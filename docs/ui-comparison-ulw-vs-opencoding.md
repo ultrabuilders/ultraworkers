@@ -2,19 +2,44 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 
 # So sánh bề mặt UI — ULW (`ultraworkers`) vs `opencoding`
 
-**Đo:** 2026-10-02 · ULW `packages/tui/src/` · opencoding `HEAD 1fc59d9` (`quangdang46/opencoding`)
+**Đo:** 2026-10-02 · ULW **`36d9ba9496`** `packages/tui/src/` · opencoding **v2.8.4**, snapshot `.tmp/opencoding-main`
+*(đo lần 1 ghim `1fc59d9`; lần 2 đo lại trên HEAD hiện tại — xem [Các neo đã rotted](#các-neo-đã-rotted))*
 **Mục đích:** owner chọn cái nào để dựng lại trong `~/.ultraworkers/extension/ulw-openTUI`.
 
-> ⚠️ **Hai bên vẽ bằng hai thứ khác nhau.** opencoding dùng **React +** `@opencoding/ink` (441 + 409 import);
+> 🎯 **Quyết định của owner (2026-10-02):** dựng một UI hỗn hợp — **bề mặt lấy của opencoding, ruột lấy của ULW.**
+> Câu trả lời cho *"làm được không"*: **Có, sáu nhóm trên bảy làm được ngay hôm nay bằng extension, không sửa một dòng core nào.**
+> Phần còn lại — xem [§Kết luận khả thi](#kết-luận-khả-thi-có-làm-được-và-phần-nào-cần-core).
+
+> ⚠️ **Hai bên vẽ bằng hai thứ khác nhau.** opencoding dùng **React + fork riêng của [`vadimdemedes/ink`](https://github.com/vadimdemedes/ink)** (441 + 409 import);
 > ULW dùng **TUI tự viết, differential rendering** (1 file import react trong `src/`).
 > Extension ULW nhận `ExtensionUiComponentFactory = (tui, theme) => ExtensionUiComponent` — **component của ULW, không phải cây React**.
 > ⇒ **Không chép code được.** Chép *thiết kế*, viết lại trên primitive ULW.
+>
+> 📎 **Bằng chứng `@opencoding/ink` là fork của `vadimdemedes/ink` (đo 2026-10-02).** Không suy từ tên:
+> - `packages/@opencoding/ink/src/core/reconciler.ts:33` trích trực tiếp issue upstream
+>   `https://github.com/vadimdemedes/ink/issues/384`
+> - Tập dependency **trùng khớp từng cái** với ink upstream: `react-reconciler` ^0.33 · `chalk` ^5.6 ·
+>   `figures` ^6.1 · `wrap-ansi` ^10 · `bidi-js` ^1 · `cli-boxes` ^4 · `usehooks-ts` ^3.1 ·
+>   `emoji-regex` ^10.6 · `get-east-asian-width` ^1.5 · `indent-string` ^5 · `auto-bind` ^5 ·
+>   `signal-exit` ^4.1 · `strip-ansi` ^7.2 · `supports-hyperlinks` ^4.4 · `type-fest` ^5.5
+> - `package.json`: `"private": true`, `"version": "1.0.0"` — **không** phải bản phát hành có số của upstream
+>
+> ⚠️ **Hệ quả cho chương trình:** ink upstream là **MIT**, nên đường pháp lý của opencoding ở chỗ này là sạch
+> (khác `claude-code` — không có giấy phép). Nhưng repo `opencoding` phát hành **Unlicense**, và fork
+> `private` không có file `LICENSE` riêng ⇒ **không rõ chỗ nào dừng bản quyền**. Nếu chép *thiết kế* thì không
+> vướng gì; nếu chép *dòng* thì phải hỏi tác giả trước. Đây là cùng ranh giới M6 vạch cho `opencode` (MIT) và
+> `oh-my-openagent` (SUL-1.0, có điều kiện).
 
-> ⚠️ **Cột "Làm được băng extension?"** — ô ✅ nghĩa là qua `setWidget`/`setHeader`/`setFooter`/`setEditorComponent`,
+> ⚠️ **Cột "Làm được băng extension?"** — ô ✅ nghĩa là qua `setWidget`/`setHeader`/`setFooter`/`setEditorComponent`/`showOverlay`,
 > **làm được ngay hôm nay**. Ô ❌ nghĩa là cần `registerEntryRenderer` (0 hit ở ULW, bead `m2-wi-16` đang `deferred`).
 > Ô 🔒 nghĩa là **nằm ngoài mọi seam** — không phải chờ việc bao trọn `pi`, mà là việc chưa tồn tại.
 
 Ô trống = **bên đó không có**.
+
+> ⚠️ **Đo lại đã sửa hai kết luận của lần 1.** Cả hai nằm ở phần "Có làm được bằng extension?":
+> 1. **Nhóm A không cần `m2-wi-16` toàn bộ.** `registerMessageRenderer` **đang chạy** — chỉ áp cho message *của riêng extension*.
+> 2. **Dòng 🔒 "Chỉ báo chế độ" không chết** — có workaround qua `setHeader`, không cần mở core.
+> Chi tiết và bằng chứng: [§Kết luận khả thi](#kết-luận-khả-thi-có-làm-được-và-phần-nào-cần-core).
 
 ---
 
@@ -48,6 +73,24 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 | Markdown render       | `tui/components/markdown.ts` (**154 KB**)        | `Markdown.tsx` (7.1) + `MarkdownTable.tsx` (13.3)                                                                               | opencoding |
 
 
+> 🔍 **Đo lại: cột "Extension?" ở nhóm A gộp hai việc khác nhau — tách ra thì phần ✅ lớn hơn bảng nói.**
+>
+> `registerMessageRenderer(customType, renderer)` **đang chạy, không vắng.** Chứng minh bằng chuỗi đầy đủ:
+> `loader.ts:599` khai → `runner.ts:1769 getMessageRenderer` → `ui-helpers.ts:360` truyền vào deps →
+> **`chat-transcript-builder.ts:623`** gọi `this.#deps.getMessageRenderer?.(message.customType)`.
+>
+> **Nhưng nó chỉ chạy trong một arm.** Dispatch ở `chat-transcript-builder.ts:286-296` là `switch (message.role)` với
+> các arm `assistant` · `toolResult` · `user` · `developer`; lời gọi renderer nằm ở arm `"hookMessage" | "custom"` (`:364-365`).
+>
+> | Việc cần làm | Hôm nay | Cần gì |
+> | --- | --- | --- |
+> | Render **message type của riêng extension** bằng component tuỳ ý | ✅ | — |
+> | **Thay** rendering của message type **của core** (`assistant` / `toolResult` / `user`) | ❌ | `registerEntryRenderer` — `m2-wi-16-036`, đang `deferred` |
+>
+> ⇒ Vế thứ hai là toàn bộ phần cần core của nhóm A, và nó **hẹp hơn nhiều** so với "`messages/` 45 file (147 KB)" mà
+> dòng tổng kết cũ ghi. Không phải 45 file chờ seam — mà là **một switch không có nhánh cắm vào**.
+
+
 
 
 ## B. Ô nhập
@@ -60,10 +103,22 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 > Đo trong `custom-editor.ts`: shimmer **18** hit, queue **33**, chips **8**, placeholder **3**.
 > ⇒ Tất cả nằm trong `CustomEditor` → ✅ hết.
 >
-> **Cái giới hạn thật:** core **gán đè** sau khi factory trả về (`interactive-mode.ts:6791+`) —
+> **Cái giới hạn thật:** core **gán đè** sau khi factory trả về (sau `interactive-mode.ts:6838`) —
 > `placeholder`, `composerState`, `attachmentChips`, `imageReferenceHyperlink`, `skillFilePath`,
 > `modelMentionLabel`, `magicKeywordsEnabled`, viewport, vim, spelling. Thay editor ≠ mua được
 > `placeholder` tuỳ ý; phải đi qua closure core đặt sẵn.
+>
+> 📌 **Handle editor đã bị thu hẹp — và đây là chi tiết quan trọng nhất của nhóm B.**
+> `setEditorComponent` (`:6838`) khai factory là
+> `((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor)`,
+> **không phải** `TUI`. Xem `ExtensionTUISurface` ở `packages/tui/src/tui.ts:762`: nó `extends Container`
+> (⇒ có `addChild`/`removeChild`/`invalidate`/`render`) cộng đúng 10 thành viên —
+> `requestRender` · `requestComponentRender` · `renderNow` · `showOverlay` · `hideOverlay` · `hasOverlay` ·
+> `stop` · `start` · `getFocused` · `setFocus`.
+> **Bị cắt** (có trong `TUI` đầy đủ, không có ở đây): `setFrameProvider`, `injectDebugInput`,
+> `getMutableViewport`, `addPaintListener`, `setInlineMouseTrackingProvider`, `getDebugPaint`.
+> ⇒ Đủ để dựng UI thật, **không** đủ để tự chế bộ khung hiển thị. Đây là ranh giới nằm ở tầng kiểu, đúng như
+> nguyên tắc trong `AGENTS.md`: extension không thể với tới `setFrameProvider` trần trụi của core.
 
 
 | Chức năng    | ULW                                                                          | opencoding                                                                                                                     | Extension? |
@@ -84,7 +139,7 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 > | Gợi ý nơi nhập | `tui/prompt/welcome.ts` (32 KB) | `usePromptInputPlaceholder.ts` (2.3) | ✅ |
 > | Ô nhập lấp lánh | `tui/theme/shimmer.ts` (12 KB) | `PromptInput/ShimmeredInput.tsx` (4.0) | ✅ |
 > | Lệnh đã xếp hàng | `tui/prompt/queued-messages.ts` (3.2) | `PromptInput/PromptInputQueuedCommands.tsx` (5.5) | ✅ |
-> | Chỉ báo chế độ | `tui/status-line/component.ts` (badge plan/bypass, **5** hit; `segments.ts` chỉ 2) | `PromptInput/PromptInputModeIndicator.tsx` (2.8) | 🔒 |
+> | Chỉ báo chế độ | `tui/status-line/component.ts` (badge plan/bypass, **5** hit; `segments.ts` chỉ 2) | `PromptInput/PromptInputModeIndicator.tsx` (2.8) | ✅\* |
 > | Mic | `tui/prompt/video.ts` (1.5) | `PromptInput/VoiceIndicator.tsx` (2.0) | ✅ |
 > | Menu trợ giúp | `tui/prompt/composer-hints.ts` (3.0) | `PromptInput/PromptInputHelpMenu.tsx` (4.7) | ✅ |
 > | Cảnh báo sandbox | | `PromptInput/SandboxPromptFooterHint.tsx` (1.7) | ✅ |
@@ -93,6 +148,19 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 > | Autocomplete model | `tui/prompt/model-mention-autocomplete.ts` (4.2) | | |
 > | Autocomplete GitHub ref | `tui/prompt/github-ref-autocomplete.ts` (3.3) | | |
 > | Autocomplete hành động | `tui/prompt/prompt-action-autocomplete.ts` (12 KB) | | |
+
+> ⭐ **Dòng `Chỉ báo chế độ`: đổi 🔒 → ✅\*.** Lần đo 1 đánh 🔒 vì nó nằm trong `StatusHost` — slot đơn,
+> `setComponent` thay thế chứ không cộng dồn. **Ràng buộc đó có thật** (xem dưới đây), nhưng **kết luận
+> "nằm ngoài mọi seam" thì sai**: `setHeader` và `setWidget` nằm ngay trên nó.
+>
+> **Bằng chứng cấu trúc:** `composer.ts:131` `class StatusHost implements Component`, `:134` `setComponent`,
+> gọi ở `:341` và `:925`, mount bằng `this.ui.addChild(this.#statusHost)` (`:363`). Đúng là một slot.
+>
+> **Nhưng layout ghép lại là** `composer.ts:377` và `:784`:
+> `[this.extensionHeader, ...this.#runtimeChildren, this.extensionFooter, this.#statusHost]`
+> — `extensionHeader` nằm **trên** status line và `#runtimeChildren` (khai `:239`, gán ở `:953`) nằm giữa.
+> ⇒ Mode chip 2.8 KB của opencoding dựng trong `setHeader` là xong. **Không cần mở `StatusHost`.**
+> Dấu `*` = "làm được, nhưng qua đường vòng; không vào đúng slot mà bản gốc dùng".
 
 
 
@@ -136,6 +204,53 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 > | Hộp | `tui/components/box.ts` (8.7) | | |
 > | Mô tả mở/đóng | `tui/components/disclosure.ts` (9.1) | | |
 > | Biểu đồ metric | `tui/components/metric.ts` (6.2) | | |
+
+
+
+### C1. Status line: ULW **đã có** custom, nhưng catalog là **đóng** — đây là câu trả lời cho "đã có kế hoạch hay đã làm chưa"
+
+Câu hỏi: *"ULW đã có kế hoạch hay đã làm để custom status line chưa?"* → **Đã làm, và làm cho người dùng qua settings, không phải cho extension.**
+
+**Đã có (settings-driven, chạy thật):**
+
+| Setting | Kiểu | Nguồn |
+| --- | --- | --- |
+| `statusLine.preset` | — | `modes/settings.ts:152` |
+| `statusLine.separator` | — | `:174` |
+| `statusLine.leftSegments` | `array` của `StatusLineSegmentId` | `:277` |
+| `statusLine.rightSegments` | `array` của `StatusLineSegmentId` | `:284` |
+| `statusLine.segmentOptions` | `record` | `:291` |
+| + `contextLine` `:196` · `sessionAccent` `:227` · `transparent` `:239` · `compactThinkingLevel` `:252` · `showHookStatus` `:265` | | |
+
+Catalog là `STATUS_LINE_SEGMENT_IDS` (`packages/tui/src/status-line/schema.ts:2-30`) — **28 phần tử**, và nó
+**đóng**: `leftSegments` khai `items: { values: STATUS_LINE_SEGMENT_IDS }` (`modes/settings.ts:280`, và `:287` cho phía phải), tức
+type-checker cấm một id ngoài danh mục. Có sẵn `CUSTOM_STATUS_LINE_DEFAULTS` với `left`/`right` riêng.
+
+**Chưa có, và đây là phần cần nói thẳng — không có bead nào cho nó:**
+
+| Việc | Trạng thái |
+| --- | --- |
+| **Extension đăng ký segment MỚI** vào status line | ❌ **không có seam.** Catalog đóng, không có `registerStatusLineSegment` (grep 0 hit) |
+| **Extension đổi nội dung/render** của segment đã có | ❌ không có seam |
+| **Chỉ báo approval/bypass mode** (`always-ask` / `write` / `yolo`) | ❌ **không tồn tại.** `grep -rn "bypass\|permissionMode\|approvalMode" packages/tui/src/status-line/` → **0 hit**. Cả package `tui` không có khái niệm approval mode — nó thuộc `coding-agent` (`tools/approval.ts:21`) |
+| **`shift+click` → native select** | ❌ không tồn tại; grep `shift+click\|native select` trong `docs/*.md` → 0 hit |
+
+**Còn cái làm được ngay hôm nay, không cần mở catalog:**
+
+`setWidget(key, content, options)` — `types.ts:345`, với `WidgetPlacement = "aboveEditor" | "belowEditor"`
+(`types.ts:231`). Nội dung là `string[]` **hoặc** component factory nhận `TUI` thật.
+⇒ Dòng hint kiểu `⏵⏵ bypass permissions on (shift+tab to cycle) · shift+click to native select`
+làm được **ngay** qua `placement: "belowEditor"`. Thêm nữa: `setStatus(key, text)` (`:329`, *"status text in the
+footer/status bar"* — **chỉ text, không component**) và `setHeader` / `setFooter`.
+
+**Extension có biết approval mode không?** Có, nhưng **event-driven**: `on("tool_approval_requested", …)` trả
+`ToolApprovalRequestedEvent.approvalMode: ApprovalMode` (`types.ts:1176`, `:1577`). Nhưng nó **chỉ bắn khi
+tool cần duyệt**, không bắn khi người dùng đổi mode — nên extension muốn hiện badge phải tự lưu trạng thái
+và sẽ không có giá trị ban đầu.
+
+⚠️ **Một sự thật phải nói trước khi dựng badge đó:** trong ULW, `shift+tab` **không** đổi approval mode.
+`packages/tui/src/app-keybindings.ts:108-111` gán nó cho **`app.thinking.cycle` — "Cycle thinking level"**.
+Viết đúng câu *"shift+tab to cycle"* vào badge bypass-permissions sẽ **dạy người dùng một phím tắt sai**.
 
 
 
@@ -236,10 +351,15 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 |                            | ULW                          | opencoding                                |
 | -------------------------- | ---------------------------- | ----------------------------------------- |
 | Tổng file UI               | ~390 file `packages/tui/src` | 418 file `src/components` + `src/screens` |
-| Hệ hiển thị                | TUI tự viết, differential    | React + `@opencoding/ink`                 |
+| Hệ hiển thị                | TUI tự viết, differential    | React + fork của [`vadimdemedes/ink`](https://github.com/vadimdemedes/ink) |
 | Chép code được?            | —                            | ❌ **không**                               |
-| Làm bằng extension hôm nay | ✅                            | ~373/418 file                             |
-| Cần `m2-wi-16` trước       | —                            | `messages/` 45 file (147 KB) + nhóm E     |
+| Làm bằng extension hôm nay | ✅                            | ~373/418 file *(đo lại: xem dưới)*         |
+| Cần `m2-wi-16` trước       | —                            | ~~`messages/` 45 file (147 KB) + nhóm E~~ → **đã thu hẹp, xem dưới** |
+
+> ⚠️ **Dòng cuối của bảng trên là của lần đo 1 và đã sai.** Đo lại cho thấy `m2-wi-16` chỉ chặn **một** thứ:
+> thay rendering của message type **của core**. Nó **không** chặn nhóm E (spinner — đi qua `setWidget`), và nó
+> **không** chặn message type của chính extension (`registerMessageRenderer` đang chạy).
+> Số đúng là: **6 nhóm trên 7 làm được ngay hôm nay.** Xem [§Kết luận khả thi](#kết-luận-khả-thi-có-làm-được-và-phần-nào-cần-core).
 
 
 
@@ -252,13 +372,155 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 **Bao trọn** `pi` **mở vùng hội thoại (nhóm A)** — qua `registerEntryRenderer`, bead `m2-wi-16`
 (id thật: `m2-wi-16-036`, hiện `deferred`).
 
-### 🔒 còn đúng **1 dòng**, và nó **không** thuộc phạm vi bao trọn `pi`
+### 🔒 **0 dòng** — dòng duy nhất của lần đo 1 đã tìm ra đường vòng
 
 
-| Dòng                                   | Vì sao                                                                                                                                                                                                                         |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Chỉ báo chế độ** (badge plan/bypass) | Nằm trong `StatusLineComponent` (`component.ts` **139 KB**), mount vào `#statusHost` — và `StatusHost` là **slot đơn**: `setComponent` **thay thế**, không cộng dồn (`composer.ts:131`, `:922`). Không seam nào cho extension. |
+| Dòng                                   | Lần đo 1 nói                    | Lần đo 2                                                                                                                        |
+| -------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Chỉ báo chế độ** (badge plan/bypass) | `StatusHost` là slot đơn, không seam nào cho extension | **Slot đơn thì đúng** (`composer.ts:131` / `:134` / `:341` / `:925`), **nhưng `setHeader` nằm ngay trên nó** → dựng chip trong `setHeader`. **✅\*** |
 
+⇒ **Không còn dòng 🔒 nào trong bảng.** Xem phần chứng minh ở [nhóm B](#b-ô-nhập).
+
+
+
+
+<a id="kết-luận-khả-thi-có-làm-được-và-phần-nào-cần-core"></a>
+## Kết luận khả thi: CÓ, và phần nào cần core
+
+Câu hỏi là *"bề mặt lấy opencoding, ruột lấy ULW — làm được không"*. Đo lại trên `36d9ba9496`: **làm được,
+và chỉ một lát nhỏ là cần core.** Bốn primitive bên dưới là lý do.
+
+> ⚠️ **Bảng này ở lần đo 2 mới đúng về mặt cấu trúc, và chưa đúng về mặt kỳ vọng.** Ba điều phải nói trước:
+> **(1)** tôi bỏ sót `ctx.ui.custom()` — seam mạnh nhất hệ thống, xem primitive 4.
+> **(2)** cột "Extension?" ở trên gộp **ba loại việc khác nhau** — có cái là UI, có cái là *feature chưa tồn tại*.
+> Xem [§Ba loại việc](#ba-loại-việc-bảng-cột-extension-gộp-mất).
+> **(3)** "Có seam" ≠ "có dữ liệu để vẽ". Xem [§Dữ liệu](#dữ-liệu-extension-có-nhìn-thấy-gì).
+
+### Bốn primitive làm cho nó thành khả thi
+
+**1. `@oh-my-pi/pi-tui` có public wildcard subpath — "ruột lấy của ULW" là import được, không phải ảo.**
+
+`packages/tui/package.json` khai 11 subpath, trong đó **4 wildcard**: `./*`, `./theme/*`, `./components/*`, `./*.js`.
+Extension ở `~/.ultraworkers/extension/` import được **mọi** component ULW: `select-list` (30 KB), `table`,
+`tree-view`, `editor` (174 KB), `markdown` (154 KB), `overlay-box`, `box`, `disclosure`, `progress-bar`,
+`metric`, `scroll-view`, `transcript-browser`, `qrcode`…
+⇒ "chép thiết kế, viết lại trên primitive ULW" là việc làm được, không phải câu khẩu hiệu.
+
+**2. Extension nhận instance TUI thật — nhưng ở hai độ rộng khác nhau, và cái thứ hai đã bị thu hẹp.**
+
+| Bề mặt | Kiểu khai | Nguồn |
+| --- | --- | --- |
+| `setWidget` / `setHeader` / `setFooter` | `(tui: TUI, theme: Theme)` | `packages/tui/src/chat/extension-types.ts:7` |
+| `setEditorComponent` / `custom` | `(tui: ExtensionTUISurface, theme, keybindings)` | `interactive-mode.ts:6838` · `types.ts:369` |
+
+Về runtime **cùng một instance** — `extension-ui-controller.ts:552` truyền `factory(this.ctx.ui, theme)`.
+Khác biệt nằm ở **tầng kiểu**, và đó là điểm tốt: `ExtensionTUISurface` (`packages/tui/src/tui.ts:762`)
+`extends Container` + đúng 10 thành viên, **không** có `setFrameProvider` · `injectDebugInput` ·
+`getMutableViewport` · `addPaintListener`. Extension đủ sức dựng UI thật và **không** với tới được khung hiển thị trần.
+
+**3. `registerMessageRenderer` đang chạy, và vòng emit→render khép kín.**
+Chuỗi đầy đủ ở phần [nhóm A](#a-hiển-thị-hội-thoại). Mặt emit: `sendMessage<T>` (`types.ts:2077`) nhận
+`CustomMessagePayload` = `string | { customType, content, display, details, attribution }`
+(`packages/tui/src/chat/messages.ts:42-45`; `CustomMessage` đầy đủ ở `:229-237`).
+⇒ extension phát ra message của riêng nó, đăng ký renderer theo `customType`, vòng kín.
+
+**4. `ctx.ui.custom<T>()` — overlay toàn màn hình có focus, trả Promise.** `types.ts:369-378`.
+
+```ts
+custom<T>(factory: (tui, theme, keybindings, done: (result: T) => void) => Component,
+          options?: { overlay?, overlayOptions?, onHandle?, signal? }): Promise<T>
+```
+
+Đây là **seam mạnh nhất** và nó phục vụ đúng những bề mặt mà `setWidget` không phục vụ được:
+`LogSelector` (44.7 KB) · `TrustDialog` (14 KB) · `wizard/` (6 file) · `Onboarding.tsx` (8.3 KB) ·
+`HistorySearchDialog` · `GlobalSearchDialog`. Tất cả là **full-screen có bàn phím**, không phải widget dải.
+
+### Phán quyết theo nhóm
+
+| Nhóm | Seam | Cần sửa core? |
+| --- | --- | --- |
+| **B. Ô nhập** | `setEditorComponent` → `#runtimeChildren` (`composer.ts:239`, mount `:377`/`:784`) | ❌ **không** |
+| **C. Chrome & trạng thái** | `setWidget` / `setHeader` / `showOverlay` | ❌ **không** |
+| **D. Bộ chọn & hộp thoại** | `showOverlay` + component ULW | ❌ **không** |
+| **E. Spinner & hiệu ứng** | `setWidget` | ❌ **không** |
+| **F. Tool renderer** | `renderCall`/`renderResult` trên tool definition | ❌ **không** |
+| **A. Hội thoại — message của extension** | `sendMessage` + `registerMessageRenderer` | ❌ **không** |
+| **A. Hội thoại — message của core** | `registerEntryRenderer` — `m2-wi-16-036` `deferred` | ✅ **có** |
+
+<a id="ba-loại-việc-bảng-cột-extension-gộp-mất"></a>
+### Ba loại việc — cột "Extension?" ở trên gộp mất
+
+Cột ✅ của bảng trên chỉ trả lời *"chỗ vẽ có không"*. Nó **không** trả lời *"vẽ cái gì"*. Ba loại:
+
+| Loại | Ví dụ trong bảng | Đáp ứng? |
+| --- | --- | --- |
+| **UI tái dựng** — dữ liệu đã có sẵn trong ULW | `PlanApprovalMessage` · `CompactBoundaryMessage` · `SystemAPIErrorMessage` | ✅ |
+| **UI cần dữ liệu** — extension tự tích từ event | `RateLimitMessage` · `CollapsedReadSearchContent` | ✅ *đủ, xem dưới* |
+| **UI cần FEATURE mà ULW không có** | `FeedbackSurvey/` (47 KB) · `TrustDialog/` · `LogSelector` · `MemoryFileSelector` · `HelpV2/` | ❌ **không phải việc UI** |
+
+⚠️ **Hàng thứ ba là chỗ dễ hứa quá.** `FeedbackSurvey` cần một feedback system — ULW không có.
+`TrustDialog` cần trust posture — ULW không có (`isProjectTrusted()` vẫn là `() => true`; đó là **M2 WI-20
+đang `deferred`**). **Extension không tạo được feature, chỉ tạo được UI cho cái đã tồn tại.**
+⇒ Nếu bảng này được đọc như "mọi dòng ✅ nghĩa là dựng lại được", thì **sai**. Đúng là: dựng lại được phần
+*trình bày*; phần *dữ liệu* thì phải tự tích hoặc phải mở feature ở core.
+
+<a id="dữ-liệu-extension-có-nhìn-thấy-gì"></a>
+### Dữ liệu — extension có nhìn thấy gì
+
+36 event (`types.ts`, `on(event: …)`). Đọc payload thật cho từng message opencoding cần:
+
+| Message opencoding | Nguồn dữ liệu | Đủ? |
+| --- | --- | --- |
+| `RateLimitMessage` | `AutoRetryStartEvent{attempt, maxAttempts, delayMs, errorMessage, errorId?}` — `extensibility/shared-events.ts:249-256` | ✅ **đúng thứ cần** |
+| `PlanApprovalMessage` | `tool_approval_requested` → `approvalMode: "always-ask" \| "write" \| "yolo"` — `tools/approval.ts:21` | ✅ |
+| `CompactBoundaryMessage` | `session_compact` | ✅ |
+| `SystemAPIErrorMessage` | `message_end` · `retry_fallback_applied` | ✅ |
+| `ShutdownMessage` | `SessionShutdownEvent` — `shared-events.ts:98-100` | ⚠️ payload là **`{}` rỗng**: biết có shutdown, **không biết lý do** |
+| `InterruptedByUser` | `TurnEndEvent{turnIndex, message, toolResults}` — `:218-223` | ⚠️ **không có cờ `interrupted`**; phải suy từ `message.stopReason` |
+| `CollapsedReadSearchContent` | `tool_call` + `tool_result` | ⚠️ tự gom được, nhưng `#readGroup` của core là **state nội bộ** → phải dựng lại |
+| `SnipBoundaryMessage` | ❌ không có `snip` event | ❌ |
+
+**Nhóm F có một cái bẫy riêng, và nó đã được ULW đóng đúng.** `toolRenderers` là
+`Readonly<Record<…>> = Object.freeze(…)` — `packages/tui/src/tools/index.ts:34-39`, docblock tự nói lý do:
+*"Frozen: this is core's built-in presentation, not an extension point… A plugin that wants a different
+transcript for its own tool declares `renderCall`/`renderResult` on the tool definition."*
+⇒ Đường đúng cho extension là per-tool, **đã mở sẵn**. Đừng cố ghi vào `toolRenderers` — bead M2 WI-4
+đóng backdoor đó có chủ đích.
+
+### Ba khoảng trống thật — đọc cái này trước khi hứa ai
+
+1. **`registerEntryRenderer`** — thay rendering của message type **của core**. Bead `m2-wi-16-036`,
+   `deferred`. Chặn **đúng một dòng bảng**.
+2. **Catalog status line đóng** — không đăng ký segment mới (`modes/settings.ts:280` +
+   `packages/tui/src/status-line/schema.ts:2-30`). Và không có chỗ nào hiện approval mode
+   (`grep -rn "bypass\|permissionMode\|approvalMode" packages/tui/src/status-line/` → **0 hit**).
+3. **Không có seam cho feature-mới.** Đây là cái quan trọng nhất về mặt kỳ vọng: extension tạo được
+   *trình bày*, không tạo được *tính năng*. `FeedbackSurvey` hay `TrustDialog` *thật* là việc khác hẳn và
+   phải mở ở core (hàng thứ ba của [§Ba loại việc](#ba-loại-việc-bảng-cột-extension-gộp-mất)).
+
+### Thứ tự làm — **không mở `m2-wi-16` ngay**
+
+Nó chỉ chặn một dòng bảng, không chặn sáu dòng còn lại. Mở nó lúc này là chi phí lớn nhất đổi lấy
+ít giá trị nhất.
+
+1. **Dựng thử hai component đại diện, mỗi thứ một seam** — đừng dựng thử hai cái qua cùng một seam, vì
+   khi cái thứ hai hỏng thì không biết seam nào có vấn đề:
+   - `PromptInputModeIndicator.tsx` của opencoding chỉ **2.8 KB**, dựng trong **`setHeader`** → trả lời
+     *dải/chrome dải được không*.
+   - `HistorySearchDialog` (4.5 KB) qua **`ctx.ui.custom()`** → trả lời *full-screen có focus được không*.
+   
+   Phép thử này rẻ nhất và nó đo **cả hai tầng seam** thay vì một.
+2. **Cập nhật bảng này theo kết quả** — mỗi dòng ✅ chuyển thành "đã dựng thật, kèm ảnh chụp", không phải "seam có sẵn".
+3. **Chỉ mở `m2-wi-16`** nếu owner thực sự muốn thay *cách hiển thị assistant/tool của core*. Đó là quyết định
+   khác hẳn và đắt hơn nhiều: nó đụng `chat-transcript-builder.ts:286-296`, tức **đường dữ liệu hiển thị của mọi lượt**.
+
+### Giới hạn của phép đo này
+
+- Bảng có 279 dòng. Đo lại này xác minh **các claim mang tải quyết định** (seam, renderer, `StatusHost`,
+  export map, độ rộng handle) — **không** kiểm từng dòng của bảng.
+- opencoding là **snapshot tĩnh v2.8.4 không có `.git`** (`.tmp/opencoding-main`, bị `.gitignore:32` bỏ qua).
+  Không pull được; nếu upstream đã tiến, phần *nội dung* so sánh có thể lệch. Phần *seam của ULW* thì đo
+  trực tiếp trên cây này nên không lệch.
 
 
 
@@ -276,5 +538,29 @@ Tôi **đánh 🔒 sai 3 lần**, cùng một cách: **đọc tên file rồi su
 
 Cách thoát, áp dụng từ đây: **tìm chỗ ULW đã instantiate component đó ở đâu** — nếu chính ULW đã
 `new` nó mà không sửa core, nó làm được. Đừng suy từ tên file.
+
+<a id="các-neo-đã-rotted"></a>
+### Các neo đã rotted — và hai chỗ đo lại đã sai
+
+Bảng này đo ở `1fc59d9`; đo lại ở `36d9ba9496`. Số dòng **đã trôi**, và một neo đã trôi vào chỗ sai hoàn toàn:
+
+| Neo cũ (lần đo 1) | Đúng ở `36d9ba9496` | Hậu quả |
+| --- | --- | --- |
+| `interactive-mode.ts:6772`, `:6791+` (setEditorComponent) | **`interactive-mode.ts:6838`** | Hai dòng cũ trỏ vào **code shutdown/teardown**, không phải editor |
+| `composer.ts:922` (statusHost.setComponent) | `composer.ts:925` | Lệch 3 dòng — vô hại |
+| `composer.ts:131` (StatusHost) | `composer.ts:131` ✅ | Không đổi |
+| `types.ts:414`, `extension-ui-controller.ts:205`, `unavailable-ui.ts:74` | ✅ cả ba | Không đổi |
+
+**Hai kết luận sai hơn là do đo, không phải do trôi neo:**
+
+| # | Lần đo 1 nói | Lần đo 2 |
+| --- | --- | --- |
+| 4 | Nhóm A cần `registerEntryRenderer` cho **mọi** thứ | `registerMessageRenderer` **đang chạy** — chỉ không phủ message type của core. Khoá **hẹp hơn nhiều**. |
+| 5 | "Chỉ báo chế độ" 🔒 — *nằm ngoài mọi seam* | Ràng buộc slot đơn thì đúng; **kết luận thì sai** — `setHeader` nằm ngay trên nó |
+
+⇒ Bài học của lần đo 1 **không chỉ** là "đừng suy từ tên file". Lần này thêm một: **đừng suy từ tên file *của loại
+thứ***. Nhóm F có tám dòng, ULW đã có sẵn bản riêng cho `todo` và `websearch`, nên rất dễ đoán "phần tool
+renderer thì không có seam nào". **Sai** — chính docblock của `toolRenderers` (`tools/index.ts:34-39`) đã ghi
+đường thay thế bằng văn bản. Đọc docblock trước khi kết luận về một registry.
 
 **Hai bên đều có** `todo` và `websearch` — ULW có bản riêng (`todo.ts` 27 KB, `web-search.ts` 14 KB), opencoding render chung trong `messageActions.tsx`. **Ở phần này nên giữ UI của ULW**, đúng như bạn nói.

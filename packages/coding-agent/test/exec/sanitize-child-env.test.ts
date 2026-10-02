@@ -50,7 +50,7 @@ describe("sanitizeChildEnv", () => {
 	});
 
 	it("strips macOS loader hijack variables, not just the Linux ones", () => {
-		// omp ships on macOS more than any other platform, and DYLD_* is the same
+		// ultraworkers ships on macOS more than any other platform, and DYLD_* is the same
 		// hijack under a different prefix. Enumerating only LD_* left the most common
 		// target unprotected while the guard looked present.
 		const env = {

@@ -355,7 +355,7 @@ const registeredSubcommands = new Map<string, RegisteredSubcommand>();
 const subcommandCollisions: Array<{ verb: string; owner: string; existingOwner: string }> = [];
 
 /**
- * Register a top-level verb owned by an extension, plus the handler `omp <verb>`
+ * Register a top-level verb owned by an extension, plus the handler `ultraworkers <verb>`
  * runs.
  *
  * Returns `false` when `verb` was already claimed so the caller can surface the
@@ -429,7 +429,7 @@ export function couldBeExtensionSubcommand(first: string | undefined): boolean {
  */
 export async function preloadExtensionSubcommands(): Promise<void> {
 	// Lazy for the same reason every command entry above is lazy: this module is
-	// reached by `omp --version` and `omp --help`, and a static import of the
+	// reached by `ultraworkers --version` and `ultraworkers --help`, and a static import of the
 	// loader would drag its whole graph onto those paths.
 	const { discoverAndLoadExtensions } = await import("./extensibility/extensions/loader");
 	await discoverAndLoadExtensions([], process.cwd(), undefined, undefined, { includeAmbientHooks: false });
@@ -470,11 +470,11 @@ export function isSubcommand(first: string | undefined): boolean {
 }
 
 // Documented-looking plugin/marketplace verbs that are NOT registered top-level
-// commands. Without a guard `resolveCliArgv` rewrites e.g. `omp marketplace add
-// xyz` to `omp launch marketplace add xyz`, silently forwarding the argv to the
+// commands. Without a guard `resolveCliArgv` rewrites e.g. `ultraworkers marketplace add
+// xyz` to `ultraworkers launch marketplace add xyz`, silently forwarding the argv to the
 // model as a prompt instead of managing plugins (#4845; same class as the
 // `list`/`remove` leak fixed in #2935 and the `install` leak in #1496/#1498).
-// The real commands live under `omp plugin <action>`; each entry maps a verb to
+// The real commands live under `ultraworkers plugin <action>`; each entry maps a verb to
 // a hint pointing there. See {@link reservedTopLevelWordMessage} for when a hint
 // fires vs. when the argv still falls through to `launch`.
 //
@@ -484,7 +484,7 @@ export function isSubcommand(first: string | undefined): boolean {
 // It is NOT a synonym for the product name, and that is the whole point. A
 // message has two jobs: echo what the user typed, and tell them what to run
 // next. Hardcoding the binary in the second job told a user who installed by
-// `bun install` / `npm i -g` / `install.sh` / nix to run `omp plugin list`,
+// `bun install` / `npm i -g` / `install.sh` / nix to run `ultraworkers plugin list`,
 // which is a command none of those four paths creates — so the advice was
 // wrong for exactly the users who did a normal install. Those four paths are
 // measured in epic-4yhd; all four produce `ultraworkers`, and
@@ -493,15 +493,15 @@ export function isSubcommand(first: string | undefined): boolean {
 // rather than a silent extra entry.
 //
 // Substituting rather than hardcoding `ultraworkers` is what makes this correct
-// without pre-empting epic-4yhd. If that bead ends up shipping an `omp` alias,
-// a user who ran `omp` is told `omp plugin list`, which then exists; if it does
-// not, a user who ran `omp` is still told the name that does exist for them.
+// without pre-empting epic-4yhd. If that bead ends up shipping an `ultraworkers` alias,
+// a user who ran `ultraworkers` is told `ultraworkers plugin list`, which then exists; if it does
+// not, a user who ran `ultraworkers` is still told the name that does exist for them.
 // Deriving the advice beats choosing a winner: the previous version hardcoded
 // the recommendation while substituting the echo, which meant the two halves
 // could disagree about which command the user was running.
 //
 // The one thing this does NOT do is change which commands exist. It cannot make
-// `omp` appear on someone's PATH, and it is not meant to.
+// `ultraworkers` appear on someone's PATH, and it is not meant to.
 const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 	extensions:
 		'`{invoked} extensions` is not a management command. Use `{invoked} plugin list` / `{invoked} plugin install`, or run `{invoked} launch extensions` if you meant to send "extensions" as a prompt.',
@@ -522,8 +522,8 @@ const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 		'`{invoked} disable` is not a top-level command. Use `{invoked} plugin disable <name@marketplace>` to disable a plugin, or run `{invoked} launch disable` if you meant to send "disable" as a prompt.',
 };
 
-// Sub-actions that make `omp marketplace <sub>` unambiguously a management
-// command even when multi-word (the reporter's `omp marketplace add xyz`,
+// Sub-actions that make `ultraworkers marketplace <sub>` unambiguously a management
+// command even when multi-word (the reporter's `ultraworkers marketplace add xyz`,
 // #4845). Mirrors the switch in `handleMarketplace` (cli/plugin-cli.ts).
 const MARKETPLACE_SUBCOMMANDS: Record<string, true> = { add: true, remove: true, rm: true, update: true, list: true };
 
@@ -549,11 +549,11 @@ function invokedBinaryName(): string {
  * Hint for a reserved plugin/marketplace verb used as a top-level command, or
  * `undefined` when the argv should fall through to `launch`.
  *
- * A bare verb (`omp marketplace`) always hints. A multi-word invocation only
+ * A bare verb (`ultraworkers marketplace`) always hints. A multi-word invocation only
  * hints when the arguments follow the documented plugin grammar — a marketplace
- * sub-action (`omp marketplace add …`) or a `name@marketplace` plugin id
- * (`omp uninstall foo@bar`) — so genuine prompts that merely begin with one of
- * these words (`omp list all my files`, `omp upgrade the deps`) still launch.
+ * sub-action (`ultraworkers marketplace add …`) or a `name@marketplace` plugin id
+ * (`ultraworkers uninstall foo@bar`) — so genuine prompts that merely begin with one of
+ * these words (`ultraworkers list all my files`, `ultraworkers upgrade the deps`) still launch.
  *
  * Flags (`-…`) and `@file` arguments in the verb slot are never management
  * commands; those fall through to the default `launch` command.
@@ -654,11 +654,11 @@ export function resolveCliArgv(argv: string[]): ResolvedCliArgv {
 	const reservedMessage = reservedTopLevelWordMessage(argv);
 	if (reservedMessage) return { error: reservedMessage };
 	// A subcommand can hide behind leading global option flags
-	// (`omp --approval-mode=yolo acp`). `run` dispatches strictly on argv[0], so
+	// (`ultraworkers --approval-mode=yolo acp`). `run` dispatches strictly on argv[0], so
 	// hoist the subcommand to the front. Launch-shaped commands share the launch
 	// flag surface, so their leading flags are forwarded and applied; every other
 	// subcommand parses only its own flags, so launch-global flags placed before
-	// it (`omp --cwd <dir> update`) are stripped rather than forwarded into a
+	// it (`ultraworkers --cwd <dir> update`) are stripped rather than forwarded into a
 	// crash (#8891). Genuine launch prompts (no trailing subcommand) are untouched.
 	const subIndex = leadingSubcommandIndex(argv);
 	if (subIndex >= 0) {

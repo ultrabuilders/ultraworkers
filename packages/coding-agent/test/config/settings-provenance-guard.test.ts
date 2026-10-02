@@ -73,7 +73,7 @@ describe("global writes are refused when a higher layer supplies the effective v
 	});
 
 	it("keeps the saved value when the policy is `keep`, and still reports the shadowing", async () => {
-		// The other calling surface — `omp config set` from a shell — may be configuring a
+		// The other calling surface — `ultraworkers config set` from a shell — may be configuring a
 		// different checkout where the shadowing layer does not exist. Discarding the edit
 		// there destroys something the user meant to keep, so this policy stands the write.
 		// If detection regressed, this would report `applied` and the user would be told the

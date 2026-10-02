@@ -220,7 +220,7 @@ export async function scanRuleA(root: string): Promise<RuleAViolation[]> {
  * number of files that still match.
  *
  * The budget is the part a bare allow-list cannot do. Measured: injecting one
- * more `omp` into an allow-listed file left the gate at exit 0, because the path
+ * more `ultraworkers` into an allow-listed file left the gate at exit 0, because the path
  * matched and nothing counted. An allow-list that silences a file forever is
  * how a rename sweep stops converging while still reading green.
  */

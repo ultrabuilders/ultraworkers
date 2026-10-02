@@ -76,7 +76,7 @@ describe("a side-effect-created directory cannot capture the read root", () => {
 	it("keeps reading the root that has config when the canonical one is empty", async () => {
 		// The exact failure: a full legacy install, plus an empty canonical dir
 		// created by a getter's mkdirSync. First-that-exists hands the read to the
-		// empty one and omp sees no settings at all.
+		// empty one and ultraworkers sees no settings at all.
 		await rootWithConfig(LEGACY_CONFIG_DIR_NAME);
 		await bareRoot(CONFIG_DIR_NAME_NEXT);
 
@@ -93,7 +93,7 @@ describe("a side-effect-created directory cannot capture the read root", () => {
 	});
 
 	it("accepts the .yaml spelling as a config root, because reads do", async () => {
-		// omp only ever WRITES config.yml (every write site uses
+		// ultraworkers only ever WRITES config.yml (every write site uses
 		// MAIN_CONFIG_FILENAMES[0]), but every READ site loops the whole list. A
 		// root holding just config.yaml is therefore a real config root, and
 		// keying the marker on the first filename only would strand it.

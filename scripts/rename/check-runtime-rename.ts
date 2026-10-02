@@ -11,7 +11,7 @@
  * The two corpora have opposite failure modes. Prose can be allow-listed by
  * path after a human reads the sentence. Runtime output cannot be swept by a
  * regex: the token's meaning depends on whether it names something that still
- * exists. `omp git` in a help string is stale prose, but the same token inside
+ * exists. `ultraworkers git` in a help string is stale prose, but the same token inside
  * `hindsight`'s default bank id is a *data* identity, and one inside a
  * `console.log` that prints a value the code computed is not prose at all. A
  * regex cannot tell those apart, so this gate takes an ALLOW-LIST OF EXACT

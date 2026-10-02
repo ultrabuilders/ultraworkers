@@ -51,8 +51,35 @@ interface RuntimeBuffer {
 const runtimeBuffer = (globalThis as { Buffer?: RuntimeBuffer }).Buffer;
 const nonAsciiPattern = /[^\x00-\x7f]/;
 
+/**
+ * Whether `Buffer.byteLength` agrees with the encoding `Buffer.from` actually produces.
+ *
+ * Bun 1.3.14 answers 3 for `"a\ud83d"` where `Buffer.from` emits four bytes (`61 ef bf bd`)
+ * and `TextEncoder` agrees with those four. Node 26.3.0 answers 4 for all three. So the
+ * unpaired surrogate is the tell: it is the one input where a correct and an incorrect
+ * byte count disagree, which makes it a cheap one-shot check at module load rather than a
+ * per-call cost.
+ *
+ * Without this guard the truncators under-report their own output, so `truncateTail` can
+ * hand back content that exceeds `maxBytes` — the caller asked for a byte budget and got
+ * more bytes than it asked for. The manual path below already counts unpaired surrogates
+ * as three bytes, which is what the encoding does.
+ */
+function bufferByteLengthIsTrustworthy(): boolean {
+	if (!runtimeBuffer) return false;
+	try {
+		// "a" is one byte; the unpaired high surrogate encodes as U+FFFD, which is three.
+		const expectedBytes = 1 + 3;
+		return runtimeBuffer.byteLength("a\ud83d", "utf8") === expectedBytes;
+	} catch {
+		return false;
+	}
+}
+
+const trustedBufferByteLength = bufferByteLengthIsTrustworthy();
+
 export function utf8ByteLength(content: string): number {
-	if (runtimeBuffer) return runtimeBuffer.byteLength(content, "utf8");
+	if (trustedBufferByteLength && runtimeBuffer) return runtimeBuffer.byteLength(content, "utf8");
 
 	const firstNonAscii = content.search(nonAsciiPattern);
 	if (firstNonAscii === -1) return content.length;

@@ -4,9 +4,16 @@
 
 ### Fixed
 
+- `truncateTail` no longer returns more bytes than it was given. `utf8ByteLength` measured output
+  through `Buffer.byteLength`, which on Bun under-reports an unpaired surrogate by one byte
+  (`Buffer.from` and `TextEncoder` both encode `"a\ud83d"` as four bytes; Bun's `Buffer.byteLength`
+  answered three). Truncation therefore decided the content already fit and returned it whole.
+  Byte length is now measured only when the runtime agrees with its own encoder, otherwise by the
+  existing manual count.
+
 - `HarnessOptions.models` no longer names a type that does not exist. durable called `getModel` and
   `streamSimple` through pi's experimental `Models` service, which `@oh-my-pi/pi-ai` never exported.
-  The import resolved to an *error type*, and member accesses on an error type are not reported —
+  The import resolved to an _error type_, and member accesses on an error type are not reported —
   so **nothing on that seam was ever typechecked**. It is now declared as `ModelLookup`, a
   two-method interface carrying the real shapes: a `getModel` that returns `Model | undefined`, and
   `streamSimple` returning pi's own `AssistantMessageEventStream`. Declaring the seam is also what
@@ -59,19 +66,19 @@
      pair out on purpose — declaring them would publish half of a feature that is still an open
      decision, and a later "no" would force the seam to give back part of its surface.
 
-     Three errors surfaced once the seam was declared:
+      Three errors surfaced once the seam was declared:
 
-     - `getModel` — resolved. `ModelLookup.getModel` returns `Model | undefined`, which is what
-       `generation.ts:119` branches on via `failNoModel`. omp's `ModelManager` cannot supply this:
-       it exposes `refresh` and no per-id lookup.
-     - `fetchDeferred` / `cancelDeferred` (2) — `src/harness/generation.ts:122` and `:132`. Both
-       have **no occurrence anywhere in the workspace**; deferred generation is a pi feature, not a
-       rename. Left out of the seam pending that decision.
-     - `streamSimple` (1) — `src/harness/generation.ts:208`. The method now resolves to pi's own
-       `AssistantMessageEventStream`, but the call passes `{ messages: [...] }` as its second
-       argument where omp's `streamSimple` takes a chord `Context` — which is
-       `{ abortSignal, value, toString }` and has no `messages`. The call is wired to a signature
-       that does not exist on this side; the port, not the seam, needs to change.
+      - `getModel` — resolved. `ModelLookup.getModel` returns `Model | undefined`, which is what
+        `generation.ts:119` branches on via `failNoModel`. omp's `ModelManager` cannot supply this:
+        it exposes `refresh` and no per-id lookup.
+      - `fetchDeferred` / `cancelDeferred` (2) — `src/harness/generation.ts:122` and `:132`. Both
+        have **no occurrence anywhere in the workspace**; deferred generation is a pi feature, not a
+        rename. Left out of the seam pending that decision.
+      - `streamSimple` (1) — `src/harness/generation.ts:208`. The method now resolves to pi's own
+        `AssistantMessageEventStream`, but the call passes `{ messages: [...] }` as its second
+        argument where omp's `streamSimple` takes a chord `Context` — which is
+        `{ abortSignal, value, toString }` and has no `messages`. The call is wired to a signature
+        that does not exist on this side; the port, not the seam, needs to change.
 
    - **`deferred` (4)** — `src/harness/context.ts:8`, `src/harness/generation.ts:237,238`.
      `StopReason` in `@oh-my-pi/pi-wire` has no `"deferred"` member and `AssistantMessage` has no

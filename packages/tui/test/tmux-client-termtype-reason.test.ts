@@ -96,24 +96,36 @@ sleep 2
 printf "%s\\n" "WezTerm 20260905-175422-0f4b5596"
 `);
 		try {
-			const ok = await resolveInChild(answering, childEnv(answering), 1);
-			// Asked twice: a cached outcome must not relabel itself. If the cache stored a
-			// refusal under any other reason, a busy machine and a terminal that is not there
-			// would become indistinguishable again — the exact defect this reason exists to
-			// remove, reintroduced one layer up.
-			const notFound = await resolveInChild(refusing, childEnv(refusing), 2);
+			// The two answering fixtures are asked more than once and judged on their LAST
+			// answer, because a busy machine can starve any of them: a fixture whose entire
+			// body is `exit 1` has been observed taking 503ms, which is the budget, and a
+			// starved query honestly reports `timeout` rather than the branch its fixture was
+			// built to produce. Judging the last answer tests the contract that survives that
+			// — a starved query must not be remembered — rather than testing how fast the
+			// machine is today.
+			const ok = await resolveInChild(answering, childEnv(answering), 3);
+			const notFound = await resolveInChild(refusing, childEnv(refusing), 3);
+			// One call only: this fixture exists to outrun the budget, so a slower machine
+			// can only make it more certainly a timeout.
 			const timeout = await resolveInChild(stalling, childEnv(stalling), 1);
 
 			// `elapsedMs` is carried but matched loosely and deliberately: a duration cannot
 			// separate these branches, since the refusal and the timeout both cost time and
 			// both end in a null. The reason code is the discriminator, so the reason is
 			// what gets asserted.
-			expect(ok).toEqual([{ value: "WezTerm", reason: "ok", elapsedMs: expect.any(Number) }]);
+			expect(ok.at(-1)).toEqual({ value: "WezTerm", reason: "ok", elapsedMs: expect.any(Number) });
+			expect(notFound.at(-1)).toEqual({
+				value: null,
+				reason: "not-found",
+				elapsedMs: expect.any(Number),
+			});
 			expect(timeout).toEqual([{ value: null, reason: "timeout", elapsedMs: expect.any(Number) }]);
-			expect(notFound).toEqual([
-				{ value: null, reason: "not-found", elapsedMs: expect.any(Number) },
-				{ value: null, reason: "not-found", elapsedMs: expect.any(Number) },
-			]);
+			// Once a refusal has answered, it is remembered: the later calls come from the
+			// cache, so they repeat the reason instead of relabelling it. This is the layer
+			// above the one that would reintroduce the defect — a cache that stored a refusal
+			// under another reason would make a busy machine and a missing terminal
+			// indistinguishable again.
+			expect(notFound.slice(1).every(result => result.reason === "not-found")).toBe(true);
 		} finally {
 			for (const dir of [answering, refusing, stalling]) {
 				await fs.rm(dir, { recursive: true, force: true });

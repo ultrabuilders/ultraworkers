@@ -47,9 +47,9 @@ describe("reconciling a live mcp.enableProjectConfig change", () => {
 
 	beforeEach(async () => {
 		originalHome = process.env.HOME;
-		tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "omp-mcp-reconcile-home-"));
-		projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-mcp-reconcile-project-"));
-		userAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-mcp-reconcile-agent-"));
+		tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "uw-mcp-reconcile-home-"));
+		projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-mcp-reconcile-project-"));
+		userAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-mcp-reconcile-agent-"));
 		process.env.HOME = tempHome;
 		vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 		setAgentDir(userAgentDir);

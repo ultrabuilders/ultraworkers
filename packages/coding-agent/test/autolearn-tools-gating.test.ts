@@ -120,7 +120,7 @@ describe("manage_skill execute", () => {
 
 	beforeEach(async () => {
 		originalAgentDir = getAgentDir();
-		tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "omp-manage-skill-"));
+		tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "uw-manage-skill-"));
 		spyOn(os, "homedir").mockReturnValue(tempHome);
 		setAgentDir(path.join(tempHome, ".omp", "agent"));
 	});
@@ -213,7 +213,7 @@ describe("learn execute", () => {
 
 	beforeEach(async () => {
 		originalAgentDir = getAgentDir();
-		tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "omp-learn-"));
+		tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "uw-learn-"));
 		spyOn(os, "homedir").mockReturnValue(tempHome);
 		setAgentDir(path.join(tempHome, ".omp", "agent"));
 		remembered = [];

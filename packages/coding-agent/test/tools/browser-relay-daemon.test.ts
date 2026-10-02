@@ -129,7 +129,7 @@ process.stdout.write(String(await probeRelayServer(url)));`,
 	});
 
 	it("stays alive while a consumer in another project holds the global broker lease", async () => {
-		const home = await fs.mkdtemp(path.join(os.tmpdir(), "omp-relay-global-"));
+		const home = await fs.mkdtemp(path.join(os.tmpdir(), "uw-relay-global-"));
 		const firstProject = path.join(home, "project-a");
 		const secondProject = path.join(home, "project-b");
 		const firstMarker = path.join(home, "first-ready");

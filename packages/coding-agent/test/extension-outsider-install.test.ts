@@ -51,7 +51,7 @@ describe("an extension installed from outside the repo", () => {
 		// there would otherwise read — and on Windows once wrote — the developer's
 		// real `~/.omp`. The XDG_* vars are cleared because the resolver prefers
 		// `$XDG_DATA_HOME/omp` over the home config root when that dir exists.
-		tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "omp-outsider-home-"));
+		tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "uw-outsider-home-"));
 		for (const key of xdgVars) {
 			originalXdg.set(key, process.env[key]);
 			delete process.env[key];

@@ -45,7 +45,7 @@ describe("resolveActiveProjectRegistryPath", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-proj-scope-"));
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "uw-proj-scope-"));
 	});
 
 	afterEach(() => {
@@ -101,7 +101,7 @@ describe("resolveActiveProjectRegistryPath", () => {
 	it("does not treat ~/.git as a project root (pass-2 home-dir guard)", async () => {
 		// Simulate a dotfiles repo managed with a bare-git technique: ~/.git exists.
 		// resolveActiveProjectRegistryPath must NOT return ~/.omp/.../installed_plugins.json.
-		const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-proj-scope-home-"));
+		const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "uw-proj-scope-home-"));
 		vi.spyOn(os, "homedir").mockReturnValue(homeDir);
 		const fakeHomeGit = path.join(homeDir, ".git");
 		await fs.promises.mkdir(fakeHomeGit, { recursive: true });
@@ -171,8 +171,8 @@ describe("listClaudePluginRoots — project shadows user", () => {
 	let projectRegPath: string;
 
 	beforeEach(() => {
-		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "omp-shadow-home-"));
-		tmpProject = fs.mkdtempSync(path.join(os.tmpdir(), "omp-shadow-proj-"));
+		tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "uw-shadow-home-"));
+		tmpProject = fs.mkdtempSync(path.join(os.tmpdir(), "uw-shadow-proj-"));
 
 		// Create .omp/ in project so resolveActiveProjectRegistryPath finds it.
 		fs.mkdirSync(path.join(tmpProject, PROJECT_AGENT_DIR_NAME, "plugins"), { recursive: true });

@@ -71,7 +71,7 @@ describe("a session's active tool set after the server pushes a new tool", () =>
 	let addGate = "";
 
 	beforeEach(() => {
-		workDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-rugpull-session-"));
+		workDir = fs.mkdtempSync(path.join(os.tmpdir(), "uw-rugpull-session-"));
 		addGate = path.join(workDir, "add");
 		fs.writeFileSync(path.join(workDir, "omp.json"), JSON.stringify({ mcpServers: {} }));
 		fs.mkdirSync(path.join(workDir, ".omp"), { recursive: true });

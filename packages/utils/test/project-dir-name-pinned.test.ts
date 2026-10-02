@@ -52,7 +52,7 @@ import {
 
 /** A throwaway project root, removed by the caller in a `finally`. */
 function makeTempProjectRoot(): string {
-	return fs.mkdtempSync(path.join(os.tmpdir(), "omp-project-dir-pin-"));
+	return fs.mkdtempSync(path.join(os.tmpdir(), "uw-project-dir-pin-"));
 }
 
 afterEach(() => {

@@ -33,7 +33,7 @@ afterEach(async () => {
 });
 
 async function runScenario(scenario: string): Promise<ScenarioResult> {
-	const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-logger-contract-"));
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "uw-logger-contract-"));
 	roots.push(root);
 	const primaryDir = path.join(root, "primary");
 	const secondaryDir = path.join(root, "secondary");

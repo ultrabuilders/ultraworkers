@@ -755,8 +755,16 @@ export interface Tx {
 	): Promise<void>;
 }
 
-/** Disposable, read-only Chord state bound to one committed document incarnation. */
-export type DocumentState<T extends JsonObject> = AttachedReplicatedState<Readonly<T> | null>;
+/**
+ * Disposable, read-only Chord state bound to one committed document incarnation.
+ *
+ * `value` is `Readonly<T>` only while this state observes the definition version it was hydrated
+ * under. `session.ts`'s `observedOperations` replaces the whole root when a commit arrives under a
+ * different version, so an observer hydrated on an older token reads the **newer** shape here. The
+ * value is therefore `Readonly<T> | JsonObject`, and a caller that knows no other token has written
+ * narrows it back — an unchecked `Readonly<T>` described a value the runtime never produces.
+ */
+export type DocumentState<T extends JsonObject> = AttachedReplicatedState<Readonly<T> | JsonObject | null>;
 
 /** Terminal result of one document watch. */
 export type WatchEnd =
@@ -775,7 +783,13 @@ export interface WatchHandle<T> {
 	readonly closed: Promise<WatchEnd>;
 }
 
-export type DocumentWatch<T extends JsonObject> = WatchHandle<Readonly<T> | null>;
+/**
+ * Terminal result of one document watch.
+ *
+ * Same version caveat as {@link DocumentState}: `observedOperations` hands an observer of an older
+ * definition version a root replacement, so a listener can receive a shape its token does not name.
+ */
+export type DocumentWatch<T extends JsonObject> = WatchHandle<Readonly<T> | JsonObject | null>;
 
 /** Committed document reads. */
 export type DocumentReader = Pick<Session, "snapshot" | "snapshotAsOf">;

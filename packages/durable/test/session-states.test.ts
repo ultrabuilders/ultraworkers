@@ -1,7 +1,7 @@
 import { defineDoc, defineDocFamily } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { getReplicatedStateInternals } from "../../chord/src/services/state-internals";
-import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support";
+import { context, createConversation, documentChanges, flush, openTestSession, singleVersion } from "./session-support";
 
 type State = { value: number; retained: { label: string } };
 
@@ -42,7 +42,9 @@ describe("Session document states", () => {
 		const baseline = (await session.snapshot(StateDoc, context))!;
 		const state = (await session.documentState(StateDoc, context))!;
 		const deliveries: Array<{ value: Readonly<State> | null; sequence: number }> = [];
-		state.subscribe((value, _context, delivery) => deliveries.push({ value, sequence: delivery.sequence }));
+		state.subscribe((value, _context, delivery) =>
+			deliveries.push({ value: singleVersion(StateDoc, value), sequence: delivery.sequence }),
+		);
 		expect(state.value).toBe(baseline);
 
 		await session.commit(async tx => {
@@ -208,7 +210,7 @@ describe("Session document states", () => {
 	it("continues from exact committed values after the tracker cache unloads", async () => {
 		const { session, storage } = await createState();
 		const state = (await session.documentState(StateDoc, context))!;
-		const baseline = state.value;
+		const baseline = singleVersion(StateDoc, state.value);
 		const reads = storage.documentReadCount;
 		await session.unloadDocuments();
 		const reloaded = await session.snapshot(StateDoc, context);

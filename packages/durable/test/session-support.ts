@@ -9,6 +9,7 @@ import {
 	type DocumentPoint,
 	type DocumentRecord,
 	type Id,
+	type JsonObject,
 	MemoryStorage,
 	type Seq,
 	type StorageWrite,
@@ -152,4 +153,32 @@ export async function createConversation(session: SessionImpl): Promise<Conversa
 /** Resolve after pending microtasks and one macrotask turn. */
 export function flush(): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+/**
+ * Narrow a widened document value back to the shape its own token declares.
+ *
+ * `DocumentState<T>` and `DocumentWatch<T>` admit `JsonObject` because `observedOperations` hands an
+ * observer of an older definition version a **root replacement** — the runtime genuinely delivers a
+ * shape the observer's token does not name, which is what
+ * `session-checkpoints-migrations.test.ts` asserts. A test built on a single-version doc can no
+ * longer lean on the type for that, so this checks instead of casting: the declared key set comes
+ * from the definition's own `initial`, so a value carrying a different version's keys throws here
+ * rather than being silently asserted as the old shape.
+ */
+export function singleVersion<T extends JsonObject>(
+	token: { readonly definition: { readonly kind: string; initial(): T } },
+	value: Readonly<T> | JsonObject | null,
+): Readonly<T> | null {
+	if (value === null) return null;
+	const declared = Object.keys(token.definition.initial()).sort();
+	const delivered = Object.keys(value).sort();
+	if (declared.join() !== delivered.join()) {
+		throw new Error(
+			`${token.definition.kind}: delivered keys [${delivered.join(", ")}] do not match the declared ` +
+				`shape [${declared.join(", ")}]. A definition that gained a second version delivers its new ` +
+				`shape to an observer of the old one — narrow deliberately rather than asserting.`,
+		);
+	}
+	return value as Readonly<T>;
 }

@@ -9,7 +9,7 @@ import {
 import { applyImmutable } from "@oh-my-pi/chord/delta";
 import { defineDoc } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
-import { context, documentChanges, flush, openTestSession } from "./session-support";
+import { context, documentChanges, flush, openTestSession, singleVersion } from "./session-support";
 
 type State = { value: number; items: string[]; retained: { label: string } };
 
@@ -48,7 +48,7 @@ describe("Session document watches", () => {
 	it("keeps the acquisition revision until start and delivers exact committed frames", async () => {
 		const { session, publications } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
-		const initial = watch.value;
+		const initial = singleVersion(StateDoc, watch.value);
 		await session.commit(async tx => {
 			(await tx.doc(StateDoc)).value = 1;
 		}, context);
@@ -66,7 +66,7 @@ describe("Session document watches", () => {
 		watch.start(async (value, ops) => {
 			expect(inline).toBe(false);
 			expect(watch.value).toBe(value);
-			deliveries.push({ value, ops });
+			deliveries.push({ value: singleVersion(StateDoc, value), ops });
 		});
 		inline = false;
 		expect(deliveries).toHaveLength(0);
@@ -95,7 +95,7 @@ describe("Session document watches", () => {
 		watch.start(async value => {
 			active++;
 			maxActive = Math.max(maxActive, active);
-			values.push(value?.value ?? -1);
+			values.push(singleVersion(StateDoc, value)?.value ?? -1);
 			if (values.length === 1) {
 				entered.resolve();
 				await release.promise;
@@ -125,7 +125,7 @@ describe("Session document watches", () => {
 		const completed = deferred();
 		const values: number[] = [];
 		watch.start(async value => {
-			const current = value?.value ?? -1;
+			const current = singleVersion(StateDoc, value)?.value ?? -1;
 			values.push(current);
 			if (current === 1) {
 				await session.commit(async tx => {
@@ -153,7 +153,7 @@ describe("Session document watches", () => {
 		}
 		const deliveries: Array<{ value: number; ops: unknown }> = [];
 		watch.start(async (value, ops) => {
-			deliveries.push({ value: value?.value ?? -1, ops });
+			deliveries.push({ value: singleVersion(StateDoc, value)?.value ?? -1, ops });
 		});
 		await flush();
 		expect(deliveries).toEqual([{ value: 101, ops: [["r", watch.value]] }]);
@@ -167,7 +167,7 @@ describe("Session document watches", () => {
 		const release = deferred();
 		const deliveries: Array<{ value: number; ops: unknown }> = [];
 		watch.start(async (value, ops) => {
-			deliveries.push({ value: value?.value ?? -1, ops });
+			deliveries.push({ value: singleVersion(StateDoc, value)?.value ?? -1, ops });
 			if (deliveries.length === 1) {
 				entered.resolve();
 				await release.promise;
@@ -201,7 +201,7 @@ describe("Session document watches", () => {
 		await session.commit(tx => tx.retireDoc(StateDoc), context);
 		const deliveries: Array<{ value: Readonly<State> | null; ops: unknown }> = [];
 		watch.start(async (value, ops) => {
-			deliveries.push({ value, ops });
+			deliveries.push({ value: singleVersion(StateDoc, value), ops });
 		});
 		expect(await watch.closed).toEqual({ reason: "retired" });
 		expect(deliveries).toEqual([{ value: null, ops: [["r", null]] }]);
@@ -210,7 +210,7 @@ describe("Session document watches", () => {
 	it("delivers replayable structural no-op commits instead of suppressing them", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
-		const initial = watch.value;
+		const initial = singleVersion(StateDoc, watch.value);
 		await session.commit(async tx => {
 			const state = await tx.doc(StateDoc);
 			const first = state.items.shift()!;
@@ -265,16 +265,16 @@ describe("Session document watches", () => {
 	it("keeps earlier immutable revisions stable", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
-		const initial = watch.value;
+		const initial = singleVersion(StateDoc, watch.value);
 		let delivered: Readonly<State> | null | undefined;
 		watch.start(async value => {
-			delivered = value;
+			delivered = singleVersion(StateDoc, value);
 		});
 		await session.commit(async tx => {
 			(await tx.doc(StateDoc)).value = 1;
 		}, context);
 		await flush();
-		expect(delivered).toBe(watch.value);
+		expect(delivered).toBe(singleVersion(StateDoc, watch.value));
 		expect(delivered).not.toBe(initial);
 		expect(delivered?.retained).toBe(initial?.retained);
 		expect(initial?.value).toBe(0);
@@ -286,7 +286,7 @@ describe("Session document watches", () => {
 		const oldWatch = (await session.watchDoc(StateDoc, context))!;
 		const values: Array<Readonly<State> | null> = [];
 		oldWatch.start(async value => {
-			values.push(value);
+			values.push(singleVersion(StateDoc, value));
 		});
 		await session.commit(async tx => {
 			await tx.retireDoc(StateDoc);
@@ -309,7 +309,7 @@ describe("Session document watches", () => {
 	it("Session close discards retirement buffered before start", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
-		const baseline = watch.value;
+		const baseline = singleVersion(StateDoc, watch.value);
 		await session.commit(tx => tx.retireDoc(StateDoc), context);
 		await session.close(context);
 		expect(await watch.closed).toEqual({ reason: "session_closed" });
@@ -324,7 +324,7 @@ describe("Session document watches", () => {
 		const release = deferred();
 		const values: Array<number | null> = [];
 		watch.start(async value => {
-			values.push(value?.value ?? null);
+			values.push(singleVersion(StateDoc, value)?.value ?? null);
 			entered.resolve();
 			await release.promise;
 		});
@@ -456,7 +456,7 @@ describe("Session document watches", () => {
 		expect(storage.commits).toHaveLength(commits);
 		const values: number[] = [];
 		watch.start(async value => {
-			values.push(value?.value ?? -1);
+			values.push(singleVersion(Current, value)?.value ?? -1);
 		});
 		await session.commit(tx => tx.doc(Current).then(() => undefined), context);
 		await flush();
@@ -472,10 +472,10 @@ describe("Session document watches", () => {
 	it("can replay every delivered exact operation batch from the acquisition revision", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
-		let replica: Readonly<State> | null = watch.value;
+		let replica: Readonly<State> | null = singleVersion(StateDoc, watch.value);
 		watch.start(async (value, ops) => {
 			replica = applyImmutable(replica, ops);
-			expect(replica).toEqual(value);
+			expect(replica).toEqual(singleVersion(StateDoc, value));
 		});
 		await session.commit(async tx => {
 			const state = await tx.doc(StateDoc);
@@ -483,14 +483,14 @@ describe("Session document watches", () => {
 			state.items.splice(0, 1);
 		}, context);
 		await flush();
-		expect(replica).toEqual(watch.value);
+		expect(replica).toEqual(singleVersion(StateDoc, watch.value));
 		await watch.stop();
 	});
 
 	it("continues after the tracker cache unloads", async () => {
 		const { session, storage } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
-		const baseline = watch.value;
+		const baseline = singleVersion(StateDoc, watch.value);
 		const reads = storage.documentReadCount;
 		await session.unloadDocuments();
 		const reloaded = await session.snapshot(StateDoc, context);

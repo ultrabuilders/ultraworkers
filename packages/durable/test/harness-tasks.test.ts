@@ -679,6 +679,20 @@ describe("task scheduling", () => {
 		const pending = harness.waitForTask(id, context);
 		const idle = harness.waitForIdle(context);
 		const conversationIdle = root.waitForIdle(context);
+		// A port difference, not a fix. `pi` attaches these three rejection handlers AFTER
+		// `close()` has already rejected them. bun fires `unhandledRejection` at reject-time,
+		// so the escape is charged to whichever test happens to be running then — which is why
+		// this test and the two that follow it all report the same failure at this line, and
+		// why the same file is green under pi's vitest, which collects rejections separately.
+		// Handlers are attached at creation instead.
+		//
+		// Measured: this test paired with `does not signal a running abort handler` fails 2;
+		// each of the five other tests in this block paired with it fails 0. The escape is
+		// named to line 696 (`close()` below), not to whichever test reports it. src/ is
+		// byte-identical to pi — `#seal()` matches exactly — and no assertion was changed.
+		pending.catch(() => {});
+		idle.catch(() => {});
+		conversationIdle.catch(() => {});
 		await flush();
 		const heldAgain = storage.holdCommits();
 		const blockerAgain = harness.commit(async tx => {

@@ -211,7 +211,19 @@ export function resolveApproval(
 	userConfig: Record<string, unknown> = {},
 ): ResolvedApproval {
 	const decision = getToolDecision(tool, args);
-	const policyKey = decision.policyKey ?? tool.name;
+	// Three rungs, most specific first: a key the tool declares itself, then the
+	// canonicalized *action* (`bash:git status`), then the bare tool name. The middle
+	// rung is the one this fix adds.
+	//
+	// It exists because the writer and the reader disagreed about what a decision is
+	// keyed on. `wrapper.ts` persists "Approve always" under
+	// `canonicalizeApprovalKey(name, args)`, so a grant for one command landed at
+	// `bash:git status` while this function looked only at `bash` and never found it —
+	// the user answered "always" and was asked again on the next identical command.
+	// Keying on the action narrows rather than widens, which is the safe direction: a
+	// grant is for one specific action, and a tool-name policy still applies to every
+	// other action through the fallback below.
+	const policyKey = decision.policyKey ?? canonicalizeApprovalKey(tool.name, args);
 	const userPolicy = Object.hasOwn(userConfig, policyKey) ? normalizePolicy(userConfig[policyKey]) : undefined;
 	const fallbackPolicy =
 		policyKey !== tool.name && userPolicy === undefined && Object.hasOwn(userConfig, tool.name)

@@ -481,23 +481,18 @@ describe("a decision on one call reaches the calls already asking", () => {
  * write that never happened, and the row would report the wrong defect.
  */
 describe('an "always" grant reaches the next call', () => {
-	// KNOWN BROKEN — this row pins the *defect*, deliberately, so the suite is green
-	// while it stands and goes RED the moment somebody fixes it.
+	// This row used to pin a *defect*, deliberately red at `2` prompts. It was fixed:
+	// the writer stored a grant under `bash:git status` while the reader
+	// (`resolveApproval`) resolved under the tool's bare name `bash`, so "Approve
+	// always" persisted to disk and the next identical command was asked about anyway.
+	// `resolveApproval` now resolves under the same canonicalized action key the writer
+	// uses, so the second call is settled by the grant.
 	//
-	// What is broken: the write lands under `bash:git status`, but the reader
-	// (`resolveApproval`, `tools/approval.ts:214`) resolves under the tool's name. So
-	// "Approve always" persists to disk and the next identical command is asked about
-	// anyway. The control row inside proves the write happened, which is what makes
-	// this a *read* defect rather than a missing write.
-	//
-	// Why it is not simply deleted: deleting it puts the feature back under no test at
-	// all, which is how it got here. Why it is not left red: a permanently failing row
-	// on a shared branch trains everyone to ignore red.
-	//
-	// When the reader is fixed, `2` below becomes wrong and this row goes red. The fix
-	// is to change it to `1` — not to delete it, and not to "fix" it while the code is
-	// still broken.
-	it('KNOWN BROKEN: "always" does not survive to the next call', async () => {
+	// Kept rather than deleted, because deleting it would put the promise back under no
+	// test at all — which is how the defect survived. The control row inside still
+	// asserts the write happened, so a future failure reports a *read* defect rather
+	// than a missing write.
+	it('"always" does survive to the next call', async () => {
 		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
 		const runner = makeRunner(settings);
 		let prompts = 0;
@@ -536,9 +531,10 @@ describe('an "always" grant reaches the next call', () => {
 
 		await call("call-2");
 
-		// `2`, not the `1` the feature promises: the stored key is not the key the
-		// approval gate resolves under, so "always" never applies to anything. See the
-		// note above — when the reader is fixed this becomes `1`.
-		expect(prompts).toBe(2);
+		// `1`, not `2`: the reader now resolves under the same canonicalized action key
+		// the writer persists (`bash:git status`), so the grant the user gave on call-1
+		// covers call-2. This row was red at `2` by design while the two sides disagreed;
+		// fixing `resolveApproval` is what made `1` the correct number.
+		expect(prompts).toBe(1);
 	});
 });

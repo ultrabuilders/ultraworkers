@@ -111,6 +111,37 @@ These explicit chain and segment restrictions are resolved before the existing r
 
 This pattern policy controls approval for the `bash` tool; it is not process or filesystem containment. An approved command retains the shell's ambient filesystem, network, and subprocess access. The `eval` tool also declares the `exec` tier and can spawn a shell via subprocess, so a `bash.patterns` `deny` rule does not apply to the same command run through `eval` — under `yolo`, that `exec` call resolves to `allow`. To gate the shell `eval` can reach, add a `tools.approval.eval` policy (`prompt` or `deny`) alongside `bash.patterns`.
 
+### Path rules
+
+`pathRules.deny` and `pathRules.allow` name the paths a project has declared
+off-limits, as globs:
+
+```yaml
+pathRules:
+  deny:
+    - "**/.env"
+    - "secrets/**"
+```
+
+**Deny wins, and an allow cannot rescue a path a deny also matches.** An allow
+only decides paths that no deny rule matched. The expressive-looking
+alternative — an explicit allow beating a broad deny — lets `allow: ["**"]`
+silently re-open everything the deny list closed, which is the opposite of what
+a user writing a deny rule is asking for.
+
+**This is the policy layer, not containment**, and the same sentence that
+applies to bash pattern policy applies here: a denied path is refused by the
+tools that consult these rules, and a command that reaches the same file by
+another route is not stopped by them. The rules default to empty, so nothing is
+refused until you write one.
+
+A double-star prefix matches zero or more leading segments, so `**` followed by
+a slash and `.env` matches a `.env` at the project root as well as a nested one.
+That is worth stating because the alternative reading compiles to a pattern that
+requires a separator, and the rule then quietly fails to cover the root file —
+no error, no warning, just a rule that does not do what it reads like it does.
+Globs are matched against the path with forward slashes on every platform.
+
 ### Computer safety
 
 The disabled-by-default Eval [`computer` API](./computer-use.md) chooses its tier per call:

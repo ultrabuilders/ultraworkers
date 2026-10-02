@@ -31,7 +31,8 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 > `oh-my-openagent` (SUL-1.0, có điều kiện).
 
 > ⚠️ **Cột "Làm được băng extension?"** — ô ✅ nghĩa là qua `setWidget`/`setHeader`/`setFooter`/`setEditorComponent`/`showOverlay`,
-> **làm được ngay hôm nay**. Ô ❌ nghĩa là cần `registerEntryRenderer` (0 hit ở ULW, bead `m2-wi-16` đang `deferred`).
+> **làm được ngay hôm nay**. Ô ❌ nghĩa là **không có đường** tới nó. Ô ⚠️ nghĩa là **API đã có nhưng chưa nối vào đường render** —
+> `registerEntryRenderer` rơi vào loại này sau `af7360c070` (đo lại lần 3, xem [nhóm A](#a-hiển-thị-hội-thoại)).
 > Ô 🔒 nghĩa là **nằm ngoài mọi seam** — không phải chờ việc bao trọn `pi`, mà là việc chưa tồn tại.
 
 Ô trống = **bên đó không có**.
@@ -85,10 +86,62 @@ claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 > | Việc cần làm | Hôm nay | Cần gì |
 > | --- | --- | --- |
 > | Render **message type của riêng extension** bằng component tuỳ ý | ✅ | — |
-> | **Thay** rendering của message type **của core** (`assistant` / `toolResult` / `user`) | ❌ | `registerEntryRenderer` — `m2-wi-16-036`, đang `deferred` |
+> | **Thay** rendering của message type **của core** (`assistant` / `toolResult` / `user`) | ⚠️ | API đã có, **đường render chưa nối** — xem dưới |
+
+> 🔄 **Đo lại lần 3 (sau `af7360c070` + `7b678bc300`, 2026-10-02): `registerEntryRenderer` ĐÃ TỒN TẠI.**
+> Câu "0 hit, bead `m2-wi-16` deferred" ở lần đo 2 **đã sai**. Đo thật:
 >
-> ⇒ Vế thứ hai là toàn bộ phần cần core của nhóm A, và nó **hẹp hơn nhiều** so với "`messages/` 45 file (147 KB)" mà
-> dòng tổng kết cũ ghi. Không phải 45 file chờ seam — mà là **một switch không có nhánh cắm vào**.
+> - **Có API:** `loader.ts:617` `registerEntryRenderer(customType, EntryRenderer)` · `types.ts:2008` khai ·
+>   `types.ts:2622` giữ `entryRenderers: Map` · `runner.ts:1817 getEntryRendererCollisionDiagnostics()` ·
+>   `runner.ts:596` clear khi teardown. Có test: `test/extension-render-seams.test.ts` (158 dòng).
+> - **NHƯNG chưa nối:** `getEntryRenderer` (`runner.ts:1809`) **không có consumer production nào**.
+>   `grep -rn "getEntryRenderer" packages/ --include=*.ts` ra 12 hit — **toàn bộ nằm trong test**.
+>   Không arm nào của `switch (message.role)` gọi tới nó.
+>
+> 🔄 **Đo lại lần 4 (sau `f2a9366f1d`): có MỘT `getEntryRenderer` thứ hai, bên hook — và nó cũng chưa nối.**
+> `f2a9366f1d` thêm `HookEntryRenderer` vào `hooks/types.ts`, `HookAPI.registerEntryRenderer` vào
+> `hooks/loader.ts:128`, và lấy ra ở `hooks/runner.ts:205`. Commit chỉ đụng `hooks/*` — **không đụng
+> `modes/` hay `packages/tui/`** — nên vẫn không có đường render.
+>
+| | Bề mặt | Đăng ký | Lấy ra | Consumer production |
+> | --- | --- | --- | --- | --- |
+> | `ExtensionAPI.registerEntryRenderer` | `extensions/loader.ts:617` | `extensions/runner.ts:1809` | ✅ |
+> | `HookAPI.registerEntryRenderer` | `hooks/loader.ts:128` | `hooks/runner.ts:205` | ❌ |
+>
+> 🔄 **Đo lại lần 5 (sau `dc5f55a2e2`): mặt EXTENSION đã nối — và nó mở thêm một khả năng mà bảng chưa tính tới.**
+>
+> `event-controller.ts:1359 #handleEntryAppended(entry: CustomEntry)` gọi
+> `getEntryRenderer(entry.customType)`, dựng `CustomEntryComponent`, rồi **chèn phía trên khối streaming
+> đang chạy** để entry hiện đúng thứ tự thời gian. Port từ `pi` (`modes/interactive/interactive-mode.ts:3739`,
+> `addCustomEntryToChat`); ba hành vi được giữ nguyên có chủ đích: **không có renderer thì im lặng**, **renderer
+> sinh ra rỗng thì không mount** (widget rỗng không để lại lỗ hổng), và splice trên streaming.
+>
+> **Khả năng mới, không nằm trong bảng gốc:** `ExtensionAPI.appendEntry<T>(customType, data?)`
+> (`types.ts:2103`) cho phép extension **đẩy entry sống, có kiểu dữ liệu tuỳ ý, giữa lúc stream đang chạy**.
+> Khác hẳn `sendMessage` — cái đó ghi ra transcript *sau khi* đã có. Đây là kênh mà một UI tùy biến thực sự
+> cần: một bảng tiến độ, một bộ đếm sống, một entry cập nhật nhiều lần mà không nhồi vào lịch sử hội thoại.
+>
+> 🔄 **Và nó nay bền, không chỉ sống (`4ff4fca2f1`).** `dc5f55a2e2` chỉ nối đường sống. Một phiên lưu có
+> custom entry, mở lại thì entry **biến mất im lặng** — không lỗi, không cảnh báo, chỉ là transcript ngắn đi.
+> `pi` vẽ từ **hai** call site (`interactive-mode.ts:3343` và `:3888`); chỉ cái thứ nhất được nối.
+> Bản sửa dựng `SessionContext.displayItems` + `customEntryInsertionPoints`, và phải **hoà giải theo danh
+> tính** trước khi trả về — vì bước cắt dangling-tool chạy ở chế độ transcript và sửa `messages` *sau* lượt
+> quét; thu thập không có bước đó thì danh sách vẫn chỉ tới những lượt transcript đã quyết định giấu.
+> Entry phải ở ngoài `context.messages` — nếu lọt vào, nó sẽ tới provider.
+>
+> **Nhưng nó KHÔNG phủ vế "thay rendering của message type của core".** `CustomEntry` là entry do extension
+> tự đẩy, không phải `assistant` / `toolResult` / `user` trong `switch (message.role)`
+> (`chat-transcript-builder.ts:286-296`). Vế đó **vẫn chưa mở**.
+>
+> ⇒ Trạng thái thật là **API đăng ký rồi, chưa nối vào đường render** — khác hẳn "chưa có" của lần đo 2,
+> và vẫn **chưa** mở vế "thay rendering của core".
+>
+> 🔄 **Ngược lại, `registerMarkdownTransformer` ĐÃ NỐI xong.** Chuỗi đầy đủ:
+> `loader.ts:605` → `runner.getMarkdownTransformers()` → `ui-helpers.ts:276` → truyền vào
+> `assistant-message.ts:483` và `user-message.ts:71` → áp dụng tại `assistant-message.ts:1201-1206`.
+> Có `messageType` để transform của user không lọt vào assistant.
+>
+> ⇒ Bảng bên dưới đã cập nhật. **`registerEntryRenderer` không còn là "cần mở bead", mà là "chờ nối".**
 
 
 
@@ -249,7 +302,7 @@ tool cần duyệt**, không bắn khi người dùng đổi mode — nên exten
 và sẽ không có giá trị ban đầu.
 
 ⚠️ **Một sự thật phải nói trước khi dựng badge đó:** trong ULW, `shift+tab` **không** đổi approval mode.
-`packages/tui/src/app-keybindings.ts:108-111` gán nó cho **`app.thinking.cycle` — "Cycle thinking level"**.
+`packages/tui/src/app-keybindings.ts:109-112` gán nó cho **`app.thinking.cycle` — "Cycle thinking level"**.
 Viết đúng câu *"shift+tab to cycle"* vào badge bypass-permissions sẽ **dạy người dùng một phím tắt sai**.
 
 
@@ -355,6 +408,7 @@ Viết đúng câu *"shift+tab to cycle"* vào badge bypass-permissions sẽ **d
 | Chép code được?            | —                            | ❌ **không**                               |
 | Làm bằng extension hôm nay | ✅                            | ~373/418 file *(đo lại: xem dưới)*         |
 | Cần `m2-wi-16` trước       | —                            | ~~`messages/` 45 file (147 KB) + nhóm E~~ → **đã thu hẹp, xem dưới** |
+| Sửa nội dung render của message | —                          | ✅ `registerMarkdownTransformer` — **đã nối** (`7b678bc300`) |
 
 > ⚠️ **Dòng cuối của bảng trên là của lần đo 1 và đã sai.** Đo lại cho thấy `m2-wi-16` chỉ chặn **một** thứ:
 > thay rendering của message type **của core**. Nó **không** chặn nhóm E (spinner — đi qua `setWidget`), và nó
@@ -445,7 +499,9 @@ custom<T>(factory: (tui, theme, keybindings, done: (result: T) => void) => Compo
 | **E. Spinner & hiệu ứng** | `setWidget` | ❌ **không** |
 | **F. Tool renderer** | `renderCall`/`renderResult` trên tool definition | ❌ **không** |
 | **A. Hội thoại — message của extension** | `sendMessage` + `registerMessageRenderer` | ❌ **không** |
-| **A. Hội thoại — message của core** | `registerEntryRenderer` — `m2-wi-16-036` `deferred` | ✅ **có** |
+| **A. Entry sống do extension đẩy** | `appendEntry` + `registerEntryRenderer` — **đã nối** (`event-controller.ts:1359`) | ❌ **không** |
+| **A. Hội thoại — message type của core** | `switch (message.role)` tại `chat-transcript-builder.ts:286-296` | ✅ **có (mở core)** |
+| **A. Sửa markdown của message core** | `registerMarkdownTransformer` — đã nối tới `assistant-message.ts` | ❌ **không** |
 
 <a id="ba-loại-việc-bảng-cột-extension-gộp-mất"></a>
 ### Ba loại việc — cột "Extension?" ở trên gộp mất
@@ -459,8 +515,12 @@ Cột ✅ của bảng trên chỉ trả lời *"chỗ vẽ có không"*. Nó **
 | **UI cần FEATURE mà ULW không có** | `FeedbackSurvey/` (47 KB) · `TrustDialog/` · `LogSelector` · `MemoryFileSelector` · `HelpV2/` | ❌ **không phải việc UI** |
 
 ⚠️ **Hàng thứ ba là chỗ dễ hứa quá.** `FeedbackSurvey` cần một feedback system — ULW không có.
-`TrustDialog` cần trust posture — ULW không có (`isProjectTrusted()` vẫn là `() => true`; đó là **M2 WI-20
-đang `deferred`**). **Extension không tạo được feature, chỉ tạo được UI cho cái đã tồn tại.**
+`TrustDialog` cần **trust posture** — ULW **có** kể từ `79e22d1229` (2026-10-02): `config/project-trust.ts`
+thay hẳn `isProjectTrusted()` literal `() => true`, với `ProjectTrust = "yes" | "no" | "undecided"`
+(`:56`), `resolveProjectTrust` (`:128`) và `isResourceTrusted` (`:146`) — `undecided` **từ chối**.
+Nhưng **posture chưa phải hộp thoại**: không có UI nào để người dùng trả lời câu hỏi đó
+(bead `m2-wi-20-049`, `open`). ⇒ `TrustDialog` **vẫn là việc của core, không phải của extension.**
+**Extension không tạo được feature, chỉ tạo được UI cho cái đã tồn tại.**
 ⇒ Nếu bảng này được đọc như "mọi dòng ✅ nghĩa là dựng lại được", thì **sai**. Đúng là: dựng lại được phần
 *trình bày*; phần *dữ liệu* thì phải tự tích hoặc phải mở feature ở core.
 
@@ -489,8 +549,11 @@ transcript for its own tool declares `renderCall`/`renderResult` on the tool def
 
 ### Ba khoảng trống thật — đọc cái này trước khi hứa ai
 
-1. **`registerEntryRenderer`** — thay rendering của message type **của core**. Bead `m2-wi-16-036`,
-   `deferred`. Chặn **đúng một dòng bảng**.
+1. **Thay rendering của message type **của core**. `registerEntryRenderer` đã **có đường render**
+   (`dc5f55a2e2`), nhưng đường đó phục vụ `CustomEntry` do extension tự đẩy — **không** phục vụ
+   `assistant` / `toolResult` / `user` trong `switch (message.role)` tại `chat-transcript-builder.ts:286-296`.
+   Phần còn lại vẫn là việc ở core. Chặn **đúng một dòng bảng**.
+   *Mặt hook (`hooks/runner.ts:205`) thì chưa có consumer production nào.*
 2. **Catalog status line đóng** — không đăng ký segment mới (`modes/settings.ts:280` +
    `packages/tui/src/status-line/schema.ts:2-30`). Và không có chỗ nào hiện approval mode
    (`grep -rn "bypass\|permissionMode\|approvalMode" packages/tui/src/status-line/` → **0 hit**).
@@ -498,21 +561,86 @@ transcript for its own tool declares `renderCall`/`renderResult` on the tool def
    *trình bày*, không tạo được *tính năng*. `FeedbackSurvey` hay `TrustDialog` *thật* là việc khác hẳn và
    phải mở ở core (hàng thứ ba của [§Ba loại việc](#ba-loại-việc-bảng-cột-extension-gộp-mất)).
 
-### Thứ tự làm — **không mở `m2-wi-16` ngay**
+<a id="check-list-làm-ulw-opentui"></a>
+## Check list — làm `ulw-openTUI`
 
-Nó chỉ chặn một dòng bảng, không chặn sáu dòng còn lại. Mở nó lúc này là chi phí lớn nhất đổi lấy
-ít giá trị nhất.
+Đo ở `a45487cdb5`+ (2026-10-02). Mỗi mục ghi **seam dùng thật** và **điều kiện xong**, để không phải đoán
+lại. Không mục nào dưới đây cần sửa core.
 
-1. **Dựng thử hai component đại diện, mỗi thứ một seam** — đừng dựng thử hai cái qua cùng một seam, vì
-   khi cái thứ hai hỏng thì không biết seam nào có vấn đề:
-   - `PromptInputModeIndicator.tsx` của opencoding chỉ **2.8 KB**, dựng trong **`setHeader`** → trả lời
-     *dải/chrome dải được không*.
-   - `HistorySearchDialog` (4.5 KB) qua **`ctx.ui.custom()`** → trả lời *full-screen có focus được không*.
-   
-   Phép thử này rẻ nhất và nó đo **cả hai tầng seam** thay vì một.
-2. **Cập nhật bảng này theo kết quả** — mỗi dòng ✅ chuyển thành "đã dựng thật, kèm ảnh chụp", không phải "seam có sẵn".
-3. **Chỉ mở `m2-wi-16`** nếu owner thực sự muốn thay *cách hiển thị assistant/tool của core*. Đó là quyết định
-   khác hẳn và đắt hơn nhiều: nó đụng `chat-transcript-builder.ts:286-296`, tức **đường dữ liệu hiển thị của mọi lượt**.
+### Nhóm 0 — làm trước, đo tầng seam
+
+- [ ] **0.1 — Badge chế độ trong `setHeader`.** `PromptInputModeIndicator.tsx` của opencoding, **2.8 KB**.
+      Seam `setHeader` (`types.ts:363`), nhận `TUI` thật.
+      *Xong khi:* chip hiện/ẩn theo chế độ và không phá layout `composer.ts:377`.
+      ⚠️ Chỉ dựng được phần **nhãn**. Extension **không có event khi người dùng đổi mode** —
+      `on("tool_approval_requested")` chỉ bắn lúc tool cần duyệt — nên ban đầu sẽ không có giá trị.
+- [ ] **0.2 — Một overlay toàn màn hình qua `custom()`.** `HistorySearchDialog` (4.5 KB) hoặc tương đương.
+      Seam `custom<T>()` (`types.ts:369`), trả Promise qua `done(result)`.
+      *Xong khi:* mở → có bàn phím → `Esc` đóng → trả kết quả về lời gọi.
+
+> Hai mục này **đo hai tầng seam khác nhau** (dải vs full-screen). Đừng gộp: nếu mục thứ hai hỏng mà
+> mục thứ nhất xanh thì ta biết ngay seam nào có vấn đề.
+
+### Nhóm 1 — kênh dữ liệu sống (thứ một UI tùy biến thực sự cần)
+
+- [ ] **1.1 — `appendEntry` + `registerEntryRenderer`.** `types.ts:2120` · `loader.ts:617` ·
+      consumer ở `modes/utils/mount-custom-entry.ts:32`.
+      *Xong khi:* một bảng tiến độ sống, **sống sót qua reload** (`4ff4fca2f1` đã sửa phần replay) và
+      **không** lọt vào `context.messages` (nếu lọt, nó tới provider).
+- [ ] **1.2 — `registerMarkdownTransformer`.** `loader.ts:605` → `ui-helpers.ts:276` →
+      `assistant-message.ts:483` → áp dụng ở `:1201-1206`. Đã nối, chỉ cần dùng.
+      *Xong khi:* transform của user không lọt sang assistant (`messageType` chặn rồi).
+
+### Nhóm 2 — bề mặt dải
+
+- [ ] **2.1 — Dải gợi ý dưới ô nhập.** `setWidget(key, content, { placement: "belowEditor" })`
+      (`types.ts:345`). Content là `string[]` **hoặc** factory.
+- [ ] **2.2 — Dải trên ô nhập.** Cùng seam, `placement: "aboveEditor"`.
+- [ ] **2.3 — Chân ô nhập.** `setFooter` (`:355`) cho phần dưới cùng.
+
+### Nhóm 3 — thay thế một phần của ô nhập
+
+- [ ] **3.1 — Ô nhập tùy biến.** `setEditorComponent` (`interactive-mode.ts:6838`), nhận
+      `ExtensionTUISurface` + `keybindings`.
+      *Xong khi:* gõ, submit, undo/redo, clipboard, viewport vẫn đúng.
+      ⚠️ **Core gán đè sau khi factory trả về** — `placeholder`, `composerState`, `attachmentChips`,
+      `imageReferenceHyperlink`, `skillFilePath`, `modelMentionLabel`, `magicKeywordsEnabled`, viewport,
+      vim, spelling. Thay editor ≠ mua được `placeholder` tuỳ ý.
+
+### Nhóm 4 — bảng chọn & hộp thoại (dựng trên primitive ULW, không cần seam mới)
+
+- [ ] **4.1 — Bộ chọn.** `select-list.ts` (30 KB) · `table.ts` · `tree-view.ts` — import qua
+      `@oh-my-pi/pi-tui/components/*`.
+- [ ] **4.2 — Hộp thoại hỏi người dùng.** `overlay-box.ts` + `custom()`.
+- [ ] **4.3 — Tool renderer của riêng bạn.** `renderCall`/`renderResult` trên tool definition.
+      ⚠️ **Đừng ghi vào `toolRenderers`** — nó `Object.freeze` + `Readonly`
+      (`packages/tui/src/tools/index.ts:34-39`), và đó là chủ ý.
+
+### Phải mở core — CHƯA LÀM, và chưa cần
+
+- [ ] **C1. Thay rendering của message type của core.** `switch (message.role)` tại
+      `chat-transcript-builder.ts:289`, arm `assistant` · `toolResult` · `user` · `developer`.
+      **Chặn đúng một dòng bảng.** Chỉ mở khi thực sự muốn thay *cách hiển thị* assistant/tool của core.
+      → `m2-wi-16-036`, hiện `deferred`.
+- [ ] **C2. Đăng ký status line segment.** Catalog `STATUS_LINE_SEGMENT_IDS` **đóng**
+      (`modes/settings.ts:280`, `:287`), `registerStatusLineSegment` **0 hit**, `setStatus` **chỉ text**.
+      *Lựa chọn:* vẽ badge ở `setHeader` (làm ngay) **hoặc** mở catalog để đưa nó **vào** status line.
+      Đây là hai việc khác nhau — **đo cái nào quan trọng hơn trước kì**.
+
+### Chưa thể làm — không phải thiếu seam, mà là chưa có sản phẩm
+
+`FeedbackSurvey` · `TrustDialog` (posture có từ `79e22d1229`; **hộp thoại để trả lời** thì chưa —
+`m2-wi-20-049` `open`) · `LogSelector` · `MemoryFileSelector` · `HelpV2`.
+
+### Hai dòng phải sửa trước khi vẽ badge
+
+| Câu trong ví dụ của owner | Thực tế ở ULW |
+| --- | --- |
+| `⏵⏵ bypass permissions on (shift+tab to cycle)` | **Nhãn OK**, nhưng `shift+tab` là `app.thinking.cycle` — *"Cycle thinking level"* (`app-keybindings.ts:109-111`), **không** phải đổi approval mode. Viết vậy là **dạy sai phím tắt**. |
+| `· shift+click to native select` | **Không tồn tại.** `grep shift+click\|native select` trong `packages/tui/src` và `docs/*.md` → 0 hit. |
+
+Ngoài ra: `SessionShutdownEvent` có payload `{}` **rỗng** (không biết lý do shutdown), và
+`TurnEndEvent` không có cờ `interrupted` (phải suy từ `message.stopReason`).
 
 ### Giới hạn của phép đo này
 

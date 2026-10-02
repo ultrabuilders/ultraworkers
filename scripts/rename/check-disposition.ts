@@ -54,29 +54,36 @@
  * text breaks on harmless refactors. The pure helpers below are covered by
  * `check-disposition.test.ts` against fixtures.
  *
- * NOT COLLECTED BY ANY RUNNER — measured 2026-10-02, and an earlier draft of this
- * header claimed the opposite ("wired into `check:ts`, the same shape as W13's and
- * W14's gates"). That claim was false, and a header that says a gate is enforced is
- * worse than one that says nothing: it stops the next reader from watching the table.
+ * WHAT RUNS IT — re-measured 2026-10-02, because this paragraph has now been wrong twice
+ * ------------------------------------------------------------------------------
+ * This gate is NOT a link in `check:ts`, and must not become one. `check:ts` is a `&&`
+ * chain that stops at the first red link, and `check:test-rename-literals` sits at
+ * position 7 and is red on this tree — so anything chained after it never executes. A
+ * gate in that position is a gate that does not run, which is worse than an unwired
+ * one because it looks enforced. (That is not hypothetical: the ratchet was first
+ * chained at position 8 and would never have fired.)
  *
- *   grep -c check-disposition package.json   -> 0    (this gate)
- *   grep -c check-docs-rename    package.json -> 1    (its sibling: wired)
- *   grep -c check-runtime-rename package.json -> 1    (its sibling: wired)
- *   grep -rln check-disposition .github/ scripts/install-tests/  -> nothing
+ * What DOES run it, and runs it even when `check:ts` is red:
  *
- * Both siblings are wired; this one is not, so the disposition table — the only thing
- * making the W8b rename auditable — rots unwatched. Running it by hand today reports:
+ *   scripts/rename/check-disposition-ratchet.ts   -> package.json `check:disposition-ratchet`
+ *   -> `GATES` in scripts/ci-check-full.ts -> `ci:check:full`
  *
- *   disposition(pre): 701 failures over 5 rows
+ * Measured, not asserted: `bun run ci:check:full` reports
+ * `PASS check:disposition-ratchet (exit 0)` on a run where `check:ts` exited 1. The
+ * ratchet re-implements no rule — it calls `checkPre` — so it cannot drift from here.
  *
- * 5 rows in `disposition.tsv` against a corpus of ~706 `*.ts` files carrying the
- * pinned expression. Two separate decisions sit here, and only the first is urgent:
+ * It is a RATCHET, not this gate in full, and that is deliberate. This gate reports
+ * every way the table is incomplete, and the table is legitimately incomplete, so
+ * running it as a gate would make CI red for work that is going correctly. The ratchet
+ * pins the one number that may only rise when a frozen literal is deleted; everything
+ * else it reports as a ceiling that must fall.
  *
- *   1. This comment was wrong. Fixing it costs one line and changes no behaviour.
- *   2. WIRING THE GATE IN IS NOT FREE, and must not be done casually. `check:ts` is a
- *      shared gate; turning it red at 5/706 rows makes it red for every agent on the
- *      tree, for a table that is legitimately still being filled. Wire it when the
- *      table is complete, and tell the tree first.
+ * Running this file directly reports the whole picture, now split by rule so a reader
+ * can see which number is which without counting `FAIL` lines:
+ *
+ *   disposition(pre): missing-row = 628
+ *   disposition(pre): literal-hits-imbalance = 0
+ *   disposition(pre): stale-row = 9
  */
 
 import * as path from "node:path";

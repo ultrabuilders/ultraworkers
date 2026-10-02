@@ -30,17 +30,31 @@ links that are red at `HEAD` were green on the shared tree.
 
 **Two of thirteen are red, and both reds are in the commit.**
 
-### Link 1 — `oxfmt`, not `oxlint`
+### Link 1 — two independent causes, and my first report of it was wrong
+
+An earlier draft of this file said link 1 was "`oxfmt`, not `oxlint`", on the grounds that oxlint
+reported 18 warnings and **0 errors**. That count came from the **last 25 lines** of a 70-line
+capture. The tail did not contain the error; the error was earlier in the output and had been cut
+off. Both causes are real:
 
 ```
-packages/coding-agent/src/tools/computer/prelude.js
-Format issues found in above 1 files.
+oxfmt  : packages/coding-agent/src/tools/computer/prelude.js — format issues   (fixed in d81ef0c61d)
+oxlint : packages/durable/test/harness-tasks-recovery.test.ts:690
+         error eslint(prefer-const): `harnessRef` is never reassigned
 ```
 
-`oxlint` itself is clean: 18 `no-unused-vars` **warnings**, 0 errors, exit 0. `check:tools` is
-`oxlint . && oxfmt --check …`, so it is the **second half** that fails, on one tracked file whose
-committed text is unformatted. Worth knowing when reading its output: this link prints a page of
-warnings that have nothing to do with its exit code.
+The oxlint finding is the only **error-severity** result anywhere in the repo, and that file is
+tracked and clean, so it is in the commit. It is a code decision rather than a mechanical
+rewrite — the two neighbouring declarations use the same declare-then-assign shape — so it is
+recorded here rather than fixed in a formatting commit.
+
+**So link 1 is still red at `3f19d4e552`, for the lint reason rather than the format one.** If you
+are reading a wall of `no-unused-vars` warnings before the exit code: those warnings are not why
+it failed.
+
+The generalisable part: a probe that keeps only a tail is measuring a *suffix*, and reporting it
+as the whole output. Counting findings over a truncated capture is the same error as counting them
+over a filtered one.
 
 ### Link 13 — the committed test does not typecheck
 

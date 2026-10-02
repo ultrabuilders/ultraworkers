@@ -116,7 +116,9 @@ describe("generation recovery", () => {
 		expect(await live(opened.harness, opened.root.id as never)).toMatchObject({ generation: { attempt: 1 } });
 		opened.harness.resume();
 		expect((await (await opened.harness.submission(id, context))!.wait(context)).status).toBe("done");
-		expect(sent).toEqual([["user", "system"]]);
+		// Roles, not entry kinds: this fork's `Message` union has no `system` role — the prompt
+		// arrives as a `developer` message, while the entry that carries it is still `pi.system`.
+		expect(sent).toEqual([["user", "developer"]]);
 		expect((await allEntries(opened.root)).map(entry => entry.kind)).toEqual([
 			"pi.user",
 			"pi.system",

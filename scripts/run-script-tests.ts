@@ -29,6 +29,11 @@ async function main(): Promise<void> {
 	}
 
 	console.error(`${PREFIX} running ${run.length} script test file(s)`);
+	// One runner, for both extensions. Bun executes `node:test` files natively, so
+	// a second runner would add a PATH dependency and buy nothing; the `.mjs` tests
+	// that were timing out under bun were carrying node:test's 5s *default* against
+	// a repo walk that legitimately takes 12s, and that is fixed by declaring a
+	// timeout on the test rather than by moving the file to another runner.
 	const proc = Bun.spawn(["bun", "test", ...run.map(file => path.join(scriptsDir, file))], {
 		cwd: path.join(scriptsDir, ".."),
 		stdout: "inherit",

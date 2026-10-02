@@ -19,10 +19,21 @@ import { classifyScriptTests } from "./script-test-manifest";
 
 const PREFIX = "[script-tests]";
 
+/**
+ * The extensions a script test may use, and so the ones this gate collects.
+ *
+ * This set IS the gate's domain, so it is deliberately wider than what exists
+ * today. A collector narrowed to the extensions currently on disk makes every
+ * other extension structurally invisible — the same blind spot as no gate at
+ * all. `.mjs` was the live instance: nine gate tests ran nowhere because this
+ * filter never selected them, and nothing reported it.
+ */
+const TEST_EXTENSIONS: readonly string[] = [".ts", ".mjs", ".cjs"];
+
 function onDiskTestFiles(scriptsDir: string): string[] {
 	return fs
 		.readdirSync(scriptsDir)
-		.filter(name => name.endsWith(".test.ts"))
+		.filter(name => TEST_EXTENSIONS.some(ext => name.endsWith(`.test${ext}`)))
 		.sort();
 }
 

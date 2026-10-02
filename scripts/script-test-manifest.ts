@@ -55,6 +55,30 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// exercised, so this needs no credentials and no network.
 	{ file: "rewrite-changelog.test.ts", reason: "" },
 	{ file: "stamp-native-version.test.ts", reason: "" },
+	// Tests of gates that run in `check:ts`. These were unclassified, which meant
+	// `test:scripts` refused to start at all — the refusal at the top of the runner
+	// is what makes an unclassified file block every other file too.
+	{ file: "check-grp-c-file-counts.test.ts", reason: "" },
+	{ file: "check-grp-c-test-baseline.test.ts", reason: "" },
+	{ file: "ci-check-full.test.ts", reason: "" },
+
+	// The `.mjs` gates' own tests. These run under `node --test`, not `bun test`:
+	// they import `node:test`, whose runner node owns. Measured 2026-10-02 —
+	// `node --test` over all nine: 47 pass / 0 fail. `bun test` over the same nine:
+	// 46 pass / 1 fail, and the failure is `check-ts-relative-imports.test.mjs`
+	// tripping the 5s default `node:test` timeout that bun also enforces (12s
+	// actual, as it walks the module graph). So the split follows the runtime the
+	// file declares rather than a preference: under the wrong runner one of the
+	// nine goes red on elapsed time alone and reports a defect that is not there.
+	{ file: "check-commit-tree-not-shrunk.test.mjs", reason: "" },
+	{ file: "check-entry-graphs.test.mjs", reason: "" },
+	{ file: "check-lockfile-commit.test.mjs", reason: "" },
+	{ file: "check-pinned-deps.test.mjs", reason: "" },
+	{ file: "check-runtime-deps.test.mjs", reason: "" },
+	{ file: "check-ts-relative-imports.test.mjs", reason: "" },
+	{ file: "keep-list-drift.test.mjs", reason: "" },
+	{ file: "keep-list-wire.test.mjs", reason: "" },
+	{ file: "nix-binary-name.test.mjs", reason: "" },
 ];
 
 /**

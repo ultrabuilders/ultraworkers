@@ -110,7 +110,14 @@ test("reports how many files it scanned, so scanning nothing cannot look clean",
 	assert.ok(Number(summary[2]) > 0, `scanned 0 files: ${result.stderr}`);
 });
 
-test("runs under Bun, which is this repo's runtime", async t => {
+// This is the only test here that walks the real repository rather than a
+// fixture, so it is the only one whose runtime scales with the tree. The
+// explicit timeout is not slack for a slow machine: `node:test` defaults to 5s,
+// which this exceeds by design, and a default that this test cannot meet turns
+// a passing gate into a red run that reports elapsed time instead of a defect.
+// Measured 2026-10-02: 11.1s unloaded, 18.1s while another full test sweep was
+// running against the same tree.
+test("runs under Bun, which is this repo's runtime", { timeout: 60_000 }, async t => {
 	// The reason this gate was unwired for as long as it was: it drove
 	// `typescript/unstable/sync`, which spawns a child and reads
 	// `child.stdout._handle` — internals Bun's streams do not have. The failure

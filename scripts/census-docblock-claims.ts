@@ -84,6 +84,8 @@ const CONTROLS: readonly { ref: string; expect: string; verdict: "confirmed" | "
 interface SourceFile {
 	readonly file: string;
 	readonly lines: readonly string[];
+	/** True when the file lives in a `testing/` directory, which is NOT skipped. */
+	readonly underTestingDir: boolean;
 }
 
 interface Hit {
@@ -106,16 +108,22 @@ function buildMatcher(terms: readonly string[], wordBounded: boolean, ignoreCase
  * and the whole corpus is read once: every variant below is then measured over
  * the identical bytes, so a difference between two rows is a difference between
  * two patterns and nothing else.
+ *
+ * A directory named `testing/` is NOT skipped. Those are shipped source —
+ * conformance runners and harness hosts exported from `src/` — not test files,
+ * so their comments are product comments. The count is reported so the reader
+ * can see exactly how much of the corpus that decision covers.
  */
-async function readCorpus(dir: string, into: SourceFile[] = []): Promise<SourceFile[]> {
+async function readCorpus(dir: string, into: SourceFile[] = [], underTestingDir = false): Promise<SourceFile[]> {
 	for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
 		if (entry.name === "node_modules" || entry.name === "test") continue;
 		const full = path.join(dir, entry.name);
+		const inTesting = underTestingDir || entry.name === "testing";
 		if (entry.isDirectory()) {
-			await readCorpus(full, into);
+			await readCorpus(full, into, inTesting);
 		} else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
 			const body = await fs.readFile(full, "utf8");
-			into.push({ file: path.relative(ROOT, full), lines: body.split("\n") });
+			into.push({ file: path.relative(ROOT, full), lines: body.split("\n"), underTestingDir: inTesting });
 		}
 	}
 	return into;
@@ -164,6 +172,7 @@ const say = (s = "") => rows.push(s);
 
 say("scope        : packages/**/*.ts, test/ and node_modules excluded");
 say(`files scanned: ${corpus.length}`);
+say(`  of which in a testing/ dir (shipped helpers, INCLUDED): ${corpus.filter(f => f.underTestingDir).length}`);
 say(`RAW regex    : ${buildMatcher(RAW_TERMS, false, false).source}`);
 say(`NARROW regex : ${buildMatcher(NARROW_TERMS, false, false).source}`);
 say();

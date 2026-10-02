@@ -146,14 +146,38 @@ export const observed = [
 		expect(overrides[key]).toBe(`omp-legacy-pi-bundled:${key}`);
 	});
 
-	it("does not enumerate root catch-all wildcards (./* / ./*.js)", () => {
-		// Root `./*` / `./*.js` patterns would static-import top-level files
-		// like the package's own `cli.ts` and explode the bundle through the
-		// binary entry's transitive graph. Plugins almost never import top-level
-		// pi-* files directly, so we keep those routed via `Bun.resolveSync`.
-		// Concrete check: `@oh-my-pi/pi-coding-agent/cli` is NOT bundled.
+	it("serves subpaths that only a root catch-all (./*) declares", async () => {
+		// `epic-idj1`: a subpath served ONLY by `./*` was absent from the compiled
+		// registry, so the import resolved from source and failed inside a binary —
+		// the same shape as #3442, one level down. The module is picked from disk
+		// rather than hardcoded, so renaming a file cannot silently un-assert this.
+		const srcDir = path.join(import.meta.dir, "../../../tui/src");
+		const candidates = (await fs.readdir(srcDir))
+			.filter(name => name.endsWith(".ts") && !["index.ts", "cli.ts", "main.ts"].includes(name))
+			.sort();
+		expect(candidates.length).toBeGreaterThan(0);
+		const picked = candidates[0]!;
+		expect(bundledModuleKeys.has(`@oh-my-pi/pi-tui/${picked.slice(0, -3)}`)).toBe(true);
+	});
+
+	it("does not enumerate the binary's own entrypoints through a root catch-all", () => {
+		// Root `./*` / `./*.js` reach the package's own `cli.ts` and `main.ts`, and
+		// importing either drags the whole application's transitive graph into the
+		// compiled registry — issue #3442, where root catch-alls "exploded the
+		// bundle through the binary entry's transitive graph". Those two stay out
+		// even though every other top-level module is now served.
 		expect(bundledModuleKeys.has("@oh-my-pi/pi-coding-agent/cli")).toBe(false);
 		expect(bundledModuleKeys.has("@oh-my-pi/pi-coding-agent/main")).toBe(false);
+	});
+
+	it("serves no key that resolves into a build output or dependency tree", () => {
+		// A root catch-all has the whole package as its source, so the failure this
+		// guards is serving `dist/`, `node_modules/` or tests as importable
+		// extensions. Enumerating those would be a new leak, not a new capability.
+		const leaked = bundledEntries.filter(entry =>
+			/(^|\/)(dist|node_modules|__tests__)(\/|$)/.test(entry.importSpecifier),
+		);
+		expect(leaked.map(entry => entry.key)).toEqual([]);
 	});
 
 	it("does not bundle main-thread-unsafe worker entrypoints", () => {

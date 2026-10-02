@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const dependencySections = ["dependencies", "devDependencies", "optionalDependencies"];
@@ -22,10 +22,34 @@ const unpublishedWorkspaces = new Map([
 	["packages/omptype", "vendored fork, published from a different pipeline"],
 ]);
 
+/**
+ * True when `directory` is itself the root of another repository.
+ *
+ * `readdirSync` returns dotfile entries unconditionally — it has no `dot`
+ * option at all, so there is nothing to switch off. Walking into a nested
+ * checkout therefore re-reports every finding the parent repository already
+ * owns: `EnterWorktree` writes a complete tree under `.claude/worktrees/<name>/`
+ * with its own `.git` file, and the parent gate then reports files governed by
+ * a different index. Measured at 661 phantom findings from one worktree.
+ *
+ * The rule is deliberately NOT "skip dot-directories". This repository tracks
+ * 532 files under dot-directories, and two of them are load-bearing for these
+ * gates: `.omp/tools/package.json` is an explicitly-exempt workspace in
+ * `check-pinned-deps`, and `.omp/tools/tui.ts` is a gated TypeScript source.
+ * A blanket dot-skip would delete that coverage silently while still printing
+ * a clean report — the one failure mode a gate must never have.
+ *
+ * A separate repository is the distinction that actually separates the two:
+ * its files belong to a different index.
+ */
+function isNestedRepositoryRoot(directory) {
+	return existsSync(join(directory, ".git"));
+}
+
 function collectPackageJsonFiles(directory) {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		if (entry.isDirectory()) {
-			if (!ignoredDirectories.has(entry.name)) {
+			if (!ignoredDirectories.has(entry.name) && !isNestedRepositoryRoot(join(directory, entry.name))) {
 				collectPackageJsonFiles(join(directory, entry.name));
 			}
 			continue;

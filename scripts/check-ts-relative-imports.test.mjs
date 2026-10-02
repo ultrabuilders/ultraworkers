@@ -126,3 +126,28 @@ test("runs under Bun, which is this repo's runtime", { timeout: 60_000 }, async 
 	assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
 	assert.match(result.stderr, /\[ts-relative-imports\] \d+ lỗi \/ [1-9]\d* tệp đã quét/);
 });
+
+test("still scans a dot-directory that is not its own repository", async t => {
+	// The positive control for the nested-repository skip below. `.omp/tools/tui.ts`
+	// is a tracked, gated source in this repository, so skipping dot-directories
+	// wholesale would drop it — and the existing exemption test could not notice,
+	// because a directory that is never scanned also produces no violation.
+	const result = await check(t, { ".hidden/src/a.ts": 'import { b } from "./b.ts";\nexport const a = b;\n' });
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /1 tệp đã quét/, result.stderr);
+	assert.equal(verdicts(result.stderr).length, 1, result.stderr);
+	assert.match(verdicts(result.stderr)[0], /FAIL \.hidden\/src\/a\.ts:1:/);
+});
+
+test("skips a nested repository, whose files a different index governs", async t => {
+	// `EnterWorktree` writes a complete checkout with its own `.git` file, and the
+	// parent gate then re-reports findings the parent already owns: measured at 661
+	// phantom failures. The scanned count is the evidence it did not descend.
+	const result = await check(t, {
+		".claude/worktrees/someone/src/a.ts": 'import { b } from "./b.ts";\nexport const a = b;\n',
+		".claude/worktrees/someone/.git": "gitdir: ../../../.git/worktrees/someone",
+	});
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stderr, /0 tệp đã quét/, result.stderr);
+	assert.equal(verdicts(result.stderr).length, 0, result.stderr);
+});

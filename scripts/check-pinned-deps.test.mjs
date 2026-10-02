@@ -95,3 +95,44 @@ test("exempts internal workspace dependencies, whose version is the workspace's 
 	});
 	assert.equal(result.status, 0, result.stderr);
 });
+
+test("still scans a dot-directory that is not its own repository", async t => {
+	// The positive control for the nested-repository skip below. This repository
+	// tracks 532 files under dot-directories, and `.omp/tools` is an explicitly
+	// exempt workspace here, so a blanket dot-skip would satisfy every other
+	// assertion in this file while silently dropping them. The scanned count is
+	// what makes this observable: one file, and it was inside a dot-directory.
+	const result = await check(
+		t,
+		{ name: "root", version: "1.0.0" },
+		{
+			".hidden/package.json": JSON.stringify({
+				name: "hidden",
+				version: "1.0.0",
+				dependencies: { external: "^1.2.3" },
+			}),
+		},
+	);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /external must be pinned, found \^1\.2\.3/);
+});
+
+test("skips a nested repository, whose files a different index governs", async t => {
+	// `EnterWorktree` writes a complete checkout with its own `.git` file. Before
+	// the guard this reported a violation the parent repository already owns —
+	// 661 phantom findings from one worktree — against a real count of ~490.
+	const result = await check(
+		t,
+		{ name: "root", version: "1.0.0" },
+		{
+			".claude/worktrees/someone/package.json": JSON.stringify({
+				name: "nested",
+				version: "1.0.0",
+				dependencies: { external: "^1.2.3" },
+			}),
+			".claude/worktrees/someone/.git": "gitdir: ../../../.git/worktrees/someone",
+		},
+	);
+	assert.equal(result.status, 0, result.stderr);
+	assert.ok(!result.stderr.includes("external must be pinned"), result.stderr);
+});

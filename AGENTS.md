@@ -7,12 +7,12 @@
 The order is a loop, not a feature list:
 
 1. **Copy every capability from `pi`** (`earendil-works/pi`, MIT — copy, don't rewrite).
-2. **Decompose what exists** into a *core* (what the host guarantees) plus *limbs* (every
+2. **Decompose what exists** into a _core_ (what the host guarantees) plus _limbs_ (every
    user- and extension-facing surface).
 3. **Once core + one limb exist, build another limb.** Claude Code's UX is the first one.
 4. **Repair what the new limb exposes**, then learn from other projects.
 
-**The test, and there is only one:** an extension written *outside this repo* installs and
+**The test, and there is only one:** an extension written _outside this repo_ installs and
 registers a tool + slash command + config key + lifecycle hook + TUI panel **without changing a
 single line of core**. Every milestone exists to move that statement from aspirational to true.
 
@@ -31,7 +31,7 @@ things that do not exist at HEAD is worse than no list.
 
 ### Scope discipline
 
-Research and plan the de-hardcoding axis. Do not open a milestone for a *new capability* unless
+Research and plan the de-hardcoding axis. Do not open a milestone for a _new capability_ unless
 the owner asks for one. A previous pass researched "what is missing", produced three
 capability-shaped milestones, and all three were deleted — the capability axis is not this
 programme's axis.
@@ -79,23 +79,28 @@ When authorized to create or edit a contributor-submitted PR, follow the checkli
 
 - No `any` unless absolutely necessary.
 - **NEVER use `ReturnType<>`** — use the actual type name.
-- **NEVER use inline imports** — no `await import()`, no `import("pkg").Type` in type positions, no dynamic type imports. Always top-level. The exception is a deliberate lazy load, where deferring the import is the entire point of the code: it keeps a module graph out of an entry point until that graph is actually needed. `packages/ai/src/registry/transports.ts` (per-provider stream transports) and the worker/command dispatch in `packages/coding-agent/src/cli.ts` are such places. Name the file in the docblock so the exception stays reviewable.
+- **NEVER use inline imports** — no `await import()`, no `import("pkg").Type` in type positions, no dynamic type imports. Always top-level. There are exactly two exceptions, and both are properties of the code rather than permissions:
+   - **A deliberate lazy load**, where deferring the import is the entire point: it keeps a module graph out of an entry point until that graph is actually needed. `packages/ai/src/registry/transports.ts` (per-provider stream transports) and the worker/command dispatch in `packages/coding-agent/src/cli.ts` are such places. Name the file in the docblock so the exception stays reviewable.
+   - **A computed specifier**, where the module to import is not knowable until runtime — `__omp_import__` and the plugin/command loaders pass a path the caller supplied. This one is not a choice: no static import can name a module that has not been chosen yet, so the rule cannot apply to it at all. `scripts/check-await-import.ts` reports these separately as _computed_ rather than counting them as lazy loads.
+
+   `bun run scripts/check-await-import.ts` gates both lists. The two are counted apart on purpose: a computed specifier that was quietly rewritten as a lazy load would be a behaviour change dressed as a refactor, and a lazy load that grew a computed specifier is the same defect wearing the other hat.
+
 - Check `node_modules` for external API types instead of guessing.
 - **Barrel exports**: prefer `export * from "./module"` over named re-exports, including `export type { ... } from`. In pure `index.ts` barrels, use star re-exports even for single-specifier cases. If stars create ambiguity, remove the redundant export path; do not keep duplicates.
 - **Class privacy**: use ES `#private` fields; leave externally accessible members bare. **No `private`/`protected`/`public` keyword on fields or methods**, except on **constructor parameter properties** where TypeScript requires it (e.g. `constructor(private readonly session: ToolSession)`).
 - **Promises**: use `Promise.withResolvers()` instead of `new Promise((resolve, reject) => ...)`.
 - **Prompts**: never build prompts in code (no inline strings, template literals, or concatenation). Prompts live in static `.md` files; use Handlebars for dynamic content. Import them via `import content from "./prompt.md" with { type: "text" }` — not `readFile`.
 - **Worker scripts**: workers re-enter the CLI entrypoint; never spawn separate worker entry modules. `cli.ts` declares itself as the worker host at startup (`declareWorkerHostEntry()` from `@oh-my-pi/pi-utils/env`) and dispatches hidden argv selectors (`__ultraworkers_worker_stats_sync`, `__ultraworkers_worker_tab`, `__ultraworkers_worker_js_eval`, `__ultraworkers_worker_tiny_inference`) before loading the command registry. Spawn sites use:
-  ```ts
-  import { workerHostEntry } from "@oh-my-pi/pi-utils";
-  const hostEntry = workerHostEntry();
-  const worker = hostEntry
-  	? new Worker(hostEntry, { type: "module", argv: ["__ultraworkers_worker_<name>"] })
-  	: new Worker(new URL("./<worker>.ts", import.meta.url).href, { type: "module" });
-  ```
-  When the process was started from the omp CLI — source `cli.ts`, npm-bundle `dist/cli.js`, or compiled binary — `workerHostEntry()` is `Bun.main` and the worker re-enters the single entry module, so no per-worker `--compile` entrypoints or bundle entries exist. Outside a CLI host (`bun test`, SDK embedding, standalone `omp-stats`) it returns `null` and the direct-module fallback loads the worker source. New worker kinds MUST add their selector to the dispatch table in `cli.ts` and keep the fallback branch.
-  History: `with { type: "file" }` only copied the entry as a raw asset (workers crashed silently in compiled binaries — issues #1011, #1027), and the later literal-path + extra-entrypoint pattern required keeping spawn literals and two build scripts in sync (issue #1150). The smoke probe below is the live validation of this contract.
-  Validate any new worker with the dedicated smoke probe: `ultraworkers --smoke-test` runs 14 worker probes, pings each, and exits — it's wired into `ci:test:smoke` and `scripts/install-tests/run-ci.sh` so binary, source-link, and tarball installs all exercise it. Add a sibling smoke if the new worker is on a different module graph. **Coverage is 13 of the 16 dispatchable selectors on darwin and 14 of 16 on Linux** — the gap is `stats_sync`, which `smokeTestSyncWorker` skips on darwin because the hardened runtime in `scripts/ci-macos-sign.sh` would re-enter the Bun-worker abort surface. A green smoke run is therefore *not* evidence that every selector is correct; re-derive the counts with `grep -c 'await smokeTest' packages/coding-agent/src/cli.ts` and the `_ARG` definitions in `cli.ts` and `cli/worker-selectors.ts` before relying on them.
+   ```ts
+   import { workerHostEntry } from "@oh-my-pi/pi-utils";
+   const hostEntry = workerHostEntry();
+   const worker = hostEntry
+   	? new Worker(hostEntry, { type: "module", argv: ["__ultraworkers_worker_<name>"] })
+   	: new Worker(new URL("./<worker>.ts", import.meta.url).href, { type: "module" });
+   ```
+   When the process was started from the omp CLI — source `cli.ts`, npm-bundle `dist/cli.js`, or compiled binary — `workerHostEntry()` is `Bun.main` and the worker re-enters the single entry module, so no per-worker `--compile` entrypoints or bundle entries exist. Outside a CLI host (`bun test`, SDK embedding, standalone `omp-stats`) it returns `null` and the direct-module fallback loads the worker source. New worker kinds MUST add their selector to the dispatch table in `cli.ts` and keep the fallback branch.
+   History: `with { type: "file" }` only copied the entry as a raw asset (workers crashed silently in compiled binaries — issues #1011, #1027), and the later literal-path + extra-entrypoint pattern required keeping spawn literals and two build scripts in sync (issue #1150). The smoke probe below is the live validation of this contract.
+   Validate any new worker with the dedicated smoke probe: `ultraworkers --smoke-test` runs 14 worker probes, pings each, and exits — it's wired into `ci:test:smoke` and `scripts/install-tests/run-ci.sh` so binary, source-link, and tarball installs all exercise it. Add a sibling smoke if the new worker is on a different module graph. **Coverage is 13 of the 16 dispatchable selectors on darwin and 14 of 16 on Linux** — the gap is `stats_sync`, which `smokeTestSyncWorker` skips on darwin because the hardened runtime in `scripts/ci-macos-sign.sh` would re-enter the Bun-worker abort surface. A green smoke run is therefore _not_ evidence that every selector is correct; re-derive the counts with `grep -c 'await smokeTest' packages/coding-agent/src/cli.ts` and the `_ARG` definitions in `cli.ts` and `cli/worker-selectors.ts` before relying on them.
 
 ## Central Utilities
 
@@ -182,15 +187,15 @@ Use `node:fs/promises` for directory ops (`fs.mkdir`, `fs.rm`, `fs.readdir`) —
 - `existsSync`/`readFileSync`/`writeFileSync` in async code → `Bun.file()` APIs.
 - `mkdir(dirname(path), …)` before `Bun.write(path, …)` → redundant; `Bun.write` handles it.
 - `if (await file.exists()) { await file.json() }` → two syscalls plus race. Use try-catch with `isEnoent`:
-  ```typescript
-  import { isEnoent } from "@oh-my-pi/pi-utils";
-  try {
-  	return await Bun.file(path).json();
-  } catch (err) {
-  	if (isEnoent(err)) return null;
-  	throw err;
-  }
-  ```
+   ```typescript
+   import { isEnoent } from "@oh-my-pi/pi-utils";
+   try {
+   	return await Bun.file(path).json();
+   } catch (err) {
+   	if (isEnoent(err)) return null;
+   	throw err;
+   }
+   ```
 - Multiple `Bun.file(path)` handles for the same path (including across `checkX`/`loadX` helpers).
 - `Buffer.from(await Bun.file(x).arrayBuffer())` → `await fs.readFile(path)`.
 - Existence check + try-catch around the same read → drop the existence check.
@@ -297,17 +302,18 @@ For the bash tool specifically:
 - Never use `tsc`/`npx tsc` — always `bun check`.
 - Never run `cargo test` directly for Rust tests — use `bun run test:rs`. It runs `cargo nextest run` (config: `.config/nextest.toml`) followed by a `cargo test --doc` pass, because nextest does not execute doctests. The doctest pass currently executes nothing (pi-natives is a `cdylib`, which rustdoc skips; pi-builtins' examples are `ignore`d vendored uutils docs) and exists so the first runnable doctest added to a lib crate is actually run.
 - Merge commits (maintainer merges of PRs) follow: `Merge PR #<number>: <conventional PR subject> (@<author>)` — e.g. `Merge PR #6386: feat(catalog): add native Meta Model API provider (@eggpeat)`.
+
 ## Rust Build Profiles
 
 Profiles live in the root `Cargo.toml`; `.cargo/config.toml` carries the settings Cargo.toml cannot express. Both are committed, so no local `~/.cargo/config.toml` is required.
 
-| Profile | Use |
-| --- | --- |
-| `dev` | Default. Line tables for our crates, no debuginfo for deps, deps at `opt-level = 2`. |
-| `release` | Shipping build: fat LTO, 1 codegen unit, stripped. |
-| `local` | Fast local release iteration: thin LTO, 16 codegen units, incremental. |
-| `profiling` | `release` codegen with symbols kept, for `perf`/`samply`/Instruments. |
-| `ci` | Thin LTO, no debuginfo, stripped. |
+| Profile     | Use                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------ |
+| `dev`       | Default. Line tables for our crates, no debuginfo for deps, deps at `opt-level = 2`. |
+| `release`   | Shipping build: fat LTO, 1 codegen unit, stripped.                                   |
+| `local`     | Fast local release iteration: thin LTO, 16 codegen units, incremental.               |
+| `profiling` | `release` codegen with symbols kept, for `perf`/`samply`/Instruments.                |
+| `ci`        | Thin LTO, no debuginfo, stripped.                                                    |
 
 **Never set `split-debuginfo = "off"` on a profile that has debuginfo.** On Mach-O the linker never merges DWARF into the executable — it writes a debug map (`N_OSO`) pointing at the `.o` files, and `"unpacked"` is what keeps those files. With `"off"` every backtrace frame in our own crates silently loses `file:line`; the `panicked at foo.rs:3` header still prints (that is `#[track_caller]`, not debuginfo), which makes the loss easy to miss. `ci` may use `"off"` only because it sets `debug = false`.
 

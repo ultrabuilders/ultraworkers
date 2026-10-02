@@ -14,7 +14,17 @@ import { tinyModelClient } from "./title-client";
 import type { TinyChatMessage } from "./title-protocol";
 
 const LOCAL_INFERENCE_API = "local-inference";
-const LOCAL_INFERENCE_SOURCE = "ultraworkers/local-inference";
+/**
+ * Identifies who registered the custom API, so `unregisterCustomApis` can withdraw
+ * exactly this registration.
+ *
+ * Exported because the value is a *matched* identity, not a label: the test passes it
+ * back to `unregisterCustomApis`, which compares `entry.sourceId === sourceId`. When
+ * this string lived only here, the test had to repeat it as a literal, and a rename
+ * that touched one copy and not the other left `afterEach` silently unregistering
+ * nothing — every test still green, the registry leaking an entry per run.
+ */
+export const LOCAL_INFERENCE_SOURCE = "ultraworkers/local-inference";
 const LOCAL_INFERENCE_NO_OUTPUT = "Local inference returned no output.";
 const LOCAL_INFERENCE_ABORTED = "Local inference request aborted.";
 

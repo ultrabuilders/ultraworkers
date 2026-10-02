@@ -304,6 +304,14 @@ export class ModelRegistry {
 	#lastModelModifierWarnings: Map<string, string> = new Map();
 	#runtimeProvidersBySource: Map<string, Set<string>> = new Map();
 	#runtimeProviderSourceByName: Map<string, string> = new Map();
+	/**
+	 * The config each extension-registered provider was handed, kept so
+	 * {@link getRegisteredProviderConfig} can answer. `registerProvider` receives this
+	 * argument and otherwise only forwards its pieces into the catalog; nothing retained
+	 * the whole, which is why `pi`'s method had no counterpart here despite the concept
+	 * existing on both sides.
+	 */
+	#registeredProviderConfigs: Map<string, ProviderConfigInput> = new Map();
 	// Runtime model managers registered by extensions via fetchDynamicModels.
 	// Keyed by provider name; use the same SQLite cache path as builtins.
 	#runtimeModelManagers: Map<string, { options: ModelManagerOptions<Api>; sourceId: string }> = new Map();
@@ -2823,6 +2831,52 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * The runtime config an extension registered for this provider, if any.
+	 *
+	 * Ported from `pi`'s `ModelRuntime.getRegisteredProviderConfig`
+	 * (`core/model-runtime.ts:514`), which reads its `extensionProviders` map. This
+	 * tree records the same thing in the opposite direction — `#runtimeProviderSourceByName`
+	 * maps a provider name to the extension that registered it — so the answer is "is this
+	 * provider ours, and who owns it" rather than "what config was it handed".
+	 *
+	 * That direction is the reason the two fields exist separately: `unregisterProvider`
+	 * resolves ownership from the NAME, so reading the name back here is what lets a caller
+	 * holding a stale per-extension record notice the provider has moved on. See
+	 * {@link providerSource}.
+	 */
+	getRegisteredProviderConfig(providerId: string): ProviderConfigInput | undefined {
+		const sourceId = this.#runtimeProviderSourceByName.get(providerId);
+		if (sourceId === undefined) return undefined;
+		const config = this.#registeredProviderConfigs.get(providerId);
+		return config;
+	}
+
+	/**
+	 * Every provider an extension registered, in registration order.
+	 *
+	 * Ported from `pi`'s `ModelRuntime.getRegisteredProviderIds`
+	 * (`core/model-runtime.ts:518`), which unions its extension and native-extension
+	 * provider maps. omp has one registry rather than two — `#runtimeProviderSourceByName`
+	 * covers both, because a native provider still arrives through `registerProvider` —
+	 * so the union pi needs is a single map's keys here.
+	 */
+	getRegisteredProviderIds(): readonly string[] {
+		return [...this.#runtimeProviderSourceByName.keys()];
+	}
+
+	/**
+	 * True when this provider was registered by an extension rather than shipped.
+	 *
+	 * The counterpart to {@link getRegisteredProviderIds} for callers that need the
+	 * provenance of ONE id. It reads the source map, so it agrees with
+	 * {@link providerSource} by construction: a provider whose ownership moved to another
+	 * extension answers the same way from both.
+	 */
+	hasRegisteredProvider(providerId: string): boolean {
+		return this.#runtimeProviderSourceByName.has(providerId);
+	}
+
+	/**
 	 * Provider-level base URL: explicit runtime/config overrides first, then any
 	 * discovered model that defines one.
 	 *
@@ -2978,6 +3032,12 @@ export class ModelRegistry {
 		this.#runtimeModelManagers.delete(providerName);
 		this.#runtimeModelModifiers.delete(providerName);
 		this.#lastModelModifierWarnings.delete(providerName);
+		// Here rather than in each unregister path: every path that drops a provider
+		// already calls this, and a per-path delete is a leak waiting for the next one.
+		// It also removes the temptation to read the map without consulting
+		// #runtimeProviderSourceByName first — the accessor guards on that map, so a
+		// config left behind here is unreachable but still retained.
+		this.#registeredProviderConfigs.delete(providerName);
 		// A credential-scoped built-in provider (e.g. opencode-go) populates its
 		// slice of #runtimeDiscoveredModels from startup cache hydration, not from
 		// this extension. #reloadStaticModels excludes credential-scoped providers
@@ -3128,6 +3188,7 @@ export class ModelRegistry {
 			sourceProviders.add(providerName);
 			this.#runtimeProvidersBySource.set(sourceId, sourceProviders);
 			this.#runtimeProviderSourceByName.set(providerName, sourceId);
+			this.#registeredProviderConfigs.set(providerName, config);
 		}
 		if (sourceHandoff) {
 			this.#reloadStaticModels({ force: true, preserveRuntimeDiscovery: true });

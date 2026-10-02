@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- The `packages/tui` suite no longer reports seven failures that only appeared when the whole package ran together. Six came from `glyph-protocol.test.ts`: it scrubbed `TMUX` but nothing else, so on a machine running under a Herdr pane the real `HERDR_ENV` reached `classifyTerminalMultiplexer`, the probe was correctly skipped as unsafe inside a multiplexer, and every assertion about a support reply failed. The seventh came from `hotkeys-markdown.test.ts`, which pinned the platform but not the symbol preset, so a key hint rendered as `⌃⇧D` instead of `Ctrl+Shift+D` once any earlier test file had loaded a theme. Both files now establish the state they assert against and hand it back: the glyph tests ask `classifyTerminalMultiplexer` which variables it actually reads instead of listing names, so a new marker is picked up automatically and a variable it deliberately ignores cannot be swept in, and the hotkey tests pin the ascii preset their expected bytes come from. Two other test files were leaving a process-global theme behind and are now restored, so neither depends on where it lands in the run order.
+
 - `sanitizeErrorLine` no longer reduces a string argument to `[object String]`. It takes `unknown`,
   so a string is a valid input, but it normalized every non-`Error` structurally and a message passed
   as a string came back as its `Object.prototype.toString` tag. An aborted `/btw` session operation

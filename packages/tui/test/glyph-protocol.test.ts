@@ -9,6 +9,7 @@ import {
 	parseGlyphProtocolReply,
 } from "@oh-my-pi/pi-tui/glyph-protocol";
 import { ProcessTerminal } from "@oh-my-pi/pi-tui/terminal";
+import { isInsideTerminalMultiplexer } from "@oh-my-pi/pi-tui/terminal-multiplexer";
 import { setTerminalGlyphProtocol, TERMINAL } from "@oh-my-pi/pi-tui/terminal-capabilities";
 import { setTerminalHeadless } from "@oh-my-pi/pi-utils";
 
@@ -99,6 +100,54 @@ const originalProbeEnv = Bun.env.PI_TUI_GLYPH_PROTOCOL_PROBE;
 const originalKillSwitch = Bun.env.PI_NO_GLYPH_PROTOCOL;
 const originalTmux = Bun.env.TMUX;
 
+/**
+ * Env keys that must be absent for the classifier to report a direct terminal.
+ *
+ * Discovered by ASKING the classifier, not by listing variables. A hardcoded
+ * `TMUX`-only scrub is exactly what let this file pass in CI (no multiplexer)
+ * and fail on a Herdr terminal, where `HERDR_ENV=1` and friends reach the same
+ * gate — the probe is skipped, so nothing is written and every assertion about
+ * a support reply fails. Naming the wrong variable is the trap here: `TERM` and
+ * `TERM_PROGRAM` are not consulted at all, so stripping those changes nothing.
+ *
+ * Asking keeps the list from drifting: a new marker in `classifyTerminalMultiplexer`
+ * is picked up automatically, and a key that does not matter is never deleted.
+ *
+ * The classifier is a DISJUNCTION — any one marker satisfies it — so the marker
+ * set is found from the empty environment outward, not by deleting from the full
+ * one. Deleting downward cannot separate "this key is a marker" from "this key
+ * happened to be visited before the condition was met": that walk swept in
+ * `NODE_ENV`, `EDITOR` and `COLORTERM` alongside the four real HERDR vars, and
+ * even picked up `HERDR_SOCKET_PATH`/`HERDR_BIN_PATH`, which `isInsideHerdr`
+ * deliberately ignores because they can be set outside a Herdr pane.
+ */
+function detectMultiplexerEnvKeys(): string[] {
+	if (!isInsideTerminalMultiplexer()) return [];
+	const original = { ...Bun.env } as Record<string, string | undefined>;
+	for (const key of Object.keys(original)) delete Bun.env[key];
+
+	const required: string[] = [];
+	for (const key of Object.keys(original)) {
+		if (original[key] === undefined) continue;
+		Bun.env[key] = original[key] as string;
+		const isMarker = isInsideTerminalMultiplexer();
+		delete Bun.env[key];
+		if (isMarker) required.push(key);
+	}
+
+	// Put EVERY key back. The probe above empties the environment, so without
+	// this the whole file would run against a gutted one — a second lie wearing
+	// the first one's clothes. The caller scrubs exactly `required`.
+	for (const [key, value] of Object.entries(original)) {
+		if (value !== undefined) Bun.env[key] = value;
+	}
+	return required;
+}
+
+/** Captured at module load, before any test scrubs the environment. */
+const multiplexerEnvKeys = detectMultiplexerEnvKeys();
+const originalMultiplexerEnv = new Map(multiplexerEnvKeys.map(key => [key, Bun.env[key] as string | undefined]));
+
 function restoreProperty(target: object, key: string, descriptor: PropertyDescriptor | undefined): void {
 	if (descriptor) {
 		Object.defineProperty(target, key, descriptor);
@@ -149,6 +198,7 @@ describe("glyph protocol probe", () => {
 		Bun.env.PI_TUI_GLYPH_PROTOCOL_PROBE = "1";
 		delete Bun.env.PI_NO_GLYPH_PROTOCOL;
 		delete Bun.env.TMUX;
+		for (const key of multiplexerEnvKeys) delete Bun.env[key];
 	});
 
 	afterEach(() => {
@@ -158,6 +208,7 @@ describe("glyph protocol probe", () => {
 		restoreEnv("PI_TUI_GLYPH_PROTOCOL_PROBE", originalProbeEnv);
 		restoreEnv("PI_NO_GLYPH_PROTOCOL", originalKillSwitch);
 		restoreEnv("TMUX", originalTmux);
+		for (const [key, value] of originalMultiplexerEnv) restoreEnv(key, value);
 		restoreProperty(process.stdin, "isTTY", stdinIsTtyDescriptor);
 		restoreProperty(process.stdout, "isTTY", stdoutIsTtyDescriptor);
 		restoreProperty(process.stdin, "setRawMode", stdinSetRawModeDescriptor);

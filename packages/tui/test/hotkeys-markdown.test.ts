@@ -1,13 +1,26 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { setKeyHintPlatform } from "@oh-my-pi/pi-tui/app-keybindings";
 import { buildHotkeysMarkdown } from "@oh-my-pi/pi-tui/hotkeys-markdown";
+import { initThemeSync, setSymbolPreset } from "@oh-my-pi/pi-tui/theme";
 
 /** Exit-row wiring for stubs that only care about display strings: no key claims the
  *  forward-delete role, so the exit row renders its plain "Exit" wording. */
 const noForwardDelete = { getKeys: () => [], matchesCanonical: () => false };
 
 describe("buildHotkeysMarkdown", () => {
-	afterEach(() => setKeyHintPlatform(undefined));
+	// Key hints render through the ACTIVE THEME's `key.*` symbols — words in the
+	// ascii preset (`Ctrl`), glyphs in unicode (`⌃`). These assertions pin exact
+	// bytes, so they have to pin the preset as well as the platform. Before this,
+	// they held only while no other test file had loaded a theme, which made this
+	// file pass alone and fail in the suite depending purely on run order.
+	beforeEach(async () => {
+		await setSymbolPreset("ascii");
+	});
+
+	afterEach(() => {
+		setKeyHintPlatform(undefined);
+		initThemeSync();
+	});
 
 	it("emits flush-left markdown and uses the configured temporary selector hint", () => {
 		const displayStrings: Record<string, string> = {

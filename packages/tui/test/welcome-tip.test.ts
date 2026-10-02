@@ -1,7 +1,16 @@
-import { beforeAll, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { renderWelcomeTip, WelcomeComponent } from "@oh-my-pi/pi-tui/prompt/welcome";
-import { initTheme, setSymbolPreset, setTheme, theme } from "@oh-my-pi/pi-tui/theme";
+import { initTheme, initThemeSync, setSymbolPreset, setTheme, theme } from "@oh-my-pi/pi-tui/theme";
 import { visibleWidth } from "@oh-my-pi/pi-tui";
+
+// Theme name AND symbol preset are process-global here, and neither is undone.
+// Left behind, they change how a later file renders key hints (`⌃⇧D` instead of
+// `Ctrl+Shift+D`), which fails hotkeys-markdown.test.ts — but only when this file
+// runs before it. `initThemeSync` clears the preset override as well as the
+// theme, so one call restores both globals.
+afterEach(() => {
+	initThemeSync();
+});
 
 describe("renderWelcomeTip", () => {
 	beforeAll(async () => {

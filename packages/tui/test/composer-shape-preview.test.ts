@@ -1,12 +1,22 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { renderComposerShapePreview } from "../src/overlays/composer-shape-preview";
 import { getComposerShapeOptions, installExtensionComposerShape } from "../src/overlays/composer-shape-registry";
-import { initTheme, setTheme } from "../src/theme/theme";
+import { initTheme, initThemeSync, setTheme } from "../src/theme/theme";
 import { type ComposerStyle, visibleWidth } from "../src/index";
 
 beforeAll(async () => {
 	await initTheme();
+});
+
+// The theme is process-global and `setTheme` here is not undone. Left set, the
+// dark theme's key symbols survive into later test files, so a key hint renders
+// as `⌃⇧D` where the ascii preset would have said `Ctrl+Shift+D` — which fails
+// hotkeys-markdown.test.ts, and only when this file happens to run first. A test
+// that passes alone but changes what a later file sees is the defect, not the
+// unlucky ordering.
+afterEach(() => {
+	initThemeSync();
 });
 
 describe("composer shape preview", () => {

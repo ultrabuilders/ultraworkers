@@ -30,10 +30,12 @@ describe("install command is registered as a top-level subcommand", () => {
 		// The first clause echoes the binary this process is running as, so it is
 		// sourced from `APP_NAME` rather than typed again here — a copied literal is
 		// what made the message accuse users of running a command they never ran.
-		// The recommendation after it is a separate fixed string and is asserted
-		// verbatim, so a change to either half is visible on its own.
+		// BOTH halves now derive from APP_NAME — the echo AND the recommendation.
+		// Asserted verbatim, so a change to either half is visible on its own; and
+		// derived, so the expectation cannot itself go stale into a second copy of
+		// the bug this file exists to prevent.
 		expect(resolveCliArgv(["extensions"])).toEqual({
-			error: `\`${APP_NAME} extensions\` is not a management command. Use \`omp plugin list\` / \`omp plugin install\`, or run \`omp launch extensions\` if you meant to send "extensions" as a prompt.`,
+			error: `\`${APP_NAME} extensions\` is not a management command. Use \`${APP_NAME} plugin list\` / \`${APP_NAME} plugin install\`, or run \`${APP_NAME} launch extensions\` if you meant to send "extensions" as a prompt.`,
 		});
 		expect(resolveCliArgv(["extensions", "are", "not", "loading"])).toEqual({
 			argv: ["launch", "extensions", "are", "not", "loading"],

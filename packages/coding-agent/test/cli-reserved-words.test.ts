@@ -19,11 +19,13 @@ import { reservedTopLevelWordMessage } from "@oh-my-pi/pi-coding-agent/cli-comma
 
 describe("reservedTopLevelWordMessage", () => {
 	it("refuses a reserved verb and points at the command that exists", () => {
-		// `omp plugin marketplace` is the real entry point (plugin-cli.ts); this is
-		// not about that verb existing, it is about the word never becoming a prompt.
-		const message = reservedTopLevelWordMessage(["marketplace"]);
+		// `<invoked> plugin marketplace` is the real entry point (plugin-cli.ts); this
+		// is not about that verb existing, it is about the word never becoming a
+		// prompt. The name is passed explicitly rather than left to the argv fallback,
+		// because the point of the assertion IS which name came out.
+		const message = reservedTopLevelWordMessage(["marketplace"], "ultraworkers");
 		expect(message).toBeDefined();
-		expect(message).toContain("omp plugin marketplace");
+		expect(message).toContain("ultraworkers plugin marketplace");
 	});
 
 	it("covers every word that looks like a command but is not one", () => {
@@ -49,11 +51,11 @@ describe("reservedTopLevelWordMessage", () => {
 		expect(reservedTopLevelWordMessage(["doctor"])).toBeUndefined();
 	});
 
-	it("offers `omp launch <word>` so the prompt the user meant still works", () => {
+	it("offers `<invoked> launch <word>` so the prompt the user meant still works", () => {
 		// The table must not be a dead end: someone who genuinely meant to talk to
 		// the model about "marketplace" needs the command that does that.
-		const message = reservedTopLevelWordMessage(["marketplace"]);
-		expect(message).toContain("omp launch marketplace");
+		const message = reservedTopLevelWordMessage(["marketplace"], "ultraworkers");
+		expect(message).toContain("ultraworkers launch marketplace");
 	});
 
 	it("stays out of the way of anything else", () => {
@@ -72,8 +74,12 @@ describe("reservedTopLevelWordMessage", () => {
 		// to a prompt. Two exceptions keep the hint: a marketplace subcommand, and an
 		// @-argument, where the word was clearly not meant as a prompt either.
 		expect(reservedTopLevelWordMessage(["marketplace", "--json"])).toBeUndefined();
-		expect(reservedTopLevelWordMessage(["marketplace", "list"])).toContain("omp plugin marketplace");
-		expect(reservedTopLevelWordMessage(["list", "some@file.ts"])).toContain("omp plugin list");
+		expect(reservedTopLevelWordMessage(["marketplace", "list"], "ultraworkers")).toContain(
+			"ultraworkers plugin marketplace",
+		);
+		expect(reservedTopLevelWordMessage(["list", "some@file.ts"], "ultraworkers")).toContain(
+			"ultraworkers plugin list",
+		);
 	});
 });
 
@@ -107,11 +113,26 @@ describe("reservedTopLevelWordMessage echoes the invocation, not a hardcoded bin
 		}
 	});
 
-	it("leaves the recommended command untouched when the invocation name changes", () => {
-		// The `omp plugin …` clause recommends a command to run NEXT, which is a
-		// separate open product decision about the installed binary name. Fixing the
-		// echo must not quietly rewrite the recommendation in the same pass.
-		expect(reservedTopLevelWordMessage(["list"], "ultraworkers")).toContain("omp plugin list");
-		expect(reservedTopLevelWordMessage(["list"], "uw-under-another-name")).toContain("omp plugin list");
+	it("names the recommendation after the binary the user actually ran", () => {
+		// INVERTED 2026-10-02. This test used to assert the opposite — that the
+		// `omp plugin …` clause stayed hardcoded while the echo was substituted — and
+		// it was the thing that kept the bug alive. A user who installed by `bun
+		// install`, `npm i -g`, `install.sh` or nix was told to run `omp plugin list`,
+		// and none of those four paths creates `omp` (epic-4yhd).
+		//
+		// Substituting is what makes this correct WITHOUT picking a side on that
+		// bead: whoever ran the command is told a command in their own namespace.
+		// If epic-4yhd ships an `omp` alias, an `omp` user is told `omp plugin list`
+		// and it exists; if it does not, they are told the name that does.
+		//
+		// What this must NOT become is a hardcoded swap to `ultraworkers` — that
+		// would be the same bug pointed the other way, telling an `omp` user to run
+		// a command their install never produced.
+		const asInstalled = reservedTopLevelWordMessage(["list"], "ultraworkers");
+		expect(asInstalled).toContain("Use `ultraworkers plugin list`");
+
+		const asAliased = reservedTopLevelWordMessage(["list"], "omp");
+		expect(asAliased).toContain("Use `omp plugin list`");
+		expect(asAliased).toContain("`omp list` is not a top-level command");
 	});
 });

@@ -86,8 +86,26 @@ describe("the reserved-word hint names the binary that ran, not the name invoked
 		expect(message).not.toContain("some-other-name");
 	});
 
-	it("still recommends the plugin command, whose name is a separate decision", async () => {
+	it("recommends the plugin command under the SAME resolved entry it echoes", async () => {
+		// INVERTED 2026-10-02 — this test used to assert the recommendation stayed
+		// hardcoded while the echo was substituted, which is precisely what told a
+		// `bun install` / `npm i -g` / `install.sh` / nix user to run `omp plugin
+		// list`, a command none of those four paths creates (epic-4yhd).
+		//
+		// Both clauses now derive from the same resolved entry, so the message
+		// cannot tell the user to run a command from a namespace they are not in.
+		// That is what makes it correct without picking a side on epic-4yhd: if an
+		// `omp` alias ships, an `omp` user's resolved entry names `omp`; if it does
+		// not, they are never told `omp`.
 		const message = await hintViaEntryName("ultraworkers", "some-other-name");
-		expect(message).toContain("omp plugin list");
+		expect(message).toContain("`ultraworkers plugin list`");
+		expect(message).not.toContain("some-other-name");
+		// The pinning half, unchanged in spirit: a symlink the user typed is not
+		// what the runtime can resolve, so it must not leak into the advice either.
+		// Scoped to the RECOMMENDED COMMAND, not the bare token: the message ends
+		// "...as a prompt", and a bare `not.toContain("omp")` matches the substring
+		// inside `pr-omp-t`. Asserting the token rather than the thing it appears in
+		// would have gone red on a message that is completely correct.
+		expect(message).not.toContain("`omp plugin");
 	});
 });

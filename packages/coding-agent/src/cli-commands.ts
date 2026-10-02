@@ -478,34 +478,48 @@ export function isSubcommand(first: string | undefined): boolean {
 // a hint pointing there. See {@link reservedTopLevelWordMessage} for when a hint
 // fires vs. when the argv still falls through to `launch`.
 //
-// `{invoked}` is replaced with the name the CLI was actually started under. It
-// is NOT a synonym for the product name: this clause echoes the command the
-// user typed, and a hardcoded binary in it made the message accuse them of
-// running something they never ran — a user who typed `ultraworkers list` was
-// told "`omp list` is not a top-level command". Only this clause is
-// substituted. The `omp plugin …` recommendations after it name the command to
-// run next, which is a separate product decision about the installed binary
-// name and is deliberately left untouched here. If the owner keeps an `omp`
-// alias (epic-4yhd) these strings are already correct; renaming them before
-// that decision would make the advice wrong.
+// `{invoked}` is replaced with the name the CLI was actually started under, in
+// BOTH clauses of every message below.
+//
+// It is NOT a synonym for the product name, and that is the whole point. A
+// message has two jobs: echo what the user typed, and tell them what to run
+// next. Hardcoding the binary in the second job told a user who installed by
+// `bun install` / `npm i -g` / `install.sh` / nix to run `omp plugin list`,
+// which is a command none of those four paths creates — so the advice was
+// wrong for exactly the users who did a normal install. Those four paths are
+// measured in epic-4yhd; all four produce `ultraworkers`, and
+// `test/bin-name-matches-app-name.test.ts` asserts the manifest's bin map is
+// EXACTLY `[APP_NAME]`, so a second installed name would be a contract change
+// rather than a silent extra entry.
+//
+// Substituting rather than hardcoding `ultraworkers` is what makes this correct
+// without pre-empting epic-4yhd. If that bead ends up shipping an `omp` alias,
+// a user who ran `omp` is told `omp plugin list`, which then exists; if it does
+// not, a user who ran `omp` is still told the name that does exist for them.
+// Deriving the advice beats choosing a winner: the previous version hardcoded
+// the recommendation while substituting the echo, which meant the two halves
+// could disagree about which command the user was running.
+//
+// The one thing this does NOT do is change which commands exist. It cannot make
+// `omp` appear on someone's PATH, and it is not meant to.
 const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 	extensions:
-		'`{invoked} extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',
-	list: '`{invoked} list` is not a top-level command. Use `omp plugin list` to list installed plugins, or run `omp launch list` if you meant to send "list" as a prompt.',
+		'`{invoked} extensions` is not a management command. Use `{invoked} plugin list` / `{invoked} plugin install`, or run `{invoked} launch extensions` if you meant to send "extensions" as a prompt.',
+	list: '`{invoked} list` is not a top-level command. Use `{invoked} plugin list` to list installed plugins, or run `{invoked} launch list` if you meant to send "list" as a prompt.',
 	remove:
-		'`{invoked} remove` is not a top-level command. Use `omp plugin uninstall <name>` to remove a plugin, or run `omp launch remove` if you meant to send "remove" as a prompt.',
+		'`{invoked} remove` is not a top-level command. Use `{invoked} plugin uninstall <name>` to remove a plugin, or run `{invoked} launch remove` if you meant to send "remove" as a prompt.',
 	uninstall:
-		'`{invoked} uninstall` is not a top-level command. Use `omp plugin uninstall <name@marketplace>` to remove a plugin, or run `omp launch uninstall` if you meant to send "uninstall" as a prompt.',
+		'`{invoked} uninstall` is not a top-level command. Use `{invoked} plugin uninstall <name@marketplace>` to remove a plugin, or run `{invoked} launch uninstall` if you meant to send "uninstall" as a prompt.',
 	marketplace:
-		'`{invoked} marketplace` is not a top-level command. Use `omp plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `omp launch marketplace` if you meant to send "marketplace" as a prompt.',
+		'`{invoked} marketplace` is not a top-level command. Use `{invoked} plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `{invoked} launch marketplace` if you meant to send "marketplace" as a prompt.',
 	discover:
-		'`{invoked} discover` is not a top-level command. Use `omp plugin discover [marketplace]` to browse available plugins, or run `omp launch discover` if you meant to send "discover" as a prompt.',
+		'`{invoked} discover` is not a top-level command. Use `{invoked} plugin discover [marketplace]` to browse available plugins, or run `{invoked} launch discover` if you meant to send "discover" as a prompt.',
 	upgrade:
-		'`{invoked} upgrade` is not a top-level command. Use `omp plugin upgrade [name@marketplace]` to upgrade plugins, or run `omp launch upgrade` if you meant to send "upgrade" as a prompt.',
+		'`{invoked} upgrade` is not a top-level command. Use `{invoked} plugin upgrade [name@marketplace]` to upgrade plugins, or run `{invoked} launch upgrade` if you meant to send "upgrade" as a prompt.',
 	enable:
-		'`{invoked} enable` is not a top-level command. Use `omp plugin enable <name@marketplace>` to enable a plugin, or run `omp launch enable` if you meant to send "enable" as a prompt.',
+		'`{invoked} enable` is not a top-level command. Use `{invoked} plugin enable <name@marketplace>` to enable a plugin, or run `{invoked} launch enable` if you meant to send "enable" as a prompt.',
 	disable:
-		'`{invoked} disable` is not a top-level command. Use `omp plugin disable <name@marketplace>` to disable a plugin, or run `omp launch disable` if you meant to send "disable" as a prompt.',
+		'`{invoked} disable` is not a top-level command. Use `{invoked} plugin disable <name@marketplace>` to disable a plugin, or run `{invoked} launch disable` if you meant to send "disable" as a prompt.',
 };
 
 // Sub-actions that make `omp marketplace <sub>` unambiguously a management

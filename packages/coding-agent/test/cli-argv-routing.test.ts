@@ -9,6 +9,7 @@
  * flags.
  */
 import { describe, expect, test } from "bun:test";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { readdirSync } from "node:fs";
 import * as path from "node:path";
 import { commands, isSubcommand, resolveCliArgv } from "@oh-my-pi/pi-coding-agent/cli-commands";
@@ -182,7 +183,7 @@ describe("every registered command is actually routed", () => {
 		// top-level command, so it now routes and this case would not exercise the guard.)
 		const resolved = resolveCliArgv(["marketplace"]);
 
-		expect("error" in resolved && resolved.error).toContain("omp plugin marketplace");
+		expect("error" in resolved && resolved.error).toContain(`${APP_NAME} plugin marketplace`);
 		expect("argv" in resolved).toBe(false);
 	});
 });

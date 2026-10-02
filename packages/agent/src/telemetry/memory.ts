@@ -2,7 +2,7 @@ import type {
 	SpanStatus,
 	TelemetryAttributeValue,
 	TelemetryAttributes,
-	TelemetryContext,
+	AgentTelemetryContext,
 	TelemetrySpan,
 } from "./context";
 
@@ -52,7 +52,7 @@ export interface MemoryTelemetryProbe {
 	last(): RecordedSpan | undefined;
 }
 
-export interface MemoryTelemetryContext extends TelemetryContext {
+export interface MemoryTelemetryContext extends AgentTelemetryContext {
 	readonly probe: MemoryTelemetryProbe;
 }
 

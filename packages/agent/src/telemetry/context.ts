@@ -100,19 +100,29 @@ export interface TelemetrySpan {
  * one rather than under whatever happened to be current. A backend must not
  * restore the enclosing span until the returned promise settles.
  */
-export interface TelemetryContext {
+export interface AgentTelemetryContext {
 	startSpan<T>(name: string, fn: (span: TelemetrySpan) => T): T;
 }
 
 /*
- * NOT the same contract as `@oh-my-pi/pi-telemetry`'s `TelemetryContext`, despite
- * the identical name. That one is `startSpan(options, cb): Promise<T>` with an
- * options object and an object-shaped `SpanStatus`; this one is synchronous, takes
- * a bare name, and uses the string union `"unset" | "ok" | "error"`. Neither is
- * assignable to the other.
+ * Named `AgentTelemetryContext`, not `TelemetryContext`, and that is the point.
+ * `@oh-my-pi/pi-telemetry` exports a `TelemetryContext` too, and the two are
+ * incompatible: that one is `startSpan(options, cb): Promise<T>` with an options
+ * object and an object-shaped `SpanStatus`; this one is synchronous, takes a bare
+ * name, and uses the string union `"unset" | "ok" | "error"`. Neither is assignable
+ * to the other, so a call site written against one cannot be handed the other by
+ * accident — which is exactly why they must not share a name. Two same-named
+ * contracts in one workspace is an import that type-checks against the wrong one
+ * and fails at the seam.
  *
- * They are two different layers that share a name, not a fork that was left behind.
- * A size comparison is what makes them look like one: this file and
+ * The package keeps the bare name deliberately: `pi` names its telemetry contract
+ * `TelemetryContext` (`pi/packages/ai/src/types.ts:135`), so the bare name is the
+ * parity-preserving one and the agent runtime's copy is the one that moves. It also
+ * pairs with `AgentTelemetryConfig`, which this package already exports and
+ * `sdk.ts` already uses.
+ *
+ * These are two different layers that happen to be adjacent, not a fork left
+ * behind. A size comparison is what makes them look like one: this file and
  * `packages/agent/src/telemetry.ts` hold the OTEL adapter (`toVendorValue`,
  * `vendorAttributes`, and the `@opentelemetry/api` imports below), while the
  * package holds the vendor-neutral type vocabulary and the typed-schema helpers.

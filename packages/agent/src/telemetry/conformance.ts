@@ -1,4 +1,4 @@
-import type { SpanStatus, TelemetryAttributes, TelemetryContext, TelemetrySpan } from "./context";
+import type { SpanStatus, TelemetryAttributes, AgentTelemetryContext, TelemetrySpan } from "./context";
 
 /**
  * The shared conformance suite for telemetry backends.
@@ -33,7 +33,7 @@ export interface ObservedSpan {
 }
 
 export interface TelemetryProbe {
-	readonly context: TelemetryContext;
+	readonly context: AgentTelemetryContext;
 	/** Spans as the caller saw them, in creation order. */
 	readonly observed: ObservedSpan[];
 }
@@ -76,7 +76,7 @@ function recordAttribute(record: RecordingSpan, key: string, value: TelemetryAtt
  * already restored its active span, and every nested span would record a parent
  * of "root" while the suite reported correct depths.
  */
-export function probeTelemetry(context: TelemetryContext): TelemetryProbe {
+export function probeTelemetry(context: AgentTelemetryContext): TelemetryProbe {
 	const observed: RecordingSpan[] = [];
 	let depth = 0;
 

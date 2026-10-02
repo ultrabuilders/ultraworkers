@@ -1,4 +1,4 @@
-import type { TelemetryAttributes, TelemetryAttributeValue, TelemetryContext, TelemetrySpan } from "./context";
+import type { TelemetryAttributes, TelemetryAttributeValue, AgentTelemetryContext, TelemetrySpan } from "./context";
 
 /**
  * The contract's negative case: a backend that records nothing, and says so by
@@ -35,7 +35,7 @@ export const NOOP_SPAN: TelemetrySpan = Object.freeze({
  * what to do with the callback's return value and its throw, and both decisions
  * are ways to make a no-op backend quietly not one.
  */
-export const NOOP_TELEMETRY_CONTEXT: TelemetryContext = Object.freeze({
+export const NOOP_TELEMETRY_CONTEXT: AgentTelemetryContext = Object.freeze({
 	startSpan<T>(_name: string, fn: (span: TelemetrySpan) => T): T {
 		return fn(NOOP_SPAN);
 	},

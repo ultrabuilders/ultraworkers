@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `TelemetryContext` is now `AgentTelemetryContext`, and nothing outside this package referenced it. Two different contracts in one workspace were sharing that name: this one is synchronous (`startSpan(name, fn): T`, a bare name, a `"unset" | "ok" | "error"` status), while `@oh-my-pi/pi-telemetry` exports a `TelemetryContext` that is asynchronous (`startSpan(options, cb): Promise<T>`, an options object, an object-shaped status). Neither is assignable to the other, so the compiler rejects a mix-up — but two same-named contracts still invite the import that has to be rechecked, and the failure lands at the seam rather than at the import. The package keeps the bare name deliberately: `pi` names its telemetry contract `TelemetryContext`, so that is the parity-preserving name, and the agent runtime's copy is the one that moves. It also reads as what it pairs with — `AgentTelemetryConfig`, already exported here and already used by `sdk.ts`
+
 ### Fixed
 
 - The package README told you to `npm install @oh-my-pi/pi-agent` and imported from that name in every

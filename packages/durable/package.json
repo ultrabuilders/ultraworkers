@@ -70,6 +70,8 @@
 		"lint": "oxlint .",
 		"fix": "oxlint --fix --fix-suggestions . && bun run fmt",
 		"fmt": "oxfmt --no-error-on-unmatched-pattern 'src/**/*.ts' 'test/**/*.ts'",
+		"bench:storage": "bun --conditions=source test/storage.bench.ts",
+		"bench:storage:memory": "bun --conditions=source test/storage-memory.ts",
 		"test": "bun test --parallel"
 	},
 	"dependencies": {

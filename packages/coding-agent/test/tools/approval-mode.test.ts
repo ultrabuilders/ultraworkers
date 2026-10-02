@@ -164,15 +164,9 @@ describe("tools.approvalMode setting", () => {
 			"tools.approval": { bash: "allow" },
 		});
 		await expect(
-			bashTool().execute(
-				"critical",
-				{ command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
-				undefined,
-				undefined,
-				{
-					settings,
-				} as AgentToolContext,
-			),
+			bashTool().execute("critical", { command: "rm -f /tmp/bun-fake-timer-probe.test.ts" }, undefined, undefined, {
+				settings,
+			} as AgentToolContext),
 		).rejects.toThrow('Tool "bash" is blocked by tool policy.\nReason: Critical pattern detected');
 	});
 

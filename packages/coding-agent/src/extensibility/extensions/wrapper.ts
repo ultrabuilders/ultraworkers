@@ -13,6 +13,7 @@ import type { ComputerSafetyCheck, ImageContent, Static, TextContent, TSchema } 
 import { sanitizeText, untilAborted } from "@oh-my-pi/pi-utils";
 import type { Theme } from "@oh-my-pi/pi-tui/theme";
 import {
+	canonicalizeApprovalKey,
 	denyError,
 	formatApprovalPrompt,
 	resolveApproval,
@@ -27,7 +28,6 @@ import { applyToolProxy } from "../tool-proxy";
 import type { ExtensionRunner } from "./runner";
 import type { RegisteredTool, ToolCallEventResult } from "./types";
 import { ToolCallBlockedError } from "../shared-events";
-import { canonicalizeApprovalKey } from "../../session/acp-permission-gate";
 
 /**
  * Second `renderCall` argument that satisfies both the omp and the upstream-pi

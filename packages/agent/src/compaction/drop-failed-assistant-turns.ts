@@ -16,8 +16,12 @@
  * agent `AgentMessage[]` (a superset with extra custom roles) pass through the
  * same drop.
  *
- * Ported from senpi (`packages/ai/src/utils/drop-failed-assistant-turns.ts`,
- * MIT, Copyright (c) 2025 Mario Zechner (upstream pi-mono)); see W0 attribution.
+ * Ported from senpi (`packages/ai/src/utils/drop-failed-assistant-turns.ts`) at
+ * commit ea9216269e9254b821446130b60d1e00759761dc, MIT:
+ * Copyright (c) 2025 Mario Zechner (upstream pi-mono)
+ * Copyright (c) 2026 Yeongyu Kim and senpi contributors
+ *
+ * Full provenance and the per-file adaptation list: see ../../NOTICE.
  */
 export function dropFailedAssistantTurns<T extends { role: string }>(messages: readonly T[]): T[] {
 	const callIdsByKeptAssistants = new Set<string>();

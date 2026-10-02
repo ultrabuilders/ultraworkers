@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { fauxAssistantMessage, fauxProvider } from "../src/testing/faux";
-import type { AssistantMessage } from "../src/types";
+import type { AssistantMessage, AssistantMessageEventStream } from "../src/types";
 
 /**
  * The deferred half of the faux double.
@@ -16,11 +16,11 @@ import type { AssistantMessage } from "../src/types";
  * or an error naming the handle that was asked for.
  */
 
-async function drain(stream: AsyncIterable<unknown>): Promise<AssistantMessage> {
+async function drain(stream: AssistantMessageEventStream): Promise<AssistantMessage> {
 	for await (const _event of stream) {
 		// Draining matters: the double only advances on a consumer reading the stream.
 	}
-	return await (stream as { result(): Promise<AssistantMessage> }).result();
+	return await stream.result();
 }
 
 describe("faux deferred generation", () => {

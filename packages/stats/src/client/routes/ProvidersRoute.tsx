@@ -69,17 +69,18 @@ const TOKEN_MIX = [
 
 // A COMMAND name, not a display name — yet it still reads APP_NAME, deliberately.
 //
-// The literal `omp` is what this replaced, and it is a P1: no package declares an `omp`
-// bin. `packages/coding-agent/package.json` installs `ultraworkers`; `packages/stats`
-// installs `omp-stats`. The `omp` on a maintainer's PATH is a symlink that `bun run
-// setup` writes (scripts/link-omp.sh), so a user who follows this hint on a real install
-// gets command-not-found.
+// `omp` is not a typo here: it is a committed install path (`bun run setup` →
+// scripts/link-omp.sh:30, with a native Windows fallback in scripts/setup.ts). But it is
+// only THAT path. Install paths that start from a published package do not create it —
+// packages/coding-agent ships `ultraworkers`, packages/stats ships `omp-stats` — so a user
+// who installed the product has no `omp` on PATH at all. The literal spelling therefore
+// fails for exactly the users who did a normal install, while APP_NAME is right on every
+// path.
 //
-// So the honest defect is NOT "APP_NAME is the wrong constant". It is that APP_NAME
-// happens to equal the binary name TODAY and nothing enforces that. The correct fix is a
-// command constant reading this package's own `bin` field; epic-grse tracks it. Until
-// then this is right under every answer epic-4yhd can give, and the literal is wrong under
-// all of them.
+// The honest defect is not "APP_NAME is the wrong constant". It is that APP_NAME equals the
+// binary name today and nothing enforces it: rename the binary without a rebrand and this
+// silently names a command that no longer exists. The fix is a command constant, and
+// epic-grse tracks it. Until then this is correct under every answer epic-4yhd can give.
 const SNAPSHOT_HINT = `Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, ${APP_NAME} usage).`;
 
 interface WindowRef {

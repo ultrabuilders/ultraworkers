@@ -6,7 +6,7 @@ Capability registry: YES
 
 The surface ranking below is **proposed — unratified**. It is an agent's
 proposal, not an owner decision. One cell is no longer a proposal: the
-capability registry's *ownership* was ruled on by the owner, and this document
+capability registry's _ownership_ was ruled on by the owner, and this document
 carries that ruling rather than choosing again.
 
 - **Decider:** _unassigned — owner ratification required_ for the ranking
@@ -24,15 +24,15 @@ right and this document is the bug.
 
 ## 1. Surface status table
 
-| Surface | Path | Status | What it is for | Evidence |
-| --- | --- | --- | --- | --- |
-| Extension factory (TypeScript) | `src/extensibility/extensions/` | CANONICAL | Everything an extension can do: events, tools, commands, renderers, provider registration | [Superset argument](#2-why-the-extension-surface-is-canonical) — four in-tree markers |
-| Hooks | `src/extensibility/hooks/` | COMPATIBILITY-ONLY / FROZEN | Legacy event API; a hook module already written keeps working | `docs/extensions.md:833` marks `hookMessage` "migration only"; the hook guide at `docs/skills/authoring-hooks.md:271` points readers *away* from it toward `ExtensionAPI` |
-| Custom tools | `src/extensibility/custom-tools/` | COMPATIBILITY-ONLY / FROZEN | Tool-focused modules; adapted into the extension path when loaded together | `src/extensibility/hooks/tool-wrapper.ts:2` — "wraps tools with hook callbacks for interception"; the tree routes hook output toward `custom` (see the `hookMessage` row above) |
-| Custom commands | `src/extensibility/custom-commands/` | COMPATIBILITY-ONLY / FROZEN | Command modules authored as **TypeScript**, loaded with native Bun import; also the home of core's own bundled commands (`bundled/ci-green`, `bundled/annotate`, `bundled/review`) | `src/extensibility/custom-commands/loader.ts:2` — "loads **TypeScript** command modules using native Bun import"; the same file imports core's bundled commands from `./bundled/` (`src/extensibility/custom-commands/loader.ts:18` imports `GreenCommand`), so the directory is core infrastructure as well as a loading seam |
-| Plugin manifest package | `src/extensibility/plugins/` | CANONICAL | Shipping an extension as an installable package with a `package.json` manifest | `docs/skills/authoring-extensions.md:229` — "Shipping as a marketplace plugin → **Extension** (use `package.json` manifest)" |
-| Capability registry | `src/capability/index.ts` | **CORE-ONLY** | Core's own registry of what a capability (skills, context files, MCP servers, rules, settings, SSH, …) can be, and which providers are enabled for each | The registry is live, not vestigial: **20 provider registrations** live across the modules in `src/discovery/` (e.g. `discovery/claude-md.ts:24`, `discovery/cursor.ts:201-217`). Core keeps it because *core* owns what a capability is. The **capability-provider** registration function at `capability/index.ts:101` has no extension-facing seam — `ExtensionAPI` (`src/extensibility/extensions/types.ts:1365-1743`) does not import that module. Note the name collision: the `registerProvider` an extension *can* reach is `src/extensibility/extensions/types.ts:1731`, which registers **model** providers (`sdk.ts:1041`, `sdk.ts:2626`), a different registry entirely |
-| Tool effect declaration | `src/tools/effects.ts` → `declareToolEffects()` | CANONICAL | Declaring which effects a tool has (`network`, `fs-write`, `subprocess`, …) so the same approval rule gates a tool published outside this repository. Import it as `@oh-my-pi/pi-coding-agent/tools/effects` — the `./tools/*` export maps `./src/tools/*.ts`, so the subpath resolves | Two documents hand this to extension authors: `docs/approval-mode.md:83-84` — "An extension declares its tool's effects by calling `declareToolEffects(name, effects)` at registration, so a tool published outside this repository is gated by the same rule" — and the docblock at `src/tools/effects.ts:42`. **The declaration is applied by core, not left to the author**: `extensibility/extensions/loader.ts:314` calls `declareToolEffectsFor(tool.name, tool.effects, resolvedPath)` for every tool an extension registers that carries an `effects` bucket, at **registration time** rather than call time, because the approval floor is resolved before `execute` runs. The author declares; the loader installs. It is still not on `ExtensionAPI` itself — the import path above is how an extension reaches the types, and the registration call is what activates them |
+| Surface                        | Path                                            | Status                      | What it is for                                                                                                                                                                                                                                                                         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------ | ----------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Extension factory (TypeScript) | `src/extensibility/extensions/`                 | CANONICAL                   | Everything an extension can do: events, tools, commands, renderers, provider registration                                                                                                                                                                                              | [Superset argument](#2-why-the-extension-surface-is-canonical) — four in-tree markers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Hooks                          | `src/extensibility/hooks/`                      | COMPATIBILITY-ONLY / FROZEN | Legacy event API; a hook module already written keeps working                                                                                                                                                                                                                          | `docs/extensions.md:833` marks `hookMessage` "migration only"; the hook guide at `docs/skills/authoring-hooks.md:271` points readers _away_ from it toward `ExtensionAPI`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Custom tools                   | `src/extensibility/custom-tools/`               | COMPATIBILITY-ONLY / FROZEN | Tool-focused modules; adapted into the extension path when loaded together                                                                                                                                                                                                             | `src/extensibility/hooks/tool-wrapper.ts:2` — "wraps tools with hook callbacks for interception"; the tree routes hook output toward `custom` (see the `hookMessage` row above)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Custom commands                | `src/extensibility/custom-commands/`            | COMPATIBILITY-ONLY / FROZEN | Command modules authored as **TypeScript**, loaded with native Bun import; also the home of core's own bundled commands (`bundled/ci-green`, `bundled/annotate`, `bundled/review`)                                                                                                     | `src/extensibility/custom-commands/loader.ts:2` — "loads **TypeScript** command modules using native Bun import"; the same file imports core's bundled commands from `./bundled/` (`src/extensibility/custom-commands/loader.ts:18` imports `GreenCommand`), so the directory is core infrastructure as well as a loading seam                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Plugin manifest package        | `src/extensibility/plugins/`                    | CANONICAL                   | Shipping an extension as an installable package with a `package.json` manifest                                                                                                                                                                                                         | `docs/skills/authoring-extensions.md:229` — "Shipping as a marketplace plugin → **Extension** (use `package.json` manifest)"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Capability registry            | `src/capability/index.ts`                       | **CORE-ONLY**               | Core's own registry of what a capability (skills, context files, MCP servers, rules, settings, SSH, …) can be, and which providers are enabled for each                                                                                                                                | The registry is live, not vestigial: **20 provider registrations** live across the modules in `src/discovery/` (e.g. `discovery/claude-md.ts:24`, `discovery/cursor.ts:201-217`). Core keeps it because _core_ owns what a capability is. The **capability-provider** registration function at `capability/index.ts:101` has no extension-facing seam — `ExtensionAPI` (`src/extensibility/extensions/types.ts:1365-1743`) does not import that module. Note the name collision: the `registerProvider` an extension _can_ reach is `src/extensibility/extensions/types.ts:1731`, which registers **model** providers (`sdk.ts:1041`, `sdk.ts:2626`), a different registry entirely. **Owner ruling, 2026-10-01** (`docs/extension-trust-model.md` §8, `M2-OQ2 = YES`): the registry is *in scope for decomposition*, so `CORE-ONLY` describes the present and not the destination — the ruling settles ownership and does not by itself create the seam                                                                                                                                                                                                    |
+| Tool effect declaration        | `src/tools/effects.ts` → `declareToolEffects()` | CANONICAL                   | Declaring which effects a tool has (`network`, `fs-write`, `subprocess`, …) so the same approval rule gates a tool published outside this repository. Import it as `@oh-my-pi/pi-coding-agent/tools/effects` — the `./tools/*` export maps `./src/tools/*.ts`, so the subpath resolves | Two documents hand this to extension authors: `docs/approval-mode.md:83-84` — "An extension declares its tool's effects by calling `declareToolEffects(name, effects)` at registration, so a tool published outside this repository is gated by the same rule" — and the docblock at `src/tools/effects.ts:42`. **The declaration is applied by core, not left to the author**: `extensibility/extensions/loader.ts:314` calls `declareToolEffectsFor(tool.name, tool.effects, resolvedPath)` for every tool an extension registers that carries an `effects` bucket, at **registration time** rather than call time, because the approval floor is resolved before `execute` runs. The author declares; the loader installs. It is still not on `ExtensionAPI` itself — the import path above is how an extension reaches the types, and the registration call is what activates them |
 
 ### What each status obliges
 
@@ -41,7 +41,7 @@ right and this document is the bug.
 - **COMPATIBILITY-ONLY / FROZEN** — it still loads and still works, and it will
   not be extended. Bugs get fixed; features do not get added. A new capability
   that would need one of these belongs on the extension-factory row.
-- **CORE-ONLY** — core keeps it *today*. It is listed here precisely so its
+- **CORE-ONLY** — core keeps it _today_. It is listed here precisely so its
   absence is a decision rather than an oversight, and so a future move to
   extension-facing is a visible change to this table. **CORE-ONLY describes who
   owns a surface now; it is not the answer to whether it should become
@@ -111,10 +111,10 @@ routing rows, which send new work away from hooks by name:
 
 **(iv)** `docs/extensions.md:833`
 
-> | `hookMessage`                  | Legacy hook-injected message (migration only; use `custom`).               |
+> | `hookMessage` | Legacy hook-injected message (migration only; use `custom`). |
 
 (i) and (ii) state the superset relation outright. (iii) and (iv) show the same
-relation from the other side: the tree already labels hooks *legacy* and routes
+relation from the other side: the tree already labels hooks _legacy_ and routes
 hook-origin output toward a migration path, in two independent places. A surface
 described as legacy in its own subsystem's docs is not a peer of the surface
 those docs tell you to use.
@@ -132,7 +132,7 @@ one this document is ranked by) deleted that line, because it and this table
 said the same thing in the same file. The surviving three are the ones that were
 never in the replaced section.
 
-Note that (ii) is written from the *hook* guide's "Further reading" list. The
+Note that (ii) is written from the _hook_ guide's "Further reading" list. The
 superset claim is load-bearing enough that the hook guide already has to point at
 it.
 
@@ -158,11 +158,11 @@ Recorded so a later reader does not mistake silence for a decision.
   covers tool + hooks only. The seams exist (`ExtensionUIContext.custom()` and
   `OverlayHandle` for TUI, `on()` for hooks, `pi.setActiveTools` for tools), but
   the promise is currently argued from parts rather than shown in one run.
-- **The capability registry has no extension-facing *registration* seam today.**
+- **The capability registry has no extension-facing _registration_ seam today.**
   Extensions read capabilities (`extensibility/skills.ts`,
-  `extensibility/slash-commands.ts`) and can register *model* providers, but
+  `extensibility/slash-commands.ts`) and can register _model_ providers, but
   cannot register a capability provider. That measurement is unchanged; what
-  changed is the answer. The question of whether the registry *should* become
+  changed is the answer. The question of whether the registry _should_ become
   extension-reachable was ruled on — `docs/extension-trust-model.md` §8,
   `M2-OQ2 = YES`, owner-ratified 2026-10-01 — and that ruling is explicitly "a
   decision on ownership, not a completed implementation". So the seam is owed
@@ -174,32 +174,32 @@ Recorded so a later reader does not mistake silence for a decision.
   The shims are what keeps already-published extensions loading; they are not
   unfinished work.
 
-  | shim | what it is | where |
-  | --- | --- | --- |
-  | `isProjectTrusted()` | Declared twice on the extension context; reports the recorded `projectTrust` decision and gates nothing | declared `extensions/types.ts:594` and `:665`; implemented `extensions/runner.ts:2020` and `session/agent-session.ts:7812`, both `isProjectTrusted: () => isProjectTrustedForScope(this.settings)` |
-  | `@earendil-works/*` specifier shim | Redirects a legacy bare specifier onto the canonical package | imported at `extensions/loader.ts:54` from `../plugins/legacy-pi-compat`, installed at `:80`; the module it hands back is loaded through `loadLegacyPiModule` at `:730` |
-  | package-root shims for `pi-ai`, `pi-coding-agent`, `pi-tui`, `typebox` | Re-export a canonical surface under each pre-rebrand package root | `plugins/legacy-pi-compat.ts:967`, `:978`, `:985`; `legacy-typebox.ts:12` re-exports `@oh-my-pi/omptype/typebox` |
+   | shim                                                                   | what it is                                                                                              | where                                                                                                                                                                                              |
+   | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `isProjectTrusted()`                                                   | Declared twice on the extension context; reports the recorded `projectTrust` decision and gates nothing | declared `extensions/types.ts:594` and `:665`; implemented `extensions/runner.ts:2020` and `session/agent-session.ts:7812`, both `isProjectTrusted: () => isProjectTrustedForScope(this.settings)` |
+   | `@earendil-works/*` specifier shim                                     | Redirects a legacy bare specifier onto the canonical package                                            | imported at `extensions/loader.ts:54` from `../plugins/legacy-pi-compat`, installed at `:80`; the module it hands back is loaded through `loadLegacyPiModule` at `:730`                            |
+   | package-root shims for `pi-ai`, `pi-coding-agent`, `pi-tui`, `typebox` | Re-export a canonical surface under each pre-rebrand package root                                       | `plugins/legacy-pi-compat.ts:967`, `:978`, `:985`; `legacy-typebox.ts:12` re-exports `@oh-my-pi/omptype/typebox`                                                                                   |
 
-  The five source files total **4,876 lines**, re-measured 2026-10-02:
-  `legacy-pi-coding-agent-shim.ts` (1,661), `plugins/legacy-pi-compat.ts`
-  (2,799), `legacy-pi-ai-shim.ts` (194), `legacy-typebox.ts` (179), and
-  `legacy-pi-tui-shim.ts` (43). An earlier draft of this line said 4,697 across
-  four files — arithmetically correct for the four it named, and wrong by
-  omission, because `legacy-typebox.ts` is a pre-rebrand root re-export like the
-  others. Line counts drift with the files; re-derive this number rather than
-  inheriting it.
-  They are process-global by construction: `Bun.plugin()` hooks installed by
-  `legacy-pi-compat.ts` cannot be withdrawn, which is why `extensibility/utils.ts:76`
-  distinguishes a handler disposer from an unload.
+   The five source files total **4,876 lines**, re-measured 2026-10-02:
+   `legacy-pi-coding-agent-shim.ts` (1,661), `plugins/legacy-pi-compat.ts`
+   (2,799), `legacy-pi-ai-shim.ts` (194), `legacy-typebox.ts` (179), and
+   `legacy-pi-tui-shim.ts` (43). An earlier draft of this line said 4,697 across
+   four files — arithmetically correct for the four it named, and wrong by
+   omission, because `legacy-typebox.ts` is a pre-rebrand root re-export like the
+   others. Line counts drift with the files; re-derive this number rather than
+   inheriting it.
+   They are process-global by construction: `Bun.plugin()` hooks installed by
+   `legacy-pi-compat.ts` cannot be withdrawn, which is why `extensibility/utils.ts:76`
+   distinguishes a handler disposer from an unload.
 
-  **This is a decision boundary, not a task.** The answer is `YES`, and `YES`
-  still leaves every one of these files exactly where it is. Making the registry
-  extension-reachable is additive; it is not a licence to withdraw what keeps
-  already-published extensions loading. Removing them breaks every extension
-  published against the pre-rebrand specifier, so it is a breaking-change project
-  with its own milestone — outside M2, and outside the M2-OQ2 answer.
-  `docs/extension-trust-model.md:96` already records the same fact for
-  `isProjectTrusted()`.
+   **This is a decision boundary, not a task.** The answer is `YES`, and `YES`
+   still leaves every one of these files exactly where it is. Making the registry
+   extension-reachable is additive; it is not a licence to withdraw what keeps
+   already-published extensions loading. Removing them breaks every extension
+   published against the pre-rebrand specifier, so it is a breaking-change project
+   with its own milestone — outside M2, and outside the M2-OQ2 answer.
+   `docs/extension-trust-model.md:96` already records the same fact for
+   `isProjectTrusted()`.
 
 ### Measured, not assumed: two things that look like findings and are not
 
@@ -230,7 +230,7 @@ not have to re-derive them.
 
 ## 4. Relationship to the trust model
 
-`docs/extension-trust-model.md` records what extension *loading* means today and
+`docs/extension-trust-model.md` records what extension _loading_ means today and
 which parts of that record are still an owner's call. This document does not
 ratify it, and the ranking below does not depend on it — but it is why
 "canonical" here means "the surface new authoring targets", not "the surface is
@@ -273,19 +273,19 @@ different question, so the list was credit claimed for work that had already
 landed. Correcting it here rather than deleting it, because the error is the
 instructive part.
 
-| work item | status at HEAD | does M2-OQ2 = YES bear on it? |
-| --- | --- | --- |
-| WI-5 (`m2-wi-5-038`) — capability registry ownership | **closed** | No. Already delivered; the ruling postdates it. |
-| WI-11 (`m2-wi-11-046`) — per-extension state | **closed** | No. Already delivered. |
-| WI-7 (`m2-wi-7-042`) | `in_progress` | No. Its one remaining step waits on **M2-OQ4** — which tab of the settings panel an extension's key belongs in. `SettingTab` (`packages/tui/src/overlays/settings-defs.ts`) is a closed union of ten literals, so the answer is a user-facing schema decision, not an ownership one. |
-| WI-12 (`m2-wi-12-047`) | **blocked** | No. It waits on the **trust-tier** question, which `docs/extension-trust-model.md` §4 answered by *deferring the behaviour change* and ratifying the shipped posture. |
+| work item                                            | status at HEAD | does M2-OQ2 = YES bear on it?                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| WI-5 (`m2-wi-5-038`) — capability registry ownership | **closed**     | No. Already delivered; the ruling postdates it.                                                                                                                                                                                                                                      |
+| WI-11 (`m2-wi-11-046`) — per-extension state         | **closed**     | No. Already delivered.                                                                                                                                                                                                                                                               |
+| WI-7 (`m2-wi-7-042`)                                 | `in_progress`  | No. Its one remaining step waits on **M2-OQ4** — which tab of the settings panel an extension's key belongs in. `SettingTab` (`packages/tui/src/overlays/settings-defs.ts`) is a closed union of ten literals, so the answer is a user-facing schema decision, not an ownership one. |
+| WI-12 (`m2-wi-12-047`)                               | **blocked**    | No. It waits on the **trust-tier** question, which `docs/extension-trust-model.md` §4 answered by _deferring the behaviour change_ and ratifying the shipped posture.                                                                                                                |
 
 So the honest statement is the negative one: **every work item this ruling
 touches is either closed or blocked on a question this ruling does not answer.**
 A reader looking for work to pick up from this document will not find any, and
 should read that as information rather than as an omission.
 
-What the ruling *does* do is settle a question that later proposals must not
+What the ruling _does_ do is settle a question that later proposals must not
 re-open: a milestone that proposes a capability already present in the registry
 will be declined, and a decomposition of `capability/` that hardcodes the
 registry back into core contradicts this section. That is a constraint on future

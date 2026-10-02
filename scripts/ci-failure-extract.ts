@@ -111,18 +111,26 @@ export function extractFailures(rawLog: string): ExtractionResult {
 	let reportedFailCount: number | undefined;
 	let reportedErrorCount: number | undefined;
 
-	// The runner tallies failing *tests*, not failing `(fail)` header lines, and it
-	// prints one header per failing assertion. A test with two failed expectations
-	// contributes two lines to the log but one to the tally, so counting lines
-	// over-counts the extraction by exactly the number of extra assertions.
+	// The runner tallies failing TESTS, and prints one `(fail)` header per failing
+	// test — NOT one per failing assertion. Measured: a test with two failing
+	// expectations prints ONE header and tallies ONE failure; bun stops at the
+	// first one. So header count and tally agree, and a test contributes exactly
+	// one line however many of its assertions failed.
 	//
-	// Deduplication is therefore per invocation, not global. A log that concatenates
-	// several `bun test` runs repeats a name once per run, and each run's own summary
-	// counts it again — collapsing those across invocations would under-count instead.
-	// The boundary is the summary block: bun prints exactly one per invocation,
-	// whatever the number of test files.
-	let namedFailureTests = 0;
-	const currentInvocation = new Set<string>();
+	// Distinct identities are therefore NOT the unit to reconcile against. Two
+	// genuinely distinct tests can share a name — `it.each` over rows that render
+	// the same title, or the same title in two `describe` blocks — and then the
+	// runner tallies 2 while a `Set` holds 1. Measured: `it.each([["a"],["b"]])`
+	// failing both rows prints 2 headers and tallies `2 fail`.
+	//
+	// Dedup is still per invocation, not global: a log concatenating several runs
+	// repeats a name once per run and each run's summary counts it again, so
+	// collapsing across invocations would under-count instead. The boundary is the
+	// summary block — bun prints exactly one per invocation, whatever the number of
+	// test files.
+	// Counted in `(fail)` HEADERS, not distinct names — the runner's tally is a
+	// count of failing tests, and a header is one failing test.
+	let failureHeaders = 0;
 
 	const lines = rawLog.split("\n");
 	for (let i = 0; i < lines.length; i++) {
@@ -130,18 +138,14 @@ export function extractFailures(rawLog: string): ExtractionResult {
 
 		const fail = BUN_FAIL.exec(line);
 		if (fail?.[1]) {
-			const identity = fail[1].trim();
-			failures.push({ identity, line: i + 1 });
-			currentInvocation.add(identity);
+			failures.push({ identity: fail[1].trim(), line: i + 1 });
+			failureHeaders++;
 			continue;
 		}
 
 		const summary = BUN_SUMMARY.exec(line);
 		if (summary?.[1]) {
 			reportedFailCount = (reportedFailCount ?? 0) + Number(summary[1]);
-			// The summary closes an invocation: bank its distinct tests, start a new one.
-			namedFailureTests += currentInvocation.size;
-			currentInvocation.clear();
 		}
 
 		const errors = BUN_ERROR_SUMMARY.exec(line);
@@ -150,23 +154,34 @@ export function extractFailures(rawLog: string): ExtractionResult {
 		}
 	}
 
-	// A run killed before its summary never closed its invocation.
-	namedFailureTests += currentInvocation.size;
-
 	const identities = [...new Set(failures.map(f => f.identity))].sort();
 
-	// Suite-level errors are counted by the runner as failures but never print a
-	// `(fail) <name>` line — there is no test to name when an import throws or an
-	// exception escapes between tests. Allowing for them keeps the guard pointed
-	// at genuine pattern gaps instead of firing on a shape it can never match.
+	// Reconcile the runner's tally against `(fail)` HEADERS.
+	//
+	// This is the whole fix, and the earlier version got it wrong in a way that
+	// read like an arithmetic subtlety: it counted DISTINCT IDENTITIES, so a log
+	// whose 87 headers named 86 tests — legal, since `it.each` rows sharing a title
+	// each print a header and each get tallied — reconciled as 87 - 3 - 86 = -2 and
+	// reported `overCounted` on a log that balances exactly. A 903s suite run was
+	// refused a verdict by that, with a diagnosis pointing at the parse.
+	//
+	// `errors` is a CEILING on how much of a shortfall it can excuse, not a term to
+	// subtract and not a term to add. Both error shapes print the same `errors`
+	// line and only the headers distinguish them: a throw while a module loads
+	// prints zero headers and lands INSIDE the `fail` tally, while an async escape
+	// from an already-failing test is counted only in `errors` because its failure
+	// was tallied by the header above it. Subtracting the tally unconditionally is
+	// what the previous version did, and `shortfall > slack` is the same predicate
+	// written so the bound is legible at the comparison rather than folded into it.
 	const accounted = reportedFailCount ?? 0;
-	const unexplained = accounted - (reportedErrorCount ?? 0) - namedFailureTests;
-	const underCounted = reportedFailCount !== undefined && unexplained > 0;
-	const overCounted = reportedFailCount !== undefined && unexplained < 0;
+	const shortfall = accounted - failureHeaders;
+	const slack = reportedErrorCount ?? 0;
+	const underCounted = reportedFailCount !== undefined && shortfall > slack;
+	const overCounted = reportedFailCount !== undefined && shortfall < 0;
 	// No summary at all: nothing to reconcile against, so an identity list here is
 	// unfalsifiable. That is the case the reference let through silently, and it
 	// is the one that looks most like a complete list.
-	const unverifiable = reportedFailCount === undefined && namedFailureTests > 0;
+	const unverifiable = reportedFailCount === undefined && failureHeaders > 0;
 
 	return {
 		failures,
@@ -206,12 +221,19 @@ if (import.meta.main) {
 	// rather than a quietly truncated list — in either direction, and including
 	// the "there was nothing to check against" case.
 	if (result.discrepant) {
+		// The same arithmetic the flags use, so this line and the verdict cannot
+		// disagree: the shortfall is what the tally holds beyond the headers, and the
+		// error tally is only how much of it can be excused.
+		const shortfall =
+			result.reportedFailCount === undefined ? undefined : result.reportedFailCount - result.failures.length;
 		const direction =
-			result.reportedFailCount === undefined
+			shortfall === undefined
 				? "no summary to reconcile against"
-				: `unexplained ${result.reportedFailCount - (result.reportedErrorCount ?? 0) - result.failures.length}`;
+				: result.overCounted
+					? `more headers than the tally (${shortfall})`
+					: `shortfall ${shortfall} exceeds the ${result.reportedErrorCount ?? 0} error(s) available to explain it`;
 		console.error(
-			`discrepant (${direction}): runner tallied ${result.reportedFailCount ?? "?"} fail / ${result.reportedErrorCount ?? 0} error, extracted ${result.failures.length} lines naming ${result.identities.length} identities`,
+			`discrepant (${direction}): runner tallied ${result.reportedFailCount ?? "?"} fail / ${result.reportedErrorCount ?? 0} error, extracted ${result.failures.length} line(s) naming ${result.identities.length} identity(ies)`,
 		);
 		process.exit(1);
 	}

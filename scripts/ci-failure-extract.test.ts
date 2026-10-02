@@ -130,29 +130,49 @@ describe("extractFailures", () => {
 		expect(result.underCounted).toBe(true);
 	});
 
-	test("counts a test once when its failing assertions print repeated headers", () => {
-		// Bun prints one `(fail)` header per failing assertion but tallies the test
-		// once, so a two-assertion failure contributes two lines and a tally of one.
-		// Counting lines made the extraction exceed the runner's own tally, and the
-		// gate reported a shortfall in the wrong direction — pointing at a missing
-		// failure that was never absent.
+	test("counts a header per failing test, so repeated names are distinct failures", () => {
+		// Two `(fail)` headers with one name is TWO failing tests, not one test that
+		// failed twice — measured both directions on bun 1.4.2:
+		//
+		//   * one test with two failing assertions prints ONE header and tallies 1
+		//     (bun stops at the first failing expectation), so headers and the tally
+		//     agree and the unit to reconcile against is the header;
+		//   * `it.each([["a"],["b"]])` failing both rows prints TWO headers under one
+		//     name and tallies 2.
+		//
+		// So the previous premise here — one header per failing assertion — was wrong,
+		// and reconciling against DISTINCT identities under-counted this shape. The
+		// old assertion expected `overCounted: false` from a 2-header/1-tally log,
+		// which is precisely the log bun cannot produce.
 		const log = [
-			`${TS}(fail) the multi-assertion one`,
+			`${TS}(fail) shared title`,
 			`${TS}1278 | expect(x).toHaveLength(2);`,
 			`${TS}error: expect(received).toHaveLength(expected)`,
-			`${TS}(fail) the multi-assertion one`,
-			`${TS}1303 | expect(y).toHaveLength(0);`,
-			`${TS} 1 fail`,
-			`${TS} 0 error`,
+			`${TS}(fail) shared title`,
+			`${TS} 2 fail`,
+			`${TS} 0 errors`,
 		].join("\n");
 
 		const result = extractFailures(log);
 
 		// Both lines are still reported — deduplication counts, it does not hide.
 		expect(result.failures).toHaveLength(2);
-		expect(result.identities).toEqual(["the multi-assertion one"]);
+		expect(result.identities).toEqual(["shared title"]);
 		expect(result.underCounted).toBe(false);
 		expect(result.overCounted).toBe(false);
+	});
+
+	test("flags headers the runner's tally cannot hold", () => {
+		// The converse of the case above, and the direction that used to be silent:
+		// two headers under one name with a tally of ONE is the log bun does not
+		// produce, so `identities` is not a complete account of what failed and the
+		// caller must not treat it as one.
+		const log = [`${TS}(fail) shared title`, `${TS}(fail) shared title`, `${TS} 1 fail`, `${TS} 0 errors`].join("\n");
+
+		const result = extractFailures(log);
+
+		expect(result.overCounted).toBe(true);
+		expect(result.discrepant).toBe(true);
 	});
 
 	test("counts a repeated name once per invocation, not once overall", () => {
@@ -296,5 +316,78 @@ describe("discrepancy in the direction the port adds", () => {
 
 		expect(result.overCounted).toBe(false);
 		expect(result.discrepant).toBe(false);
+	});
+
+	/**
+	 * The shape that made the gate red on a sound parse.
+	 *
+	 * What a consumer observes if this regresses: `check:ts` reports "the failure
+	 * list could not be reconciled" and refuses to give a verdict, on a run whose
+	 * own numbers agree exactly. A real 903s suite run was blocked by this, and the
+	 * reported diagnosis pointed at the parse rather than at the arithmetic.
+	 *
+	 * Two things have to be present for it to reproduce, and a fixture missing
+	 * either one passes against the broken code — which is how a regression test
+	 * ends up asserting nothing:
+	 *
+	 *   1. a DUPLICATE identity. 87 headers naming 86 distinct tests is legal —
+	 *      `it.each` over rows rendering one title prints one header per row and
+	 *      tallies each. Reconciling `fail` against DISTINCT identities read that
+	 *      as 87 - 3 - 86 = -2 and flagged a log that reconciles exactly.
+	 *   2. an `errors` tally that must NOT be subtracted wholesale. The three here
+	 *      are async escapes from tests that had already failed and been tallied.
+	 *
+	 * Measured against bun 1.4.2, a throw while a module loads is the other shape:
+	 * zero `(fail)` headers, and it lands inside the `fail` tally instead. Both
+	 * print an `errors` line, so the tally cannot say which occurred — which is why
+	 * `errors` bounds a shortfall rather than being removed from it.
+	 */
+	test("reconciles when headers, tally and in-test errors all agree", () => {
+		const headers = Array.from({ length: 87 }, (_, i) => `${TS}(fail) some test number ${i}`);
+		headers[5] = headers[0]!; // two distinct tests sharing one title
+		const log = [...headers, `${TS} 87 fail`, `${TS} 3 errors`].join("\n");
+
+		const result = extractFailures(log);
+
+		expect(result.reportedFailCount).toBe(87);
+		expect(result.reportedErrorCount).toBe(3);
+		expect(result.failures).toHaveLength(87);
+		expect(result.identities).toHaveLength(86);
+		expect(result.underCounted).toBe(false);
+		expect(result.overCounted).toBe(false);
+		expect(result.discrepant).toBe(false);
+	});
+
+	test("still flags a shortfall larger than the errors can explain", () => {
+		// The bound is a CEILING, not an exemption: 5 unnamed failures with only 1
+		// suite-level error leaves 4 the patterns cannot account for.
+		const log = [`${TS}(fail) one named`, `${TS} 5 fail`, `${TS} 1 error`].join("\n");
+
+		const result = extractFailures(log);
+
+		expect(result.underCounted).toBe(true);
+		expect(result.discrepant).toBe(true);
+	});
+
+	test("accepts a shortfall the errors account for exactly", () => {
+		// The boundary, and the one an off-by-one in the comparison gets wrong. A run
+		// with no headers at all, one tallied failure and one suite-level error is
+		// measured on bun 1.4.2 (`1 fail / 1 error`, zero headers): the error IS the
+		// failure, so the list is complete and must not be flagged.
+		const log = [`${TS} 1 fail`, `${TS} 1 error`].join("\n");
+
+		const result = extractFailures(log);
+
+		expect(result.failures).toHaveLength(0);
+		expect(result.underCounted).toBe(false);
+		expect(result.discrepant).toBe(false);
+	});
+
+	test("flags one failure more than the errors can account for", () => {
+		// The same run with the error removed is a genuine shortfall of one, and it
+		// has to be reported rather than rounded into the clean case above.
+		const log = [`${TS} 2 fail`, `${TS} 1 error`].join("\n");
+
+		expect(extractFailures(log).underCounted).toBe(true);
 	});
 });

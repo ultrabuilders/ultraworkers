@@ -108,8 +108,16 @@ function stabilizeUnnamed(log: string, identity: string, failLine: number): stri
  * Run the suite and return the set of failing test names, or `null` if the run
  * never measured. `target` defaults to the whole suite; the confirmation pass
  * re-runs the suite once to see which new names survive.
+ *
+ * `null` covers two different failures, and the caller must not describe them the
+ * same way. An unreconcilable list means the RUN happened and the parse of it is
+ * what could not be trusted; a void run means there was no measurement at all. The
+ * first was previously reported as the second, which sent the reader looking for a
+ * suite that could not load when the suite ran fine and the arithmetic was wrong.
  */
-async function collectFailures(target: string = SUITE): Promise<Set<string> | null> {
+async function collectFailures(
+	target: string = SUITE,
+): Promise<{ readonly failures: Set<string> } | { readonly reason: "unparseable" | "void" }> {
 	const proc = Bun.spawn(["bun", "test", target], { stdout: "pipe", stderr: "pipe" });
 	const [stdout, stderr] = await Promise.all([
 		new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
@@ -160,7 +168,7 @@ async function collectFailures(target: string = SUITE): Promise<Set<string> | nu
 				"Deciding 'no new failures' from a list this run cannot vouch for would report a\n" +
 				"silently truncated measurement as a clean suite. Fix the parse, not the baseline.",
 		);
-		return null;
+		return { reason: "unparseable" };
 	}
 
 	// The line number travels with the identity because an unnamed failure can only
@@ -180,8 +188,8 @@ async function collectFailures(target: string = SUITE): Promise<Set<string> | nu
 	// Measured, not reasoned: a suite with a bad import makes `bun test` exit 1
 	// reporting `1 fail / 1 error`, and this gate reported green, exit 0, with
 	// both baseline entries announced as healed. Fail closed instead.
-	if (failures.size === 0 && proc.exitCode !== 0) return null;
-	return failures;
+	if (failures.size === 0 && proc.exitCode !== 0) return { reason: "void" };
+	return { failures };
 }
 
 interface Baseline {
@@ -240,18 +248,34 @@ function treeHeldStill(headAtStart: string | null, headAtEnd: string | null): bo
 // part, and the window it opens is exactly when a peer commits.
 const headAtStart = await liveHead();
 
-const current = await collectFailures();
+const outcome = await collectFailures();
 
-if (current === null) {
-	console.error("grp-c baseline gate: the suite did not run to completion.");
-	console.error(
-		"No `(fail)` lines and a non-zero exit means the run produced no measurement —\n" +
-			"most often a suite that cannot load, which `bun test` reports as an error rather\n" +
-			"than a failure. Reporting that as green would call a broken suite clean and then\n" +
-			"advise deleting baseline entries that are still real.",
-	);
+if (!("failures" in outcome)) {
+	// The two reasons need different sentences. Reporting an unreconcilable parse
+	// as "the suite did not run to completion" names a failure that did not happen:
+	// the run finished, printed its own summary, and the numbers did not reconcile.
+	// A reader sent after that goes looking for a suite that cannot load.
+	if (outcome.reason === "unparseable") {
+		console.error("grp-c baseline gate: the suite RAN — its failure list could not be parsed.");
+		console.error(
+			"The run completed and printed a summary; the `(fail)` lines do not reconcile\n" +
+				"against it. Nothing here says a test regressed, and nothing here says the\n" +
+				"suite failed to load. The measurement is untrustworthy, so no verdict is\n" +
+				"being claimed. Fix the parse, then re-run.",
+		);
+	} else {
+		console.error("grp-c baseline gate: the suite did not run to completion.");
+		console.error(
+			"No `(fail)` lines and a non-zero exit means the run produced no measurement —\n" +
+				"most often a suite that cannot load, which `bun test` reports as an error rather\n" +
+				"than a failure. Reporting that as green would call a broken suite clean and then\n" +
+				"advise deleting baseline entries that are still real.",
+		);
+	}
 	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
 }
+
+const current = outcome.failures;
 
 // The tree moved under the run. Checked here, before the confirm re-run, so a void
 // run does not spend another ten minutes proving something it may not report.
@@ -298,7 +322,7 @@ let confirmed = added;
 let unconfirmed: string[] = [];
 if (added.length > 0) {
 	const second = await collectFailures(SUITE);
-	if (second === null) {
+	if (!("failures" in second)) {
 		// The confirmation run itself could not be measured. Failing closed here
 		// would be defensible, but it is not what happened: the only way to reach
 		// it is a suite that loaded the first time and not the second, and
@@ -308,8 +332,8 @@ if (added.length > 0) {
 			"grp-c baseline gate: the confirmation run did not measure; treating the first run as authoritative.",
 		);
 	} else {
-		unconfirmed = added.filter(name => !second.has(name));
-		confirmed = added.filter(name => second.has(name));
+		unconfirmed = added.filter(name => !second.failures.has(name));
+		confirmed = added.filter(name => second.failures.has(name));
 	}
 }
 

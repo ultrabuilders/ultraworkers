@@ -137,7 +137,14 @@ const TABLE_PATH = "scripts/rename/disposition.tsv";
  * new class — the set is closed precisely so that adding a class is a reviewed act
  * rather than something a sweep does by accident.
  */
-export const DISPOSITIONS = ["rename", "keep-wire", "keep-worker-selector", "keep-path", "keep-prose"] as const;
+export const DISPOSITIONS = [
+	"rename",
+	"keep-wire",
+	"keep-worker-selector",
+	"keep-path",
+	"keep-filename",
+	"keep-prose",
+] as const;
 
 export type Disposition = (typeof DISPOSITIONS)[number];
 
@@ -622,11 +629,29 @@ export function countUnverifiableKeepRefs(rows: readonly Row[]): {
  * `keep-worker-selector` and `keep-path` are LITERAL, not ERE — the bead says so
  * explicitly. They name one fixed string each, so an ERE would be both slower and
  * vaguer than the substring it is standing in for.
+ *
+ * `keep-filename` is the third kind: a SHAPE rather than a fixed string. `keep-path`
+ * can only hold the quoted `".omp"`, so a live artifact filename like
+ * `"omp-plugins.lock.json"` had no row that could count it — `keep-path` does not
+ * match, it is code rather than prose so `keep-prose` lies about it, and it names an
+ * installed file so `rename` would break it. The gap is `epic-6ttm` in its sharpest
+ * form. The shape is deliberately narrow — a quoted, `omp-`-prefixed name carrying a
+ * real extension — so it cannot swallow the prose rows it now sits beside.
  */
 export interface ClassMatcher {
 	readonly literal?: string;
 	readonly pinned?: boolean;
+	readonly filename?: boolean;
 }
+
+/**
+ * A quoted `omp-`-prefixed filename: `"omp-plugins.lock.json"`.
+ *
+ * Requiring the extension is what keeps this a filename class. Without it the
+ * expression would also match `"omp://"`, `"omp-work"` and every prose quote, which
+ * are exactly the classes this one exists to stay clear of.
+ */
+const OMP_FILENAME = /"(omp-[A-Za-z0-9._-]+\.[A-Za-z0-9]+)"/g;
 
 export function classMatcher(disposition: Disposition): ClassMatcher {
 	switch (disposition) {
@@ -634,6 +659,8 @@ export function classMatcher(disposition: Disposition): ClassMatcher {
 			return { literal: "__omp_worker_" };
 		case "keep-path":
 			return { literal: '".omp"' };
+		case "keep-filename":
+			return { filename: true };
 		case "rename":
 		case "keep-wire":
 		case "keep-prose":
@@ -645,6 +672,7 @@ export function classMatcher(disposition: Disposition): ClassMatcher {
 export function countClass(text: string, disposition: Disposition): number {
 	const matcher = classMatcher(disposition);
 	if (matcher.literal !== undefined) return text.split(matcher.literal).length - 1;
+	if (matcher.filename === true) return (text.match(new RegExp(OMP_FILENAME.source, "g")) ?? []).length;
 	if (matcher.pinned !== true) return 0;
 	return (text.match(new RegExp(PINNED.source, "g")) ?? []).length;
 }
@@ -924,7 +952,7 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
  *
  * Read by `check-disposition-ratchet.ts`, which reports drift and never blocks on it.
  */
-export const RULES_VERSION = "2026-10-03.1";
+export const RULES_VERSION = "2026-10-03.2";
 
 interface Violation {
 	readonly rule: string;

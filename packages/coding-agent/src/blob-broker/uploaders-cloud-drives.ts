@@ -12,6 +12,7 @@ import {
 	publication,
 	requireCredential,
 } from "./uploader-runtime";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 
 const DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2";
 const DROPBOX_API = "https://api.dropboxapi.com/2";
@@ -437,7 +438,7 @@ function createPushbulletUploader(config: DestinationRuntimeConfig): BlobUploade
 			if (deviceId) pushForm.set("device_iden", deviceId);
 			pushForm.set("type", "file");
 			pushForm.set("file_url", fileUrl);
-			pushForm.set("body", "Sent via omp");
+			pushForm.set("body", `Sent via ${APP_NAME}`);
 			pushForm.set("file_type", fileType);
 			const pushResponse = await expectOk(
 				await fetchImpl(`${PUSHBULLET_API}/pushes`, {

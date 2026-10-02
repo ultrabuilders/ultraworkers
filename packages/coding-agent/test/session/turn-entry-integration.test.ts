@@ -33,6 +33,7 @@ import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
+import type { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import type { TurnEntry } from "../../src/session/session-entries";
 import { isTranscriptEntry } from "../../src/session/session-context";
 
@@ -303,5 +304,98 @@ describe("blockedBy, read back off a real turn", () => {
 		// Absent, not `[]`: an empty array is indistinguishable from a writer that
 		// meant to populate it and failed.
 		expect(endedTurn()?.blockedBy).toBeUndefined();
+	});
+});
+
+/**
+ * `turn_id`, the turn index a `session_stop` handler is told about.
+ *
+ * This pins a bug this branch already fixed. The increment that advances the turn
+ * counter used to sit inside the extension relay's `turn_end` arm, which is gated on
+ * `hasHandlers` — and `hasHandlers` only ever sees *user* extensions. So in a session
+ * with none, the counter never advanced, `Math.max(0, this.#turnIndex - 1)` was `0`
+ * for the life of the process, and every `session_stop` handler was told it was
+ * looking at turn 0 no matter how many turns had run.
+ *
+ * Asserted through a real turn rather than by reading the counter: the field only
+ * exists to tell a hook which turn it is being asked about, so the contract is what
+ * the hook receives. Two prompts must report 0 then 1.
+ */
+describe("turn_id reported to session_stop", () => {
+	it("advances with the turn instead of staying at 0", async () => {
+		const auth = await AuthStorage.create(":memory:");
+		auth.keys.setRuntime("anthropic", "test-key");
+		const manager = SessionManager.inMemory();
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("Expected claude-sonnet-4-5 model to exist");
+
+		const seen: number[] = [];
+		// A tool so the single prompt spans two turns inside one run.
+		const noopTool = {
+			name: "noop",
+			description: "Does nothing; exists to make the turn advance",
+			parameters: { type: "object", properties: {} },
+			async execute() {
+				return { output: "ok" };
+			},
+		} as unknown as AgentTool;
+		// A stub, not a spy: the relay is gated on this, and the point of the test is
+		// the value handed across the boundary. Only `session_stop` is subscribed, so
+		// the relay stays out of every other arm — which is the configuration the
+		// regression needed.
+		// A Proxy rather than a hand-listed double: `AgentSession` calls a long tail
+		// of runner methods on this path (`emitBeforeAgentStart` and friends), and
+		// stubbing them one by one couples this test to an unrelated call list. The
+		// only two answers that matter here are explicit — whether anything
+		// subscribes, and what `turn_id` the hook receives — so everything else is a
+		// no-op.
+		const answers: Record<string, unknown> = {
+			hasHandlers: (type: string) => type === "session_stop",
+			emitSessionStop: async (event: { turn_id: number }) => {
+				seen.push(event.turn_id);
+				return undefined;
+			},
+		};
+		const runner = new Proxy(answers, {
+			get: (target, prop: string) => (prop in target ? target[prop] : async () => undefined),
+		}) as unknown as ExtensionRunner;
+
+		const session = new AgentSession({
+			agent: new Agent({
+				getApiKey: () => "test-key",
+				initialState: {
+					model,
+					systemPrompt: ["Test"],
+					tools: [noopTool],
+					messages: manager.buildSessionContext().messages,
+				},
+				streamFn: createMockModel({
+					responses: [
+						{ content: [{ type: "toolCall", name: "noop", arguments: {} }], stopReason: "toolUse" },
+						{ content: ["done"] },
+					],
+				}).stream,
+			}),
+			sessionManager: manager,
+			settings: Settings.isolated({ "compaction.enabled": false }),
+			modelRegistry: new ModelRegistry(auth),
+			extensionRunner: runner,
+		});
+
+		try {
+			await session.prompt("first");
+		} finally {
+			await session.dispose();
+			auth.close();
+		}
+
+		// Control: the hook has to have run at all, or "1" and "0" are the same
+		// observation of a suite that never called it.
+		expect(seen).toHaveLength(1);
+		// 1, not 0. The counter resets on `agent_start`, so it numbers turns *within
+		// a run*: this prompt ran two turns (a tool call and a reply), so the settled
+		// turn is the second. With the increment stuck behind the relay's
+		// `hasHandlers` gate it never advanced and this read 0 forever.
+		expect(seen).toEqual([1]);
 	});
 });

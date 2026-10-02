@@ -919,29 +919,30 @@ export class AgentSession implements SettingsScope {
 				turnIndex: this.#turnIndex,
 				timestamp: Date.now(),
 			};
-			// Recorded on the EVENT, not on the loop's `turnOpen` flag: three sites
-			// in `runLoopBody` push `turn_start` and then throw, so `turn_end` never
-			// follows them, and one of them never assigns the flag at all.
-			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "started" });
+			// The durable record is deliberately NOT written here. This table is the
+			// extension relay, and `#emitExtensionEvent` returns before reaching any
+			// arm unless an extension has subscribed to that event type — so a write
+			// placed in this arm records a turn only for sessions that happen to have
+			// a listener, and pins the turn counter at 0 for everyone else (which in
+			// turn pins `turn_id` to 0). A turn is not an extension notification: it
+			// is an audit record, and it must be written whether or not anyone is
+			// watching. Both the write and the counter live in `#processAgentEvent`,
+			// which every event reaches unconditionally.
 			return hookEvent;
 		},
 		turn_end: async event => {
 			const hookEvent: TurnEndEvent = {
 				type: "turn_end",
-				turnIndex: this.#turnIndex,
+				// `#openTurnIndex` — the index captured when this turn opened — rather
+				// than the live counter. `#processAgentEvent` owns the increment, and
+				// whether it has already run by the time this arm is reached depends
+				// on where the dispatcher interleaves its awaits. The captured value
+				// is the same number under either interleaving, and it is what this
+				// field has always reported to extensions.
+				turnIndex: this.#openTurnIndex,
 				message: event.message,
 				toolResults: event.toolResults,
 			};
-			// The increment moves INTO this arm, ahead of the dispatch. The table
-			// returns a payload and the dispatcher emits it, so leaving the bump
-			// after the emit would read a stale index on the next turn. Equivalent
-			// to the previous placement: `#turnIndex` is read only by the
-			// `turn_start`/`turn_end` arms and by `turn_id` on the session_stop
-			// continuation path, all of which run later in the turn's lifetime, and
-			// an extension `turn_end` handler receives an `ExtensionContext` with no
-			// reach into session internals.
-			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "ended" });
-			this.#turnIndex++;
 			return hookEvent;
 		},
 		message_start: async event => {
@@ -1079,6 +1080,16 @@ export class AgentSession implements SettingsScope {
 	 */
 	#fallbackExtensionTimers: ManagedTimers | undefined = undefined;
 	#turnIndex = 0;
+	/**
+	 * Index of the turn currently open, latched when it opened.
+	 *
+	 * Separate from `#turnIndex` because that counter is incremented at `turn_end`
+	 * and the extension relay's `turn_end` arm may read it either side of that
+	 * increment, depending on where the dispatcher interleaves its awaits. A value
+	 * that depends on scheduling is not a value to hand an extension, so the open
+	 * turn's index is captured once and read back.
+	 */
+	#openTurnIndex = 0;
 	#messageEndPersistenceTail: Promise<void> = Promise.resolve();
 	#pendingMessageEndPersistence = new Map<string, Promise<void>>();
 	#persistedMessageKeys: { anchor: string; keys: Set<string> } | undefined;
@@ -3621,6 +3632,22 @@ export class AgentSession implements SettingsScope {
 		// This must happen before event fan-out awaits: streamed tool-call deltas
 		// can otherwise queue validation that a delayed turn-start reset erases.
 		if (event.type === "turn_start") this.#streamingEditGuard.reset();
+		if (event.type === "turn_start") {
+			// The durable turn record, and the only ungated writer of it. The
+			// extension relay (`#sessionEventRelay`) is the wrong home for an audit
+			// record: `#emitExtensionEvent` returns before reaching an arm unless
+			// `hasHandlers(event.type)` is true, so a write there fires only for
+			// sessions that happen to have an extension listening, and the counter
+			// increment that lived beside it never ran for anyone else. This handler
+			// is reached by every event, so the record and the index are recorded
+			// for every turn regardless of who is subscribed.
+			//
+			// Keyed on the EVENT, not on the loop's `turnOpen` flag: three sites in
+			// `runLoopBody` push `turn_start` and then throw, so `turn_end` never
+			// follows them, and one of them never assigns the flag at all.
+			this.#openTurnIndex = this.#turnIndex;
+			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "started" });
+		}
 		// Step the mid-run todo counter synchronously, BEFORE any await in this
 		// handler. The agent loop's next-turn `getAsideMessages` poll can run
 		// before queued microtasks drain, so `#takeMidRunTodoNudge` MUST see the
@@ -3808,6 +3835,15 @@ export class AgentSession implements SettingsScope {
 		}
 
 		if (event.type === "turn_end") this.#ttsr.onTurnEnd();
+		if (event.type === "turn_end") {
+			// The closing half, and the increment that makes the index a sequence
+			// rather than a constant. The append reads `#turnIndex` BEFORE the bump
+			// so both halves of a turn carry the same number, and so `turn_id`
+			// (`Math.max(0, this.#turnIndex - 1)`, further down) keeps naming the
+			// turn that just closed. Ungated for the same reason as the opening half.
+			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "ended" });
+			this.#turnIndex++;
+		}
 		// Finalize the tool-choice queue's in-flight yield after tools have executed.
 		// This must happen at turn_end (not message_end) because onInvoked handlers
 		// run during tool execution, which happens between message_end and turn_end.
@@ -4905,10 +4941,12 @@ export class AgentSession implements SettingsScope {
 			| undefined;
 		if (!arm) return;
 
-		// `agent_start` stays ungated: its arm resets the turn counter, which also
-		// feeds `turn_id` on the session_stop continuation path and must not depend
-		// on any extension being subscribed. Every other relayable kind keeps the
-		// pre-existing zero-handler fast path.
+		// `agent_start` stays ungated so the turn counter is reset before any turn is
+		// numbered — `turn_id` on the session_stop continuation path depends on it and
+		// must not require an extension to be subscribed. The rest of the turn
+		// bookkeeping (the durable record, and the increment that advances the index)
+		// deliberately does NOT live in this table at all; see the `turn_start` arm.
+		// Every other relayable kind keeps the pre-existing zero-handler fast path.
 		if (event.type !== "agent_start" && !runner.hasHandlers(event.type)) return;
 
 		const payload = await arm(event);

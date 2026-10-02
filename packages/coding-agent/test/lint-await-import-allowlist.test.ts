@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import * as path from "node:path";
 import {
+	applyInjection,
 	AwaitImportParseError,
+	collectSources,
+	evaluateSources,
 	EXEMPTIONS,
 	findAwaitImports,
 	isExempt,
@@ -10,6 +13,27 @@ import {
 } from "../../../scripts/check-await-import";
 
 const repoRoot = path.resolve(import.meta.dir, "..", "..", "..");
+
+/**
+ * The tree's source text, read once and shared by every test that needs it.
+ *
+ * This is a performance seam with a correctness reason attached. Five tests each called
+ * {@link runGate}, and every call re-read all 5950 tracked files, so this one file spent
+ * ~10s scanning before asserting anything; on a shared box with peers running suites that
+ * pushed five tests past bun's 5s default and they failed as **timeouts**, which says
+ * nothing about the gate. The first version of this file also timed out at ~2s per scan
+ * under load — it is not a slow gate, it was the same scan repeated five times.
+ *
+ * Reading is separated from judging (`collectSources` / `evaluateSources`) so the read can
+ * be shared without the rule being restated: the assertion still runs the gate's own
+ * evaluation over the gate's own inputs, through `applyInjection`, which is the same
+ * function the gate merges injections with.
+ */
+let cachedTree: Promise<Map<string, string>> | undefined;
+function treeSources(): Promise<Map<string, string>> {
+	cachedTree ??= collectSources(repoRoot);
+	return cachedTree;
+}
 
 /**
  * Contract: an `await import()` outside a stated exemption fails the gate.
@@ -26,7 +50,9 @@ const repoRoot = path.resolve(import.meta.dir, "..", "..", "..");
  * one place, and this file tests that place.
  */
 describe("the await-import gate", () => {
-	it("reports no dynamic import outside an exemption", async () => {
+	it("reports no dynamic import outside an exemption, from a scan that measured something", async () => {
+		// The one test that calls `runGate` — the exact entry `package.json` invokes. The
+		// rest go through the collect/evaluate seam so they can share a single read.
 		const report = await runGate(repoRoot);
 		// Printed because a one-sided check is worse than none: with only a count you cannot
 		// tell "the tree is clean" from "the scan found nothing to look at".
@@ -34,26 +60,24 @@ describe("the await-import gate", () => {
 			`[await-import] scanned=${report.total} exempt=${report.exempt} computed=${report.computed} ` +
 				`unexempted=${report.reported.length}`,
 		);
-		expect(report.reported).toEqual([]);
-	});
-
-	it("actually scanned the tree, so the check above is not vacuous", async () => {
-		const report = await runGate(repoRoot);
-		// A scan that measured nothing passes the first test for the wrong reason. These
+		// A scan that measured nothing passes the first assertion for the wrong reason. These
 		// bound the run: the tree has hundreds of sites, and a non-trivial share of them are
 		// computed — meaning the distinction the gate draws is exercised, not dormant.
 		expect(report.total).toBeGreaterThan(100);
 		expect(report.computed).toBeGreaterThan(0);
 		expect(report.exempt).toBeGreaterThan(0);
+		expect(report.reported).toEqual([]);
 	});
 
 	it("fails on a new dynamic import no exemption covers", async () => {
 		// Injected rather than written to a real file: this tree is shared, and a test that
 		// edits a stranger's source and restores it is one crash from leaving it modified.
-		const report = await runGate(repoRoot, {
-			"packages/coding-agent/src/__injected-await-import-probe.ts":
-				'export async function load() {\n\treturn await import("./never-written");\n}\n',
-		});
+		const report = evaluateSources(
+			applyInjection(await treeSources(), {
+				"packages/coding-agent/src/__injected-await-import-probe.ts":
+					'export async function load() {\n\treturn await import("./never-written");\n}\n',
+			}),
+		);
 		expect(report.reported).toHaveLength(1);
 		expect(report.reported[0].file).toBe("packages/coding-agent/src/__injected-await-import-probe.ts");
 		expect(report.reported[0].computed).toBe(false);
@@ -63,10 +87,12 @@ describe("the await-import gate", () => {
 	it("stays green for an injected file an exemption does cover", async () => {
 		// The negative direction of the pair above. Without it, a gate that reported every
 		// site in the tree would pass the "goes red" test and still be wrong.
-		const report = await runGate(repoRoot, {
-			"packages/coding-agent/src/cli/stats-cli.ts":
-				'export async function load() {\n\treturn await import("@oh-my-pi/omp-stats");\n}\n',
-		});
+		const report = evaluateSources(
+			applyInjection(await treeSources(), {
+				"packages/coding-agent/src/cli/stats-cli.ts":
+					'export async function load() {\n\treturn await import("@oh-my-pi/omp-stats");\n}\n',
+			}),
+		);
 		expect(report.reported).toEqual([]);
 	});
 
@@ -140,12 +166,13 @@ describe("the await-import gate", () => {
 		// The fixture must contain the token the pre-filter looks for. A file with no
 		// `import(` in it is skipped before it is ever parsed — correctly, and the reason this
 		// fixture is not simply "malformed text".
-		await expect(
-			runGate(repoRoot, {
-				"packages/coding-agent/src/__injected-broken.ts":
-					'export async function broken() {\n\treturn await import("./x")\n}\nfunction ( {\n',
-			}),
-		).rejects.toThrow(AwaitImportParseError);
+		const sources = applyInjection(await treeSources(), {
+			"packages/coding-agent/src/__injected-broken.ts":
+				'export async function broken() {\n\treturn await import("./x")\n}\nfunction ( {\n',
+		});
+		// The read happens first so that a timeout on it cannot be mistaken for a pass here:
+		// `evaluateSources` is synchronous, and it throws before any assertion runs.
+		expect(() => evaluateSources(sources)).toThrow(AwaitImportParseError);
 	});
 
 	it("matches an exemption by path, so a moved file stops being exempt", () => {

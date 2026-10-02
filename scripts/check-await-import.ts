@@ -151,13 +151,38 @@ export interface AwaitImportSite {
 	readonly file: string;
 	readonly line: number;
 	readonly column: number;
-	/** True when the specifier is not a static string — i.e. cannot be a static import. */
+	/**
+	 * True when the specifier is not a bare string literal.
+	 *
+	 * Deliberately one notch stricter than "cannot be a static import": a template with
+	 * **no** interpolation (`` import(`./x`) ``) is hoistable but is counted here as
+	 * computed, because `staticSpecifier` only accepts `StringLiteral`. The error is in
+	 * the safe direction — `computed` is a reporting field, and a site still needs an
+	 * exemption either way, so over-counting can never turn a violation into a pass.
+	 * Measured at `HEAD=aadc91da99`: **0** such sites exist, and the reported 17 decompose
+	 * as 15 non-string arguments + 2 interpolated templates.
+	 */
 	readonly computed: boolean;
 	/** A short rendering of the specifier, for the failure message. */
 	readonly specifier: string;
 }
 
-/** A parse failure is a gate failure, never a skip. */
+/**
+ * A parse failure is a gate failure — **for the files this gate parses**.
+ *
+ * The scope matters, and an earlier version of this line claimed it unconditionally.
+ * {@link findAwaitImports} pre-filters on the raw text and never parses a file without
+ * an `import(` token, so "never a skip" is true of the files that reach the parser and
+ * silent about the rest. Measured at `HEAD=aadc91da99`: **5950 tracked `.ts`, 108
+ * containing the token, 5842 never parsed.** An unparseable file with no `import(` in it
+ * is therefore not reported — not because a failure was swallowed, but because the gate
+ * never opened it.
+ *
+ * That is the right trade (parsing 5950 files to count 282 call sites is most of a
+ * gate's budget spent on files that cannot contain one), but it is only defensible while
+ * the sentence says so. The number that would falsify it: a `.ts` file that stops
+ * parsing *and* still contains `import(` — that one throws, loudly.
+ */
 export class AwaitImportParseError extends Error {
 	constructor(
 		readonly file: string,
@@ -272,20 +297,62 @@ export interface GateReport {
 }
 
 /**
- * Scan the tree and decide which call sites no exemption covers.
+ * Overlay `injected` onto already-read sources, last writer winning.
  *
- * `injected` maps a repo-relative path to source text and is merged over what the
- * tree scan finds. It exists so a test can prove the gate goes **red** on a new
- * violation without writing into a real source file — on a shared tree a test that
- * edits a file and restores it is one crash away from leaving a stranger's file
- * modified, and a gate proven red that way is not worth the risk.
+ * Exported, and used by both {@link collectSources} and the test, so a test that proves
+ * the gate goes red on an injected violation merges through the **same** function the
+ * gate merges through. A test that spelled the merge out itself would be a second copy
+ * of a rule — the failure mode this file's test file is written against.
  */
-export async function runGate(repoRoot: string, injected?: Readonly<Record<string, string>>): Promise<GateReport> {
+export function applyInjection(
+	sources: ReadonlyMap<string, string>,
+	injected?: Readonly<Record<string, string>>,
+): Map<string, string> {
+	const merged = new Map(sources);
+	for (const [file, text] of Object.entries(injected ?? {})) merged.set(file, text);
+	return merged;
+}
+
+/**
+ * Read every tracked source file, and only those files.
+ *
+ * Bounded concurrency, not sequential: at `HEAD=c4637dcc1c` (dirty 567) reading the
+ * 5950 tracked `.ts` files one at a time took **1165ms**, and the same set at a batch
+ * of 64 took **185ms** — 6.3x, byte-identical on all 5950 files, which the probe
+ * compared rather than assumed. The batch is not a taste call: 5950 concurrent opens
+ * would exhaust the descriptor table, and this gate runs in CI where an fd failure
+ * reads as a gate that cannot start.
+ *
+ * Reading is not the gate's job, so nothing here decides anything. {@link evaluateSources}
+ * does, and takes the map this returns.
+ */
+export async function collectSources(
+	repoRoot: string,
+	injected?: Readonly<Record<string, string>>,
+): Promise<Map<string, string>> {
 	const files = await trackedTypeScriptFiles(repoRoot);
 	const sources = new Map<string, string>();
-	for (const file of files) sources.set(file, await Bun.file(`${repoRoot}/${file}`).text());
-	for (const [file, text] of Object.entries(injected ?? {})) sources.set(file, text);
+	const BATCH = 64;
+	for (let i = 0; i < files.length; i += BATCH) {
+		const slice = files.slice(i, i + BATCH);
+		const entries = await Promise.all(
+			slice.map(async file => [file, await Bun.file(`${repoRoot}/${file}`).text()] as const),
+		);
+		for (const [file, text] of entries) sources.set(file, text);
+	}
+	return applyInjection(sources, injected);
+}
 
+/**
+ * Decide which call sites no exemption covers. **This is the whole rule.**
+ *
+ * Split from {@link collectSources} so reading the tree and judging it can be timed,
+ * cached and reused apart from each other. The five tests in
+ * `lint-await-import-allowlist.test.ts` all need the same 5950 files; when one scan
+ * had to serve all five, the file cost ~10s of scanning and its tests timed out under
+ * a loaded box. That is a property of the test's structure, not of the gate's verdict.
+ */
+export function evaluateSources(sources: ReadonlyMap<string, string>): GateReport {
 	const reported: AwaitImportSite[] = [];
 	let total = 0;
 	let exempt = 0;
@@ -308,6 +375,19 @@ export async function runGate(repoRoot: string, injected?: Readonly<Record<strin
 		reported.push(...sites);
 	}
 	return { total, exempt, computed, reported };
+}
+
+/**
+ * Scan the tree and decide which call sites no exemption covers.
+ *
+ * `injected` maps a repo-relative path to source text and is merged over what the
+ * tree scan finds. It exists so a test can prove the gate goes **red** on a new
+ * violation without writing into a real source file — on a shared tree a test that
+ * edits a file and restores it is one crash away from leaving a stranger's file
+ * modified, and a gate proven red that way is not worth the risk.
+ */
+export async function runGate(repoRoot: string, injected?: Readonly<Record<string, string>>): Promise<GateReport> {
+	return evaluateSources(await collectSources(repoRoot, injected));
 }
 
 if (import.meta.main) {

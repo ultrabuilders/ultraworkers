@@ -3,7 +3,7 @@
 # An entry is `path:line` — a human read THIS line and accepted THIS token. The
 # same file at a different line is a NEW site, not an inherited approval.
 #
-# All four below were surfaced by widening the gate's writer set from
+# Both entries below were surfaced by widening the gate's writer set from
 # `console.*` to `logger.*`. `console.*` is BANNED by AGENTS.md in any code that
 # may run beside the TUI/RPC/SDK/workers, so the previous trigger matched nothing
 # in compliant code and the gate reported `0 ungated of 0 sites` while watching an
@@ -14,10 +14,6 @@
 # npm package installs only `ultraworkers`, while the dev launcher links `omp`.
 # Deciding that here would pre-empt it. What changes is that a human has now seen
 # each line — which is the entire point of the gate.
-
-# Debug message naming the product whose render tore down. Not user-facing: it
-# goes to the log sink, never to a screen.
-packages/coding-agent/src/cli/render-cli.ts:272
 
 # Log TAG, not a command. `[omp-plugins]` labels this loader's own diagnostics in
 # the log stream; no user types it and nothing parses it.

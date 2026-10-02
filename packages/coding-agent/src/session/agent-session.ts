@@ -107,6 +107,7 @@ import {
 	withTimeout,
 	withFileLock,
 } from "@oh-my-pi/pi-utils";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import type { AdvisorConfig } from "@oh-my-pi/pi-tui/overlays/advisor-config";
 import { formatUsageResetWindow } from "@oh-my-pi/pi-tui/overlays/usage-display";
 import { loadAdvisorTranscriptCosts } from "../advisor";
@@ -680,7 +681,7 @@ const SESSION_CWD_CHANGE_REJECTED = Symbol("sessionCwdChangeRejected");
 export function powerAssertionOptions(mode: "off" | "idle" | "display" | "system"): PowerAssertionOptions | undefined {
 	if (mode === "off") return undefined;
 	return {
-		reason: "omp agent session",
+		reason: `${APP_NAME} agent session`,
 		idle: true,
 		display: mode === "display" || mode === "system",
 		system: mode === "system",

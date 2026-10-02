@@ -17,7 +17,7 @@ import * as path from "node:path";
 import { Agent } from "@oh-my-pi/pi-agent-core";
 import type { Terminal, TerminalAppearance, TerminalAppearanceRequestToken } from "@oh-my-pi/pi-tui/terminal";
 import type { RenderScheduler } from "@oh-my-pi/pi-tui/tui";
-import { formatBytes, getProjectDir, isEnoent, logger, TempDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, formatBytes, getProjectDir, isEnoent, logger, TempDir } from "@oh-my-pi/pi-utils";
 import { VERSION } from "@oh-my-pi/pi-utils/dirs";
 import { ModelRegistry } from "../config/model-registry";
 import { Settings } from "../config/settings";
@@ -269,7 +269,7 @@ export async function runRenderCommand(args: RenderCommandArgs): Promise<number>
 			mode?.stop();
 			await session?.dispose();
 		} catch (err) {
-			logger.debug("omp render teardown failed", { error: String(err) });
+			logger.debug(`${APP_NAME} render teardown failed`, { error: String(err) });
 		}
 		tempDir.removeSync();
 	}

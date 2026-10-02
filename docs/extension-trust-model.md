@@ -111,8 +111,8 @@ project-scoped roots.
 **(c) `isProjectTrusted()` is declared twice on the extension-facing context.**
 
 ```
-packages/coding-agent/src/extensibility/extensions/types.ts:583
-packages/coding-agent/src/extensibility/extensions/types.ts:650
+packages/coding-agent/src/extensibility/extensions/types.ts:594
+packages/coding-agent/src/extensibility/extensions/types.ts:665
 ```
 
 **Their doc comments were stale, and are now corrected.**
@@ -138,16 +138,26 @@ because it is the one most likely to be misread.
 ```
 packages/coding-agent/src/extensibility/extensions/runner.ts:2020
     isProjectTrusted: () => isProjectTrustedForScope(this.settings),
-packages/coding-agent/src/session/agent-session.ts:7795
+packages/coding-agent/src/session/agent-session.ts:7812
     isProjectTrusted: () => isProjectTrustedForScope(this.settings),
 ```
 
+**Two answering sites, not one** — and this is the fact that makes the remaining
+gap smaller than it reads. `isProjectTrusted` is **wired at both**, both delegate
+to the same function, and both are live. It is not one callback with a second
+copy in reserve: an extension reaches it through the extension context *and*
+through the session context, and either path answers today.
+
 Both delegate to one function, `isProjectTrustedForScope` in
-`packages/coding-agent/src/config/project-trust.ts:160`, which reads a recorded
+`packages/coding-agent/src/config/project-trust.ts:183`, which reads a recorded
 three-valued decision (`yes` / `no` / `undecided`, `project-trust.ts:56`) and
 answers `true` only for `yes`. An undecided project answers `false`
-(`project-trust.ts:161`, `:163`). The value is therefore **real and
+(`project-trust.ts:184`, `:186`). The value is therefore **real and
 falsifiable**, where the previous literal could not be false at all.
+
+Both call sites are assignments, and neither is a call *on core's behalf*. Core
+asks nowhere; it only makes the answer available. That asymmetry is the whole
+of the remaining gap, and section 5 states it as one thing rather than two.
 
 **(e) No prompt, allowlist, or gate exists anywhere on the load path — and
 `assertTrusted`, the one function that could refuse, is never called outside
@@ -211,7 +221,7 @@ refusal.
 > This has now happened three times, so treat the numbers as a convenience
 > rather than a citation. Re-measured 2026-10-02 against `f6a303150c`: the two
 > `isProjectTrusted` declarations (`types.ts:558`/`:625` → `:583`/`:650`), both
-> implementations (`runner.ts:1810`/`agent-session.ts:7708` → `:2020`/`:7795`),
+> implementations (`runner.ts:1810`/`agent-session.ts:7708` → `:2020`/`:7812`),
 > the `ctx.exec` declaration (`:1989` → `:2105`), the load branch
 > (`main.ts:2234` → `:2235`), the two posture comments (`:551-557`/`:613-624` →
 > `:576-583`/`:642-650`), and the `#7955` changelog entry (`:1587` → `:1644` at
@@ -422,9 +432,18 @@ facts above:
   are not equivalent exposures, and a single gate applied uniformly would paper
   over the worse one. A plugin entry's `installPath` need not be inside the
   workspace at all, so a gate keyed on `<cwd>/.omp` does not cover it.
-- The gate must call `assertTrusted` (`project-trust.ts:179`) at the load
+- The gate must call `assertTrusted` (`project-trust.ts:202`) at the load
   boundary, not merely exist. Per `(e)`, the current state is a decision with no
   consumer, and the consumer is the whole of the remaining work.
+- **The mechanism is not missing; core's use of it is.** Per `(d)` the decision
+  is already answerable at two live sites — `runner.ts:2020` and
+  `agent-session.ts:7812`, both `isProjectTrusted: () =>
+  isProjectTrustedForScope(this.settings)`. So this item does not build a way to
+  ask the question; it asks it earlier. That distinction is why the scope is
+  "M–L" and not "M–XL": the decision, its storage, its UI, and its refusals are
+  built and tested (`test/project-trust-gate.test.ts`, 11 rows). What is absent
+  is a single question asked at the load boundary, and both of the open branches
+  below — enforce or state honestly — are waiting on exactly that one thing.
 - It must define what happens when the decision is `undecided`, since `undecided`
   refuses and every existing install is `undecided`. The upgrade path that
   `extensibility/hooks/trust.ts` used — record on first sight, then treat as
@@ -487,3 +506,35 @@ Two consequences worth stating so they are not re-litigated:
 
 Tracked by `m2-wi-5-038`. Sections 1-7 above are unaffected by this ruling; it
 adds a ratified decision, it does not ratify the proposal in Section 4.
+
+## 9. Open question: which resources a refusal must cover
+
+**OPEN — not decided here, and deliberately unanswered.** Raised by peer review
+2026-10-02.
+
+`assertTrusted(resource, scope)` (`project-trust.ts:202`) takes a
+`ProjectTrustResource` so the thrown `ProjectTrustError` can name what was
+refused. The list those names come from is already concrete:
+`PROJECT_TRUSTED_RESOURCES` is `["extensions", "plugins", "settings", "skills"]`
+(`project-trust.ts:63`), and `ProjectTrustResource` is derived from it at `:65`.
+
+So the enumeration is not the open part. **Which of the four must actually be
+refused in an untrusted project is**, and that is a product decision, not an
+implementation detail:
+
+- `extensions` and `plugins` are the exposures this document is about — code that
+  runs. Refusing them is the decision every other section assumes.
+- `settings` is not the same kind of thing. The project-scoped settings file
+  configures the agent; refusing it means a project cannot set a preference
+  without also being trusted to ship code. Whether a directory earns trust *to
+  configure* before it earns it *to execute* is exactly the question.
+- `skills` sits between the two — a skill is content the agent reads, which is
+  closer to configuration than to execution.
+
+The answer changes what M–L means. Gating `extensions` and `plugins` is the
+item section 5 scopes; gating `settings` as well is a larger upgrade hazard,
+because every existing install is `undecided` and would stop reading its own
+project configuration.
+
+**Nothing above is a recommendation.** This is recorded so the owner rules on it
+rather than having the first implementation pick by omission.

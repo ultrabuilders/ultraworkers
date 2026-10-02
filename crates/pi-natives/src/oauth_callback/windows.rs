@@ -905,7 +905,7 @@ mod tests {
 		// fall back to the legacy command instead of retaining the journal.
 		let verbatim = Context::new(
 			context.home,
-			PathBuf::from(r"\\?\Volume{d0e5f6a7-0000-0000-0000-000000000000}\omp-oauth-test"),
+			PathBuf::from(r"\\?\Volume{d0e5f6a7-0000-0000-0000-000000000000}\ultraworkers-oauth-test"),
 			context.scheme,
 			context.id,
 			BTreeMap::new(),

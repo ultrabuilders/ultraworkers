@@ -736,7 +736,7 @@ mod tests {
 		let mut context = Context::new(
 			home,
 			directory,
-			"omp-auth".to_owned(),
+			"ultraworkers-auth".to_owned(),
 			"0123456789abcdef0123456789abcdef".to_owned(),
 			env,
 			CancelToken::default(),
@@ -754,9 +754,9 @@ mod tests {
 			assert_eq!(args.len(), 3);
 			assert_eq!(args[0], "query");
 			assert_eq!(args[1], "default");
-			assert_eq!(args[2], "x-scheme-handler/omp-auth");
+			assert_eq!(args[2], "x-scheme-handler/ultraworkers-auth");
 			let current = fs::read_to_string(&preference).unwrap_or_default();
-			let (_, entry) = parse_default_entry(&current, "x-scheme-handler/omp-auth")?;
+			let (_, entry) = parse_default_entry(&current, "x-scheme-handler/ultraworkers-auth")?;
 			Ok(if entry.present {
 				entry.value.split(';').next().unwrap_or_default().to_owned()
 			} else {
@@ -862,7 +862,7 @@ mod tests {
 		let context = context(&root, "KDE", "inherited.desktop");
 		let preference = read_preference(
 			&expected_paths(&context).unwrap().preference_path,
-			"x-scheme-handler/omp-auth",
+			"x-scheme-handler/ultraworkers-auth",
 		)
 		.unwrap();
 		let mut snapshot = prepare(&context).unwrap();
@@ -890,8 +890,8 @@ mod tests {
 		fs::create_dir_all(preference_path.parent().unwrap()).unwrap();
 		fs::write(
 			&preference_path,
-			"[Default Applications]\nx-scheme-handler/omp-auth=previous.desktop;\ntext/html=browser.\
-			 desktop;\n",
+			"[Default Applications]\nx-scheme-handler/ultraworkers-auth=previous.desktop;\ntext/\
+			 html=browser.desktop;\n",
 		)
 		.unwrap();
 		let snapshot = prepare(&context).unwrap();
@@ -902,7 +902,7 @@ mod tests {
 		restore(&context, &snapshot).unwrap();
 
 		let restored = fs::read_to_string(&snapshot.preference_path).unwrap();
-		assert!(restored.contains("x-scheme-handler/omp-auth=previous.desktop;"));
+		assert!(restored.contains("x-scheme-handler/ultraworkers-auth=previous.desktop;"));
 		assert!(restored.contains("text/html=browser.desktop;"));
 		assert!(restored.contains("text/plain=external-editor.desktop;"));
 		assert!(!restored.contains(&snapshot.desktop_id));
@@ -957,7 +957,7 @@ mod tests {
 		restore(&context, &snapshot).unwrap();
 
 		let restored = fs::read_to_string(&snapshot.preference_path).unwrap();
-		assert!(restored.contains("x-scheme-handler/omp-auth=external.desktop;"));
+		assert!(restored.contains("x-scheme-handler/ultraworkers-auth=external.desktop;"));
 		assert!(!snapshot.desktop_path.exists());
 	}
 

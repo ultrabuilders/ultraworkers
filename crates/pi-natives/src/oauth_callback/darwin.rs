@@ -806,7 +806,7 @@ mod tests {
 		let mut context = Context::new(
 			home,
 			directory,
-			"omp-auth".to_owned(),
+			"ultraworkers-auth".to_owned(),
 			"0123456789abcdef0123456789abcdef".to_owned(),
 			BTreeMap::new(),
 			CancelToken::default(),
@@ -880,7 +880,7 @@ mod tests {
 		assert_eq!(fs::read(&staging_executable).unwrap(), b"precompiled helper");
 		let plist = fs::read_to_string(staging_path.join("Contents/Info.plist")).unwrap();
 		assert!(plist.contains(&snapshot.bundle_id));
-		assert!(plist.contains("<string>omp-auth</string>"));
+		assert!(plist.contains("<string>ultraworkers-auth</string>"));
 		assert!(plist.contains(&context.callback_path.to_string_lossy().into_owned()));
 		assert!(!snapshot.app_path.exists());
 		#[cfg(unix)]
@@ -1042,7 +1042,7 @@ mod tests {
 				 "bundleId": legacy_bundle,
 				 "pid": i32::MAX,
 				 "previousHandler": "com.example.browser",
-				 "scheme": "omp-auth"
+				 "scheme": "ultraworkers-auth"
 			}))
 			.unwrap(),
 		)
@@ -1063,7 +1063,7 @@ mod tests {
 		fs::create_dir_all(recovery_path.parent().unwrap()).unwrap();
 		fs::write(
             &recovery_path,
-            br#"{"appPath":"/tmp/unowned.app","bundleId":"dev.omp.oauth-callback.bad","pid":999999,"previousHandler":"","scheme":"omp-auth"}"#,
+            br#"{"appPath":"/tmp/unowned.app","bundleId":"dev.omp.oauth-callback.bad","pid":999999,"previousHandler":"","scheme":"ultraworkers-auth"}"#,
         )
         .unwrap();
 
@@ -1088,7 +1088,7 @@ mod tests {
 				 "bundleId": "dev.omp.oauth-callback.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				 "pid": std::process::id(),
 				 "previousHandler": "",
-				 "scheme": "omp-auth"
+				 "scheme": "ultraworkers-auth"
 			}))
 			.unwrap(),
 		)

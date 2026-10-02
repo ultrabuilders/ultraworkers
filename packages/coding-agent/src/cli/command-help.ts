@@ -66,6 +66,9 @@ export const galleryHelp = {
 	description: "Preview tool, composer, and status-line renderers in a deterministic visual gallery",
 } satisfies CommandMetadata;
 
+export const doctorHelp = {
+	description: "Diagnose whether this environment can run the agent (PATH, log directory mode, theme and tool seams)",
+} satisfies CommandMetadata;
 export const gcHelp = { description: "Run storage garbage collection" } satisfies CommandMetadata;
 export const ifBenchHelp = {
 	description:

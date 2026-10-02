@@ -4,13 +4,15 @@
  *
  * WHY THIS IS A SCRIPT AND NOT A NUMBER IN A BEAD
  *
- * The first pass at this census recorded `8408 lines / 1364 files` (raw) and
- * `240 / 162` (narrowed). Neither figure reproduced. Four RAW variants and two
- * NARROW variants were measured: RAW ranged 9187–12570 depending only on word
- * boundaries and case, and NARROW was 360 without a prefilter and 220 with one.
- * A count that cannot be regenerated is prose wearing a number's clothes, so
- * the count lives here, every figure is printed next to the pattern that
- * produced it, and no headline figure is emitted at all.
+ * The first pass at this census recorded a raw and a narrowed headline. Neither
+ * reproduced. Four RAW variants and two NARROW variants were measured, and they
+ * disagree by more than a third depending only on word boundaries and case.
+ * That disagreement is the finding, and it is why no figure is quoted here:
+ * a number this paragraph had to be edited around is stale by the next commit,
+ * and the two that used to sit here had already drifted while the text around
+ * them still read as present tense. Run the script instead. It prints every
+ * count beside the pattern that produced it, and emits no headline at all, so
+ * nothing here has to be kept true by hand.
  *
  * WHAT IT DELIBERATELY DOES NOT DO
  *

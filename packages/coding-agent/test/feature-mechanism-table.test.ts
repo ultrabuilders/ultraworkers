@@ -6,11 +6,20 @@
  * reader: a row pointing at a file that no longer exists, and a `proof: none` whose
  * named work item has since closed.
  *
- * There is deliberately no cap on the number of `none` rows. A cap is a number
- * somebody has to remember to update, and it drifts — the table ends up technically
- * correct and no longer trustworthy, which is worse than having no table. Naming
- * the work item instead makes each `none` row self-clearing: when that work item
- * closes, this test goes red until the row becomes a real gate.
+ * The number of `none` rows is capped, and the cap is *registered in the document
+ * itself* rather than written here. A cap kept only in this file is a number
+ * somebody has to remember to update, and it drifts — the table ends up
+ * technically correct and no longer trustworthy, which is worse than having no
+ * table. Reading it back out of the document removes that second copy: there is
+ * one number, and it is the one the document publishes. A missing marker throws
+ * rather than defaulting, because a cap that silently reads as unlimited is
+ * exactly the hole the cap exists to close.
+ *
+ * That is in addition to, not instead of, naming the work item. A cap bounds how
+ * many unproven claims may accumulate; naming the work item makes each one
+ * self-clearing, since when that item closes this test goes red until the row
+ * becomes a real gate. Neither substitutes for the other — a cap alone does not
+ * tell you which row to fix, and a name alone does not stop the list growing.
  */
 import { describe, expect, test } from "bun:test";
 import * as path from "node:path";

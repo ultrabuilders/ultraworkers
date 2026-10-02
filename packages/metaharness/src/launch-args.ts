@@ -6,6 +6,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import type { BenchmarkKind, RunRole } from "./store";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
@@ -74,7 +75,7 @@ export function harborRunnerArgs(
 		}
 	}
 	if (request.prebuiltBinaries) {
-		for (const name of ["omp-linux-arm64", "omp-linux-x64"]) {
+		for (const name of [`${APP_NAME}-linux-arm64`, `${APP_NAME}-linux-x64`]) {
 			const binary = path.join(REPO_ROOT, "packages", "coding-agent", "dist", name);
 			if (fs.existsSync(binary)) argv.push("--binary", binary);
 		}

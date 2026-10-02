@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import type { AgentBinaries, AgentConfig, GatewayConfig, GuestArch } from "./types";
 import type { TrialVm } from "./vmon";
 
@@ -59,7 +60,7 @@ export async function prepareAgentBinaries(opts: {
 	const arches = [...new Set(opts.arches)];
 	const cached: Partial<Record<GuestArch, string>> = {};
 	for (const arch of arches) {
-		cached[arch] = path.join(opts.cacheDir, `omp-linux-${arch}-${manifest.version}`);
+		cached[arch] = path.join(opts.cacheDir, `${APP_NAME}-linux-${arch}-${manifest.version}`);
 	}
 	const missing: GuestArch[] = [];
 	for (const arch of arches) {
@@ -72,7 +73,7 @@ export async function prepareAgentBinaries(opts: {
 		const targets = missing.map(arch => `linux-${arch}`).join(",");
 		await run(["bun", "scripts/ci-release-build-binaries.ts", "--targets", targets], REPO_ROOT);
 		for (const arch of missing) {
-			const source = path.join(CODING_AGENT_DIR, "binaries", `omp-linux-${arch}`);
+			const source = path.join(CODING_AGENT_DIR, "binaries", `${APP_NAME}-linux-${arch}`);
 			const destination = cached[arch]!;
 			if (!(await Bun.file(source).exists())) throw new Error(`Binary build did not produce ${source}`);
 			await Bun.write(destination, Bun.file(source));

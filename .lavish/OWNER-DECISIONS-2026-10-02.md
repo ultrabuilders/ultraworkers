@@ -1,11 +1,16 @@
-# Owner decisions — 7 items blocking the sweep
+# Owner decisions — 8 items blocking the sweep
 
-**Date:** 2026-10-02 · **Branch:** `feat/beads-sweep-2026-09-30`
+**Date:** 2026-10-02, item 5 and item 8 corrected 2026-10-03 · **Branch:** `feat/beads-sweep-2026-09-30`
 **Prepared by:** `ultraworkers-55`, peer-reviewed by `ultraworkers-a4`
 
 Every item below is a **decision**, not engineering work. Each was measured against a moving
 tree; the measurement, the control, and the consequence are stated so the answer can be given
 without re-running anything.
+
+> **The runtime moved between sessions.** `bun test` printed `v1.3.14` early in the sweep and
+> `v1.4.2` later. `bun --version` is `1.4.2`; the Homebrew keg is *named* `1.3.14` but its binary
+> was rewritten 2026-09-05. **Any number below that mixes the two runtimes is wrong** — item 5
+> was, and is corrected below with the measurement redone on one runtime.
 
 ## Summary
 
@@ -15,9 +20,10 @@ without re-running anything.
 | 2   | `1beb` | A component factory passed to `ui.setWidget` under RPC: throw, or stay silent? | Extension authors have no way to ask, and get silence when they get it wrong                    |
 | 3   | `1du7` | Do `W11:*` / `a57q:*` ref names get a definition site, or are they human-only? | 19 names covering 335 rows carry no verifiable meaning; the column's docblock implies otherwise |
 | 4   | `r1t2` | Does this fork keep pi's `deferred-response`?                                  | 4 type errors persist in `packages/durable`                                                     |
-| 5   | `0twi` | Raise `MIN_BUN_VERSION` 1.3.14 → 1.4.2?                                        | A workaround in `session-loader.ts` stays that could be deleted                                 |
+| 5   | `0twi` | Is the runtime floor 1.3.14 or 1.4.2?                                         | A workaround in `session-loader.ts` stays that could be deleted                                 |
 | 6   | `q8f0` | A `rename` row that reaches 0 occurrences: delete it, or tombstone it?         | 6 rows sit red, and every future sweep repeats this                                             |
 | 7   | `grse` | Which binary does the dashboard tell users to run?                             | A user who installed only the dashboard is told a command they do not have                      |
+| 8   | —      | Is `.omp` on disk a contract, or old branding?                                 | `check-docs-rename.ts` stays red on 1 file, and re-litigated every sweep                         |
 
 Item 3 was reduced by a peer's commit (`194952ede6`) that landed while this document was being
 written; the entry above reflects what is still open.
@@ -144,22 +150,58 @@ independent of the `SystemMessage` question. If "keep it", it is a real feature 
 
 ---
 
-## 5. `epic-0twi` — raise `MIN_BUN_VERSION` to 1.4.2?
+## 5. `epic-0twi` — is our runtime floor 1.3.14 or 1.4.2?
 
-**Finding.** The workaround is real, reproduced on the installed runtime rather than inferred
-from its docblock. A 1,049,018-byte file, sliced to 262,238:
+> **Both halves of this entry were wrong when first written, in opposite directions.** The
+> version label came from a package manager, not from the binary. Corrected 2026-10-03.
+
+**The machine is on 1.4.2 — and its own package manager disagrees.**
 
 ```
-bun 1.3.14:  slice -> HANG (>2.5s)
-bun 1.3.14:  whole -> ok in 0ms (1049018B)
+$ bun --version                    1.4.2          ← the binary's own answer
+$ brew list --versions bun         bun 1.3.14     ← what the keg is NAMED
+$ ls /opt/homebrew/Cellar/bun/     1.3.14         ← directory name
+$ stat …/Cellar/bun/1.3.14/bin/bun 2026-09-05     ← but the binary was rewritten Sep 5
 ```
 
-At 1.3.14 `createReadStream` is the only thing between that and an infinite wait. Upstream fixed
-the underlying bug in 1.4.2.
+The keg directory and `brew list` both say `1.3.14`; the binary inside it was replaced on
+2026-09-05 and reports `1.4.2`. **The version label follows the directory name.** So a probe
+that writes "bun 1.3.14" because `brew list` said so is labelling a 1.4.2 run — which is what
+this entry did.
 
-**Blocker on measuring this one.** Only `bun 1.3.14` is installed on this machine, and it is
-shared. Answering "does 1.4 regress?" requires installing 1.4.2 — which changes the machine for
-every agent working on it. That is an owner's call, not a measurement I can make alone.
+**What actually reproduces, on the runtime that exists (1.4.2):**
+
+```
+slice(0, 262238).stream()   -> completed, 262238 bytes, 0.09ms
+slice(0, 7).stream()        -> completed, 7 bytes, 0.05ms
+whole file.stream()         -> completed, 1049018 bytes, 0.33ms
+5 fresh processes           -> all completed (0.29–3.08ms), 0 hangs
+```
+
+Measured through **both** APIs — `for await` and the explicit `.stream().getReader().read()`
+loop the bead's own note names. The hang does not occur on either. The cap control still holds
+exactly: `createReadStream(…, {end: cap - 1})` reads 262,238 of 262,238 bytes, slack 0.
+
+**So the earlier `1.3.14: slice -> HANG (>2.5s)` line cannot be from this runtime.** It was
+written on 2026-10-02, after the binary had already been 1.4.2 since Sep 5. It is either a
+1.3.14 result carried in from elsewhere without its provenance, or a mislabelled observation.
+It should not be presented as a measurement of this machine.
+
+**The decision, stated so it can be answered without installing anything:**
+
+- **1.4.2** — measured, on this machine, today: the hang is **gone**, and the cap still bounds.
+- **1.3.14** — **not measurable here**; no 1.3.14 binary exists on this machine. The only
+  remaining unknown is whether the *old* floor genuinely hangs.
+
+**The question.** Keep the workaround while the declared floor is 1.3.14, or raise the floor to
+1.4.2 and delete it? The declared floor currently lives in two places that agree:
+`scripts/install.sh:16` (`MIN_BUN_VERSION="1.3.14"`) and `packages/durable`'s
+`engines.bun: ">=1.3.14"`.
+
+**The same question, second reason.** `packages/durable` ships `storage/sqlite/node.ts`, which
+imports `node:sqlite`. That built-in resolves fine on 1.4.2 — but a package that declares
+`>=1.3.14` while depending on a built-in is making a claim about the floor that its own
+engines field has to honour. One floor question, two independent reasons to answer it.
 
 **Separately:** the bead claimed CI was red on `--frozen-lockfile`. That is now **stale** —
 `bun install --frozen-lockfile` exits 0 and `pi-telemetry` is in `bun.lock`. Nobody needs to
@@ -224,6 +266,45 @@ for the first user. Naming both is never wrong, only longer.
 A gate is in place at `packages/stats/test/advised-command-resolves.test.ts`: it reads the real
 command table, and goes red if a dispatched subcommand is renamed. If the answer is `omp-stats`,
 the gate **should** go red — that is the signal to extend the valid set, not to loosen it.
+
+---
+
+## 8. Is `.omp` on disk a contract, or old branding?
+
+**No bead.** This one surfaced while verifying the others, and it is the cheapest item here:
+one yes/no, and it un-reds a gate.
+
+**The gate is red, on one file.**
+
+```
+$ bun scripts/rename/check-docs-rename.ts .
+FAIL ruleA 8 docs/ui-comparison-ulw-vs-opencoding.md
+FAIL ruleA 1 file(s) carry the legacy display token without an accepted reason.
+```
+
+**The 8 occurrences are real directories, not stale prose.** `docs/ui-comparison-ulw-vs-opencoding.md`
+cites `~/.omp/agent/extensions/` and `<cwd>/.omp/extensions/`, and on disk `.omp/`,
+`.omp/skills/` and `.omp/commands/` all exist. `packages/utils/src/dirs.ts:42` declares
+`CONFIG_DIR_NAME = ".omp"`. Renaming those strings would describe a layout the repository does
+not have.
+
+**The seam is already open — no milestone needed.** A peer first guessed the allowlist was
+per-file only; that was wrong. `scripts/rename/docs-legacy-allowlist.txt` already carries **99
+budget lines** of the form `path<TAB>N`, pinning an occurrence count per file, with `#` reason
+lines that the gate parses. The gate asks for exactly what the file already knows how to
+express:
+
+```
+AGENTS.md                    5
+docs/advisor-watchdog.md     5
+docs/agent-hub.md            1
+```
+
+**The question.** Is `.omp` on disk a **contract** — the discovery root, which renaming breaks
+for existing users — or **old branding** that a future release should migrate? If contract, the
+allowlist entry is the correct and permanent answer, the gate goes green, and nobody touches
+code. That is the cheap answer; it is not mine to pick, because it decides what happens to every
+existing user's `~/.omp/` directory.
 
 ---
 

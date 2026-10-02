@@ -148,7 +148,20 @@ export interface FauxProviderHandle {
 	getPendingResponseCount: () => number;
 	/** The four `ModelLookup` methods, so a caller can hold this as its model lookup. */
 	streamSimple(model: Model, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream;
+	/**
+	 * Resumes a deferred generation — but there is nothing to resume here, so it reports the
+	 * handle it was given and rejects.
+	 *
+	 * `pi`'s double drives this from a `deferred: true` **entry** option. That option does not
+	 * exist in this fork: `deferred` is a field on the *result* `AssistantMessage`
+	 * (`types.ts:1151`), read when `stopReason === "deferred"`. So pi's entry branch is not
+	 * reachable without adding a production option that exists only to serve a test double.
+	 * **The branch returns when `StreamOptions.deferred` is added** — as a new branch on top,
+	 * not as a rewrite of this commit. `onResponse` is still invoked, because it is a real wire
+	 * contract with ~60 call sites, not a deferred-specific one.
+	 */
 	fetchDeferred(model: Model, handle: DeferredHandle, options?: SimpleStreamOptions): Promise<AssistantMessage>;
+	/** Abandon a deferred generation. A no-op: this double never leaves one pending. */
 	cancelDeferred(model: Model, handle: DeferredHandle, options?: SimpleStreamOptions): Promise<void>;
 }
 
@@ -186,8 +199,28 @@ function assistantContentToText(content: AssistantMessage["content"]): string {
 			if (block.type === "toolCall") {
 				return `${block.name}:${JSON.stringify(block.arguments)}`;
 			}
-			// Image and provider-specific blocks carry no text this double can stream.
-			return "";
+			// Four arms pi's version cannot have: its parameter is
+			// `TextContent | ThinkingContent | ToolCall`, and its final `return` is the toolCall
+			// arm — the function is total over its union, with no catch-all. This fork's
+			// `AssistantMessage["content"]` adds four types, so each is named rather than folded
+			// into a silent `return ""`. A catch-all here would drop a block that later grows
+			// real text without any signal.
+			if (block.type === "image") {
+				// Same marker `contentToText` renders for a user-side image.
+				return `[image:${block.mimeType}:${block.data.length}]`;
+			}
+			if (block.type === "redactedThinking") {
+				// Redacted upstream by definition: there is no thought text to project.
+				return "";
+			}
+			if (block.type === "fallback") {
+				// Its own docblock says non-Anthropic consumers must ignore this block. The model
+				// transition is its entire payload, so it is shown as a marker rather than dropped:
+				// a cross-provider hop is exactly what a transcript assertion wants to see.
+				return `[fallback:${block.from.model}->${block.to.model}]`;
+			}
+			// `anthropicServerTool`: server-side tool output, which this double does not model.
+			return "[anthropicServerTool]";
 		})
 		.join("\n");
 }

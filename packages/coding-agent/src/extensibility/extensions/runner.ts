@@ -119,6 +119,7 @@ import { type HookResultRejection, validateHookResult } from "../hooks/result-va
 import { unavailableFrameMessage } from "./unavailable-ui";
 
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
+import { modeRegistry } from "../../modes/mode-registry";
 
 /** Combined result from all before_agent_start handlers */
 interface BeforeAgentStartCombinedResult {
@@ -1362,6 +1363,18 @@ export class ExtensionRunner {
 		// Its own trampolines only — a neighbour's stay installed.
 		this.disposeFileFallbacksFor(extensionPath);
 		this.#managedTimers.clearForPath(extensionPath);
+
+		// Its modes go with it. The registry is process-global and permanent, so a
+		// mode left behind would outlive the extension and then collide with the
+		// reloaded copy's own registration — an error that reads as the *new*
+		// extension's mistake.
+		for (const mode of extension.modes) {
+			// Ownership check, same reason as the provider loop below: this id may
+			// have been re-declared by a later owner since this record was written,
+			// and withdrawing it would delete a live extension's mode silently.
+			if (modeRegistry.modeSource(mode.id) !== extension.path) continue;
+			modeRegistry.unregister(mode.id);
+		}
 
 		for (const { name } of extension.registeredProviders) {
 			// Ownership check: `registerProvider` hands a claimed name to the later

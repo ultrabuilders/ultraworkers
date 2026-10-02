@@ -113,6 +113,7 @@ import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../
 import type { CompactionProtection } from "../../tools/compaction-protection";
 import type { ContextTransform } from "../../tools/compaction-transforms";
 import type { EventBus } from "../../utils/event-bus";
+import type { ModeDefinition } from "../../modes/mode-registry";
 import type {
 	AgentEndEvent,
 	AgentStartEvent,
@@ -1772,6 +1773,29 @@ export interface ExtensionAPI {
 	): void;
 
 	/**
+	 * Declare an interactive mode: a tool set, an optional `enter`/`exit`, a write
+	 * policy, and a chip on the status line.
+	 *
+	 * This is the seam the mode registry was built for — a mode arrives as one
+	 * record rather than as a boolean per built-in, so an out-of-repo extension can
+	 * add one without touching core.
+	 *
+	 * The registry is single-active deliberately: it describes a *mutually
+	 * exclusive* interaction mode, which is what an extension registers. It is not
+	 * a home for orthogonal drivers like `/loop`, which changes no tool set and
+	 * consults no other mode.
+	 *
+	 * Ids are unique across the whole program, not per extension. Registering the
+	 * same id twice throws, so a conflict surfaces at load instead of silently
+	 * displacing whichever mode was there first.
+	 *
+	 * Known limit: a registered mode is not removed when its extension unloads,
+	 * because the registry has no removal operation yet. That is a gap in the
+	 * registry, not a licence to leak — noted here so nobody reads reload as safe.
+	 */
+	registerMode(definition: ModeDefinition): void;
+
+	/**
 	 * Register a top-level `omp <verb>` command, so `omp <verb> …` routes to this
 	 * extension instead of being forwarded to the model as a prompt.
 	 *
@@ -2531,6 +2555,13 @@ export interface Extension {
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	doubleEscapeActions: DoubleEscapeAction[];
+	/**
+	 * Modes this extension registered, kept only so unload can withdraw exactly
+	 * those. The registry itself is process-global, so without this record an
+	 * unloaded extension's mode would outlive it and collide with its own
+	 * replacement on reload.
+	 */
+	modes: ModeDefinition[];
 	outputFormats: Map<string, OutputFormat>;
 	/**
 	 * Setting ids this extension declared, so unloading can remove exactly those.

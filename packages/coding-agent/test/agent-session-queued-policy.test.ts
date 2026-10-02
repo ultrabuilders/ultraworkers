@@ -40,6 +40,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		path: name,
 		resolvedPath: name,
 		registeredProviders: [],
+		modes: [],
 		toolRegistrationListeners: new Set(),
 		handlers: new Map([
 			["before_agent_start", [async (...args: unknown[]) => handler(args[0] as BeforeAgentStartEvent)]],

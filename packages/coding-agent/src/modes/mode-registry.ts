@@ -17,16 +17,22 @@
  *
  * ## Registration is permanent, activation is not
  *
- * `register()` is for load time, and today only the built-in modes call it.
- * **An extension has no way to register a mode yet** — `registerMode` does not
- * exist on `ExtensionAPI`, and nothing outside core reaches this method. The
- * shape here is the one an extension will use, but the seam out is not built;
- * see WI-7 step 7. Do not read this module as extension-facing until then.
+ * `register()` is for load time: the built-in modes, and — through
+ * `registerMode` on `ExtensionAPI` — any extension that declares one.
+ *
+ * ## The registry is process-global, and that is a real limit
+ *
+ * One instance is shared by every session and every extension in the process. So
+ * a mode declared by an extension is visible to *all* of them, and withdrawing it
+ * is the only way it leaves ({@link ModeRegistry.unregister}, which extension
+ * unload calls). That is the correct scope for an extension — it is loaded once
+ * per process from the config directory, not once per session — but it does mean
+ * the registry must not become the source of truth for per-session state. The
+ * built-in modes' `*Enabled` fields still hold that; see WI-7 step 4.
  *
  * Activation is a separate, cheap, reversible operation
  * ({@link ModeRegistry.setActivation}), because switching modes happens far more
- * often than declaring them, and because a mode that could be unregistered while
- * active would leave every consumer holding a record that no longer resolves.
+ * often than declaring them.
  */
 
 import type { WritePolicy } from "../plan-mode/write-policy";
@@ -99,6 +105,8 @@ const DEFAULT_ORDER = 100;
 
 export class ModeRegistry {
 	readonly #definitions = new Map<string, ModeDefinition>();
+	/** Which source declared each id. Mirrors `modelRegistry.providerSource`. */
+	readonly #sources = new Map<string, string>();
 	#activeId: string | undefined;
 	#sorted: string[] | undefined;
 	#listeners = new Set<(mode: ResolvedMode | undefined) => void>();
@@ -110,18 +118,68 @@ export class ModeRegistry {
 	 * A duplicate id throws rather than overwriting. Silently replacing would let
 	 * one extension displace another's mode with no signal, and the displaced mode
 	 * would keep whatever state it had already applied.
+	 *
+	 * `source` names the owner for {@link modeSource}. It is optional because the
+	 * built-in modes have no path — they are declared by core, not loaded from a
+	 * directory — and an id with no source is simply one no unload can withdraw.
 	 */
-	register(definition: ModeDefinition): void {
+	register(definition: ModeDefinition, source?: string): void {
 		if (this.#definitions.has(definition.id)) {
 			throw new Error(`Mode "${definition.id}" is already registered`);
 		}
 		this.#definitions.set(definition.id, definition);
+		if (source !== undefined) this.#sources.set(definition.id, source);
 		this.#sorted = undefined;
 	}
 
 	/** Whether a mode is declared under `id`. */
 	has(id: string): boolean {
 		return this.#definitions.has(id);
+	}
+
+	/**
+	 * Which source declared `id`, or `undefined` for an id that is not declared or
+	 * was declared without a source.
+	 *
+	 * The same shape as `modelRegistry.providerSource`, and for the same reason:
+	 * an unload walks a list of ids it recorded at load time, and by the time it
+	 * runs, one of those ids may belong to somebody else. Comparing the source is
+	 * what stops a stale record from withdrawing a later owner's declaration.
+	 */
+	modeSource(id: string): string | undefined {
+		return this.#sources.get(id);
+	}
+
+	/**
+	 * Withdraw a declaration, returning whether there was one.
+	 *
+	 * Exists because the registry is process-global: without it, unloading an
+	 * extension left its mode declared forever, and a reloaded copy would then
+	 * collide with its own predecessor. That is the same ownership trap
+	 * `modelRegistry.unregisterProvider` guards against in `runner.ts` — so this
+	 * does *not* decide ownership. It withdraws whatever currently holds `id`,
+	 * which is why callers must check {@link modeSource} first; see the unload
+	 * loop in `ExtensionRunner.unloadExtension` for the shape.
+	 *
+	 * Deactivating first is deliberate: a withdrawn mode that is still active
+	 * would leave `resolvedMode()` reporting something nothing can resolve.
+	 */
+	unregister(id: string): boolean {
+		if (!this.#definitions.delete(id)) return false;
+		this.#sources.delete(id);
+		this.#sorted = undefined;
+		if (this.#activeId === id) {
+			this.#activeId = undefined;
+			for (const listener of this.#listeners) {
+				try {
+					listener(undefined);
+				} catch {
+					// Same isolation as `setActivation`: a subscriber that cannot
+					// render must not abort the withdrawal.
+				}
+			}
+		}
+		return true;
 	}
 
 	/**

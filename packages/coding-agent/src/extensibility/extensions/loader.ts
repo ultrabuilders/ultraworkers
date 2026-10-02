@@ -56,6 +56,7 @@ import { installLegacyPiSpecifierShim, loadLegacyPiModule } from "../plugins/leg
 import { getAllPluginExtensionPaths } from "../plugins/loader";
 
 import { createHandlerDisposer, resolvePath, withHostGuard } from "../utils";
+import { modeRegistry, type ModeDefinition } from "../../modes/mode-registry";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type {
 	AssistantThinkingRenderer,
@@ -364,6 +365,22 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		},
 	): void {
 		this.extension.commands.set(name, { name, ...options });
+	}
+
+	registerMode(definition: ModeDefinition): void {
+		// Validate before handing it over, so the message names the extension that
+		// caused the collision. The registry's own throw says only that an id is
+		// taken, which is useless to an author with three extensions loaded.
+		if (modeRegistry.has(definition.id)) {
+			throw new Error(
+				`Extension ${this.extension.resolvedPath}: mode id "${definition.id}" is already registered — ids must be unique across all extensions and the built-in modes`,
+			);
+		}
+		// `path`, not `resolvedPath`: those are different fields, and `unloadExtension`
+		// compares against `extension.path` — the same field `registerProvider` hands
+		// over as its source, and the only one the unload loop has.
+		modeRegistry.register(definition, this.extension.path);
+		this.extension.modes.push(definition);
 	}
 
 	/**
@@ -685,6 +702,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		compactionProtections: [],
 		contextTransforms: [],
 		doubleEscapeActions: [],
+		modes: [],
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
 		outputFormats: new Map(),

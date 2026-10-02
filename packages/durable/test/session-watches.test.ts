@@ -72,9 +72,13 @@ describe("Session document watches", () => {
 		expect(deliveries).toHaveLength(0);
 		await flush();
 		expect(deliveries.map(({ value }) => value?.value)).toEqual([1, 2]);
-		expect(deliveries[0]!.value).toBe(firstPublished.value);
+		// `toBe` is Object.is, so the assertion is symmetric; it is written with the
+		// publication frame on the receiving side because `DocumentCommitChange.value` is
+		// honestly `JsonObject | null` (null meaning "this commit retired the incarnation")
+		// and cannot be narrowed to a State's shape without a cast. Same claim either way.
+		expect(firstPublished.value).toBe(deliveries[0]!.value);
 		expect(deliveries[0]!.ops).toBe(firstPublished.ops);
-		expect(deliveries[1]!.value).toBe(secondPublished.value);
+		expect(secondPublished.value).toBe(deliveries[1]!.value);
 		expect(deliveries[1]!.ops).toBe(secondPublished.ops);
 		expect(initial?.value).toBe(0);
 		await watch.stop();
@@ -213,6 +217,7 @@ describe("Session document watches", () => {
 			state.items.unshift(first);
 		}, context);
 		const newest = (await session.snapshot(StateDoc, context))!;
+		if (initial === null) throw new Error("watch.value is null for a document committed before the watch");
 		expect(newest).not.toBe(initial);
 		expect(newest).toEqual(initial);
 		const batches: unknown[] = [];
@@ -489,6 +494,8 @@ describe("Session document watches", () => {
 		const reads = storage.documentReadCount;
 		await session.unloadDocuments();
 		const reloaded = await session.snapshot(StateDoc, context);
+		if (reloaded === undefined) throw new Error("StateDoc was committed, so a snapshot after unload must return it");
+		if (baseline === null) throw new Error("watch.value is null for a document committed before the watch");
 		expect(reloaded).toEqual(baseline);
 		expect(reloaded).not.toBe(baseline);
 		expect(storage.documentReadCount).toBeGreaterThan(reads);

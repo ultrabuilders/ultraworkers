@@ -463,7 +463,10 @@ describe("Session document migrations", () => {
 		if (admitted.type !== "document.change" || admitted.content.kind !== "base") {
 			throw new Error("Expected migration base");
 		}
-		expect(published.value).toBe(await session.snapshot(Current, context));
+		const currentDoc = await session.snapshot(Current, context);
+		if (currentDoc === undefined)
+			throw new Error("Current was migrated and committed above, so snapshot must return it");
+		expect(published.value).toBe(currentDoc);
 		expect(published.value).toBe(admitted.content.value);
 		expect(published.ops.length).toBeGreaterThan(0);
 		expect(migrations).toBe(1);

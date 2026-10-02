@@ -94,10 +94,12 @@ describe("Session document transactions", () => {
 		const publication = publications.at(-1)!;
 		const published = documentChanges(publication)[0]!;
 		expect(published.record.createdAt).toBe(publication.seq);
+		if (snapshot === undefined)
+			throw new Error("LiveDoc was just committed, so the snapshot asserted above must exist");
 		expect(published.value).toBe(snapshot);
 		expect(published.conversationId).toBe(conversationId);
 		const create = storage.admittedCommits.at(-1)!.find(write => write.type === "document.create")!;
-		expect(create.content.value).toBe(published.value);
+		expect(published.value).toBe(create.content.value);
 	});
 
 	it("never creates on snapshot and returns undefined when absent", async () => {
@@ -499,7 +501,10 @@ describe("Session document transactions", () => {
 		expect(created!.record.id).not.toBe(oldId);
 		expect(created!.record.createdAt).toBe(publication.seq);
 		expect(created).toMatchObject({ value: { message: "new", items: [] }, ops: [] });
-		expect(await session.snapshot(LiveDoc, conversationId, context)).toBe(created!.value);
+		const currentLive = await session.snapshot(LiveDoc, conversationId, context);
+		if (currentLive === undefined)
+			throw new Error("LiveDoc was just re-created, so snapshot must return the new value");
+		expect(created!.value).toBe(currentLive);
 
 		await session.commit(tx => tx.retireDoc(LiveDoc, conversationId), context);
 		expect(await session.snapshot(LiveDoc, conversationId, context)).toBeUndefined();

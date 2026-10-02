@@ -55,7 +55,10 @@ describe("Session document states", () => {
 
 		expect(deliveries.map(({ sequence }) => sequence)).toEqual([0, 1, 2]);
 		expect(deliveries.map(({ value }) => value?.value)).toEqual([0, 1, 2]);
-		expect(state.value).toBe(await session.snapshot(StateDoc, context));
+		const current = await session.snapshot(StateDoc, context);
+		if (current === undefined)
+			throw new Error("StateDoc was committed three times above, so snapshot must return it");
+		expect(state.value).toBe(current);
 		state.dispose();
 	});
 
@@ -93,7 +96,7 @@ describe("Session document states", () => {
 		}, context);
 		await flush();
 		const published = documentChanges(publications.at(-1)!)[0]!;
-		expect(state.value).toBe(published.value);
+		expect(published.value).toBe(state.value);
 		expect(receivedOps).toBe(published.ops);
 		expect(state.value?.retained).toBe((await session.snapshot(StateDoc, context))!.retained);
 		state.dispose();
@@ -209,6 +212,8 @@ describe("Session document states", () => {
 		const reads = storage.documentReadCount;
 		await session.unloadDocuments();
 		const reloaded = await session.snapshot(StateDoc, context);
+		if (reloaded === undefined) throw new Error("StateDoc was committed, so a snapshot after unload must return it");
+		if (baseline === null) throw new Error("documentState.value is null for a document committed before it");
 		expect(reloaded).toEqual(baseline);
 		expect(reloaded).not.toBe(baseline);
 		expect(storage.documentReadCount).toBeGreaterThan(reads);

@@ -3,25 +3,35 @@
  * programme's test names: a tool, a slash command, a lifecycle hook, a TUI
  * panel, and a mode — with no core change and no hardcoded path.
  *
- * The signature is deliberately loose. This file is loaded by the real
- * discovery path, not imported by a test that could satisfy it with types the
- * extension author would never have; `api` is whatever `ExtensionAPI` is at
- * runtime, and every call below is one the published interface actually has.
+ * Typed, and that is the point rather than a nicety. This is the file an author
+ * copies, so every parameter is annotated from the published `ExtensionAPI` —
+ * the same import the shipped examples use. An untyped fixture loads fine and
+ * teaches its reader nothing, while the mistakes an author actually hits are
+ * exactly these: `execute` takes five arguments, and an unannotated `api` is an
+ * implicit `any` under this repo's settings.
  */
-export default function outsider(api) {
+import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+
+export default function outsider(api: ExtensionAPI): void {
 	api.registerTool({
 		name: "outsider_echo",
 		label: "Outsider Echo",
 		description: "Echoes its input. Registered by an extension installed from outside the repo.",
-		parameters: {
-			type: "object",
-			properties: {
-				text: { type: "string", description: "What to echo back." },
-			},
-			required: ["text"],
-		},
-		execute: async args => ({
-			content: [{ type: "text", text: `outsider heard: ${args?.text ?? ""}` }],
+		// `api.zod`, the builder the host injects — not `import { z } from
+		// "@oh-my-pi/omptype/zod"`. Measured: a package import of any `@oh-my-pi/*`
+		// module fails to resolve from an extension installed outside the repo,
+		// because a user's config directory has no `node_modules` to walk up to.
+		// The injected builder is how a real extension is written, and it is also
+		// the only form that survives being installed.
+		parameters: api.zod.object({
+			text: api.zod.string().describe("What to echo back."),
+		}),
+		// Five parameters in this order: call id, parsed params, abort signal,
+		// update callback, extension context. Passing only the params is the
+		// mistake a reader makes first, so they are written out rather than
+		// elided behind a rest signature.
+		execute: async (_toolCallId, params: { text: string }) => ({
+			content: [{ type: "text", text: `outsider heard: ${params.text}` }],
 			details: {},
 		}),
 	});
@@ -33,11 +43,14 @@ export default function outsider(api) {
 
 	api.on("session_start", async () => {});
 
-	// `ctx.ui.setWidget`, not a detached `pi.ui.setWidget`: the panel has to be
-	// reachable from the context the hook is handed, which is the only shape an
-	// extension author can rely on.
-	api.on("session_start", async ctx => {
-		ctx.ui.setWidget("outsider-widget", () => [{ type: "text", text: "outsider panel" }]);
+	// `ctx.ui.setWidget`, not a detached `pi.ui.setWidget`: the panel is reached
+	// through the context the hook is handed, the only shape an author can rely
+	// on. `setWidget` is documented to work without a frame.
+	api.on("session_start", async (_event, ctx: ExtensionContext) => {
+		// `ExtensionWidgetContent` is `string[] | factory | undefined` — lines of
+		// text, not content blocks. Passing blocks type-errors, which is the second
+		// thing a reader gets wrong here.
+		ctx.ui.setWidget("outsider-widget", ["outsider panel"]);
 	});
 
 	api.registerMode({

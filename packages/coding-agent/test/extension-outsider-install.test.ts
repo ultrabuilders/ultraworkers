@@ -24,6 +24,8 @@ import { getAgentDir, getPluginsDir, removeSyncWithRetries, setAgentDir, TempDir
  */
 
 const FIXTURE_DIR = path.join(import.meta.dir, "fixtures", "outsider-extension");
+/** `import.meta.dir` is `<pkg>/test`; the git root is two levels up. */
+const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 
 describe("an extension installed from outside the repo", () => {
 	let projectDir: TempDir;
@@ -113,15 +115,57 @@ describe("an extension installed from outside the repo", () => {
 		// pinning is that the out-of-repo extension reached the UI context and the
 		// call was accepted, not that some record on `extension` grew. A vacuous
 		// `>= 0` here would pass against a fixture that never declared a panel.
+		// An `ExtensionHandler` receives `(event, ctx)` — two arguments. Passing one
+		// object makes it the *event*, and the hook then dereferences `ctx.ui` on
+		// `undefined`, which reads as a bug in the extension rather than in the call.
 		const widgets: string[] = [];
+		const event = {};
 		const ctx = { ui: { hasUI: false, setWidget: (key: string) => widgets.push(key) } };
-		for (const hook of startHooks) await hook(ctx as never);
+		for (const hook of startHooks) await hook(event as never, ctx as never);
 		expect(widgets).toContain("outsider-widget");
 		// 5 — mode, with its write policy reachable from the same registry core reads
 		expect(modeRegistry.has("outsider")).toBe(true);
 		modeRegistry.setActivation("outsider");
 		expect(modeRegistry.resolvedMode()?.statusLine.label).toBe("Outsider");
 		expect(modeRegistry.writePolicy()).toEqual({ denyDelete: true });
+	});
+
+	it("needed no core change: the fixture is the only thing that differs", async () => {
+		// The claim in this file's name is "out-of-repo", and nothing above asserts
+		// it. Those cases would still pass if `registerMode` had been added to
+		// `ExtensionAPI` for extensions only, or if a loader branch special-cased
+		// this fixture's id. So: the extension loads, AND the working tree carries
+		// no edit to the modules it is supposed to reach through.
+		//
+		// Scoped to the modules that implement the seams this file exercises. A
+		// whole-tree assertion would be a different test, and would go red for
+		// unrelated work on a shared tree.
+		installInto(getAgentDir());
+		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
+
+		const result = await discoverAndLoadExtensions([], projectDir.path());
+		expect(result.errors).toHaveLength(0);
+		expect(modeRegistry.has("outsider")).toBe(true);
+
+		// Repo-relative, because `cwd` is the git root: `git status -- <path>`
+		// resolves its pathspec against the root, so a package-relative path
+		// matches nothing and the query reports a clean tree for a dirty file.
+		// Measured — a mutation against the package-relative form stayed green.
+		const seamModules = [
+			"packages/coding-agent/src/extensibility/extensions/loader.ts",
+			"packages/coding-agent/src/extensibility/extensions/runner.ts",
+			"packages/coding-agent/src/extensibility/extensions/types.ts",
+			"packages/coding-agent/src/modes/mode-registry.ts",
+		];
+		const modified = seamModules.filter(rel => {
+			const proc = Bun.spawnSync(["git", "status", "--porcelain", "--", rel], { cwd: REPO_ROOT });
+			if (proc.exitCode !== 0) {
+				throw new Error(`git status failed for ${rel}: ${proc.stderr.toString()}`);
+			}
+			return proc.stdout.toString().trim().length > 0;
+		});
+
+		expect(modified).toEqual([]);
 	});
 
 	it("installs the same extension at project scope, discovered from the working directory", async () => {
@@ -152,7 +196,15 @@ describe("an extension installed from outside the repo", () => {
 		const tool = extension?.tools.get("outsider_echo");
 		if (!tool) throw new Error("outsider_echo was not registered");
 
-		const output = await tool.definition.execute({ text: "ping" } as never, {} as never);
+		// Five arguments, matching the real signature: call id, params, signal,
+		// update callback, context. Two is the shape a reader guesses.
+		const output = await tool.definition.execute(
+			"call-1",
+			{ text: "ping" } as never,
+			undefined,
+			undefined,
+			{} as never,
+		);
 		expect(JSON.stringify(output.content)).toContain("outsider heard: ping");
 	});
 

@@ -47,7 +47,7 @@
  */
 
 import * as path from "node:path";
-import { checkPre, parseTable, RULES_VERSION } from "./check-disposition.ts";
+import { checkPre, parseTable, RULES_VERSION } from "./check-disposition";
 
 /**
  * The ceiling. Not the count of correct rows — the count of rows whose file has

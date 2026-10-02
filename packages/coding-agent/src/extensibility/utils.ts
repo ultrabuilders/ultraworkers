@@ -155,39 +155,16 @@ let hostGuardStdinWasPaused = false;
 let hostGuardStdinWasRaw = false;
 
 /**
- * Run `fn` with host-owned process state fenced off from third-party module
- * evaluation, restored in `finally`. Guards the dynamic-import and
- * factory-invocation sites that load extension / hook / tool / plugin modules
- * from user directories (including Claude Code's `~/.claude/tools`, which OMP
- * slurps wholesale). Two hazards are neutralized:
+ * Build the throwing replacement that stands in for `process.exit` or
+ * `process.reallyExit` while a guard window is open.
  *
- * - **Hard exit.** `process.exit(0)` / `process.reallyExit(0)` in a stranger's
- *   script (e.g. a CLI-shaped module with `main()` at the bottom) would kill
- *   OMP during startup with no error surface, since `try/catch` cannot
- *   intercept a synchronous exit. Both are patched to throw
- *   {@link ExtensionExitError} instead.
- * - **stdin hijack.** A module that attaches a stdin consumer at evaluation
- *   time (an MCP `StdioServerTransport`, or a bare `resume()`) steals Bun's
- *   single stdin reader, so the TUI goes permanently deaf after one keypress
- *   (#5618). Any `data`/`readable`/`end`/`close`/`error` listener the module
- *   adds is removed, and the stream's paused and raw-mode state is restored to
- *   the pre-load snapshot.
+ * A synchronous exit cannot be intercepted by `try/catch`, so the only way to stop a
+ * stranger's module from killing OMP during startup is to remove the primitive and put
+ * something throwable in its place. Each stub is stamped by its caller with the native
+ * exit it shadows, so host-owned shutdown can still reach the real thing (#6488).
  *
- * Nested guard windows are safe: only the outermost guard snapshots and
- * restores host state.
- *
- * OVERLAPPING windows are a weaker claim than that. Because the counter is a
- * plain depth, two windows that interleave rather than nest (A enters, B enters,
- * A exits, B exits) snapshot only once and restore only once — on B's exit, using
- * A's snapshot. Between A's exit and B's exit stdin is unguarded, which is real
- * but bounded: it lasts exactly as long as the inner window has left to run.
- * "Safe" above means no state is lost or corrupted, not that no window exists.
- *
- * A depth left above zero by an abandoned window (its `finally` never runs) is a
- * different failure, and a silent one: every later `withHostGuard` in that
- * process becomes a no-op, since neither the snapshot nor the restore branch is
- * reached. What a stranded depth owes the host is still open; see
- * {@link hostGuardState} for what can be observed about it.
+ * Which windows exist, how they nest, and what a window that never closes costs belong to
+ * {@link withHostGuard}, whose it is; this factory only makes one stub.
  */
 function guardedExit(alias: ExitAliasName): (code?: number | string) => never {
 	return (code?: number | string): never => {
@@ -229,6 +206,41 @@ export function hostGuardState(): HostGuardState {
 	};
 }
 
+/**
+ * Run `fn` with host-owned process state fenced off from third-party module
+ * evaluation, restored in `finally`. Guards the dynamic-import and
+ * factory-invocation sites that load extension / hook / tool / plugin modules
+ * from user directories (including Claude Code's `~/.claude/tools`, which OMP
+ * slurps wholesale). Two hazards are neutralized:
+ *
+ * - **Hard exit.** `process.exit(0)` / `process.reallyExit(0)` in a stranger's
+ *   script (e.g. a CLI-shaped module with `main()` at the bottom) would kill
+ *   OMP during startup with no error surface, since `try/catch` cannot
+ *   intercept a synchronous exit. Both are patched to throw
+ *   {@link ExtensionExitError} instead.
+ * - **stdin hijack.** A module that attaches a stdin consumer at evaluation
+ *   time (an MCP `StdioServerTransport`, or a bare `resume()`) steals Bun's
+ *   single stdin reader, so the TUI goes permanently deaf after one keypress
+ *   (#5618). Any `data`/`readable`/`end`/`close`/`error` listener the module
+ *   adds is removed, and the stream's paused and raw-mode state is restored to
+ *   the pre-load snapshot.
+ *
+ * Nested guard windows are safe: only the outermost guard snapshots and
+ * restores host state.
+ *
+ * OVERLAPPING windows are a weaker claim than that. Because the counter is a
+ * plain depth, two windows that interleave rather than nest (A enters, B enters,
+ * A exits, B exits) snapshot only once and restore only once — on B's exit, using
+ * A's snapshot. Between A's exit and B's exit stdin is unguarded, which is real
+ * but bounded: it lasts exactly as long as the inner window has left to run.
+ * "Safe" above means no state is lost or corrupted, not that no window exists.
+ *
+ * A depth left above zero by an abandoned window (its `finally` never runs) is a
+ * different failure, and a silent one: every later `withHostGuard` in that
+ * process becomes a no-op, since neither the snapshot nor the restore branch is
+ * reached. What a stranded depth owes the host is still open; see
+ * {@link hostGuardState} for what can be observed about it.
+ */
 export async function withHostGuard<T>(fn: () => Promise<T>): Promise<T> {
 	if (hostGuardDepth === 0) {
 		// Stamp each throwing replacement with the native primitive it shadows so

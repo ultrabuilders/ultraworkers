@@ -130,42 +130,40 @@ describe("an extension installed from outside the repo", () => {
 		expect(modeRegistry.writePolicy()).toEqual({ denyDelete: true });
 	});
 
-	it("needed no core change: the fixture is the only thing that differs", async () => {
-		// The claim in this file's name is "out-of-repo", and nothing above asserts
-		// it. Those cases would still pass if `registerMode` had been added to
-		// `ExtensionAPI` for extensions only, or if a loader branch special-cased
-		// this fixture's id. So: the extension loads, AND the working tree carries
-		// no edit to the modules it is supposed to reach through.
+	it("needed no core change: it loaded the installed copy, never the one in this repo", async () => {
+		// The claim in this file's name is "out-of-repo", and it is the one thing the
+		// sibling cases cannot see. They all read the same registry, so a loader
+		// branch that special-cased this fixture's id — or pointed discovery at the
+		// copy inside `test/fixtures/` — leaves every one of them green. What no
+		// sibling can distinguish is *which file on disk* answered.
 		//
-		// Scoped to the modules that implement the seams this file exercises. A
-		// whole-tree assertion would be a different test, and would go red for
-		// unrelated work on a shared tree.
+		// So assert provenance: the extension that registered these surfaces is the
+		// copy in the temp home, and provably not the repository's. A hardcoded path
+		// cannot produce a temp directory this run created, which is what makes this
+		// the check the file's name promises.
+		//
+		// This replaces a `git status --porcelain` sweep over the four seam modules.
+		// That version measured the working tree, not this claim: it went red for any
+		// peer with legitimate work in a seam file, and — the part that made it worse
+		// than useless — it read *dirty vs HEAD*, so the special case it was written
+		// to catch would have to be **committed** to evade it. Committed, it read
+		// clean and passed. A gate that fails on honest work and passes on the abuse
+		// it names is a load meter, not a gate.
 		installInto(getAgentDir());
 		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
 
 		const result = await discoverAndLoadExtensions([], projectDir.path());
 		expect(result.errors).toHaveLength(0);
 		expect(modeRegistry.has("outsider")).toBe(true);
+		const extension = result.extensions.find(ext => ext.path.includes("outsider-extension"));
+		expect(extension).toBeDefined();
+		if (!extension) return;
 
-		// Repo-relative, because `cwd` is the git root: `git status -- <path>`
-		// resolves its pathspec against the root, so a package-relative path
-		// matches nothing and the query reports a clean tree for a dirty file.
-		// Measured — a mutation against the package-relative form stayed green.
-		const seamModules = [
-			"packages/coding-agent/src/extensibility/extensions/loader.ts",
-			"packages/coding-agent/src/extensibility/extensions/runner.ts",
-			"packages/coding-agent/src/extensibility/extensions/types.ts",
-			"packages/coding-agent/src/modes/mode-registry.ts",
-		];
-		const modified = seamModules.filter(rel => {
-			const proc = Bun.spawnSync(["git", "status", "--porcelain", "--", rel], { cwd: REPO_ROOT });
-			if (proc.exitCode !== 0) {
-				throw new Error(`git status failed for ${rel}: ${proc.stderr.toString()}`);
-			}
-			return proc.stdout.toString().trim().length > 0;
-		});
-
-		expect(modified).toEqual([]);
+		// The installed copy, under the temp home this run made.
+		expect(extension.path.startsWith(`${tempHome}${path.sep}`)).toBe(true);
+		// And not the fixture sitting in this repository, which is the only path a
+		// special case could have pointed at.
+		expect(extension.path.startsWith(`${REPO_ROOT}${path.sep}`)).toBe(false);
 	});
 
 	it("installs the same extension at project scope, discovered from the working directory", async () => {

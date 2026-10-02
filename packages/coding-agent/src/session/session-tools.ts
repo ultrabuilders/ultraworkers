@@ -2251,9 +2251,22 @@ export class SessionTools {
 		// the full new catalog, which is what makes `beta` visible-but-off rather than
 		// absent. Asserting "the registry has it" would pass on the unpatched tree —
 		// the boundary that matters is registered ≠ active.
-		const retainedActiveManagerToolNames = previousActiveMcpToolNames.filter(name =>
-			this.#mcpManagerToolNames.has(name),
-		);
+		//
+		// A FIRST connection is not a push, though. `previousActiveMcpToolNames` is
+		// empty on the session's first MCP refresh, so gating that one as a push left a
+		// tool the user deliberately connected registered but never activated: invisible
+		// to the model and absent from the xd:// route guidance. The startup path never
+		// hit this because it hands its catalog over as `initialMcpManagerTools` and
+		// activates it wholesale, so deferred discovery (`hasUI`) and awaited startup
+		// diverged on which MCP tools the model could actually call.
+		// `mcp-tool-activation-session.test.ts` already pins the intended contract —
+		// ALPHA (connected) becomes active, BETA (pushed afterwards) does not — so the
+		// discriminator is whether the registry already held MCP tools: false for a
+		// first connection, true for every `list_changed` push that follows it.
+		const isFirstMCPConnection = previousMcpTools.size === 0;
+		const retainedActiveManagerToolNames = isFirstMCPConnection
+			? [...this.#mcpManagerToolNames]
+			: previousActiveMcpToolNames.filter(name => this.#mcpManagerToolNames.has(name));
 		// Extension-owned MCP tools retain their prior selection unchanged: they do not
 		// arrive through the manager path and are not subject to its gate.
 		const retainedActiveExtensionToolNames = previousActiveMcpToolNames.filter(

@@ -331,19 +331,69 @@ export async function findCoinedRefs(root: string, rows: readonly Row[]): Promis
 }
 
 /**
- * A `./*.js` → `./src/*.ts` export entry: every `.ts` DIRECTLY under `src/` is a
- * public module of that package.
+ * An export entry that publishes `src/` by wildcard: a subpath key containing `*`,
+ * pointing at a wildcard target under `./src/`.
  *
- * Single-segment on purpose. The key has no `**`, so `src/a/b.ts` is NOT published
- * and renaming it is safe. Reading it as `**` would report hundreds of nested rows
- * that carry no breaking change; reading it as matching nothing would report none.
- * Both errors are silent, so the shape is anchored rather than searched for.
+ * The wildcard SPANS `/`. That is not a detail of this regex, it is how `exports`
+ * resolves: `{ "exports": { "./*": "./src/*.ts" } }` serves `pkg/deep/nested/leaf`
+ * from `src/deep/nested/leaf.ts`. Verified against Node's own resolver, and stated
+ * in this repo at `packages/coding-agent/scripts/legacy-pi-virtual-module.ts`:
+ *
+ *   // Recursive on purpose: Node matches `*` in an `exports` pattern across `/`
+ *
+ * An earlier version of this rule anchored on the single-segment shape `./*.js` and
+ * concluded from the missing `**` that `src/a/b.ts` was not published and so was
+ * safe to rename. That inference was backwards, and it was the dangerous kind of
+ * wrong: it did not merely under-report, it certified a class of files as safe. It
+ * under-reported by exactly the depth-1 subset (16 of 194).
  */
-const PUBLISHING_EXPORT_KEY = /^\.\/\*\.[a-z]+$/;
-const PUBLISHING_EXPORT_TARGET = /^\.\/src\/\*\.[a-z]+$/;
+const PUBLISHING_EXPORT_KEY = /^\.\/[^"]*\*[^"]*$/;
+const PUBLISHING_EXPORT_TARGET = /^\.\/src\/[^"]*\*[^"]*$/;
 
-/** `packages/<pkg>/src/<name>.ts` — one segment under `src/`, which is what a wildcard publishes. */
-const PUBLISHED_MODULE = /^packages\/([^/]+)\/src\/([^/]+)\.(?:ts|tsx|mjs|js)$/;
+/**
+ * `packages/<pkg>/src/<rest>.<ext>` — any depth under `src/`.
+ *
+ * Depth is deliberately unrestricted: `*` matches across `/`, so a nested file is
+ * published by exactly the same entry that publishes a top-level one.
+ */
+const PUBLISHED_MODULE = /^packages\/([^/]+)\/src\/(.+)\.(ts|tsx|mjs|js)$/;
+
+/**
+ * An `exports` glob, where `*` spans `/`, anchored at both ends.
+ *
+ * Built by splitting on `*` rather than by a character class, because the wildcard
+ * has to be able to consume a `/` for a nested path to match. Escaping each
+ * literal segment is what keeps a `.` in `./src/` from matching any character.
+ */
+function exportGlob(glob: string): RegExp {
+	const body = glob
+		.split("*")
+		.map(segment => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+		.join("(.*)");
+	return new RegExp(`^${body}$`);
+}
+
+/**
+ * The specifier a consumer writes, for a key and a file's path under `src/`.
+ *
+ * `./*.js` against `overlays/model-hub` yields `overlays/model-hub.js` — the `.js`
+ * comes from the KEY, not the filename, so a rule that appends it from the file
+ * extension would name a specifier that does not resolve. Returns null rather than
+ * a guess when the key's directory does not prefix the file.
+ *
+ * The result is round-tripped through `exportGlob` before it is returned, so a
+ * specifier that does not actually match the key it came from is never reported.
+ */
+function resolveSpecifier(key: string, rest: string): string | null {
+	const star = key.indexOf("*");
+	if (star < 0) return null;
+	const prefix = key.slice(0, star);
+	const suffix = key.slice(star + 1);
+	const dir = prefix.slice(prefix.lastIndexOf("/") + 1);
+	if (!rest.startsWith(dir)) return null;
+	const spec = `./${dir}${rest.slice(dir.length)}${suffix}`;
+	return exportGlob(key).test(spec) ? spec.slice(2) : null;
+}
 
 export interface PublishedRenameRow {
 	readonly path: string;
@@ -362,12 +412,23 @@ export interface PublishedRenameSurvey {
 	/** Directories whose package.json publishes `src/*` as public modules. */
 	readonly publishing: ReadonlySet<string>;
 	readonly renameRowsTotal: number;
-	/** Rename rows in a publishing package that are NOT published modules (nested, or non-`.ts`). */
+	/** Rename rows in a publishing package that no wildcard export entry publishes. */
 	readonly notPublishedInSamePackage: number;
-	/** Rename rows in packages that publish nothing by wildcard. */
+	/** Rename rows in packages that publish nothing by wildcard, including private ones. */
 	readonly outsidePublishingPackage: number;
 	/**
-	 * Whether the three buckets sum to the rename total.
+	 * Rename rows naming a file that is not on disk.
+	 *
+	 * Excluded rather than reported, and counted rather than dropped, so the
+	 * partition still reconciles. A row pointing at a deleted file describes
+	 * something that does not exist: there is no specifier to break and no
+	 * consumer to break it for, so attaching a verdict to it would be a claim
+	 * about a file nobody can open. Same reasoning as the generated-artifact rows:
+	 * a file regenerated on every build has no stable answer either.
+	 */
+	readonly fileMissingOnDisk: number;
+	/**
+	 * Whether the four buckets sum to the rename total.
 	 *
 	 * Reported so a reader can tell a partitioned population from a number that
 	 * merely looks plausible: if these ever stop summing, one of the buckets is
@@ -392,9 +453,30 @@ export interface PublishedRenameSurvey {
  * `private: true` packages are excluded: a private package publishes to nobody, so
  * renaming inside it breaks no consumer. Including them would inflate the count with
  * changes that are provably safe.
+ *
+ * A row naming a file that is not on disk is excluded into its own counted bucket:
+ * the row's premise is a file, and without the file there is no specifier and no
+ * consumer to break.
  */
 export async function findPublishedFileRenames(root: string, rows: readonly Row[]): Promise<PublishedRenameSurvey> {
-	const publishing = new Map<string, string>(); // dir -> published package name
+	/** A wildcard export entry, with the conditions (`types`, `import`) already unwrapped. */
+	interface Publishing {
+		readonly name: string;
+		readonly entries: readonly { readonly key: string; readonly target: string }[];
+	}
+
+	/** Collect every string target under an export value, at any condition depth. */
+	function targetsOf(value: unknown, into: string[]): void {
+		if (typeof value === "string") {
+			into.push(value);
+			return;
+		}
+		if (value !== null && typeof value === "object") {
+			for (const nested of Object.values(value)) targetsOf(nested, into);
+		}
+	}
+
+	const publishing = new Map<string, Publishing>(); // dir -> publishing evidence
 	for await (const rel of new Bun.Glob("packages/*/package.json").scan({ cwd: root })) {
 		const dir = rel.slice("packages/".length, rel.length - "/package.json".length);
 		const handle = Bun.file(path.join(root, rel));
@@ -404,39 +486,65 @@ export async function findPublishedFileRenames(root: string, rows: readonly Row[
 		} catch {
 			continue; // unreadable manifest is not evidence that nothing is published
 		}
-		if (manifest.private) continue;
+		if (manifest.private) continue; // publishes to nobody, so it breaks no consumer
+		const entries: { key: string; target: string }[] = [];
 		for (const [key, val] of Object.entries(manifest.exports ?? {})) {
 			if (!PUBLISHING_EXPORT_KEY.test(key)) continue;
-			const targets = typeof val === "string" ? [val] : Object.keys((val ?? {}) as object);
-			if (!targets.some(t => PUBLISHING_EXPORT_TARGET.test(t))) continue;
-			publishing.set(dir, manifest.name ?? dir);
+			const targets: string[] = [];
+			targetsOf(val, targets);
+			for (const target of targets) {
+				if (PUBLISHING_EXPORT_TARGET.test(target)) entries.push({ key, target });
+			}
 		}
+		if (entries.length > 0) publishing.set(dir, { name: manifest.name ?? dir, entries });
 	}
 
 	const found: PublishedRenameRow[] = [];
 	let renameRowsTotal = 0;
 	let notPublishedInSamePackage = 0;
 	let outsidePublishingPackage = 0;
+	let fileMissingOnDisk = 0;
 	for (const row of rows) {
 		if (row.disposition !== "rename") continue;
 		renameRowsTotal++;
 		const module = PUBLISHED_MODULE.exec(row.path);
-		if (module) {
-			const packageName = publishing.get(module[1]!);
-			if (packageName !== undefined) {
-				found.push({
-					path: row.path,
-					line: row.line,
-					dir: module[1]!,
-					packageName,
-					specifier: `${packageName}/${module[2]}`,
-				});
-				continue;
+		if (!module) {
+			if (publishing.has(row.path.split("/")[1] ?? "")) notPublishedInSamePackage++;
+			else outsidePublishingPackage++;
+			continue;
+		}
+		const publishingForDir = publishing.get(module[1]!);
+		if (publishingForDir === undefined) {
+			outsidePublishingPackage++; // no manifest publishes this package by wildcard
+			continue;
+		}
+		// The row's claim is about a FILE. If the file is not there, the claim is
+		// about nothing, so it gets its own bucket instead of a verdict.
+		if (!(await Bun.file(path.join(root, row.path)).exists())) {
+			fileMissingOnDisk++;
+			continue;
+		}
+		const fileRel = `./src/${module[2]}.${module[3]}`;
+		let specifier: string | null = null;
+		for (const entry of publishingForDir.entries) {
+			if (!exportGlob(entry.target).test(fileRel)) continue;
+			const resolved = resolveSpecifier(entry.key, module[2]!);
+			if (resolved !== null) {
+				specifier = `${publishingForDir.name}/${resolved}`;
+				break;
 			}
 		}
-		// Same package but not a published module — a nested path, or a non-`.ts` file.
-		if (module || publishing.has(row.path.split("/")[1] ?? "")) notPublishedInSamePackage++;
-		else outsidePublishingPackage++;
+		if (specifier === null) {
+			notPublishedInSamePackage++; // inside a publishing package, but no entry publishes it
+			continue;
+		}
+		found.push({
+			path: row.path,
+			line: row.line,
+			dir: module[1]!,
+			packageName: publishingForDir.name,
+			specifier,
+		});
 	}
 
 	return {
@@ -445,7 +553,9 @@ export async function findPublishedFileRenames(root: string, rows: readonly Row[
 		renameRowsTotal,
 		notPublishedInSamePackage,
 		outsidePublishingPackage,
-		reconciles: found.length + notPublishedInSamePackage + outsidePublishingPackage === renameRowsTotal,
+		fileMissingOnDisk,
+		reconciles:
+			found.length + notPublishedInSamePackage + outsidePublishingPackage + fileMissingOnDisk === renameRowsTotal,
 	};
 }
 

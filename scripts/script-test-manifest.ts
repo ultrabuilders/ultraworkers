@@ -61,6 +61,7 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "check-grp-c-file-counts.test.ts", reason: "" },
 	{ file: "check-grp-c-test-baseline.test.ts", reason: "" },
 	{ file: "ci-check-full.test.ts", reason: "" },
+	{ file: "check-script-tests.test.ts", reason: "" },
 
 	// The `.mjs` gates' own tests. These run under `node --test`, not `bun test`:
 	// they import `node:test`, whose runner node owns. Measured 2026-10-02 —

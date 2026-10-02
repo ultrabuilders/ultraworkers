@@ -24,11 +24,15 @@
  * boundary — one is a build output path, the other is an install input, and
  * matching them IS the requirement.
  *
- * Scope is deliberately narrow. The installed NAME (`$out/bin/omp`), `pname`,
- * and `mainProgram` are user-facing and are the owner's decision — a nix user
- * who writes `programs.omp.enable = true` breaks if they move. This gate says
- * nothing about them and would stay green through such a rename, because the
- * source path it checks is independent of the destination name.
+ * Scope is deliberately narrow. The installed NAME (`$out/bin/ultraworkers`),
+ * `pname`, and `mainProgram` are user-facing and are the owner's decision. The
+ * name moved from `omp` to `ultraworkers` during the rebrand; that move was a
+ * user-facing break for a nix consumer writing `programs.omp.enable = true`,
+ * and it was decided as policy rather than derived from anything this gate
+ * checks. This gate says nothing about the destination name and stayed green
+ * through that rename on purpose, because the source path it compares is
+ * independent of where the file is installed to. Measured 2026-10-02: both
+ * sides read `ultraworkers`, so the assertion below is still true.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";

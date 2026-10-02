@@ -672,7 +672,11 @@ export class MCPManager {
 	async #applyProjectConfig(enabled: boolean): Promise<void> {
 		await this.#discoveryInFlight;
 		const options = this.#discoverOptions;
-		if (!options || (options.enableProjectConfig ?? true) === enabled) return;
+		// `false`, matching `loadConfigs` and the `mcp.enableProjectConfig` default, and
+		// the direction is load-bearing rather than cosmetic: an unset cached option must
+		// read as OFF, or enabling the flag matches it, returns early, and the reload
+		// this reconciler exists to perform silently never happens.
+		if (!options || (options.enableProjectConfig ?? false) === enabled) return;
 		this.#discoverOptions = { ...options, enableProjectConfig: enabled };
 		const loaded = await this.loadConfigs(this.cwd, {
 			enableProjectConfig: enabled,

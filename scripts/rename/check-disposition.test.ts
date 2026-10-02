@@ -199,6 +199,69 @@ describe("stage pre", () => {
 		expect(violations.filter(v => v.rule === "stale-row").map(v => v.detail)).toEqual(["src/gone.ts"]);
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
+
+	it("does not call a row stale just because its class is disjoint from the pinned set", async () => {
+		// The bug this defends: `keep-path` is counted by the literal `".omp"`, which
+		// the pinned expression cannot match, so a file holding only `".omp"` has no
+		// pinned hit. The gate used to read "no pinned hit" as "row went stale" and
+		// flagged every such row — 54 of them, all live. The README already said the
+		// opposite: a worker's file "may have no pinned hits at all".
+		const root = await tree({
+			...FILES,
+			"src/p.ts": `const dir = path.join(home, ".omp", "run");\n`,
+		});
+		const violations = await checkPre(root, [
+			row_("src/a.ts", 2, "rename", "W1"),
+			row_("src/c.ts", 1, "keep-wire", "N3", "N3"),
+			row_("src/p.ts", 1, "keep-path", "on-disk agent dir", "N-path"),
+		]);
+		expect(violations.filter(v => v.rule === "stale-row")).toEqual([]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("still calls a row stale once the file stops carrying what its class counts", async () => {
+		// The negative branch, and the reason the case above is not simply a relaxed
+		// gate: widening "stale" to include disjoint classes must not make `stale-row`
+		// unreachable. Delete the literal and the row has to be reported again.
+		const root = await tree({
+			...FILES,
+			"src/p.ts": `const dir = path.join(home, "run");\n`,
+		});
+		const violations = await checkPre(root, [
+			row_("src/a.ts", 2, "rename", "W1"),
+			row_("src/c.ts", 1, "keep-wire", "N3", "N3"),
+			row_("src/p.ts", 1, "keep-path", "on-disk agent dir", "N-path"),
+		]);
+		expect(violations.filter(v => v.rule === "stale-row").map(v => v.detail)).toEqual(["src/p.ts"]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("balances a literal-counted row against its own literal, not the pinned total", async () => {
+		// `hits` was only ever checked as a group SUM against the pinned count, and a
+		// `".omp"`-only file has a pinned count of 0 — so a `keep-path` row declaring
+		// `hits = 0` balanced perfectly against a file holding 45 occurrences.
+		// Measured 2026-10-02: 45 such rows, all declaring 0, all carrying `".omp"`.
+		const root = await tree({
+			...FILES,
+			"src/p.ts": `const a = ".omp"; const b = ".omp"; const c = ".omp";\n`,
+		});
+		const wrong = await checkPre(root, [
+			row_("src/a.ts", 2, "rename", "W1"),
+			row_("src/c.ts", 1, "keep-wire", "N3", "N3"),
+			row_("src/p.ts", 0, "keep-path", "on-disk agent dir", "N-path"),
+		]);
+		expect(wrong.filter(v => v.rule === "literal-hits-imbalance").map(v => v.detail)).toEqual([
+			"src/p.ts (line 2): keep-path declares 0, file has 3 of \".omp\"",
+		]);
+
+		const right = await checkPre(root, [
+			row_("src/a.ts", 2, "rename", "W1"),
+			row_("src/c.ts", 1, "keep-wire", "N3", "N3"),
+			row_("src/p.ts", 3, "keep-path", "on-disk agent dir", "N-path"),
+		]);
+		expect(right).toEqual([]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
 });
 
 describe("stage post", () => {

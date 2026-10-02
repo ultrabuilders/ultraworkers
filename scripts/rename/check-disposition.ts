@@ -295,9 +295,24 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 	for (const filePath of paths) {
 		if (!byPath.has(filePath)) violations.push({ rule: "missing-row", detail: filePath });
 	}
-	// Every row must correspond to a real hit file.
-	for (const [filePath] of byPath) {
-		if (!paths.includes(filePath)) violations.push({ rule: "stale-row", detail: filePath });
+	// Every row must still describe something its own class can count.
+	//
+	// "Not in `paths`" is NOT that test. `paths` holds files with a PINNED hit, and
+	// `keep-path` / `keep-worker-selector` are counted by LITERAL and are documented
+	// as disjoint from the pinned expression — so their files legitimately have no
+	// pinned hit at all. Measured 2026-10-02: that rule flagged 54 rows, every one of
+	// them a live `keep-path` row over a file carrying `".omp"`, and the README states
+	// the opposite ("its file may have no pinned hits at all"). A row is stale when the
+	// file no longer carries what its class counts, or when the file is gone.
+	for (const [filePath, group] of byPath) {
+		if (paths.includes(filePath)) continue;
+		const handle = Bun.file(path.join(root, filePath));
+		if (await handle.exists()) {
+			const text = await handle.text();
+			const stillCarriesIt = group.some(row => countClass(text, row.disposition) > 0);
+			if (stillCarriesIt) continue;
+		}
+		violations.push({ rule: "stale-row", detail: filePath });
 	}
 	// Per-row reviewability.
 	for (const row of rows) {
@@ -306,15 +321,35 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 			violations.push({ rule: "missing-keep-refs", detail: `${row.path} (line ${row.line})` });
 		}
 	}
-	// The load-bearing invariant. Only files `hitPaths` actually found are counted:
-	// a row pointing at a file that no longer exists is already reported as
-	// `stale-row` above, and reading it here would throw ENOENT and take the whole
-	// gate down instead of reporting the one row that is wrong.
 	for (const [filePath, group] of byPath) {
-		if (!paths.includes(filePath)) continue;
-		const text = await Bun.file(path.join(root, filePath)).text();
-		const keeps = group.filter(row => row.disposition !== "rename").map(row => row.disposition);
-		const declared = group.reduce((total, row) => total + row.hits, 0);
+		// A row pointing at a file that no longer exists is already reported as
+		// `stale-row` above, and reading it here would throw ENOENT and take the whole
+		// gate down instead of reporting the one row that is wrong.
+		const handle = Bun.file(path.join(root, filePath));
+		if (!(await handle.exists())) continue;
+		const text = await handle.text();
+		// Literal-counted classes are checked per row, against their OWN literal.
+		// The group-sum invariant below cannot reach them: it compares against the
+		// pinned count, which is 0 for a `".omp"`-only file, so a `keep-path` row
+		// declaring `hits = 0` balanced perfectly while the file held 45 occurrences.
+		// Measured 2026-10-02 across 45 rows, all declaring 0, all carrying `".omp"`.
+		for (const row of group) {
+			const matcher = classMatcher(row.disposition);
+			if (matcher.literal === undefined) continue;
+			const actual = countClass(text, row.disposition);
+			if (row.hits !== actual) {
+				violations.push({
+					rule: "literal-hits-imbalance",
+					detail: `${filePath} (line ${row.line}): ${row.disposition} declares ${row.hits}, file has ${actual} of ${matcher.literal}`,
+				});
+			}
+		}
+		// The load-bearing invariant for the pinned-counted classes, which share one
+		// expression and can only be checked as a sum.
+		const pinnedRows = group.filter(row => classMatcher(row.disposition).literal === undefined);
+		if (pinnedRows.length === 0) continue;
+		const keeps = pinnedRows.filter(row => row.disposition !== "rename").map(row => row.disposition);
+		const declared = pinnedRows.reduce((total, row) => total + row.hits, 0);
 		// The whole file's pinned occurrences: each keep class plus what is left for
 		// `rename`. Comparing this to the declared sum is what makes a partially
 		// decided file impossible to pass.

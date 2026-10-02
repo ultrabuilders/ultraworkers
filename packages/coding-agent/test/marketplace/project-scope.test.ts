@@ -25,6 +25,7 @@ import {
 	writeInstalledPluginsRegistry,
 } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/marketplace";
 import { removeSyncWithRetries } from "@oh-my-pi/pi-utils";
+import { PROJECT_AGENT_DIR_NAME } from "@oh-my-pi/pi-utils/dirs";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -55,26 +56,26 @@ describe("resolveActiveProjectRegistryPath", () => {
 	it("walk-up finds nearest .omp/ directory", async () => {
 		// Layout: tmpDir/.omp/   +   tmpDir/sub/nested/  (cwd)
 		// Resolver must climb from cwd → sub → tmpDir and find .omp/ there.
-		fs.mkdirSync(path.join(tmpDir, ".omp"), { recursive: true });
+		fs.mkdirSync(path.join(tmpDir, PROJECT_AGENT_DIR_NAME), { recursive: true });
 		const cwd = path.join(tmpDir, "sub", "nested");
 		fs.mkdirSync(cwd, { recursive: true });
 
 		const result = await resolveActiveProjectRegistryPath(cwd);
 
-		expect(result).toBe(path.join(tmpDir, ".omp", "plugins", "installed_plugins.json"));
+		expect(result).toBe(path.join(tmpDir, PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json"));
 	});
 
 	it("walk-up stops at the nearest .omp/ — does not skip to a more distant one", async () => {
 		// Layout: tmpDir/.omp/   +   tmpDir/sub/.omp/   +   tmpDir/sub/nested/  (cwd)
 		// Resolver must stop at tmpDir/sub/.omp/, not climb further to tmpDir/.omp/.
-		fs.mkdirSync(path.join(tmpDir, ".omp"), { recursive: true });
-		fs.mkdirSync(path.join(tmpDir, "sub", ".omp"), { recursive: true });
+		fs.mkdirSync(path.join(tmpDir, PROJECT_AGENT_DIR_NAME), { recursive: true });
+		fs.mkdirSync(path.join(tmpDir, "sub", PROJECT_AGENT_DIR_NAME), { recursive: true });
 		const cwd = path.join(tmpDir, "sub", "nested");
 		fs.mkdirSync(cwd, { recursive: true });
 
 		const result = await resolveActiveProjectRegistryPath(cwd);
 
-		expect(result).toBe(path.join(tmpDir, "sub", ".omp", "plugins", "installed_plugins.json"));
+		expect(result).toBe(path.join(tmpDir, "sub", PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json"));
 	});
 
 	it("falls back to .git root when no .omp/ exists", async () => {
@@ -87,7 +88,7 @@ describe("resolveActiveProjectRegistryPath", () => {
 
 		const result = await resolveActiveProjectRegistryPath(cwd);
 
-		expect(result).toBe(path.join(tmpDir, ".omp", "plugins", "installed_plugins.json"));
+		expect(result).toBe(path.join(tmpDir, PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json"));
 	});
 
 	it("returns null when neither .omp/ nor .git/ found anywhere in the tree", async () => {
@@ -118,7 +119,7 @@ describe("resolveActiveProjectRegistryPath", () => {
 
 	it("canonical path — /repo and /repo/src resolve to the same registry file", async () => {
 		// Both sub-directories of the same project must produce identical paths.
-		fs.mkdirSync(path.join(tmpDir, ".omp"), { recursive: true });
+		fs.mkdirSync(path.join(tmpDir, PROJECT_AGENT_DIR_NAME), { recursive: true });
 		const src = path.join(tmpDir, "src");
 		fs.mkdirSync(src, { recursive: true });
 
@@ -127,6 +128,35 @@ describe("resolveActiveProjectRegistryPath", () => {
 
 		expect(fromRoot).not.toBeNull();
 		expect(fromRoot).toBe(fromSrc);
+	});
+
+	it("walks up past a same-named decoy's parent and ignores a directory that is not the config root", async () => {
+		// The condition that makes the rest of this file worth trusting now that its
+		// fixtures read PROJECT_AGENT_DIR_NAME instead of a literal: the traversal is
+		// what is under test, and it has to hold for WHATEVER the constant holds.
+		//
+		// Two things are asserted that a value-blind test cannot distinguish. The
+		// config root sits two levels above cwd, so finding it at all means the
+		// resolver climbed. And a decoy sits closer to cwd, holding the same
+		// registry file under a DIFFERENT name — if the resolver matched on "some
+		// directory that exists" rather than on the configured name, it would stop
+		// there and this fails.
+		//
+		// Both fixtures are built from the constant, so renaming it moves the whole
+		// test and leaves the assertion standing. That is the point: a literal here
+		// would have made this file pass for a rename that broke the walk-up.
+		const decoy = path.join(tmpDir, "not-a-config-root");
+		fs.mkdirSync(path.join(decoy, "plugins"), { recursive: true });
+		fs.writeFileSync(path.join(decoy, "plugins", "installed_plugins.json"), "[]");
+
+		fs.mkdirSync(path.join(tmpDir, PROJECT_AGENT_DIR_NAME), { recursive: true });
+		const cwd = path.join(tmpDir, "sub", "nested");
+		fs.mkdirSync(cwd, { recursive: true });
+
+		const result = await resolveActiveProjectRegistryPath(cwd);
+
+		expect(result).toBe(path.join(tmpDir, PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json"));
+		expect(result).not.toBe(path.join(decoy, "plugins", "installed_plugins.json"));
 	});
 });
 
@@ -145,12 +175,12 @@ describe("listClaudePluginRoots — project shadows user", () => {
 		tmpProject = fs.mkdtempSync(path.join(os.tmpdir(), "omp-shadow-proj-"));
 
 		// Create .omp/ in project so resolveActiveProjectRegistryPath finds it.
-		fs.mkdirSync(path.join(tmpProject, ".omp", "plugins"), { recursive: true });
+		fs.mkdirSync(path.join(tmpProject, PROJECT_AGENT_DIR_NAME, "plugins"), { recursive: true });
 
 		userRegPath = path.join(tmpHome, ".omp", "plugins", "installed_plugins.json");
 		fs.mkdirSync(path.dirname(userRegPath), { recursive: true });
 
-		projectRegPath = path.join(tmpProject, ".omp", "plugins", "installed_plugins.json");
+		projectRegPath = path.join(tmpProject, PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json");
 	});
 
 	afterEach(() => {

@@ -43,9 +43,9 @@ out of scope for the measurement that produced this file, so its row says "not r
 carrying a number nobody measured. It is the one link in the chain whose cost is unbounded by
 anything above.
 
-## The one red link, and why it will also be red in CI
+## Link 13 was red when measured, and went green 20 minutes later — read this before quoting it
 
-Link 13, `check:types`, at `c284464c4e`:
+At `c284464c4e` link 13 was red:
 
 ```
 packages/coding-agent/test/extensions-discarded-handler-result.test.ts(51,10): error TS2769
@@ -53,9 +53,23 @@ packages/coding-agent/test/extensions-discarded-handler-result.test.ts(51,10): e
   parameter of type '"mcp_notification"'.
 ```
 
-That file was **staged and committed during this measurement** (it appeared as `A` in an
-earlier snapshot and is tracked now). So this red is a property of the commit, not of anybody's
-uncommitted work: **CI sees it too.** It is not local noise.
+At `e7a2da1551`, twenty minutes later, with no commit in between that touched it, it was
+**green** — 0 errors. The table above is therefore a snapshot of `c284464c4e`, not a property of
+this branch.
+
+**The green one is a *disk* reading, and that distinction is not decorative.** At the time of the
+re-run, `extensions-discarded-handler-result.test.ts` was ` M` — modified in the working tree,
+not committed — while `extensions/types.ts` and `extensions/runner.ts` were clean. The committed
+text of the test differs from the working-tree text: `pi.on("tool_approval_requested", …)` at
+`HEAD` against `extension.handlers.set("tool_approval_requested", …)` on disk.
+
+So: **the red was measured on the working tree, and the fix that cleared it is uncommitted.**
+Whether `HEAD` itself typechecks was *not measured*, and no claim is made here either way. An
+earlier draft of this file asserted the red was "a property of the commit, so CI sees it too".
+That was an inference from a disk measurement and it was wrong; the table is the measurement, and
+only the table.
+
+## Disk-reading vs commit-reading, with one measured example of each
 
 ## Disk-reading vs commit-reading, with one measured example of each
 
@@ -67,7 +81,10 @@ Nothing in the commit had that error. A peer has since taken the file; link 2 is
 table above. This is the shape of red worth double-checking before filing: *is the file it is
 naming actually in the commit?*
 
-**Commit-visible red (CI is red too).** Link 13 today, above.
+**A red whose fix is uncommitted.** Link 13. It was red at `c284464c4e` and green at
+`e7a2da1551` with no intervening commit to the file — because the correcting edit sits in the
+working tree, unstaged. Neither reading is "the commit's verdict"; they are two different trees,
+and only one of them is what CI would check.
 
 Links 1 and 2 read the filesystem by construction (`oxlint`/`oxfmt`/`tsgo` take paths, not
 revisions). For the remaining links the disk-vs-commit split was **not** established by

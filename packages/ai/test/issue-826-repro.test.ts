@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { streamAnthropic } from "@oh-my-pi/pi-ai/providers/anthropic";
+import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import type { Context, Model, ModelSpec, Tool } from "@oh-my-pi/pi-ai/types";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { Effort } from "@oh-my-pi/pi-catalog/effort";
@@ -40,20 +41,66 @@ function abortedSignal(): AbortSignal {
 	return controller.signal;
 }
 
+/**
+ * Resolve on the first payload, and FAIL if the stream settles without one.
+ *
+ * `onPayload` only runs while the provider is pumping, so a bare
+ * `Promise.withResolvers()` has no path to rejection: if some earlier file in the
+ * same process has left state that stops that pumping, the promise never settles
+ * and the test hangs until bun's 5s default. That surfaces as a slow test, which
+ * reads as "this area is slow" rather than "this test is broken" — and it cannot
+ * be reproduced by running the file alone, so it gets filed as flake.
+ *
+ * `EventStream.end()` already settled this same class of hang for its own callers,
+ * with the comment "end() without a terminal value must still settle result() —
+ * otherwise complete()/result() awaits hang forever". This is that discipline one
+ * level up: the stream's own completion is a SECOND clock, and whichever fires
+ * first decides the outcome.
+ *
+ * `payloadSeen` is what distinguishes the two cases that must not be conflated —
+ * a stream that called `onPayload` and then settled (success; the payload is the
+ * answer) versus one that settled having never called it (failure; there is no
+ * answer to return, and returning `undefined` would assert against nothing).
+ *
+ * **This does not make the failure reproducible in isolation.** It converts an
+ * unexplained 5s timeout into a named error. The underlying contamination still
+ * only manifests in a process where an earlier file has already run — proving
+ * THAT needs a fixture that deliberately contaminates, which is separate work.
+ */
+async function firstPayload<T>(
+	open: (onPayload: (payload: unknown) => undefined) => AssistantMessageEventStream,
+): Promise<T> {
+	let payloadSeen = false;
+	const { promise, resolve } = Promise.withResolvers<T>();
+	const stream = open(payload => {
+		payloadSeen = true;
+		resolve(payload as T);
+		return undefined;
+	});
+	const settledFirst = stream.result().then(
+		() => {
+			if (payloadSeen) return promise;
+			throw new Error("onPayload never arrived: stream settled without one");
+		},
+		(error: unknown) => {
+			if (payloadSeen) return promise;
+			throw new Error(`onPayload never arrived: stream settled first (${String(error)})`);
+		},
+	);
+	return await Promise.race([promise, settledFirst]);
+}
+
 function captureParams(
 	model: Model<"anthropic-messages">,
 ): Promise<{ tools?: Array<{ name: string; strict?: unknown }> }> {
-	const { promise, resolve } = Promise.withResolvers<{ tools?: Array<{ name: string; strict?: unknown }> }>();
-	void streamAnthropic(model, baseContext, {
-		apiKey: "sk-ant-api-test",
-		isOAuth: false,
-		signal: abortedSignal(),
-		onPayload: payload => {
-			resolve(payload as { tools?: Array<{ name: string; strict?: unknown }> });
-			return undefined;
-		},
-	});
-	return promise;
+	return firstPayload<{ tools?: Array<{ name: string; strict?: unknown }> }>(onPayload =>
+		streamAnthropic(model, baseContext, {
+			apiKey: "sk-ant-api-test",
+			isOAuth: false,
+			signal: abortedSignal(),
+			onPayload,
+		}),
+	);
 }
 
 describe("issue #826: Anthropic strict-tools opt-out for Vertex-style proxies", () => {
@@ -87,18 +134,15 @@ describe("issue #826: Anthropic strict-tools opt-out for Vertex-style proxies", 
 			},
 			compat: baseModel.compatConfig,
 		} as ModelSpec<"anthropic-messages">);
-		const { promise, resolve } = Promise.withResolvers<{ thinking?: { type?: string } }>();
-		void streamAnthropic(adaptiveModel, baseContext, {
-			apiKey: "sk-ant-api-test",
-			isOAuth: false,
-			signal: abortedSignal(),
-			thinkingEnabled: true,
-			onPayload: payload => {
-				resolve(payload as { thinking?: { type?: string } });
-				return undefined;
-			},
-		});
-		const params = await promise;
+		const params = await firstPayload<{ thinking?: { type?: string } }>(onPayload =>
+			streamAnthropic(adaptiveModel, baseContext, {
+				apiKey: "sk-ant-api-test",
+				isOAuth: false,
+				signal: abortedSignal(),
+				thinkingEnabled: true,
+				onPayload,
+			}),
+		);
 		expect(params.thinking?.type).toBe("adaptive");
 	});
 
@@ -113,19 +157,47 @@ describe("issue #826: Anthropic strict-tools opt-out for Vertex-style proxies", 
 			},
 			compat: { ...baseModel.compatConfig, disableAdaptiveThinking: true },
 		} as ModelSpec<"anthropic-messages">);
-		const { promise, resolve } = Promise.withResolvers<{ thinking?: { type?: string; budget_tokens?: number } }>();
-		void streamAnthropic(adaptiveModel, baseContext, {
-			apiKey: "sk-ant-api-test",
-			isOAuth: false,
-			signal: abortedSignal(),
-			thinkingEnabled: true,
-			onPayload: payload => {
-				resolve(payload as { thinking?: { type?: string; budget_tokens?: number } });
-				return undefined;
-			},
-		});
-		const params = await promise;
+		const params = await firstPayload<{ thinking?: { type?: string; budget_tokens?: number } }>(onPayload =>
+			streamAnthropic(adaptiveModel, baseContext, {
+				apiKey: "sk-ant-api-test",
+				isOAuth: false,
+				signal: abortedSignal(),
+				thinkingEnabled: true,
+				onPayload,
+			}),
+		);
 		expect(params.thinking?.type).toBe("enabled");
 		expect(typeof params.thinking?.budget_tokens).toBe("number");
+	});
+});
+
+/**
+ * The two cases `firstPayload` must keep apart, driven by a stream this file owns.
+ *
+ * Both directions are asserted against the helper rather than against a real
+ * provider, because the real provider is exactly what cannot be relied on here:
+ * the failure it causes only appears once an earlier file in the same process has
+ * already contaminated something. A test that waits for that is a test that only
+ * fails on someone else's bad day.
+ */
+describe("firstPayload does not conflate 'settled after a payload' with 'settled without one'", () => {
+	it("rejects with the named cause when the stream settles and onPayload never ran", async () => {
+		const settled = new AssistantMessageEventStream();
+		const captured = firstPayload<{ marker: string }>(() => settled);
+		settled.end(); // terminal event, with no payload ever produced
+		await expect(captured).rejects.toThrow("onPayload never arrived");
+	});
+
+	it("still returns the payload when the stream settles AFTER onPayload ran", async () => {
+		// The converse, and the one a naive "always throw when the stream ends"
+		// implementation gets wrong: a stream that produced its payload and then
+		// finished normally is a SUCCESS, not a failure.
+		const settled = new AssistantMessageEventStream();
+		const captured = firstPayload<{ marker: string }>(onPayload => {
+			onPayload({ marker: "seen" });
+			settled.end();
+			return settled;
+		});
+		await expect(captured).resolves.toEqual({ marker: "seen" });
 	});
 });

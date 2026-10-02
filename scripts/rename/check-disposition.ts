@@ -117,8 +117,17 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * `_` stays excluded on both edges, and that is load-bearing too: `__omp_worker_*` is
  * the `keep-worker-selector` class, counted by its own literal. Allowing `_` makes every
  * worker selector a pinned hit — measured at one per file across 1467 files.
+ *
+ * `/` is excluded on neither edge as of 2026-10-03 (`epic-skwz`). It used to sit in the
+ * LEADING class, which made every occurrence preceded by a path separator invisible: a
+ * locator that cannot see `@oh-my-pi/omp-stats` or `packages/omp/x.ts` cannot count a row
+ * covering one, so those sites could never be given a disposition at all. Measured on the
+ * tracked corpus: 120 sites across 65 files became countable, 911 → 1031.
+ *
+ * Only the LEADING edge changed. The trailing class keeps `.` and `-`, so `.omp/` is still
+ * not matched and `omp-like` still is — both are separate axes, not this one.
  */
-const PINNED = /(^|[^a-zA-Z0-9_./-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
+const PINNED = /(^|[^a-zA-Z0-9_.-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
 
 /** Repo-relative path of the table. */
 const TABLE_PATH = "scripts/rename/disposition.tsv";

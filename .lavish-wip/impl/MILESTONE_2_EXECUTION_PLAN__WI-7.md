@@ -129,6 +129,13 @@ Ràng buộc loại trừ lẫn nhau, đo bằng cặp phạm vi:
 
 #### Việc bước 4 làm
 
+> **THỨ TỰ — bước này KHÔNG chạy được trước khi đăng ký mode.** Đo hôm nay: `grep -rn 'modeRegistry\.' -- packages/coding-agent/src` → **không có call site nào**; `register()` chưa có ai gọi. Chạy control:
+> ```bun
+> const r = new ModeRegistry(); r.setActivation("plan");
+> // → THROWS: Cannot activate unregistered mode "plan"
+> ```
+> Nghĩa là accessor của bước 4 sẽ **ném exception ở mọi lần bật/tắt mode**. Phải **đảo thứ tự**: đăng ký 5 mode tích hợp (nay là bước 7) **trước**, rồi mới chuyển field.
+
 - **5 field → accessor**: `planModeEnabled`, `planModePaused`, `goalModeEnabled`, `goalModePaused`, `vibeModeEnabled`.
 - **`loopModeEnabled` / `loopModePaused` giữ là field thô**, kèm comment nói vì sao (loop không đổi tool set, không `enter`/`exit`, không hỏi ai — nó chỉ render giống mode).
 
@@ -173,9 +180,13 @@ Viết `packages/tui/test/status-line-extension-mode.test.ts` trong **chính com
 
 ### Bước 7 — Nạp registry bằng cách BỌC
 
-Đăng ký plan trước, rồi goal, vibe, loop, prewalk. Mỗi definition bọc ủy quyền `enter`/`exit` cho method `InteractiveMode` sẵn có — code gốc đứng nguyên tại chỗ. Chạy lại seam-1 sau **mỗi** mode.
+> **Bước này phải chạy TRƯỚC bước 4** (xem mục "THỨ TỰ" ở bước 4). Không có nó thì mọi accessor của bước 4 ném `Cannot activate unregistered mode`.
+>
+> **Không đăng ký `loop`** — bản gốc của bước này có loop trong danh sách, sai theo đo ở bước 4: loop không đổi tool set, không `enter`/`exit`, và không loại trừ lẫn nhau với plan/goal/vibe.
 
-> `order` của năm mode tích hợp phải lấy từ output của WI-2. Nếu WI-2 chỉ hạ một thứ tự kiểu chẩn đoán mà không có danh sách chuẩn thì bước 7 không có gì để gán, và ưu tiên trên status-line trở thành nguồn sự thật thứ hai cạnh tranh với `segments.ts:369-407`.
+Đăng ký plan trước, rồi goal, vibe, prewalk. Mỗi definition bọc ủy quyền `enter`/`exit` cho method `InteractiveMode` sẵn có — code gốc đứng nguyên tại chỗ. Chạy lại seam-1 sau **mỗi** mode.
+
+> `order` của các mode tích hợp phải lấy từ output của WI-2. Nếu WI-2 chỉ hạ một thứ tự kiểu chẩn đoán mà không có danh sách chuẩn thì bước 7 không có gì để gán, và ưu tiên trên status-line trở thành nguồn sự thật thứ hai cạnh tranh với `segments.ts:369-407`.
 
 ### Bước 8 — `test/modes/mode-registry.test.ts`
 

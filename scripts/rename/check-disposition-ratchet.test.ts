@@ -127,7 +127,7 @@ describe("the ratchet as a runnable gate", () => {
 		// bun writes a script's own stderr to stderr, so a run that reported nothing
 		// would exit 0 and pass every assertion below.
 		expect(out).toContain("metric    : stale-row");
-		expect(out).toContain("[ratchet] ceiling   : 9");
+		expect(out).toContain(`[ratchet] ceiling   : ${STALE_ROW_BASELINE}`);
 		expect(out).toMatch(/measured  : \d+/);
 		// The COMPUTED digest, matched through its own line. An earlier version of this
 		// assertion was a bare `/md5:[0-9a-f]{32}/`, which the baseline line also

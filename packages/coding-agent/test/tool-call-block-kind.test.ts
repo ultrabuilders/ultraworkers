@@ -81,10 +81,11 @@ describe("a tool_call hook that breaks vs one that denies", () => {
 			resolvedPath: "/hooks/third-party.ts",
 			handlers,
 			messageRenderers: new Map(),
+			entryRenderers: new Map(),
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-		} as unknown as LoadedHook;
+		};
 		return new HookRunner([hook], tempDir.path(), SessionManager.inMemory(), modelRegistry);
 	}
 

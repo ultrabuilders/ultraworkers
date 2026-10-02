@@ -37,10 +37,11 @@ describe("HookToolWrapper tool_call contract", () => {
 			resolvedPath: "/test/test-hook.ts",
 			handlers,
 			messageRenderers: new Map(),
+			entryRenderers: new Map(),
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-		} as unknown as LoadedHook;
+		};
 	}
 
 	function makeRunner(hooks: LoadedHook | LoadedHook[]): HookRunner {

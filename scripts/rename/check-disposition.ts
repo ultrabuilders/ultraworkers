@@ -321,9 +321,29 @@ const EXCLUDED_PREFIXES = [
 	"python/robomp/web/dist/",
 ];
 
-/** Build output: any path with a `dist` or `target` segment, matching the per-package dist rule. */
+/**
+ * Build output: any path with a `dist`, `target`, `.venv` or `__pycache__` segment,
+ * matching the per-package dist rule.
+ *
+ * `.venv` is the same lesson as `target/`, one ecosystem over, and it is here for
+ * the same reason rather than as a separate preference. Adding `.py` to the glob
+ * puts a whole Python environment inside the walk: this repository has two
+ * (`python/omp-rpc/.venv`, `python/robomp/.venv`), and a virtualenv is a
+ * directory of third-party sources that `pip install` rewrites at will. Free for
+ * the reason the others are — `git ls-files` finds **0** `.py` files under any
+ * `.venv`, so no file of this repository's index is lost.
+ *
+ * The hazard was probed rather than assumed, and in the order that makes the
+ * probe mean something: the FIRST probe reported 0 planted files inside a
+ * `.venv`, which was worth nothing because `.py` was not yet in the glob — a
+ * zero from a chain that never ran the test. Re-probed after the extension was
+ * live, with the identical file planted outside any `.venv` as the control that
+ * can be non-zero.
+ */
 function isBuildOutput(relPath: string): boolean {
-	return relPath.split("/").some(segment => segment === "dist" || segment === "target");
+	return relPath
+		.split("/")
+		.some(segment => segment === "dist" || segment === "target" || segment === ".venv" || segment === "__pycache__");
 }
 
 /**
@@ -350,14 +370,19 @@ function isBuildOutput(relPath: string): boolean {
  * same walk and the same expression — 4 `.tsx` files / 5 occurrences, 4 `.sh` /
  * 12 — 8 files, 17 occurrences that previously produced no signal at all.
  *
- * `.py` is measured (15 files / 79 occurrences) but NOT yet in this glob: its
- * ground is `python/robomp/`, a separate product with its own entrypoint,
- * containers and system accounts, and two of its sites (`metaharness/agent/
- * omp_local.py:267`, which returns the command name to invoke in a container,
- * and `robomp/src/sandbox.py:549,588`, which create a directory literally named
- * `omp`) turn on bead `epic-4yhd` — an owner decision that is still open. Adding
- * the extension while the decision is open would file those two under a class
- * chosen by whoever happened to write the row first.
+ * `.py` joined last, and it is the extension where the sweep had the most to
+ * lose by guessing: its ground is `python/robomp/`, a separate product with its
+ * own container entrypoint, system accounts and per-slot users, plus two
+ * benchmark harnesses that resolve the binary off `PATH`. Measured the same
+ * way — 15 files, 79 occurrences, none of which had a row before.
+ *
+ * Four of those files turn on `epic-4yhd`, which is still an OPEN owner
+ * decision: `metaharness/agent/omp_local.py:267` returns the command name
+ * invoked inside a container, `robomp/src/sandbox.py:549,588` create a directory
+ * named for the pre-rebrand product, and both benchmark scripts resolve a binary
+ * off `PATH`. Those are filed `keep-wire` — the direction that sweeps NOTHING.
+ * That is a holding position, not a verdict: it keeps the decision with the
+ * owner instead of letting whichever agent wrote the row first decide it.
  *
  * Adding `.rs` also forced a `target/` exclusion, and the two are one change
  * rather than two preferences: `.rs` is the first extension here that Rust build
@@ -377,7 +402,7 @@ function isBuildOutput(relPath: string): boolean {
  * because cargo may place a workspace target directory below the root.
  */
 export async function hitPaths(root: string): Promise<readonly string[]> {
-	const glob = new Bun.Glob("**/*.{ts,tsx,js,mjs,rs,sh}");
+	const glob = new Bun.Glob("**/*.{ts,tsx,js,mjs,rs,py,sh}");
 	const found: string[] = [];
 	const nestedRepos = nestedRepoCache();
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {

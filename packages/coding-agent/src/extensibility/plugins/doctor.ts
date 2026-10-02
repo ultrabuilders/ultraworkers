@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import { $which, getLogsDir } from "@oh-my-pi/pi-utils";
+import { $which, APP_NAME, getLogsDir } from "@oh-my-pi/pi-utils";
 import { getAvailableThemes, getBuiltinThemes, resolveThemeJson } from "@oh-my-pi/pi-tui/theme";
 import type { CheckOutcome, DoctorCheck } from "./types";
 import { isUnavailable } from "./types";
@@ -181,7 +181,7 @@ function checkLogDirPermissions(snap: DoctorSnapshot): DoctorCheck {
 		name: "logs:permissions",
 		status: exposed ? "error" : "warning",
 		message: exposed
-			? `Log directory is ${formatMode(actual)} — readable by other accounts on this machine. It holds request headers, URLs and tool arguments. The logger re-asserts ${formatMode(expected)} on its next write; run \`omp doctor --fix\` now to narrow it.`
+			? `Log directory is ${formatMode(actual)} — readable by other accounts on this machine. It holds request headers, URLs and tool arguments. The logger re-asserts ${formatMode(expected)} on its next write; run \`${APP_NAME} doctor --fix\` now to narrow it.`
 			: `Log directory is ${formatMode(actual)}, not the expected ${formatMode(expected)} (owner-only, so nothing is exposed)`,
 	};
 }

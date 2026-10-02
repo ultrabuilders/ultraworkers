@@ -2,6 +2,7 @@
  * Settings declared by this domain (see `config/registry.ts`). Declaration order is the
  * settings-panel order; `config/all-settings.ts` registers every domain.
  */
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { combine, register, type SettingValueOf } from "../config/registry";
 import { DEFAULT_SKILLS_URL } from "@oh-my-pi/pi-wire/skillshare";
 
@@ -76,8 +77,7 @@ export const cfgSkillsRegistryUrl = register({
 		tab: "interaction",
 		group: "Skills",
 		label: "Skill Registry",
-		description:
-			"Skillshare registry used by `omp skill` to install, search, and publish skills (https://host[:port])",
+		description: `Skillshare registry used by \`${APP_NAME} skill\` to install, search, and publish skills (https://host[:port])`,
 	},
 });
 

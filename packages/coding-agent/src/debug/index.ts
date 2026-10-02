@@ -50,7 +50,7 @@ const DEBUG_MENU_ITEMS: SelectItem[] = [
 	{
 		value: "doctor",
 		label: "Check: environment health",
-		description: "Run the same checks as `omp doctor`",
+		description: `Run the same checks as \`${APP_NAME} doctor\``,
 	},
 	{ value: "terminal", label: "View: terminal state", description: "Subprotocols, geometry, scrollback strategy" },
 	{

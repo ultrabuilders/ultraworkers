@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import * as path from "node:path";
-import { PROBE_PREFIX, ptree, TempDir } from "@oh-my-pi/pi-utils";
+import { ptree, TempDir } from "@oh-my-pi/pi-utils";
+import { PROBE_PREFIX } from "@oh-my-pi/pi-utils/probe";
 import {
 	chunkRunsTests,
 	countProbeEntries,

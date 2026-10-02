@@ -5,7 +5,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { $ } from "bun";
-import { PROBE_PREFIX } from "@oh-my-pi/pi-utils";
+import { PROBE_PREFIX } from "@oh-my-pi/pi-utils/probe";
 
 type Mode =
 	| "all"

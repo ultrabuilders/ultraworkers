@@ -30,6 +30,7 @@ import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-containe
 import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import { clearExtensionBuckets } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
+import { deobfuscateSessionContext } from "@oh-my-pi/pi-coding-agent/secrets/message-transform";
 
 /** Load a real extension through the real factory. */
 async function load(register: (api: ExtensionAPI) => void, name: string): Promise<Extension> {
@@ -45,6 +46,60 @@ async function load(register: (api: ExtensionAPI) => void, name: string): Promis
 /** The runner's two readers, over extensions the real loader produced. */
 function readerOver(extensions: Extension[]) {
 	return new ExtensionRunner(extensions, new ExtensionRuntime(), "/cwd", SessionManager.inMemory(), {} as never);
+}
+
+/**
+ * An interactive context whose transcript is a real `TranscriptContainer` and
+ * whose session is the very manager the caller will later read a client's view
+ * from.
+ *
+ * Sharing the manager is the whole point. A transcript that renders from its own
+ * store while the client view is built from a second one makes the two
+ * assertions independent, so a transform leaking into persistence cannot reach
+ * the assertion meant to catch it — that version survived a mutation that wrote
+ * the transformed text into the message.
+ */
+function buildContext(extensionRunner: unknown, sessionManager: SessionManager): InteractiveModeContext {
+	return {
+		chatContainer: new TranscriptContainer(),
+		transcriptMessageComponents: new WeakMap(),
+		viewSession: {
+			extensionRunner,
+			sessionManager,
+		},
+		ui: { requestRender: () => {}, imageBudget: undefined },
+		settings: { get: () => false },
+		effectiveHideThinkingBlock: false,
+		proseOnlyThinking: true,
+		editor: { addToHistory: () => {} },
+	} as unknown as InteractiveModeContext;
+}
+
+/**
+ * Push one user message through the real `UiHelpers` into a real session, and
+ * return both what was drawn and what a client would read back.
+ *
+ * Driving the transcript rather than the renderer directly is the point: the two
+ * halves of this seam are the runner handing out a transformer and a component
+ * applying one, and a test that exercises only the halves stays green when the
+ * join between them is deleted.
+ */
+async function renderAndReadBack(ext: Extension, content: string): Promise<{ drawn: string; clientView: string }> {
+	const session = SessionManager.inMemory();
+	const ctx = buildContext(readerOver([ext]), session);
+	await initTheme(false);
+
+	const message = { role: "user", content, timestamp: 1 } as const;
+	// `addMessageToChat` only draws; persistence is the agent's job. Doing it here
+	// first means the store a client reads back is the same one holding the message
+	// the transcript was handed — which is what makes the two halves comparable.
+	session.appendMessage(message);
+	new UiHelpers(ctx).addMessageToChat(message);
+
+	return {
+		drawn: ctx.chatContainer.children.flatMap(child => child.render(80)).join("\n"),
+		clientView: JSON.stringify(deobfuscateSessionContext(session.buildSessionContext(), undefined)),
+	};
 }
 
 describe("registerEntryRenderer", () => {
@@ -199,22 +254,33 @@ describe("registerMarkdownTransformer", () => {
 		expect(readerOver([ext]).getMarkdownTransformers()).toHaveLength(1);
 	});
 
-	it("is unreachable from the RPC/JSON path, which keeps transcript clients working", async () => {
-		// The boundary is structural, so it is asserted as reachability rather than
-		// as prose: no module on the RPC path may name the transformer reader. If
-		// this fails, a client reading the session would receive transformed
-		// Markdown and break with no omp stack trace to explain it.
-		const { readdirSync, readFileSync } = await import("node:fs");
-		const { join } = await import("node:path");
-		const rpcDir = join(import.meta.dir, "..", "src", "modes", "rpc");
+	it("transforms the drawn transcript and leaves the stored session raw", async () => {
+		// The dangerous failure is a transformer running on the RPC/JSON path: a
+		// client reading the session would receive transformed Markdown and break on
+		// its own side, with no omp stack trace to point at.
+		//
+		// This asserts the boundary by OBSERVING BOTH SIDES OF ONE SESSION rather
+		// than by reading source. The earlier version grepped `modes/rpc/` for the
+		// reader's name and stayed green with that check disabled — a source-grep
+		// cannot fail when the thing it forbids is reached indirectly, and
+		// `AGENTS.md` bans it outright.
+		//
+		// Sharing the session manager is what makes the second half falsifiable. With
+		// the transcript and the client view built from separate stores, a transform
+		// leaking into the persisted message had nowhere to show up, and the negative
+		// assertion survived having itself deleted.
+		const ext = await load(api => {
+			api.registerMarkdownTransformer(markdown => `${markdown} [drawn]`);
+		}, "boundary-probe");
 
-		const offenders: string[] = [];
-		for (const file of readdirSync(rpcDir)) {
-			if (!file.endsWith(".ts")) continue;
-			const source = readFileSync(join(rpcDir, file), "utf8");
-			if (source.includes("getMarkdownTransformers")) offenders.push(file);
-		}
-		expect(offenders).toEqual([]);
+		const { drawn, clientView } = await renderAndReadBack(ext, "boundary");
+
+		// The interactive path applies it...
+		expect(drawn).toContain("[drawn]");
+		// ...and a client reading the same session back does not. This is the call
+		// `sdk.ts:1843` and `acp-agent.ts:2304` make before serialising.
+		expect(clientView).toContain("boundary");
+		expect(clientView).not.toContain("[drawn]");
 	});
 });
 
@@ -281,52 +347,22 @@ describe("the transcript actually passes transformers to its components", () => 
 	 * The test above proves the runner hands out transformers and that the renderer
 	 * applies one. Neither proves the two meet — and a mutation that emptied the
 	 * transcript's own mapper survived all of it, because everything either side of
-	 * the join still worked. This drives the real `UiHelpers` with a real runner so
-	 * the join itself is under test.
+	 * the join still worked. `renderAndReadBack` drives the real `UiHelpers`
+	 * with a real runner so the join itself is under test.
 	 */
-	function buildContext(extensionRunner: unknown): InteractiveModeContext {
-		return {
-			chatContainer: new TranscriptContainer(),
-			transcriptMessageComponents: new WeakMap(),
-			viewSession: {
-				extensionRunner,
-				sessionManager: { putBlobSync: () => "unused" },
-			},
-			ui: { requestRender: () => {}, imageBudget: undefined },
-			settings: { get: () => false },
-			effectiveHideThinkingBlock: false,
-			proseOnlyThinking: true,
-			editor: { addToHistory: () => {} },
-		} as unknown as InteractiveModeContext;
-	}
-
 	it("renders a user message through the registered transformer", async () => {
 		const ext = await load(api => {
 			api.registerMarkdownTransformer(markdown => `${markdown} [seen]`);
 		}, "wired-user");
-		const runner = readerOver([ext]);
 
-		const ctx = buildContext(runner);
-		await initTheme(false);
-		const helpers = new UiHelpers(ctx);
-		helpers.addMessageToChat({ role: "user", content: "hello", timestamp: 1 });
-
-		const drawn = ctx.chatContainer.children.flatMap(child => child.render(80)).join("\n");
-		expect(drawn).toContain("[seen]");
+		expect((await renderAndReadBack(ext, "hello")).drawn).toContain("[seen]");
 	});
 
 	it("draws the same user message unchanged when nothing registered a transformer", async () => {
 		// The negative half at the join: a session with no transformer must produce
 		// exactly the transcript it produced before the seam existed.
 		const ext = await load(() => {}, "unwired-user");
-		const runner = readerOver([ext]);
 
-		const ctx = buildContext(runner);
-		await initTheme(false);
-		const helpers = new UiHelpers(ctx);
-		helpers.addMessageToChat({ role: "user", content: "untouched", timestamp: 1 });
-
-		const drawn = ctx.chatContainer.children.flatMap(child => child.render(80)).join("\n");
-		expect(drawn).toContain("untouched");
+		expect((await renderAndReadBack(ext, "untouched")).drawn).toContain("untouched");
 	});
 });

@@ -25,6 +25,7 @@ import {
 	isCommentLine,
 	parseTable,
 	requiresKeepRefs,
+	tallyByRule,
 } from "./check-disposition";
 
 const HEADER = "scope\tpath\thits\tdisposition\treason\tkeep_refs";
@@ -251,7 +252,7 @@ describe("stage pre", () => {
 			row_("src/p.ts", 0, "keep-path", "on-disk agent dir", "N-path"),
 		]);
 		expect(wrong.filter(v => v.rule === "literal-hits-imbalance").map(v => v.detail)).toEqual([
-			"src/p.ts (line 2): keep-path declares 0, file has 3 of \".omp\"",
+			'src/p.ts (line 2): keep-path declares 0, file has 3 of ".omp"',
 		]);
 
 		const right = await checkPre(root, [
@@ -298,6 +299,40 @@ describe("stage post", () => {
 		]);
 		expect(violations).toEqual([]);
 		await Bun.$`rm -rf ${root}`.quiet();
+	});
+});
+
+describe("rule tally", () => {
+	/** Gate violations shaped exactly as `checkPre` emits them. */
+	const v = (rule: string, detail: string) => ({ rule, detail });
+
+	it("splits the lumped total into one count per rule, biggest first", () => {
+		// The single `N failures over M rows` line could not be acted on: a reader
+		// could not tell 9 stale rows from 90 without counting `FAIL` lines by hand,
+		// and 9 is a ratchet ceiling. A ceiling nobody can see is not a ceiling.
+		const violations = [
+			...Array.from({ length: 9 }, (_, i) => v("stale-row", `a${i}`)),
+			...Array.from({ length: 600 }, (_, i) => v("missing-row", `b${i}`)),
+			v("literal-hits-imbalance", "c0"),
+		];
+		expect([...tallyByRule(violations)]).toEqual([
+			["missing-row", 600],
+			["stale-row", 9],
+			["literal-hits-imbalance", 1],
+		]);
+	});
+
+	it("counts parse problems as their own rule and breaks ties by name", () => {
+		// A table the parser rejected has no rows, so its problems are the only thing
+		// there is to report — they must not vanish from the tally. Ties are ordered by
+		// name so two runs of the same tree print the same lines in the same order.
+		const tallied = [...tallyByRule([v("stale-row", "x"), v("empty-reason", "y")], ["p1", "p2"])];
+		expect(tallied).toEqual([
+			["parse", 2],
+			["empty-reason", 1],
+			["stale-row", 1],
+		]);
+		expect([...tallyByRule([])]).toEqual([]);
 	});
 });
 

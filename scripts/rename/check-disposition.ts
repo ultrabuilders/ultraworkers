@@ -269,9 +269,49 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
 	return found.sort();
 }
 
+/**
+ * Which set of rules this file implements.
+ *
+ * A ratchet over one of those rules records what it measured AND what it measured
+ * against. Recording only the table's digest is not enough, and the hole is
+ * specific: `59 changes the meaning of stale-row inside this file` leaves
+ * `disposition.tsv` byte-identical, so the table digest still matches, no drift is
+ * reported, the ceiling stays 9 — now silently wrong — and the run still prints
+ * GREEN. Silence that looks like a pass is the worst failure a gate has.
+ *
+ * Bump this when a rule's MEANING changes: a class added to or removed from
+ * `classMatcher`, a row that used to be reported under one name now reported under
+ * another, a check that stops firing or starts firing on new input. Rewording a
+ * comment, reformatting, or changing how a violation is WORDED does not need a
+ * bump — a digest of this file would demand one for those, which is a false alarm,
+ * and a ratchet that cries wolf is ignored.
+ *
+ * Read by `check-disposition-ratchet.ts`, which reports drift and never blocks on it.
+ */
+export const RULES_VERSION = "2026-10-02.1";
+
 interface Violation {
 	readonly rule: string;
 	readonly detail: string;
+}
+
+/**
+ * Tally violations by rule name, most frequent first.
+ *
+ * The single `N failures over M rows` line this replaces could not be acted on: a
+ * reader cannot tell 9 stale rows from 90, and the baseline of 9 existed only as 9
+ * scattered `FAIL stale-row` lines. A ceiling nobody can see is not a ceiling.
+ */
+export function tallyByRule(
+	violations: readonly { readonly rule: string }[],
+	problems: readonly string[] = [],
+): ReadonlyMap<string, number> {
+	const counts = new Map<string, number>();
+	for (const violation of violations) {
+		counts.set(violation.rule, (counts.get(violation.rule) ?? 0) + 1);
+	}
+	if (problems.length > 0) counts.set("parse", problems.length);
+	return new Map([...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
 }
 
 /**
@@ -432,7 +472,16 @@ async function main(): Promise<void> {
 
 	for (const problem of problems) console.log(`FAIL parse ${problem}`);
 	for (const violation of violations) console.log(`FAIL ${violation.rule} ${violation.detail}`);
-	console.log(`disposition(${stage}): ${violations.length + problems.length} failures over ${rows.length} rows`);
+	// One line per rule, not one lumped total. A reader has to be able to tell
+	// `stale-row = 9` from `= 90` without counting `FAIL` lines by hand, because the
+	// 9 is a ratchet ceiling and a ceiling nobody can see is not a ceiling.
+	const tally = tallyByRule(violations, problems);
+	if (tally.size === 0) console.log(`disposition(${stage}): clean over ${rows.length} rows`);
+	else {
+		for (const [rule, count] of tally) console.log(`disposition(${stage}): ${rule} = ${count}`);
+		console.log(`disposition(${stage}): ${violations.length + problems.length} failures over ${rows.length} rows`);
+	}
+	console.log(`disposition(${stage}): rules ${RULES_VERSION}`);
 	if (violations.length > 0 || problems.length > 0) process.exit(1);
 }
 

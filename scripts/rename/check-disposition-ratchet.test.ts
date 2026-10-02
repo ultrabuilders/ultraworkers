@@ -16,7 +16,14 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { checkRatchet, STALE_ROW_BASELINE } from "./check-disposition-ratchet";
+import {
+	BASELINE_RULES_VERSION,
+	BASELINE_TABLE_DIGEST,
+	checkRatchet,
+	digest,
+	STALE_ROW_BASELINE,
+} from "./check-disposition-ratchet";
+import { RULES_VERSION } from "./check-disposition";
 
 /** Gate violations shaped exactly as `checkPre` emits them. */
 const v = (rule: string, detail: string) => ({ rule, detail });
@@ -76,6 +83,33 @@ describe("ratchet arithmetic", () => {
 	});
 });
 
+describe("the baseline records what it was measured against", () => {
+	it("produces a digest comparable with the constant it is compared to", () => {
+		// THE bug this pins, found by a peer reading the file rather than by a test.
+		// `BASELINE_TABLE_DIGEST` was a 32-hex md5 while `digest()` returned a
+		// 12-char sha256 slice, so `printed === BASELINE_TABLE_DIGEST` could never be
+		// true: the "table has changed" line printed on every run and meant nothing.
+		// Two known vectors fix the algorithm, and the length check fixes the shape —
+		// neither depends on the live table, so a peer editing it cannot redden this.
+		expect(digest("")).toBe("d41d8cd98f00b204e9800998ecf8427e");
+		expect(digest("abc")).toBe("900150983cd24fb0d6963f7d28e17f72");
+		expect(digest("abc").length).toBe(BASELINE_TABLE_DIGEST.length);
+		expect(BASELINE_TABLE_DIGEST).toMatch(/^[0-9a-f]{32}$/);
+	});
+
+	it("records the rules version, which the table digest cannot stand in for", () => {
+		// Changing what `stale-row` means inside the gate leaves the table
+		// byte-identical, so the md5 still matches and the run still prints green with
+		// a ceiling that is now measuring something else. The rules version is the
+		// only thing standing between that edit and a silently wrong baseline — so
+		// the ratchet has to be reading the LIVE value, not a copy of it.
+		expect(RULES_VERSION).toBe(BASELINE_RULES_VERSION);
+		// And the live value has to be the gate's, not a duplicate: if these drift
+		// apart the ratchet would keep reporting the old rules forever.
+		expect(BASELINE_RULES_VERSION.length).toBeGreaterThan(0);
+	});
+});
+
 describe("the ratchet as a runnable gate", () => {
 	it("runs against the real table and reports the metric it measured", async () => {
 		// The contract is the output, not just the code: a ratchet nobody can audit is
@@ -103,6 +137,8 @@ describe("the ratchet as a runnable gate", () => {
 		// The ceiling carries the digest it was recorded against, so a number that goes
 		// wrong in a month can be traced back to what it meant today.
 		expect(out).toContain("ad1f1ef25f5c55fc924da3c07ac71b44");
+		// …and the rules it was measured under, which the digest above cannot cover.
+		expect(out).toMatch(/\[ratchet\] rules {5}: \S+ \(ceiling set against \S+\)/);
 		// A green run must still name the number it deliberately does not gate on.
 		expect(out).toContain("reported, not gated: missing-row");
 		expect(proc.exitCode).toBe(0);

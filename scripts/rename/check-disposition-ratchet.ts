@@ -33,17 +33,21 @@
  * fixed — a ratchet that goes red because the bug was fixed trains people to
  * ignore it.
  *
- * THE BASELINE RECORDS WHAT IT WAS MEASURED AGAINST. Without the table's digest
- * beside the number, `9` is right today and wrong next month with no way to tell
- * why, and a ratchet nobody can audit is worse than no ratchet: it is silence
- * that looks like a pass.
+ * THE BASELINE RECORDS WHAT IT WAS MEASURED AGAINST — TWICE, because one record is
+ * not enough. The table's digest catches "the table was edited". It cannot catch
+ * "the RULE changed": altering what `stale-row` means inside `check-disposition.ts`
+ * leaves `disposition.tsv` byte-identical, so the digest still matches, nothing is
+ * reported, the ceiling stays 9 while measuring something else, and the run prints
+ * GREEN. That is silence that looks like a pass, so `RULES_VERSION` is recorded
+ * beside the table digest for exactly that hole. Both REPORT drift; neither blocks,
+ * because the table is legitimately being filled in.
  *
  * This is a RUNNER, not the gate. It calls `checkPre` and reads its result; it
  * does not re-implement any rule, so the two cannot drift.
  */
 
 import * as path from "node:path";
-import { checkPre, parseTable } from "./check-disposition.ts";
+import { checkPre, parseTable, RULES_VERSION } from "./check-disposition.ts";
 
 /**
  * The ceiling. Not the count of correct rows — the count of rows whose file has
@@ -57,6 +61,17 @@ export const STALE_ROW_BASELINE = 9;
  * failure, because peers are still filling the table.
  */
 export const BASELINE_TABLE_DIGEST = "ad1f1ef25f5c55fc924da3c07ac71b44";
+
+/**
+ * The rules the ceiling was measured against.
+ *
+ * The table digest alone is not enough, and the gap is not hypothetical: a change
+ * to `check-disposition.ts` that alters what `stale-row` MEANS leaves the table
+ * byte-identical, so the digest still matches, no drift is printed, the ceiling
+ * stays 9 — now wrong — and the run still prints GREEN. The rules version is what
+ * catches that; the table digest only catches "the table was edited".
+ */
+export const BASELINE_RULES_VERSION = RULES_VERSION;
 
 const TABLE_PATH = "scripts/rename/disposition.tsv";
 
@@ -91,8 +106,11 @@ export function checkRatchet(
  * this file existed, and a comparison between two digests of different lengths can
  * never succeed — the drift line would fire on every run and the mismatch would read
  * as "the table changed" when the truth is "these two were never comparable".
+ *
+ * That exact bug shipped for as long as it took a peer to read the file, because
+ * nothing asserted the output was comparable with the constant. It is pinned now.
  */
-function digest(text: string): string {
+export function digest(text: string): string {
 	const hasher = new Bun.CryptoHasher("md5");
 	hasher.update(text);
 	return hasher.digest("hex");
@@ -113,14 +131,19 @@ async function main(): Promise<number> {
 
 	const verdict = checkRatchet(await checkPre(root, rows));
 	const printed = digest(tableText);
-	const drift = printed === BASELINE_TABLE_DIGEST ? "" : "  ← table has changed since the baseline was set";
+	const tableDrift = printed === BASELINE_TABLE_DIGEST ? "" : "  ← table edited since the ceiling was set";
+	const rulesDrift =
+		RULES_VERSION === BASELINE_RULES_VERSION
+			? ""
+			: "  ← RULES CHANGED: this ceiling may be measuring a different thing";
 
 	console.log(
 		`[ratchet] metric    : stale-row (a row whose file no longer carries its own literal)\n` +
 			`[ratchet] measured  : ${verdict.staleRow}\n` +
 			`[ratchet] ceiling   : ${verdict.baseline}\n` +
 			`[ratchet] table     : ${TABLE_PATH} · ${rows.length} rows · md5:${printed}\n` +
-			`[ratchet] baseline recorded against md5:${BASELINE_TABLE_DIGEST}${drift}\n` +
+			`[ratchet] ceiling set against md5:${BASELINE_TABLE_DIGEST}${tableDrift}\n` +
+			`[ratchet] rules     : ${RULES_VERSION} (ceiling set against ${BASELINE_RULES_VERSION})${rulesDrift}\n` +
 			`[ratchet] reported, not gated: missing-row = ${verdict.missingRow} (a ceiling — it must fall)`,
 	);
 

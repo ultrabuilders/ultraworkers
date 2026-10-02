@@ -16,7 +16,7 @@
  * LINE 2 — the Markdown transformer is reachable from the interactive transcript
  * and from nowhere else. If it ever reached the RPC/JSON path, a client reading
  * the session would receive transformed Markdown and break on its own side, with
- * no omp stack trace to point at. The assertion is structural: the transformer's
+ * no ultraworkers stack trace to point at. The assertion is structural: the transformer's
  * only reader is the interactive layer, and the RPC path has no call site.
  */
 import { describe, expect, it } from "bun:test";
@@ -264,7 +264,7 @@ describe("registerMarkdownTransformer", () => {
 	it("transforms the drawn transcript and leaves the stored session raw", async () => {
 		// The dangerous failure is a transformer running on the RPC/JSON path: a
 		// client reading the session would receive transformed Markdown and break on
-		// its own side, with no omp stack trace to point at.
+		// its own side, with no ultraworkers stack trace to point at.
 		//
 		// This asserts the boundary by OBSERVING BOTH SIDES OF ONE SESSION rather
 		// than by reading source. The earlier version grepped `modes/rpc/` for the

@@ -6,7 +6,7 @@ describe("installed binary name", () => {
 	// fact, in two packages, so they can drift. When they do, `invokedBinaryName`
 	// (src/cli-commands.ts) falls back to APP_NAME for a source-file entry, and the
 	// CLI's own "run <name>" advice then names a binary this package never installs.
-	// Adding a second bin (an `omp` alias) is also a contract change, so the exact
+	// Adding a second bin (an `ultraworkers` alias) is also a contract change, so the exact
 	// key set is asserted rather than containment.
 	it("is exactly the name the CLI echoes back in its own advice", async () => {
 		const pkg = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as {

@@ -1,12 +1,12 @@
 /**
- * `omp` from source must actually run.
+ * `ultraworkers` from source must actually run.
  *
  * `import.meta.main` is PER-MODULE, not per-process: it is true only for the module
  * Bun was handed on the command line. `cli-process-entry.ts` read its own, so it was
  * `false` in every source run of `cli.ts`, and `isProcessEntry` was constant false.
  *
  * That is not a hardening nuance, it is a dead CLI. `cli.ts` gates its entire entry
- * block on the flag, so `runCli` was never called and `omp --version`, `omp --help`
+ * block on the flag, so `runCli` was never called and `ultraworkers --version`, `ultraworkers --help`
  * and every subcommand exited 0 having printed nothing — on stdout AND stderr, with
  * no diagnostic, because the reporter that would have named a stalled entry is itself
  * registered inside that same skipped block.

@@ -1,5 +1,5 @@
 /**
- * The contract: `omp config migrate` is accepted, and `--apply` is what turns a
+ * The contract: `ultraworkers config migrate` is accepted, and `--apply` is what turns a
  * read into a write.
  *
  * The failure this defends is the one that cannot be caught by a type check.

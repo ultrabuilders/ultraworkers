@@ -330,7 +330,7 @@ describe("images doctor", () => {
 		// exits 0.
 		//
 		// What a consumer observes if this regresses: anything gating on
-		// `omp images doctor` — a CI step, a pre-deploy check — is told images are
+		// `ultraworkers images doctor` — a CI step, a pre-deploy check — is told images are
 		// fine while the one component able to prove it was never consulted. "No
 		// errors" is not the same claim as "checked, and healthy", and a diagnostic
 		// that collapses the two reads as coverage it does not have.

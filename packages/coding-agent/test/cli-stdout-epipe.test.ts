@@ -4,9 +4,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 // Regression for #10930: a one-shot CLI run whose stdout consumer closes before
-// the write drains (`omp --help | head`, `| less` then `q`, `| grep -m1`,
+// the write drains (`ultraworkers --help | head`, `| less` then `q`, `| grep -m1`,
 // `| true`) used to take the fatal path — Bun surfaced the broken-pipe EPIPE as
-// an unhandled rejection/uncaught exception and `omp` exited 1 with an
+// an unhandled rejection/uncaught exception and `ultraworkers` exited 1 with an
 // `[Uncaught Exception] Error: EPIPE: broken pipe, write` dump. The CLI
 // process-entry now registers `registerStdioDisconnectHandling()`, so a vanished
 // stdout peer is an ordinary Unix disconnect: cleanup runs and the process exits
@@ -24,9 +24,9 @@ it.skipIf(process.platform === "win32")(
 		const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-cli-epipe-"));
 		const errPath = path.join(tmpDir, "omp.err");
 		try {
-			// `| true` closes the read end of the pipe immediately, so `omp`'s help
+			// `| true` closes the read end of the pipe immediately, so `ultraworkers`'s help
 			// write hits a broken pipe regardless of output size. PIPESTATUS[0] is
-			// the middle command's (omp's) exit code, not the pipeline's.
+			// the middle command's (ultraworkers's) exit code, not the pipeline's.
 			const script = `"${process.execPath}" "${cliEntry}" --help 2>"${errPath}" | true; echo "\${PIPESTATUS[0]}"`;
 			const proc = Bun.spawn(["bash", "-c", script], {
 				cwd: repoRoot,

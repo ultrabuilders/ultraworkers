@@ -1,5 +1,5 @@
 /**
- * A diagnostic that never settles must not hold `omp plugin doctor` open.
+ * A diagnostic that never settles must not hold `ultraworkers plugin doctor` open.
  *
  * `PluginManager.doctor()` runs each extension-contributed check under a timeout,
  * because a diagnostic is third-party code on a path that still has to print the

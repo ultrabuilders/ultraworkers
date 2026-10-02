@@ -3,7 +3,7 @@ import type { DisabledReason, Extension, ExtensionState } from "@oh-my-pi/pi-tui
 import { toTriageRow } from "@oh-my-pi/pi-coding-agent/cli/extensions-triage-cli";
 
 /**
- * `toTriageRow` is the whole contract of `omp extensions-triage`: it answers
+ * `toTriageRow` is the whole contract of `ultraworkers extensions-triage`: it answers
  * "is my thing loaded, and if not, what stopped it" from a discovered
  * `Extension`. The tests below assert the triage questions rather than field
  * names, because a field rename that keeps the answers intact is not a

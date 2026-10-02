@@ -1,5 +1,5 @@
 /**
- * An extension can contribute a check to `omp plugin doctor`.
+ * An extension can contribute a check to `ultraworkers plugin doctor`.
  *
  * The surface was core-owned with no way in: `DoctorCheck` is a closed struct
  * built entirely inside `PluginManager.doctor()`, and the 60-event ExtensionAPI
@@ -8,7 +8,7 @@
  * `on("resources_discover")`, contributes paths only, never a diagnostic.
  *
  * Every assertion here is on what `doctor()` RETURNS, which is the list the
- * `omp plugin doctor` command prints. Asserting that the registry holds an entry
+ * `ultraworkers plugin doctor` command prints. Asserting that the registry holds an entry
  * would stay green while the command ignored it, and that is the whole failure
  * mode: a seam that exists and is not reached is indistinguishable from a
  * feature that was never built.

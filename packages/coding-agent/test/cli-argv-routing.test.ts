@@ -1,7 +1,7 @@
 /**
  * Leading global option flags must not hide a subcommand from the CLI runner.
  *
- * #2970: `omp --approval-mode=yolo acp` was rewritten to
+ * #2970: `ultraworkers --approval-mode=yolo acp` was rewritten to
  * `launch --approval-mode=yolo acp`, swallowing `acp` as a launch prompt so the
  * yolo override never reached the ACP command path. The resolver now skips
  * leading global flags (using the launch parser's value-consumption contract)
@@ -102,7 +102,7 @@ describe("resolveCliArgv strips launch-global flags before non-launch subcommand
  * `run` dispatches strictly on argv[0]. A command missing from `commands` is not
  * rejected — it falls through to `launch`, and the whole argv becomes the user's
  * prompt to the model. There is no error, no exit code, and no log line: the user
- * types `omp session list`, the model receives the string `session list`, and it
+ * types `ultraworkers session list`, the model receives the string `session list`, and it
  * answers in prose. That is the most expensive failure in this milestone precisely
  * because nothing ever reports it (#1496, #1499, #4845).
  *
@@ -154,7 +154,7 @@ describe("every registered command is actually routed", () => {
 	test("every command module is reachable by name or alias, so a new one cannot be left unrouted", () => {
 		// The gap the test above cannot see. That one walks the registry, so a command
 		// file that was written and never added to `commands` is invisible to it — and
-		// that is precisely the failure: `omp session` exists, works, and is not
+		// that is precisely the failure: `ultraworkers session` exists, works, and is not
 		// dispatched, so its argv reaches the model as a prompt.
 		//
 		// Derived from the directory rather than a hand-written list, because a hand
@@ -163,7 +163,7 @@ describe("every registered command is actually routed", () => {
 		//   launch-help — help text for `launch`, imported by its registry entry
 		//   settings    — a settings surface reached through another command
 		//   complete    — registered as `__complete`, the shell-completion callback
-		//                 `completion-gen.ts` invokes. `omp complete` is deliberately
+		//                 `completion-gen.ts` invokes. `ultraworkers complete` is deliberately
 		//                 not a command, so the module name is not a public name.
 		const helpers = new Set(["launch-help", "settings", "complete"]);
 		const reachable = new Set(commands.flatMap(command => [command.name, ...(command.aliases ?? [])]));
@@ -177,7 +177,7 @@ describe("every registered command is actually routed", () => {
 	});
 
 	test("a reserved plugin verb errors instead of reaching the model", () => {
-		// `omp marketplace` is documented-looking but not a top-level command.
+		// `ultraworkers marketplace` is documented-looking but not a top-level command.
 		// Returning an error is the point; reaching `launch` would forward the word
 		// itself. (`doctor` used to be the subject here, but 22225aec9b made it a real
 		// top-level command, so it now routes and this case would not exercise the guard.)

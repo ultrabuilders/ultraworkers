@@ -29,7 +29,7 @@ import type {
  * Request transport for one streaming attempt.
  *
  * Copied verbatim from pi's `packages/ai/src/types.ts`, where it is the canonical
- * definition. omp's `@oh-my-pi/pi-ai` does not export a `Transport`, so declaring it here
+ * definition. ultraworkers's `@oh-my-pi/pi-ai` does not export a `Transport`, so declaring it here
  * keeps durable's spelling identical to the reference rather than inventing a near-match.
  */
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
@@ -37,7 +37,7 @@ export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 /**
  * Thinking level for a durable conversation.
  *
- * pi pairs `"off"` with its own `ThinkingLevel`; omp has no such export, and its user-facing
+ * pi pairs `"off"` with its own `ThinkingLevel`; ultraworkers has no such export, and its user-facing
  * ladder is `Effort` from `@oh-my-pi/pi-catalog/effort`. `Effort` is a `const enum`, so this
  * alias is type-only — never read a member off it as a value.
  */

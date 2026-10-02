@@ -47,7 +47,7 @@
  */
 
 import * as path from "node:path";
-import { checkPre, findUnreconciledPinned, parseTable, RULES_VERSION } from "./check-disposition";
+import { checkPre, countRename, findUnreconciledPinned, parseTable, RULES_VERSION } from "./check-disposition";
 import { readGateArgsOrExit } from "./args";
 
 /**
@@ -158,6 +158,37 @@ export interface RatchetVerdict {
 	readonly danglingKeepRef: number;
 }
 
+/** One `rename` row whose declared `hits` disagrees with the file. */
+export interface RenameHitsDrift {
+	readonly path: string;
+	readonly declared: number;
+	readonly actual: number;
+}
+
+/**
+ * `rename` rows whose declared `hits` the file contradicts, in table order.
+ *
+ * Reads each file once and counts with the gate's own `countRename`, so a row is
+ * never judged against a different matcher than the one that will fire on it.
+ * A file that cannot be read is skipped rather than counted as drift: an unreadable
+ * file is already the `stale-row` gate's business, and reporting it here as a lie
+ * would name the wrong cause.
+ */
+export async function measureRenameHitsDrift(
+	root: string,
+	rows: readonly { readonly path: string; readonly hits: number; readonly disposition: string }[],
+): Promise<readonly RenameHitsDrift[]> {
+	const drift: RenameHitsDrift[] = [];
+	for (const row of rows) {
+		if (row.disposition !== "rename") continue;
+		const handle = Bun.file(path.join(root, row.path));
+		if (!(await handle.exists())) continue;
+		const actual = countRename(await handle.text());
+		if (actual !== row.hits) drift.push({ path: row.path, declared: row.hits, actual });
+	}
+	return drift;
+}
+
 /**
  * Apply the ratchet to a gate result. Pure: it takes violations, not a tree, so a
  * test can drive every branch without touching the repository.
@@ -223,6 +254,23 @@ async function main(): Promise<number> {
 		occurrences: unreconciled.reduce((sum, u) => sum + u.occurrences, 0),
 		paths: unreconciled.length,
 	});
+	// REPORTED, never gated, and deliberately not part of `checkRatchet`: that
+	// function is pure over violations, and threading this in would mean a
+	// defaulted argument — the exact shape whose zero reads as healthy when the
+	// caller simply forgot to measure. See `measureRenameHitsDrift`.
+	//
+	// `checkPost` reads `row.hits` for exactly one disposition — `keep-shrank`, via
+	// `keep-*-shrank`. On a `rename` row the column is never read: the violation is
+	// raised from the FILE (`if (renameRemaining > 0)`), not from the number. So a
+	// `rename` row can declare any `hits` and cost nothing, which is what this
+	// counts. `hits-imbalance` does not cover it either — that compares a path's
+	// rows SUM against the file's count, and a set of rows can satisfy the sum
+	// while every row still lies.
+	//
+	// Ungated while the drift is real: gating it now would redden CI for a number
+	// nobody has fixed yet, and since `check:ts` is an `&&` chain it would hide
+	// every link after it. A gate earns its red by being able to go green first.
+	const drift = await measureRenameHitsDrift(root, rows);
 	const printed = digest(tableText);
 	const tableDrift = printed === BASELINE_TABLE_DIGEST ? "" : "  ← table edited since the ceiling was set";
 	const rulesDrift =
@@ -239,10 +287,11 @@ async function main(): Promise<number> {
 			`[ratchet] rules     : ${RULES_VERSION} (ceiling set against ${BASELINE_RULES_VERSION})${rulesDrift}\n` +
 			`[ratchet] gated, must be 0:\n` +
 			`[ratchet]   dangling-keep-ref      = ${verdict.danglingKeepRef}   (a keep_refs id no plan document introduces)\n` +
-			`[ratchet] reported, not gated — all four are CEILINGS, they must fall:\n` +
+			`[ratchet] reported, not gated — all five are CEILINGS, they must fall:\n` +
 			`[ratchet]   missing-row             = ${verdict.missingRow}   (rows still not covered)\n` +
 			`[ratchet]   literal-hits-imbalance  = ${verdict.literalImbalance}   (rows whose declared hits ≠ the file's)\n` +
 			`[ratchet]   hits-imbalance          = ${verdict.hitsImbalance}   (a path's rows sum ≠ the file's count)\n` +
+			`[ratchet]   rename-hits-drift       = ${drift.length}   (rename rows whose declared hits ≠ countRename; no gate reads this column)\n` +
 			`[ratchet]   unreconciled-pinned     = ${verdict.unreconciledPinned}   (pinned occurrences over ${verdict.unreconciledPaths} path(s) that no row accounts for)`,
 	);
 

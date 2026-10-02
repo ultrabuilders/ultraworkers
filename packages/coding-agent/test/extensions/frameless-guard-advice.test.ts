@@ -187,3 +187,50 @@ describe("the frameless advice names a canMount the caller can actually pass", (
 		expect(message).toContain("pi.ui.select");
 	});
 });
+
+/** Runs the real ACP call and returns the message an author would actually read. */
+function setWidgetMessage(context: ExtensionUIContext, content: unknown): string {
+	try {
+		context.setWidget("probe", content as never);
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+	throw new Error("setWidget was expected to throw on the ACP context");
+}
+
+describe("ACP refuses setWidget for both of the shapes RPC renders differently", () => {
+	// The contract is not "ACP throws" — it is that ACP throws for the string array too.
+	// RPC sends a string array as a frame and refuses only a component factory, so a test
+	// that used a factory alone would pass against a context that silently dropped arrays,
+	// which is the more dangerous half: an author would see their text widget simply not
+	// appear, with no error anywhere.
+	const STRING_ARRAY = ["first", "second"] as never;
+	const FACTORY = (() => null) as never;
+
+	it("throws for a string array, which is the shape that does cross over RPC", () => {
+		expect(setWidgetMessage(acpContext(FORM_CAPABILITIES), STRING_ARRAY)).toContain("setWidget is not available");
+	});
+
+	it("throws for a component factory", () => {
+		expect(setWidgetMessage(acpContext(FORM_CAPABILITIES), FACTORY)).toContain("setWidget is not available");
+	});
+
+	it("does not tell the author to guard on hasUI, which is true for a form-capable client", () => {
+		// The client reports `hasUI: true` and the call still throws, so the old advice
+		// would walk the author straight into it. This is the same regression the setHeader
+		// rows above pin, reached through a different member.
+		const context = acpContext(FORM_CAPABILITIES);
+		expect(context.hasUI).toBe(true);
+
+		expect(setWidgetMessage(context, STRING_ARRAY)).not.toContain(NAMES_THE_GUARD);
+	});
+
+	it("offers a surface that does work, rather than only denying the one that does not", () => {
+		// `setStatus` is `() => {}` here, so naming it would trade a thrown error for the
+		// silent absence this file exists to end. The dialogs are what `hasUI` describes.
+		const message = setWidgetMessage(acpContext(FORM_CAPABILITIES), STRING_ARRAY);
+
+		expect(message).toContain("pi.ui.setStatus is a no-op");
+		expect(message).toContain("pi.ui.select");
+	});
+});

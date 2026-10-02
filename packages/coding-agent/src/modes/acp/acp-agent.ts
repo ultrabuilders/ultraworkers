@@ -599,7 +599,16 @@ export function createAcpExtensionUiContext(
 		setWorkingMessage: () => {},
 		// ACP drives its own indicator; this client context does not animate one.
 		setWorkingIndicator: () => {},
-		setWidget: () => {},
+		setWidget: () => {
+			// The one bare `() => {}` left in this literal, and it was the widest of them:
+			// RPC renders a string array and refuses a component factory, so *some* of
+			// setWidget crosses there — but ACP has no widget frame at all, so here both
+			// forms vanish. A widget that never appears is exactly what a panel that did
+			// appear looks like, and this context has no `setStatus`-style text path to
+			// fall back on, which is the condition `noOpUIContext` states for staying
+			// silent. Its neighbours below already throw for the same reason.
+			throw new Error(unavailableFrameMessage("setWidget", "ACP mode", ACP_FRAMELESS_GUARD));
+		},
 		setFooter: () => {
 			throw new Error(unavailableFrameMessage("setFooter", "ACP mode", ACP_FRAMELESS_GUARD));
 		},

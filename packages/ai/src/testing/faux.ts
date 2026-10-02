@@ -686,8 +686,12 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 		handle: DeferredHandle,
 		cancelOptions?: SimpleStreamOptions,
 	): Promise<void> => {
-		await cancelOptions?.onResponse?.({ status: 200, headers: {} }, requestModel);
 		state.cancelledDeferred.push(structuredClone(handle));
+		const entry = deferredResponses.get(handle.id);
+		// Without this the cancellation is only recorded: a later fetch finds the entry still live
+		// and finishes a generation the caller already gave up on.
+		if (entry) entry.cancelled = true;
+		await cancelOptions?.onResponse?.({ status: 200, headers: {} }, requestModel);
 	};
 
 	function getModel(): Model;

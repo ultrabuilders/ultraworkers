@@ -53,6 +53,17 @@ export type { KeyId };
 export interface KeybindingDefinition {
 	defaultKeys: KeyId | KeyId[];
 	description?: string;
+	/**
+	 * A default key that yields to the user: when the user has bound this exact
+	 * key to a *different* action, it is dropped from this action's resolved keys.
+	 *
+	 * Declared on the definition rather than in a lookup table beside it. The table
+	 * this replaced held two entries, and every action that wanted to yield had to
+	 * be added to it as a separate edit in a different file from the one declaring
+	 * the key — so "this default yields" was a fact that existed in one place and
+	 * the behaviour in another, and a new action silently did not yield.
+	 */
+	fallbackKey?: KeyId;
 }
 
 export type KeybindingDefinitions = Record<string, KeybindingDefinition>;

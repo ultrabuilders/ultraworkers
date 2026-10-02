@@ -148,6 +148,9 @@ export const KEYBINDINGS = {
 		// first so the default binding works there without remapping (#1903).
 		defaultKeys: ["ctrl+q", "ctrl+enter"],
 		description: "Send follow-up message",
+		// Yields to the user: if Ctrl+Q has been bound to something else, follow-up
+		// stops claiming it and keeps only Ctrl+Enter.
+		fallbackKey: "ctrl+q",
 	},
 	"app.retry": {
 		// F5 leads: it is delivered verbatim by every terminal, unlike modified
@@ -161,6 +164,8 @@ export const KEYBINDINGS = {
 		// for character composition, leaving Alt+Up unreachable there.
 		defaultKeys: ["alt+up", "shift+up"],
 		description: "Dequeue message",
+		// Yields to the user, for the same reason follow-up does.
+		fallbackKey: "shift+up",
 	},
 	"app.clipboard.pasteImage": {
 		defaultKeys: getDefaultPasteImageKeys(),
@@ -539,13 +544,28 @@ function migrateKeybindingsConfigFile(agentDir: string): void {
 }
 
 const FOLLOW_UP_KEYBINDING: AppKeybinding = "app.message.followUp";
-const WINDOWS_FOLLOW_UP_FALLBACK_KEY: KeyId = "ctrl+q";
-const DEQUEUE_KEYBINDING: AppKeybinding = "app.message.dequeue";
-const MACOS_DEQUEUE_FALLBACK_KEY: KeyId = "shift+up";
+/**
+ * `KEYBINDINGS` is `as const`, so each entry narrows to its own literal shape and
+ * the union of them has no shared `fallbackKey`. This alias is the one widening,
+ * kept beside its only reader so the cast does not have to travel.
+ *
+ * Exported because a test that reads the declarations has to read them the same
+ * widened way; a second copy of this widening in the test would be a third place
+ * for the two views to disagree.
+ */
+export const KEYBINDING_DEFINITIONS: KeybindingDefinitions = KEYBINDINGS;
+/**
+ * The key an action yields when the user has claimed it, if it declares one.
+ *
+ * Read off the definition so an action opts in by carrying `fallbackKey` on its
+ * own entry, rather than by being added to a table maintained somewhere else. The
+ * table this replaced compared against two hardcoded constants and returned
+ * `undefined` for everything else, which meant the yield behaviour was opt-in
+ * only for the two actions someone remembered to list — a new action could not
+ * yield without editing this function.
+ */
 function getFallbackKey(keybinding: Keybinding): KeyId | undefined {
-	if (keybinding === FOLLOW_UP_KEYBINDING) return WINDOWS_FOLLOW_UP_FALLBACK_KEY;
-	if (keybinding === DEQUEUE_KEYBINDING) return MACOS_DEQUEUE_FALLBACK_KEY;
-	return undefined;
+	return KEYBINDING_DEFINITIONS[keybinding]?.fallbackKey;
 }
 function keyListIncludes(keys: KeyId | KeyId[] | undefined, target: KeyId): boolean {
 	if (keys === undefined) return false;

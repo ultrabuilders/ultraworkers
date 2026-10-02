@@ -349,7 +349,11 @@ describe("blockedBy, from a tool-policy denial", () => {
 	 * audit half to the same `SessionManager` the turn scan reads. Everything else
 	 * is inert so nothing else in the wrapper is under test here.
 	 */
-	function runnerFor(manager: SessionManager, settings: Settings): ExtensionRunner {
+	function runnerFor(
+		manager: SessionManager,
+		settings: Settings,
+		answer: "Approve" | "Deny" = "Approve",
+	): ExtensionRunner {
 		return {
 			hasHandlers: () => false,
 			consumeToolCallEmitted: () => false,
@@ -358,6 +362,11 @@ describe("blockedBy, from a tool-policy denial", () => {
 			// The wrapper resolves approval from its context, falling back to the
 			// runner's session settings when the loop supplies none.
 			sessionSettings: settings,
+			// The seam the wrapper actually uses when it does ask. Without it a prompt
+			// cannot be answered, so the prompted-denial row could not exist.
+			getUIContext: () => ({
+				select: async () => answer,
+			}),
 			recordApprovalEntry: (half: Omit<ApprovalEntry, "type">) => {
 				manager.appendApprovalEntry(half as never);
 			},
@@ -370,14 +379,22 @@ describe("blockedBy, from a tool-policy denial", () => {
 	/**
 	 * Drive one prompt whose turn calls bash with `command`.
 	 *
-	 * `yolo` on purpose: this is the path where nobody is asked anything, so the
-	 * refusal is the tool's own policy and not a user answering a prompt.
+	 * `yolo` by default: that is the path where nobody is asked anything, so the
+	 * refusal is the tool's own policy rather than a user answering a prompt. The
+	 * `answer` override exists for the sibling branch — a refusal a human was
+	 * actually asked about and said no to.
 	 */
-	async function promptThroughToolPolicy(command: string, callId: string): Promise<SessionManager> {
+	async function promptThroughToolPolicy(
+		command: string,
+		callId: string,
+		answer: "Approve" | "Deny" = "Approve",
+	): Promise<SessionManager> {
 		sandboxes.push(TempDir.createSync("@pi-policy-denial-"));
 		const manager = SessionManager.inMemory();
-		const settings = Settings.isolated({ "tools.approvalMode": "yolo" });
-		const runner = runnerFor(manager, settings);
+		const settings = Settings.isolated(
+			answer === "Approve" ? { "tools.approvalMode": "yolo" } : { "tools.approvalMode": "always-ask" },
+		);
+		const runner = runnerFor(manager, settings, answer);
 
 		const bash = new BashTool({
 			settings,
@@ -453,6 +470,130 @@ describe("blockedBy, from a tool-policy denial", () => {
 		const manager = await promptThroughToolPolicy("echo hello", "call-benign");
 
 		const halves = manager.getEntries().filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+		expect(halves.every(entry => !isApprovalDenial(entry))).toBe(true);
+
+		const ended = manager.getEntries().find((e): e is TurnEntry => e.type === "turn" && e.phase === "ended");
+		expect(ended?.blockedBy).toBeUndefined();
+	});
+});
+
+/**
+ * The sibling branch, and the last writer with a real path to the field.
+ *
+ * The block above closes the refusal *nobody was asked about*: `policy: "deny"`,
+ * decided by the tool, recorded from `#recordPolicyDenial`. This one is a refusal a
+ * human saw and said no to — a different writer call site (`recordApprovalAnswered`
+ * rather than `#recordPolicyDenial`) and a different decision vocabulary
+ * (`decision: "denied"` rather than `policy: "deny"`).
+ *
+ * Both reach the field through the same reader, so the block above does not cover
+ * this one. A reader understanding only `policy: "deny"` would leave every refusal a
+ * person actually expressed invisible, and the block above would stay green the
+ * whole time.
+ *
+ * `always-ask` is what makes the question happen. Under `yolo` the wrapper resolves
+ * without asking and records nothing — which is the honest answer, not a gap.
+ */
+describe("blockedBy, from a refusal a person was asked about", () => {
+	const sandboxes: TempDir[] = [];
+	let own: AgentSession | undefined;
+
+	afterEach(async () => {
+		if (own) await own.dispose();
+		own = undefined;
+		while (sandboxes.length > 0) await sandboxes.pop()!.remove();
+	});
+
+	function runnerFor(manager: SessionManager, settings: Settings, answer: "Approve" | "Deny"): ExtensionRunner {
+		return {
+			hasHandlers: () => false,
+			consumeToolCallEmitted: () => false,
+			hasUI: () => true,
+			sessionId: "prompted-denial-turn-test",
+			sessionSettings: settings,
+			getUIContext: () => ({
+				select: async () => answer,
+			}),
+			recordApprovalEntry: (half: Omit<ApprovalEntry, "type">) => {
+				manager.appendApprovalEntry(half as never);
+			},
+			runScoped<T>(fn: () => T): T {
+				return fn();
+			},
+		} as unknown as ExtensionRunner;
+	}
+
+	/** Drive one real turn whose bash call is put to `answer`. */
+	async function promptThroughPrompt(command: string, callId: string, answer: "Approve" | "Deny") {
+		sandboxes.push(TempDir.createSync("@pi-prompted-denial-"));
+		const manager = SessionManager.inMemory();
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		const runner = runnerFor(manager, settings, answer);
+
+		const bash = new BashTool({
+			settings,
+		} as unknown as ConstructorParameters<typeof BashTool>[0]);
+		const wrapped = new ExtensionToolWrapper(bash as unknown as AgentTool, runner);
+
+		const mock = createMockModel({
+			responses: [
+				{ content: [{ type: "toolCall", id: callId, name: "bash", arguments: { command } }] },
+				{ content: ["finished"] },
+			],
+		});
+		own = new AgentSession({
+			agent: new Agent({
+				getApiKey: () => "test-key",
+				initialState: {
+					model: mock.model,
+					systemPrompt: ["Test"],
+					tools: [wrapped],
+					messages: manager.buildSessionContext().messages,
+				},
+				streamFn: mock.stream,
+			}),
+			sessionManager: manager,
+			settings,
+			modelRegistry: { getApiKey: () => "test-key" } as never,
+		});
+
+		await own.prompt("do the thing");
+		return manager;
+	}
+
+	it("names the call the user said no to, from the decision they made", async () => {
+		const manager = await promptThroughPrompt("echo hello", "call-user-deny", "Deny");
+
+		// A *pair*, not one row: this refusal has an `asked` half, because for once a
+		// question really was put to somebody. A single row here would mean the audit
+		// could not tell this refusal from the policy one above.
+		const halves = manager.getEntries().filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+		expect(halves.map(e => e.phase)).toEqual(["asked", "answered"]);
+		const [asked, answered] = halves;
+		expect(answered.requestId).toBe(asked.requestId);
+		expect(answered.requestId).toBe("call-user-deny");
+		// This branch's provenance and vocabulary — `source: "user"` and a decision
+		// string, neither of which the policy branch writes.
+		expect(answered.decision).toBe("denied");
+		expect(answered.source).toBe("user");
+		expect(asked.decision).toBeUndefined();
+
+		expect(isApprovalDenial(answered)).toBe(true);
+
+		const ended = manager.getEntries().find((e): e is TurnEntry => e.type === "turn" && e.phase === "ended");
+		expect(ended?.blockedBy).toEqual(["call-user-deny"]);
+	});
+
+	it("leaves the turn unblocked when the user said yes to the same call", async () => {
+		// The control that gives the row above its meaning. Same prompt, same tool,
+		// same real turn — one answer apart. If `blockedBy` meant "an approval was
+		// recorded", this turn would carry the id and the row above would be
+		// satisfied by a writer that audits every prompt as a refusal.
+		const manager = await promptThroughPrompt("echo hello", "call-user-allow", "Approve");
+
+		const halves = manager.getEntries().filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+		// Still a full pair: the question really was asked and really was answered.
+		expect(halves.map(e => e.phase)).toEqual(["asked", "answered"]);
 		expect(halves.every(entry => !isApprovalDenial(entry))).toBe(true);
 
 		const ended = manager.getEntries().find((e): e is TurnEntry => e.type === "turn" && e.phase === "ended");

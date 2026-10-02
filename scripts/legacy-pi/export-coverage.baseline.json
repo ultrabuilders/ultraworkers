@@ -112,7 +112,9 @@
 			"ArminComponent",
 			"CredentialSynchronizationError",
 			"DEFAULT_COMPACTION_SETTINGS",
+			"ModelRuntime",
 			"ModelSelectorComponent",
+			"ProjectTrustStore",
 			"SkillInvocationMessageComponent",
 			"UserMessageSelectorComponent",
 			"VIRTUAL_MODEL_STATE_ENTRY",
@@ -122,11 +124,15 @@
 			"createAgentSessionFromServices",
 			"createAgentSessionRuntime",
 			"createAgentSessionServices",
+			"createCodemodeExtension",
+			"createEventBus",
 			"createLocalBashOperations",
 			"createLocalPowerShellOperations",
+			"createMcpExtension",
 			"createPowerShellTool",
 			"createPowerShellToolDefinition",
 			"createSyntheticSourceInfo",
+			"createToolSearchExtension",
 			"detectSupportedImageMimeTypeFromFile",
 			"findTurnStartIndex",
 			"formatDimensionNote",
@@ -155,14 +161,7 @@
 			"shouldCompact"
 		],
 		"extension-surface": [],
-		"unknown": [
-			"ModelRuntime",
-			"ProjectTrustStore",
-			"createCodemodeExtension",
-			"createEventBus",
-			"createMcpExtension",
-			"createToolSearchExtension"
-		]
+		"unknown": []
 	},
 	"piValueExports": 156,
 	"shimRuntimeExports": 716

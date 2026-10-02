@@ -38,23 +38,36 @@ export interface TmuxClientTerminalQuery {
 }
 
 /**
+ * The caller's view of a query, plus whether it is worth remembering.
+ *
+ * `definitive` is deliberately not derived from `reason`. A tmux that vanishes between the
+ * lookup and the spawn, and a tmux that was never installed, both report `not-found` — but
+ * only the second is final. Deriving the cache decision from the reason would cache the
+ * first and reintroduce the permanent-loss bug this split exists to prevent, so the two
+ * travel together and the caller reads only the reason.
+ */
+interface TmuxQueryOutcome extends TmuxClientTerminalQuery {
+	readonly definitive: boolean;
+}
+
+/**
  * Ask tmux for the attached client's terminal type.
  *
- * A query that runs out of its budget reports `undefined` rather than `null`, because the
- * two mean opposite things: `null` is an answer that will not change on a retry (tmux
- * absent, or tmux reporting no client type), while a killed query says only that this
- * machine was busy. Returning `null` for a timeout made a busy moment permanent — the
- * caller caches, so one slow spawn cost the process its terminal type for the rest of its
- * life, and in a long-running TUI the name simply never recovered.
+ * A query that ends without an answer must stay distinguishable from one that is answered
+ * `null`, because the two mean opposite things: `null` is an answer that will not change on
+ * a retry (tmux absent, or tmux reporting no client type), while a query that never
+ * completed says only that this machine was busy. Treating the second as the first made a
+ * busy moment permanent — the caller caches, so one slow spawn cost the process its
+ * terminal type for the rest of its life, and in a long-running TUI the name never recovered.
  *
- * `timeout` covers both ways a query can end without an answer: the budget firing, and
- * tmux vanishing between the lookup and the spawn (ENOENT). Those are different events
- * with the same consequence — neither is worth caching — so they share a reason code; the
- * difference between them is not observable from outside this function.
+ * `timeout` names the budget firing and nothing else. A tmux that vanishes between the
+ * lookup and the spawn is reported `not-found` instead, because a reason code reaches test
+ * output and into the log of whoever reads a red run: calling that a timeout would tell
+ * them the machine was slow when the truth is that tmux was not there to be asked.
  */
-function queryTmuxClientTerminalName(env: NodeJS.ProcessEnv): TmuxClientTerminalQuery {
+function queryTmuxClientTerminalName(env: NodeJS.ProcessEnv): TmuxQueryOutcome {
 	const tmux = $which("tmux", { PATH: env.PATH });
-	if (!tmux) return { value: null, reason: "not-found" };
+	if (!tmux) return { value: null, reason: "not-found", definitive: true };
 	try {
 		const result = Bun.spawnSync([tmux, "display-message", "-p", "#{client_termtype}"], {
 			env,
@@ -65,14 +78,17 @@ function queryTmuxClientTerminalName(env: NodeJS.ProcessEnv): TmuxClientTerminal
 		});
 		// The time budget fired — reported as a null exit code with a kill signal, which is
 		// distinct from tmux exiting non-zero, which is an answer.
-		if (result.exitCode === null) return { value: null, reason: "timeout" };
-		if (result.exitCode !== 0) return { value: null, reason: "not-found" };
+		if (result.exitCode === null) return { value: null, reason: "timeout", definitive: false };
+		if (result.exitCode !== 0) return { value: null, reason: "not-found", definitive: true };
 		const name = CLIENT_TERMTYPE_NAME.exec(result.stdout.toString().trim())?.[1];
-		return name === undefined ? { value: null, reason: "not-found" } : { value: name, reason: "ok" };
+		return name === undefined
+			? { value: null, reason: "not-found", definitive: true }
+			: { value: name, reason: "ok", definitive: true };
 	} catch {
-		// tmux vanished between the lookup and the spawn (ENOENT). Like a timeout that is
-		// unknown rather than absent, and a later call can still succeed.
-		return { value: null, reason: "timeout" };
+		// tmux vanished between the lookup and the spawn (ENOENT). It is not found — but
+		// unlike a tmux that was never installed, a later call can still succeed, so it must
+		// not be remembered.
+		return { value: null, reason: "not-found", definitive: false };
 	}
 }
 
@@ -90,11 +106,11 @@ export function resolveTmuxClientTerminalNameWithReason(env: NodeJS.ProcessEnv =
 	const cached = cachedClientTerminalName;
 	if (cached !== undefined) return { value: cached, reason: cached === null ? "not-found" : "ok" };
 	const outcome = queryTmuxClientTerminalName(env);
-	// A timeout — budget fired, or tmux vanished mid-spawn — is not an answer, so nothing
-	// is cached and the next call tries again.
-	if (outcome.reason === "timeout") return outcome;
+	// A query that never completed — budget fired, or tmux vanished mid-spawn — is not an
+	// answer, so nothing is cached and the next call tries again.
+	if (!outcome.definitive) return { value: outcome.value, reason: outcome.reason };
 	cachedClientTerminalName = outcome.value;
-	return outcome;
+	return { value: outcome.value, reason: outcome.reason };
 }
 
 /**

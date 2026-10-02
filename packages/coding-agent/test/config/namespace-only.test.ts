@@ -69,8 +69,32 @@ describe("registerOwned refuses a bare id from a non-core owner", () => {
 
 describe("core keeps declaring bare ids — this is what makes the rule non-breaking", () => {
 	it("lets a bare id through for the core owner", () => {
+		// There is deliberately NO cleanup for the registration below.
+		//
+		// `register` forces owner "core" (registry.ts:934), and `unregisterOwned` takes
+		// an OWNER, not an id, so the only way to undo this one registration is to drop
+		// every core-owned setting — ~520 of them. That is not a cleanup, it is a
+		// process-wide demolition, and it used to be written here.
+		//
+		// Measured cost, in this repo's own suites: with that line present,
+		// `bun test packages/coding-agent/test/config/ packages/coding-agent/test/collab/`
+		// reports 51 failures, all of them one assertion —
+		// `Unknown setting "compaction.enabled"` from settings.ts:267 — because the
+		// collab fixtures build Settings and the registry could no longer resolve an id
+		// the demolition had taken. Removing the line turns that run green (336 pass /
+		// 1 pre-existing fail with the enumeration-sensitive suites added).
+		//
+		// Note it was ALWAYS destructive, not only in that pairing: a probe counting the
+		// registry at end of run reads 502 settings after this file against a 522
+		// baseline. It simply did not bite until the removed set happened to include an
+		// id a later test looked up — order decided whether the bug was visible, not
+		// whether it was there.
+		//
+		// Leaving one inert core setting registered is the smaller cost: it is a valid
+		// definition, no suite enumerates the registry expecting an exact membership
+		// (extension-setting-registry, path-rule-yaml and settings-registry were checked
+		// against it), and it cannot deny a later test anything the way a missing id can.
 		expect(() => register({ id: "some.core.bare", type: "string", default: "c" } as never)).not.toThrow();
-		unregisterOwned("core");
 	});
 
 	it("roots every generated id under the reserved prefix", () => {

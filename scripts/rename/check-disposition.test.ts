@@ -149,6 +149,33 @@ describe("occurrence counting", () => {
 		expect(countClass(`const x = "omp.shs";`, "rename")).toBe(1);
 	});
 
+	it("counts a dotfile directory, which the leading edge was blind to", () => {
+		// The companion blind spot to the one above, on the LEADING edge rather than the
+		// trailing one, and with no test covering it — which is why it survived.
+		//
+		// `[^a-zA-Z0-9_.-]` refuses to match when a `.` precedes `omp`, so every
+		// reference to the agent's own config directory — `~/.omp/agent/extensions/`,
+		// `~/.omp` in prose — counts ZERO. That is not cosmetic: `--stage=post` accepts a
+		// row when the count reaches zero, so a file whose only occurrences are dotfile
+		// paths reports as finished while the token is still in it.
+		//
+		// Measured on `test/cli-extension-providers.test.ts`, whose row says `hits=2`:
+		// `countRename` returns 0, `hits-imbalance` fires "rows sum to 2, file has 0",
+		// and the two `omp` tokens sit at lines 8 and 14 inside a docblock.
+		//
+		// The narrowing has to stay as tight as the trailing edge's. `.omp` is a
+		// directory, so the continuation must be a path or word boundary — `omp.sh`
+		// must still not match, and neither must `my.omp.sh`.
+		expect(countClass(`~/.omp/agent/extensions/`, "rename")).toBe(1);
+		expect(countClass(`the developer's real \`~/.omp\`.`, "rename")).toBe(1);
+		expect(countClass(`path.join(home, ".omp", "agent")`, "rename")).toBe(1);
+
+		// The domain is still excluded on the leading edge — this is the same wire
+		// value the case above protects, seen through the other edge.
+		expect(countClass(`"https://omp.sh/install"`, "keep-wire")).toBe(0);
+		expect(countClass(`"wss://my.omp.sh/s/abc#key"`, "keep-wire")).toBe(0);
+	});
+
 	it("leaves an underscore-delimited token uncounted, on purpose", () => {
 		// This is a DECISION, not an oversight, and it is the one place a later reader is
 		// most likely to "fix" the expression. A review proposed that `some_omp_thing`

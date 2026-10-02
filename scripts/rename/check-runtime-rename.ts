@@ -96,6 +96,23 @@ const LEGACY_TOKEN = /\bomp\b/;
  * the census for them is `check-disposition.ts`'s 241-row table, which
  * accounts for each occurrence against a reviewed reason. Folding them in here
  * would give the same token a second, per-line source of truth.
+ *
+ * IT ALSO DOES NOT COVER THE TUI RENDER PATH, and that is a decision rather than
+ * an oversight. `packages/tui` does call `logger.*` (21 files), so the trigger
+ * reaches it — but user-visible TUI text does not travel that way. It lands
+ * through the component writers (`push` 3242, `render` 395, `addChild` 358,
+ * `write` 75 call sites across `packages/tui/src`), none of which this trigger
+ * can see; all three sites this gate holds live in `coding-agent`.
+ *
+ * Adding those writers here is not merely expensive, it is structurally wrong
+ * for THIS gate: the allow-list is per `(path, line)` with a human signing each
+ * one, and any trigger over `packages/tui/src` exposes a ceiling of 571 token
+ * lines across 171 files (measured here; a trigger also requires the writer, so
+ * that is the ceiling, not the count). That is a flood, not a signal — and a
+ * flood is how a gate stops being read. The measured cost is the reason; if
+ * display text needs a census, it needs a census whose unit is the string a
+ * user sees, not one keyed to a call expression, and that is a different gate
+ * rather than a wider one.
  */
 const RUNTIME_WRITER = /\blogger\.(?:log|error|warn|debug|info)\(/;
 

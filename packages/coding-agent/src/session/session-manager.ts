@@ -66,8 +66,10 @@ import {
 	type SessionTreeNode,
 	type ThinkingLevelChangeEntry,
 	type ApprovalEntry,
+	type TurnEntry,
 	type SessionEntryBase,
 	APPROVAL_ENTRY_TYPE,
+	TURN_ENTRY_TYPE,
 	TITLE_CHANGE_ENTRY_TYPE,
 	type TitleChangeEntry,
 	type TtsrInjectionEntry,
@@ -3058,6 +3060,20 @@ export class SessionManager {
 	 */
 	appendApprovalEntry(half: Omit<ApprovalEntry, keyof SessionEntryBase>): string {
 		const entry: ApprovalEntry = { ...half, type: APPROVAL_ENTRY_TYPE, ...this.#freshEntryFields() };
+		this.#recordEntry(entry);
+		return entry.id;
+	}
+
+	/**
+	 * Append one half of a turn's durable record.
+	 *
+	 * A dedicated method for the same reason `appendApprovalEntry` has one: an
+	 * `appendCustomEntry("turn", …)` would emit a `CustomEntry` and leave the
+	 * `TurnEntry` union member with no producer, which is a shape nothing can
+	 * rely on when reading the log back.
+	 */
+	appendTurnEntry(half: Omit<TurnEntry, keyof SessionEntryBase>): string {
+		const entry: TurnEntry = { ...half, type: TURN_ENTRY_TYPE, ...this.#freshEntryFields() };
 		this.#recordEntry(entry);
 		return entry.id;
 	}

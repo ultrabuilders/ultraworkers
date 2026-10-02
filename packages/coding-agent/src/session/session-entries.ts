@@ -20,6 +20,8 @@ export const TITLE_CHANGE_ENTRY_TYPE = "title_change";
 
 export const APPROVAL_ENTRY_TYPE = "approval";
 
+export const TURN_ENTRY_TYPE = "turn";
+
 export type SessionTitleSource = "auto" | "user";
 
 /** Fixed-width first-line slot carrying the mutable current session title. */
@@ -242,12 +244,50 @@ export interface ApprovalEntry extends SessionEntryBase {
 	source?: "user" | "mode" | "tool" | "acp";
 }
 
+/**
+ * One half of a turn's durable record: when it opened, and how it closed.
+ *
+ * ## Why it is written on the event, not on the loop's `turnOpen` flag
+ *
+ * Three sites in `runLoopBody` push `turn_start` and then throw
+ * (`agent-loop.ts:1243` `getSteeringMessages`, `:1381` `beforeModelCall`,
+ * `:1397` `onToolChoiceRejected`), so `turn_end` never fires for those turns.
+ * A record written only on close would be missing exactly the turns that died.
+ * `agent-loop.ts:1243` also opens a turn with a bare `stream.push` and never
+ * assigns the flag, so the flag and the stream disagree at one of the three
+ * sites: keying the write on the event cannot inherit that bug, and keying it
+ * on the flag would.
+ *
+ * ## Why `blockedBy` is a reference and not a copy
+ *
+ * `ApprovalEntry` already holds the decision, the policy key, and the source.
+ * Duplicating those fields here would create a second source of truth that can
+ * drift from the first, so this names the `requestId`s and leaves the content
+ * where it is already written.
+ */
+export interface TurnEntry extends SessionEntryBase {
+	type: typeof TURN_ENTRY_TYPE;
+	/** Index of the turn within the session; matches the loop's `turnIndex`. */
+	turnIndex: number;
+	phase: "started" | "ended";
+	/**
+	 * `ApprovalEntry.requestId` of every denial that cut this turn short.
+	 *
+	 * Deliberately not derived from `ToolResultMessage.isError`: that flag
+	 * carries no policy, so it cannot tell a gate denial from an ordinary tool
+	 * failure. Filling this from it would build a second source that disagrees
+	 * with `ApprovalEntry` in exactly the cases that matter.
+	 */
+	blockedBy?: string[];
+}
+
 declare module "@oh-my-pi/pi-agent-core/compaction/entries" {
 	interface CustomCompactionSessionEntries {
 		titleChange: TitleChangeEntry;
 		credentialPin: CredentialPinEntry;
 		modelUsage: ModelUsageEntry;
 		approval: ApprovalEntry;
+		turn: TurnEntry;
 	}
 }
 
@@ -360,6 +400,7 @@ export type SessionEntry =
 	| ModeChangeEntry
 	| CredentialPinEntry
 	| ApprovalEntry
+	| TurnEntry
 	| ResetBoundaryEntry;
 
 /** Raw logical file entry after loaders strip any fixed-width title slot. */

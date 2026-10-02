@@ -41,6 +41,20 @@ export type SessionTreeEntry = { id: string; parentId: string | null } & (
 	| { type: "ttsr_injection"; injectedRules: string[] }
 	| { type: "session_init" | "reset_boundary" }
 	| { type: "approval"; toolName: string; phase: "asked" | "answered"; decision?: string }
+	/**
+	 * `turn` looks unreachable from this tree — `isUserRequestEntry` admits only
+	 * user messages, so a turn entry never reaches the selector. The arm is
+	 * nevertheless required, and it is required *for a reason that is not visible
+	 * here*: this union is the display projection of the host's `SessionEntry`, and
+	 * omitting a member makes the producer fail to narrow, not this file fail to
+	 * compile. The type error surfaces in the host, at a distance from the omission.
+	 *
+	 * So the tempting cleanup — "the tree filters turns out, therefore this arm is
+	 * dead, delete it" — is wrong, and re-deriving it costs a typecheck round-trip
+	 * to rediscover. The filter lives in TUI; this union is consumed by the host;
+	 * they change independently.
+	 */
+	| { type: "turn"; turnIndex: number; phase: "started" | "ended" }
 );
 
 /** Session tree shape consumed by the selector. */

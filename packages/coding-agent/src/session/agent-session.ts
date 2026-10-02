@@ -919,6 +919,10 @@ export class AgentSession implements SettingsScope {
 				turnIndex: this.#turnIndex,
 				timestamp: Date.now(),
 			};
+			// Recorded on the EVENT, not on the loop's `turnOpen` flag: three sites
+			// in `runLoopBody` push `turn_start` and then throw, so `turn_end` never
+			// follows them, and one of them never assigns the flag at all.
+			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "started" });
 			return hookEvent;
 		},
 		turn_end: async event => {
@@ -936,6 +940,7 @@ export class AgentSession implements SettingsScope {
 			// continuation path, all of which run later in the turn's lifetime, and
 			// an extension `turn_end` handler receives an `ExtensionContext` with no
 			// reach into session internals.
+			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "ended" });
 			this.#turnIndex++;
 			return hookEvent;
 		},

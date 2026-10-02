@@ -853,6 +853,19 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 			`--parallel=${fileWidths.join("/") || "n/a"} per chunk.`,
 	);
 
+	// Which files each chunk was given, on disk before the first chunk starts. A quiet
+	// run names no file on a passing chunk, so without this a file that never executed is
+	// indistinguishable from one that passed. See formatChunkManifest.
+	const manifestPath = path.join(os.tmpdir(), `omp-test-chunks-${process.pid}.txt`);
+	try {
+		await Bun.write(manifestPath, formatChunkManifest(commands));
+		console.log(`chunk manifest: ${manifestPath}`);
+	} catch (error) {
+		// The manifest is a record, not a gate: failing to write it must not stop the run,
+		// but the reader has to know it is missing rather than assume there is one.
+		console.log(style.dim(`chunk manifest: unavailable (${error instanceof Error ? error.message : String(error)})`));
+	}
+
 	// Incremental, cancellable drain into a mutable sink, so a watchdog-killed
 	// chunk still reports whatever the child managed to print before it wedged.
 	function drainInto(
@@ -1041,6 +1054,40 @@ function chunkTestFiles(testCommand: TestCommand): string[] {
 	return rest
 		.filter(arg => arg !== "test" && !onlyFailuresArgs.includes(arg) && !arg.startsWith("-"))
 		.filter(arg => /\.test\.(?:[cm]?[jt]sx?)$/.test(arg));
+}
+
+/**
+ * Every chunk and the files it was given, as text.
+ *
+ * A quiet run prints one line per chunk and **that line names no file**:
+ *
+ *     ✓ packages/coding-agent (UI/TUI bucket; 352 files; …; 5 files) [19.9s]
+ *
+ * Only a failing chunk names anything, because only a failing chunk is replayed. So
+ * "my test is not in the log" cannot be read as "my test ran and passed" — the two
+ * are indistinguishable, and a chunk that dies importing one file prints only that
+ * one file while the rest of its chunk vanishes without a trace.
+ *
+ * This manifest closes that gap from the side the runner actually knows: the argv.
+ * A chunk that passes ran every file it was handed (an unrunnable file fails the
+ * chunk), so the assignment plus the per-chunk verdict answers "did this file run"
+ * without parsing a single line of child output. It goes to a file rather than to
+ * stdout because 220 chunks × 10 names is noise, and the defect here is a missing
+ * record, not a missing scrollback.
+ *
+ * Each chunk's names are read back off its argv by {@link chunkTestFiles}, which is
+ * the same source the label's own count comes from — so a chunk whose label and
+ * argv disagree shows up here as a mismatch rather than as a silent lie.
+ */
+export function formatChunkManifest(commands: readonly TestCommand[]): string {
+	const lines: string[] = [];
+	for (const [index, command] of commands.entries()) {
+		const files = chunkTestFiles(command);
+		lines.push(`# ${index + 1}/${commands.length} ${command.label}`);
+		lines.push(...files.map(file => `  ${file}`));
+		if (files.length === 0) lines.push("  (no test files in argv)");
+	}
+	return `${lines.join("\n")}\n`;
 }
 
 // Decides whether a chunk is affected by a diff, given the changed file and

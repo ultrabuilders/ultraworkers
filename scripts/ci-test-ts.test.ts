@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { ptree, TempDir } from "@oh-my-pi/pi-utils";
-import { selectAffected, selectShard } from "./ci-test-ts";
+import { formatChunkManifest, selectAffected, selectShard } from "./ci-test-ts";
 
 describe("test runner watchdog", () => {
 	// Parent fake timers cannot drive the real watchdog inside the isolated runner process.
@@ -360,5 +360,46 @@ describe("selectAffected", () => {
 	test("a whole-package chunk reacts to any file in its package", () => {
 		const commands = [chunk("demo pkg", "packages/demo", []), chunk("other pkg", "packages/other", [])];
 		expect(selectAffected(commands, ["packages/demo/src/index.ts"]).map(c => c.label)).toEqual(["demo pkg"]);
+	});
+});
+
+// A quiet run prints one line per chunk and names no file on a passing chunk, so
+// "my test is not in the log" and "my test passed" look identical. These defend the
+// record that makes the two distinguishable.
+describe("formatChunkManifest", () => {
+	const chunk = (label: string, ...files: string[]) => ({
+		label,
+		cwd: "packages/coding-agent",
+		command: ["bun", "test", ...files],
+	});
+
+	test("names every file of every chunk, so an unrun file is never silently absent", () => {
+		const manifest = formatChunkManifest([
+			chunk("chunk 1/2", "test/a.test.ts", "test/b.test.ts"),
+			chunk("chunk 2/2", "test/c.test.ts"),
+		]);
+		for (const file of ["test/a.test.ts", "test/b.test.ts", "test/c.test.ts"]) {
+			expect(manifest).toContain(file);
+		}
+		// Each chunk is headed by its own label, so a file is attributable to the chunk
+		// that would have run it — not just present somewhere in a flat list.
+		expect(manifest).toContain("chunk 1/2");
+		expect(manifest).toContain("chunk 2/2");
+	});
+
+	test("reads the file list off the argv, so a label that disagrees is visible", () => {
+		// The label claims four files and the argv names two. The manifest is read from the
+		// argv, so the mismatch is countable here rather than being a number in a label
+		// nobody can check against the run.
+		const manifest = formatChunkManifest([chunk("claims 4 files", "test/a.test.ts", "test/b.test.ts")]);
+		const names = manifest.split("\n").filter(line => line.startsWith("  ") && line.endsWith(".test.ts"));
+		expect(names).toHaveLength(2);
+	});
+
+	test("marks a chunk that names no test file instead of printing an empty block", () => {
+		// A silently empty block is indistinguishable from a chunk whose files were all
+		// dropped; saying so is the difference between a record and a blank.
+		const manifest = formatChunkManifest([chunk("rs chunk", "scripts/run-rs-task.ts", "test:rs")]);
+		expect(manifest).toContain("(no test files in argv)");
 	});
 });

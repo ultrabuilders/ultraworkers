@@ -161,11 +161,18 @@ export interface RatchetVerdict {
 /**
  * Apply the ratchet to a gate result. Pure: it takes violations, not a tree, so a
  * test can drive every branch without touching the repository.
+ *
+ * Neither parameter after `violations` is defaulted, and that is the contract rather
+ * than an omission. `unreconciledPinned` is a ceiling that must FALL, so `0` is the one
+ * value that reads as healthy — a default of `{ occurrences: 0, paths: 0 }` let any
+ * caller that forgot the argument print `unreconciled-pinned = 0 (… over 0 path(s) that
+ * no row accounts for)`, a clean reading produced by not measuring. Requiring both
+ * arguments makes "I did not check" a compile error instead of a passing line.
  */
 export function checkRatchet(
 	violations: readonly { readonly rule: string }[],
-	baseline: number = STALE_ROW_BASELINE,
-	unreconciled: { readonly occurrences: number; readonly paths: number } = { occurrences: 0, paths: 0 },
+	baseline: number,
+	unreconciled: { readonly occurrences: number; readonly paths: number },
 ): RatchetVerdict {
 	const count = (rule: string) => violations.filter(v => v.rule === rule).length;
 	const staleRow = count("stale-row");

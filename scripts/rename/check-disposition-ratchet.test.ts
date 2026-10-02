@@ -28,15 +28,18 @@ import { RULES_VERSION } from "./check-disposition";
 /** Gate violations shaped exactly as `checkPre` emits them. */
 const v = (rule: string, detail: string) => ({ rule, detail });
 
+/** The explicit "measured, and nothing is unreconciled" reading. Named so that every call site passes a number it actually chose. */
+const NONE = { occurrences: 0, paths: 0 };
+
 describe("ratchet arithmetic", () => {
 	it("passes at the ceiling and fails one row over it", () => {
 		// The bound is inclusive. `<=` is what lets the number be reached without
 		// going red, so a run that has not improved and has not regressed is green.
 		const at = Array.from({ length: STALE_ROW_BASELINE }, (_, i) => v("stale-row", `src/f${i}.ts`));
-		expect(checkRatchet(at).ok).toBe(true);
+		expect(checkRatchet(at, STALE_ROW_BASELINE, NONE).ok).toBe(true);
 
 		const over = [...at, v("stale-row", "src/one-more.ts")];
-		const verdict = checkRatchet(over);
+		const verdict = checkRatchet(over, STALE_ROW_BASELINE, NONE);
 		expect(verdict.staleRow).toBe(STALE_ROW_BASELINE + 1);
 		expect(verdict.ok).toBe(false);
 	});
@@ -52,7 +55,7 @@ describe("ratchet arithmetic", () => {
 			v("missing-keep-refs", "src/b.ts (line 4)"),
 			...Array.from({ length: 71 }, (_, i) => v("literal-hits-imbalance", `src/c${i}.ts`)),
 		];
-		const verdict = checkRatchet(noisy);
+		const verdict = checkRatchet(noisy, STALE_ROW_BASELINE, NONE);
 		expect(verdict.staleRow).toBe(0);
 		expect(verdict.missingRow).toBe(700);
 		expect(verdict.literalImbalance).toBe(71);
@@ -64,8 +67,8 @@ describe("ratchet arithmetic", () => {
 		// both rules, every row a peer adds would raise the total and the ratchet
 		// would punish progress — the exact failure `768 files` had.
 		const many = (n: number) => Array.from({ length: n }, (_, i) => v("missing-row", `m${i}`));
-		const before = checkRatchet(many(9));
-		const after = checkRatchet(many(3));
+		const before = checkRatchet(many(9), STALE_ROW_BASELINE, NONE);
+		const after = checkRatchet(many(3), STALE_ROW_BASELINE, NONE);
 		expect(after.ok).toBe(true);
 		expect(after.missingRow).toBeLessThan(before.missingRow);
 	});
@@ -78,9 +81,10 @@ describe("ratchet arithmetic", () => {
 			checkRatchet(
 				Array.from({ length: 9 }, () => v("stale-row", "x")),
 				0,
+				NONE,
 			).ok,
 		).toBe(false);
-		expect(checkRatchet([], 0).ok).toBe(true);
+		expect(checkRatchet([], 0, NONE).ok).toBe(true);
 	});
 
 	it("goes red on a dangling keep_ref even with stale-row sitting at its ceiling", () => {
@@ -92,10 +96,14 @@ describe("ratchet arithmetic", () => {
 		// id no plan document introduces is not a work-in-progress, so nothing
 		// legitimate can be waiting on it.
 		const atCeiling = Array.from({ length: STALE_ROW_BASELINE }, (_, i) => v("stale-row", `src/f${i}.ts`));
-		const clean = checkRatchet(atCeiling);
+		const clean = checkRatchet(atCeiling, STALE_ROW_BASELINE, NONE);
 		expect(clean.ok).toBe(true);
 
-		const verdict = checkRatchet([...atCeiling, v("dangling-keep-ref", "src/x.ts (line 3) -> W99")]);
+		const verdict = checkRatchet(
+			[...atCeiling, v("dangling-keep-ref", "src/x.ts (line 3) -> W99")],
+			STALE_ROW_BASELINE,
+			NONE,
+		);
 		expect(verdict.staleRow).toBe(STALE_ROW_BASELINE);
 		expect(verdict.danglingKeepRef).toBe(1);
 		expect(verdict.ok).toBe(false);
@@ -108,9 +116,11 @@ describe("ratchet arithmetic", () => {
 		// looked from the outside. Both directions are asserted here so the string
 		// cannot drift from the gate that produces it in either direction.
 		const other = v("some-future-rule", "src/y.ts (line 9)");
-		expect(checkRatchet([other]).danglingKeepRef).toBe(0);
-		expect(checkRatchet([other]).ok).toBe(true);
-		expect(checkRatchet([v("dangling-keep-ref", "src/z.ts (line 1) -> W98")]).danglingKeepRef).toBe(1);
+		expect(checkRatchet([other], STALE_ROW_BASELINE, NONE).danglingKeepRef).toBe(0);
+		expect(checkRatchet([other], STALE_ROW_BASELINE, NONE).ok).toBe(true);
+		expect(
+			checkRatchet([v("dangling-keep-ref", "src/z.ts (line 1) -> W98")], STALE_ROW_BASELINE, NONE).danglingKeepRef,
+		).toBe(1);
 	});
 });
 
@@ -200,11 +210,15 @@ describe("the ratchet as a runnable gate", () => {
 		// satisfy a test that only checks the line exists. This one moves the input and
 		// requires the number to move with it, which is what makes growth visible on the
 		// next run — the whole reason a4 asked for the ratchet rather than a print.
-		const base = checkRatchet([]);
+		// The 0 here is passed, not defaulted. `checkRatchet` takes no default for
+		// this metric: a default of 0 on a ceiling that must fall printed a clean
+		// reading for any caller that forgot the argument, so "not measured" and
+		// "measured, nothing unreconciled" were the same output.
+		const base = checkRatchet([], STALE_ROW_BASELINE, NONE);
 		expect(base.unreconciledPinned).toBe(0);
 		expect(base.unreconciledPaths).toBe(0);
 
-		const grown = checkRatchet([], undefined, { occurrences: 85, paths: 31 });
+		const grown = checkRatchet([], STALE_ROW_BASELINE, { occurrences: 85, paths: 31 });
 		expect(grown.unreconciledPinned).toBe(85);
 		expect(grown.unreconciledPaths).toBe(31);
 

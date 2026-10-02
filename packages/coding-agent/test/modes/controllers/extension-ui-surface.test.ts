@@ -80,7 +80,7 @@ function bandRows(container: Container): string {
 const marker = (text: string) => () => new Text(text, 0, 0);
 
 describe("extension header/footer on a framed context", () => {
-	it("mounts a header that renders in the band the composer mounts", async () => {
+	it("mounts a header into the band it was handed, and renders its rows", async () => {
 		const harness = makeHarness();
 		const ui = await harness.init();
 
@@ -89,6 +89,11 @@ describe("extension header/footer on a framed context", () => {
 		// Assert on rendered rows, not on "did not throw": the seam this bead closes
 		// is the one where the call succeeded and nothing ever appeared, so the only
 		// assertion that can catch a regression is the painted output.
+		//
+		// What this does NOT cover: that the band handed to the controller is the one
+		// the composer draws. `makeHarness` supplies its own container, so rewiring
+		// `interactive-mode.ts` to pass a throwaway leaves this green. That link is
+		// asserted in `extensions/header-footer-real-frame.test.ts`.
 		expect(bandRows(harness.extensionHeaderContainer)).toContain("HDR-ROW");
 		expect(bandRows(harness.extensionFooterContainer)).not.toContain("HDR-ROW");
 		expect(harness.requestRender).toHaveBeenCalled();

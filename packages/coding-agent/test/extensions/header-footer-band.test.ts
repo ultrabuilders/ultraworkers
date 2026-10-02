@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "bun:test";
+import { Container } from "@oh-my-pi/pi-tui";
 import type { ExtensionUiComponent } from "@oh-my-pi/pi-tui/chat/extension-types";
 import type { ExtensionUIContext } from "../../src/extensibility/extensions/types";
 import { ExtensionUiController } from "../../src/modes/controllers/extension-ui-controller";
@@ -32,20 +33,15 @@ function fakeComponent(label: string, dispose?: () => void): FakeComponent {
 }
 
 function createBandContext() {
-	const makeContainer = () => {
-		const children: FakeComponent[] = [];
-		return {
-			children,
-			clear() {
-				children.length = 0;
-			},
-			addChild(child: FakeComponent) {
-				children.push(child);
-			},
-		};
-	};
-	const extensionHeaderContainer = makeContainer();
-	const extensionFooterContainer = makeContainer();
+	// A real `Container`, not a hand-rolled `{children, clear, addChild}`. The
+	// controller drives the band through whatever `Container` exposes, so a fake
+	// that implements only today's three methods passes no matter what the real
+	// one is called tomorrow — the fake can drift from the product and the suite
+	// stays green. This file answers "which extension's band survives", which is
+	// about ownership and needs no frame; `header-footer-real-frame.test.ts` is
+	// where the band is checked against the container the composer actually draws.
+	const extensionHeaderContainer = new Container();
+	const extensionFooterContainer = new Container();
 	const ui = { requestRender: vi.fn() };
 	let toolUIContext: ExtensionUIContext | undefined;
 	const ctx = {

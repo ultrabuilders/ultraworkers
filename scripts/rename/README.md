@@ -107,6 +107,19 @@ measured rather than assumed:
 is genuinely _disjoint_ from it — a `keep-worker-selector` row can never be reported
 "missing", because its file may have no pinned hits at all.
 
+### An occurrence with no row may only be a comment
+
+`missing-row` reports pinned occurrences that no row accounts for. Those read as debt
+nobody claimed, and the natural reading is that a sweeper skipped them. Measured
+2026-10-03 at `3614eae6f4`, the count fell **108 → 39**, and **69 of the 108 were
+comment lines** inside the 48 files that slice renamed.
+
+So most of that population was an **artifact of the comment layer**, not unclaimed
+work: the table's author counted code, and the gate counts every pinned occurrence in
+the file. Before treating a rowless occurrence as debt, classify it — a comment
+mentioning the old name is a documentation obligation, not a contract, and renaming it
+retires it without any row ever needing to exist.
+
 ## Measured on the tree
 
 Re-measured 2026-10-03 with the gate's own code path — `hitPaths(".")` from
@@ -186,6 +199,47 @@ disagrees with itself. A ref can name a contract that has since been retired —
 here froze "the name a user has on their PATH" after the installed binary had already
 been renamed, so the ref kept authorising rows on a premise that was no longer true.
 Check that the named contract still exists before trusting the row it justifies.
+
+### The sweep expires its own rows, and that one is not stale — it is undeclared
+
+The case above is a row that went stale because _someone else_ moved a file. The
+harder case is the row the sweeping commit invalidates **itself**, in the same commit,
+with nothing else in the diff to hint at it.
+
+Renaming occurrences lowers the file's real count. `hits` records the count as it was
+_before_ the sweep, so every renamed occurrence is undeclared debt the moment the
+sweep lands. Measured 2026-10-03 at `3614eae6f4`, by A/B in a worktree pinned at the
+slice's exact parent `270e278db9`:
+
+```
+                     before   after
+hits-imbalance          322     330     +8
+rename-incomplete       182     182      0
+keep-shrank               4       6     +2
+missing-row             501     501      0
+```
+
+Read by **path**, not by message string: 16 paths became newly imbalanced (all 16
+from that slice), 8 stopped being imbalanced, and 314 were already imbalanced and
+only shifted. The real debt is larger than the +8, because a path that was already
+unbalanced stays unbalanced — across the whole slice, 36 files over-claim by 144
+occurrences and 4 under-claim by 11.
+
+`rename-incomplete` not moving is not evidence the sweep did nothing: that rule fires
+per `rename` **row** while any occurrence remains, so removing occurrences only clears
+it when a file reaches zero.
+
+Two rules that follow:
+
+- **Correct `hits` in the same commit as the rename.** The table is the only record of
+  what was _supposed_ to change; a renamed occurrence with an un-updated row is a
+  decision nobody wrote down.
+- **Attribute a `hits-imbalance` change to a slice by A/B, not by subtraction.** Two
+  numbers read from a shared tree minutes apart carry every other agent's commits in
+  between. Pin a worktree at the slice's parent, apply the slice inside it, re-measure.
+  Subtracting "before" from "after" on the live tree is what produced a wrong
+  attribution here in both directions — first blaming the slice, then wrongly clearing
+  it.
 
 ## Two stages, and why one is not enough
 

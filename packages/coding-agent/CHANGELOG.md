@@ -55,6 +55,41 @@
 
 - `@oh-my-pi/pi-coding-agent/tools/exec-policy` — `registerExecPolicyProvider(...)` lets an extension contribute `allow` / `deny` / `prompt` rules to the exec policy that `bash.patterns` already feeds, so a command an extension cares about can be gated without the user hand-writing a glob for it. A contributed rule is exactly as strong as one the user writes — same matcher, same per-shell-segment semantics, same deny-beats-prompt order — and contributed rules come _after_ the user's own, so ordered first-match means an extension can never pre-empt a decision the user made. Registration is refused with a reason when it cannot be honoured: no id, no `rules()`, a duplicate id, or a rule whose approval is not one of the three verdicts, since a silently dropped provider leaves an extension believing it gates commands while the matcher never sees its rules. Unregistering restores the previous decision exactly. `CRITICAL_BASH_PATTERNS` stays core-owned and unregistered — those force the `exec` tier, and widening the safety floor to plugins is the owner's call. Note the deliberate asymmetry: the safety floor is closed to extensions while the `allow` direction is open, so with no user rule for a command an extension can allow it. That is what the seam is for, and it is the counterpart to keeping the critical patterns shut.
 
+### Breaking Changes
+
+- The Nix package now installs the command as `ultraworkers`, matching every other install path —
+  `install.sh`, the npm `bin` entry, and the release tarballs already shipped it under that name, so
+  `nix profile install` was the one installer that produced a differently-named command for the same
+  program. The flake keeps its old attribute names (`packages.omp`, `apps.omp`, `overlays.omp`,
+  `homeManagerModules.omp`, `nixosModules.omp`) as aliases pointing at the renamed package, so an
+  existing `inputs.<this>.packages.${system}.omp` keeps resolving; the `ultraworkers` spelling is
+  preferred and the aliases are marked deprecated. The home-manager and NixOS option `programs.omp` is
+  unchanged — renaming it would invalidate every existing user configuration, which is a separate call
+- The Docker image tag built by `bun run pi:image` is now `ultraworkers/pi:dev`, changed together with
+  the `PI_BASE` default in `Dockerfile.robomp` and in `python/robomp/docker-compose.yml` — the three
+  only work as a set, since the derived image resolves its base by that exact tag. Set `PI_IMAGE` to
+  keep using a differently-named tag
+
+- `ui.setHeader` and `ui.setFooter` now throw in any mode that cannot mount a component — headless,
+  print, subagent, ACP, RPC, and the interactive context itself. They previously returned silently,
+  so an extension could set a footer, see no error, and ship one that never appeared. Guard the call
+  with `ui.hasUI`, or use `ui.setWidget` / `ui.setStatus`, which work without a frame
+- Plugin config mutations (`setEnabled`, `setEnabledFeatures`, `setPluginSetting`,
+  `deletePluginSetting`) now return `{ changed, application }`. A `changed: false` result means the
+  value was already in that state and nothing was written, which the CLI reports instead of
+  claiming success, and `--json` output carries `changed` and `application` so a script can tell a
+  no-op from a real write. Enabling a plugin from the shell now says a restart is needed, because
+  the running session does not pick the change up
+- An extension written as `api => api.on(...)` no longer type-checks: `on()` returns an unsubscribe
+  function, and TypeScript's "assignable where `void` is expected" rule does not survive a union.
+  Write the factory with a block body, or return `undefined` explicitly. Nothing breaks at runtime —
+  the host discards the return value — so this is a source-level change for extension authors only
+
+- **A hook nobody has approved no longer loads.** Until now the first time the loader saw a hook it recorded the file's hash and admitted it, so the first thing that ever ran a given hook file was that file itself. It now reports `untrusted`, skips the hook, and says why in the log — including the exact key and hash to write under `hooks.state` in `config.yml` to approve that exact version. **This will stop existing hooks from running on first upgrade**: anything already installed is, by definition, unapproved. Admin-installed hooks are exempt, and a hook whose file is unchanged since it was approved is unaffected. If you hit it, the log line names the key to pin; there is no prompt and no in-product approval flow yet
+
+- **Settings an extension declares must now live under a reserved `plugins.` id — this is the prerequisite, not the migration.** Calling `registerSetting` with a bare id such as `autoContext.enabled` is refused, naming the extension, the id, and the shape to use (`plugins.<id>.<key>`, buildable with `pluginSettingId()`). Today the registry's id map is flat and global, so an extension can claim an id a core setting already uses and one of the two silently loses; the reserved root makes that collision impossible to express. Built-in settings are unaffected and keep declaring bare ids — that exemption is the point, since core settings are what extensions are being kept out of. **Nothing reads the namespace yet**: plugin settings still live in the side-channel store behind `omp plugin config`, and migrating it — including what `config unset` should mean across layers — is separate, undecided work. So an extension that declares a bare id must change, and an extension already namespaced sees no behaviour change yet
+
+
 ### Added
 
 - `pathRules.deny` and `pathRules.allow` name the paths a project has declared off-limits, as globs, with deny winning over allow. The glob dialect is now written down in one place because the tree had two that answered differently for the same pattern: a double-star prefix is an *optional* one here, so a rule naming a dotenv file covers the copy at the project root as well as nested ones. The other dialect treats it as a required separator, so the same rule built with it permits the root file — no error and no warning, just a rule that does not do what it reads like it does. These are policy rules, not containment: they refuse a path in the tools that consult them and do not stop a command that reaches the same file another way. Both default to empty, so nothing is refused until you write one
@@ -110,12 +145,10 @@
 
 ### Changed
 
-- **A hook nobody has approved no longer loads.** Until now the first time the loader saw a hook it recorded the file's hash and admitted it, so the first thing that ever ran a given hook file was that file itself. It now reports `untrusted`, skips the hook, and says why in the log — including the exact key and hash to write under `hooks.state` in `config.yml` to approve that exact version. **This will stop existing hooks from running on first upgrade**: anything already installed is, by definition, unapproved. Admin-installed hooks are exempt, and a hook whose file is unchanged since it was approved is unaffected. If you hit it, the log line names the key to pin; there is no prompt and no in-product approval flow yet
 - Hooks installed by admin-controlled config are now exempt from the "edited after approval" tripwire, and the trust state is now the four values the design calls for — `managed`, `trusted`, `modified`, `untrusted` — where before it carried two. `untrusted` is now a blocking state rather than a provisional one, and the dashboard shows a badge beside the run state for each: `modified` and `untrusted` warn, `managed` is dimmed, and an approved hook draws nothing
 
 - `pi.ui.notify(...)` from an extension with no interactive frame is now recorded instead of discarded. The bundled `annotate` and `review` commands call it 30 times, and on a frameless context every one of those calls returned silently: the message went nowhere and left no trace that it had. It now goes to the log with its severity and with the name of the seam that dropped it, which is what the ACP context already did for the same reason. It is logged rather than thrown because `notify` returns `void` and no error message could point an author anywhere — unlike `ui.setStatus`, which stays silent on these contexts precisely because the frameless error names it as the path that still works.
 
-- **Settings an extension declares must now live under a reserved `plugins.` id — this is the prerequisite, not the migration.** Calling `registerSetting` with a bare id such as `autoContext.enabled` is refused, naming the extension, the id, and the shape to use (`plugins.<id>.<key>`, buildable with `pluginSettingId()`). Today the registry's id map is flat and global, so an extension can claim an id a core setting already uses and one of the two silently loses; the reserved root makes that collision impossible to express. Built-in settings are unaffected and keep declaring bare ids — that exemption is the point, since core settings are what extensions are being kept out of. **Nothing reads the namespace yet**: plugin settings still live in the side-channel store behind `omp plugin config`, and migrating it — including what `config unset` should mean across layers — is separate, undecided work. So an extension that declares a bare id must change, and an extension already namespaced sees no behaviour change yet
 - `omp plugin upgrade` no longer moves a plugin whose marketplace source names a ref or sha. Writing `#main` in a source and then upgrading used to silently re-resolve it, so the running plugin changed to whatever that ref pointed at today, with no error to show for it. Pass `--force` to keep following a pinned ref; because the override is not remembered, it has to be passed on every upgrade, and it is logged each time so the move leaves a trace
 - `omp plugin doctor --fix` now restores a plugin whose installed copy went missing, instead of only deleting its config entry — but only when the recorded source is pinned to a commit. An entry installed from a tag or branch is still removed, because re-fetching that ref now can bring different code than the one the registry recorded, and swapping it in silently would be worse than removing it. Installing from a tag or branch is unaffected: that is you asking for whatever the ref resolves to
 
@@ -153,37 +186,6 @@
   `~/.omp/agent` for a session store that lives in `~/.ultraworkers/agent`
 - `omp plugin doctor` no longer hangs for five seconds after it has finished printing, when an
   extension contributed a check of its own
-
-### Breaking Changes
-
-- The Nix package now installs the command as `ultraworkers`, matching every other install path —
-  `install.sh`, the npm `bin` entry, and the release tarballs already shipped it under that name, so
-  `nix profile install` was the one installer that produced a differently-named command for the same
-  program. The flake keeps its old attribute names (`packages.omp`, `apps.omp`, `overlays.omp`,
-  `homeManagerModules.omp`, `nixosModules.omp`) as aliases pointing at the renamed package, so an
-  existing `inputs.<this>.packages.${system}.omp` keeps resolving; the `ultraworkers` spelling is
-  preferred and the aliases are marked deprecated. The home-manager and NixOS option `programs.omp` is
-  unchanged — renaming it would invalidate every existing user configuration, which is a separate call
-- The Docker image tag built by `bun run pi:image` is now `ultraworkers/pi:dev`, changed together with
-  the `PI_BASE` default in `Dockerfile.robomp` and in `python/robomp/docker-compose.yml` — the three
-  only work as a set, since the derived image resolves its base by that exact tag. Set `PI_IMAGE` to
-  keep using a differently-named tag
-
-- `ui.setHeader` and `ui.setFooter` now throw in any mode that cannot mount a component — headless,
-  print, subagent, ACP, RPC, and the interactive context itself. They previously returned silently,
-  so an extension could set a footer, see no error, and ship one that never appeared. Guard the call
-  with `ui.hasUI`, or use `ui.setWidget` / `ui.setStatus`, which work without a frame
-- Plugin config mutations (`setEnabled`, `setEnabledFeatures`, `setPluginSetting`,
-  `deletePluginSetting`) now return `{ changed, application }`. A `changed: false` result means the
-  value was already in that state and nothing was written, which the CLI reports instead of
-  claiming success, and `--json` output carries `changed` and `application` so a script can tell a
-  no-op from a real write. Enabling a plugin from the shell now says a restart is needed, because
-  the running session does not pick the change up
-- An extension written as `api => api.on(...)` no longer type-checks: `on()` returns an unsubscribe
-  function, and TypeScript's "assignable where `void` is expected" rule does not survive a union.
-  Write the factory with a block body, or return `undefined` explicitly. Nothing breaks at runtime —
-  the host discards the return value — so this is a source-level change for extension authors only
-
 ### Added
 
 - Added `omp config migrate` — moves the config root to its new name, along with the XDG data, state and cache roots. It is a dry run unless you pass `--apply`. When both the old and the new root exist it reports the pair and leaves it alone rather than merging, so a migration can never silently drop one of the two installs.

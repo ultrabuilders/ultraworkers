@@ -91,7 +91,7 @@ export const STALE_ROW_BASELINE = 0;
  * on every run so a drift is attributable; a mismatch is information, not a
  * failure, because peers are still filling the table.
  */
-export const BASELINE_TABLE_DIGEST = "ffe1ed638390250b9459dc8d2cd682d7";
+export const BASELINE_TABLE_DIGEST = "2ae4e43f4eab5faa4c3270c4a4455611";
 
 /**
  * The rules the ceiling was measured against, as a literal.

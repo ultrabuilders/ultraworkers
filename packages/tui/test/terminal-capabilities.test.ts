@@ -387,6 +387,16 @@ console.log(JSON.stringify({ id: TERMINAL_ID, imageProtocol: TERMINAL.imageProto
  * dependence "full-suite safe" rules out. Matching families means a new
  * variable inside a known terminal's namespace is covered without anyone
  * remembering to add it.
+ *
+ * `PI_` is deliberately broader than "terminal marker": it also cuts
+ * `PI_CODING_AGENT_DIR`, `PI_PROFILE`, `PI_CONFIG_DIR` and `PI_CONFIG_FILES`,
+ * which are config, not capability. That is the accepted trade — the narrower
+ * alternative lets through the very flags this list exists to stop
+ * (`PI_NO_HYPERLINKS` is read by `hyperlinksUserOverride` in
+ * `terminal-capabilities.ts`). The measured
+ * blast radius is 0 because this helper is file-local and its only callers
+ * spawn a child for terminal detection. **Do not use it to spawn a process
+ * that needs to read the user's config** — the cut would be silent.
  */
 const TERMINAL_MARKER_PREFIXES = [
 	"TERM",

@@ -2,7 +2,7 @@
  * Cross-process contract for the machine-global text-prediction daemon.
  *
  * One daemon per agent directory runs under the `text-predict` global daemon
- * broker (`omp ps --global text-predict`) and serves ghost-text word
+ * broker (`ultraworkers ps --global text-predict`) and serves ghost-text word
  * completion to every omp process over newline-delimited JSON on a Unix socket
  * (a named pipe on Windows). Each request carries a numeric `id` echoed by its
  * response; responses may arrive out of order.

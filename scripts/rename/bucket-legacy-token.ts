@@ -24,11 +24,14 @@
  *
  * HOW THE BUCKETS ARE ASSIGNED — and the two ways this was got wrong first
  * ------------------------------------------------------------------------
- * One occurrence lands in exactly ONE bucket: rules are tried first-match-wins over the
- * context window around the match. An earlier version tested every rule per file and
- * added the counts, which double-counted any occurrence two rules could both claim and
- * reported a total of **-60** for a corpus of 869. A bucket table whose parts do not sum
- * to its whole is not a measurement.
+ * Each occurrence is counted into exactly ONE bucket — but that is a consequence of WHERE
+ * THE WINDOW IS TAKEN, not a property of the rules. The window is anchored to the first
+ * token on a line and shared by every token on that line, so the first matching rule is
+ * effectively decided once per line and inherited by each of its tokens. Read the table as
+ * "a line's tokens were judged together", not "each token was judged on its own merits".
+ * An earlier version tested every rule per file and added the counts, which double-counted
+ * any occurrence two rules could both claim and reported a total of **-60** for a corpus of
+ * 869. A bucket table whose parts do not sum to its whole is not a measurement.
  *
  * `command-pos` is deliberately NOT anchored to the start of a line. Real command tokens
  * sit mid-line inside backticks — `see \`omp stats\`` — so an anchored rule reported **1**
@@ -70,8 +73,19 @@ export interface Bucket {
 	readonly files: number;
 }
 
-/** Classify a single occurrence by the text surrounding it. First matching rule wins. */
-function classify(context: string): string {
+/**
+ * Classify a context window by the rules above. First matching rule wins.
+ *
+ * The parameter is a WINDOW, not an occurrence — see the note at the call site in
+ * `bucketLegacyTokens`. A window is shared by every token on its line, so "first match
+ * wins" is decided once per line and then applied to each of that line's tokens.
+ *
+ * Exported so a test can pin the verdict of a single string. Until this was exported the
+ * classifier had no unit seam: `bucketLegacyTokens` returns aggregate counts only, so the
+ * one fixture that carries both known defects could only be asserted through its sum — and
+ * the sum held with both defects intact.
+ */
+export function classify(context: string): string {
 	for (const [name, pattern] of BUCKETS) {
 		if (pattern.test(context)) return name;
 	}
@@ -107,6 +121,16 @@ export async function bucketLegacyTokens(root: string): Promise<BucketReport> {
 					continue;
 				}
 				const at = line.search(LEGACY_TOKEN);
+				// ONE WINDOW PER LINE, NOT PER OCCURRENCE. `at` is the FIRST token on the
+				// line, and every occurrence on that line is then judged against the same
+				// window. So a single backticked command promotes every token on its line
+				// into `command-pos` — including config paths and ordinary prose that share
+				// it. On the corpus that produced this classifier, one line of browser-relay
+				// prose contributed 5 occurrences and another 3.
+				//
+				// Do not read the bucket table as "each occurrence was classified on its own
+				// merits". It is not, and it never was: per-occurrence assignment is a
+				// consequence of where the window is taken, not a property of the design.
 				const context = line.slice(Math.max(0, at - 60), at + LEGACY_TOKEN.source.length + 60);
 				const bucket = classify(context);
 				occurrences[bucket] = (occurrences[bucket] ?? 0) + 1;

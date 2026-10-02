@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { bucketLegacyTokens } from "./bucket-legacy-token";
+import { bucketLegacyTokens, classify } from "./bucket-legacy-token";
 
 /** Build a throwaway tree the bucket scanner can walk. */
 async function tree(files: Record<string, string>): Promise<string> {
@@ -84,5 +84,63 @@ describe("bucketing legacy tokens by decision owner", () => {
 		const report = await bucketLegacyTokens(root);
 		expect(report.inScopeOccurrences).toBe(1);
 		expect(report.excludedOccurrences).toBe(2);
+	});
+});
+
+/**
+ * One row per branch of the classifier, each pinned to the verdict a single string gets.
+ *
+ * Why this block exists and why it is per-string: until `classify` was exported, the only
+ * observable was a sum, and a sum holds while every individual verdict is wrong. The fixture
+ * above already carried both known defects — `omp --doctor` filed as prose, `omp and` filed
+ * as a command — and stayed green, because `sum === inScope` cannot see either.
+ *
+ * Two rows below pin KNOWN DEFECTS rather than correct behaviour, and say so. That is the
+ * point: the defects are named here instead of living silently in a bucket table. When the
+ * lookahead gains a spaced-flag branch, `omp --doctor` and `omp -p` flip to `command-pos`
+ * and these two rows are the ones that must change with it.
+ */
+describe("the verdict a single string receives", () => {
+	// Each of the five non-W13 buckets: a regression here silently reassigns another
+	// milestone's occurrences, which is the split the whole table exists to preserve.
+	it("routes each non-W13 shape to the milestone that owns it", () => {
+		expect(classify("@omp/pkg")).toBe("npm-scope    (W7)");
+		expect(classify("~/.omp/config")).toBe("config-dir   (W6)");
+		expect(classify("omp://thing")).toBe("protocol     (W9/W12)");
+		expect(classify("https://omp.sh/help")).toBe("wire/header  (W9)");
+		expect(classify("/usr/share/omp/docs")).toBe("on-disk name (W9)");
+	});
+
+	it("accepts a command in command position, mid-line and with a glued flag", () => {
+		// The property that an anchored classifier broke: real command tokens sit mid-line
+		// inside backticks, so position on the line must not change the verdict.
+		expect(classify("omp stats")).toBe("command-pos  (W13)");
+		expect(classify("see `omp stats` for usage")).toBe("command-pos  (W13)");
+		expect(classify("omp--doctor")).toBe("command-pos  (W13)");
+	});
+
+	// KNOWN DEFECT — the lookahead is `(?=\s+(?!')[a-z]|--)`, so the alternation sits
+	// INSIDE it: it asserts either `<space><lowercase>` or `--` glued to the token. A
+	// spaced flag satisfies neither. On the corpus that produced this classifier every one
+	// of the 15 `omp --flag` occurrences was filed as prose, including `omp --mode rpc`.
+	// Both shapes are pinned because a fix must cover the long and short flag alike.
+	it("KNOWN DEFECT: files a spaced-flag command as prose", () => {
+		expect(classify("omp --doctor")).toBe("UNBUCKETED (prose noun)");
+		expect(classify("omp -p")).toBe("UNBUCKETED (prose noun)");
+	});
+
+	// KNOWN DEFECT — no regex can separate `omp stats` from `omp is`: both are the token
+	// plus a lowercase word. Recognising commands here would need a subcommand list, which
+	// would make this measuring tool depend on the thing it measures. Left unclassified on
+	// purpose rather than silently counted as commands.
+	it("KNOWN DEFECT: files ordinary prose as a command", () => {
+		expect(classify("omp is a fork of pi")).toBe("command-pos  (W13)");
+		expect(classify("omp reads the working tree")).toBe("command-pos  (W13)");
+	});
+
+	// The `(?!')` guard: a possessive must not open the command branch, so a sentence that
+	// merely mentions the token as a noun stays prose.
+	it("does not read a possessive or a bare mention as a command", () => {
+		expect(classify("the agent's display name is omp")).toBe("UNBUCKETED (prose noun)");
 	});
 });

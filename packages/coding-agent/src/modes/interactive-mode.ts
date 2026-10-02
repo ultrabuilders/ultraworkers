@@ -112,6 +112,8 @@ import { onDownloadActivity } from "../downloads/activity";
 import { DownloadActivityHud, JudgmentBatchProgressHud } from "./progress-hud";
 import { autosaveApprovedPlan, planSaveFileName } from "../plan-mode/plan-autosave";
 import { resolvePlanModelTransition } from "../plan-mode/model-transition";
+import { PLAN_MODE_WRITE_POLICY } from "../plan-mode/write-policy";
+import { modeRegistry, type ModeDefinition } from "./mode-registry";
 import guidedGoalInterviewPrompt from "../prompts/goals/guided-goal-interview.md" with { type: "text" };
 import planFilenamePrompt from "../prompts/system/plan-filename.md" with { type: "text" };
 import planModeApprovedPrompt from "../prompts/system/plan-mode-approved.md" with { type: "text" };
@@ -1895,8 +1897,67 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.composer.playWelcomeIntro();
 	}
 
+	/**
+	 * Declare the built-in modes to the shared registry.
+	 *
+	 * The definitions close over `this` and call the `#enter*` / `#exit*` methods
+	 * directly, rather than reaching for the public `handle*ModeCommand` handlers.
+	 * Those handlers are the wrong shape twice over: the entry points are private,
+	 * and a handler *toggles* — binding `enter` to one turns "enter" into "exit"
+	 * whenever the mode is already on, which is exactly when a registry-driven
+	 * consumer is least likely to notice.
+	 *
+	 * `loop` is deliberately absent. It changes no tool set, gates no write, has no
+	 * `enter`/`exit`, and never consults the other modes — and since loop and
+	 * plan mode can be on at the same time, putting it in a single-active registry
+	 * would evict plan mode and silently drop its read-only policy while the UI
+	 * still said "plan mode". It is an auto-submit driver that renders like a mode.
+	 */
+	#registerBuiltinModes(): void {
+		// Built as a value first, then declared. Passing these object literals
+		// straight into a call crashed Bun's transpiler on the private-method
+		// arrows inside a call's argument list (`panic: Scope mismatch while
+		// visiting`, .function_args vs .block) — which took `bun test` down before
+		// a single assertion ran. `check:types` was green throughout, so the gate
+		// that caught it was the one that loads the file.
+		const definitions: ModeDefinition[] = [
+			{
+				id: "plan",
+				name: "Plan",
+				description: "Research and plan without touching the working tree.",
+				writePolicy: PLAN_MODE_WRITE_POLICY,
+				statusLine: { label: "Plan" },
+				enter: () => this.#enterPlanMode(),
+				exit: () => this.#exitPlanMode(),
+			},
+			{
+				id: "goal",
+				name: "Goal",
+				description: "Work toward a stated objective until it is met.",
+				statusLine: { label: "Goal" },
+				enter: () => this.#enterGoalMode({}),
+				exit: () => this.#exitGoalMode(),
+			},
+			{
+				id: "vibe",
+				name: "Vibe",
+				description: "Direct freeform coding through worker agents.",
+				statusLine: { label: "Vibe" },
+				enter: () => this.#enterVibeMode(),
+				exit: () => this.#exitVibeMode(),
+			},
+		];
+
+		for (const definition of definitions) {
+			// `register` throws on a duplicate id, and a throw here would take the
+			// TUI down on a path that should be idempotent, so skip instead.
+			if (!modeRegistry.has(definition.id)) modeRegistry.register(definition);
+		}
+	}
+
 	async init(options: InteractiveModeInitOptions = {}): Promise<void> {
 		if (this.isInitialized) return;
+		this.#registerBuiltinModes();
 
 		this.keybindings = logger.time("InteractiveMode.init:keybindings", () => KeybindingsManager.create());
 		// A key bound to two actions means one of them silently stopped responding

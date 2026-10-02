@@ -55,12 +55,19 @@ import { checkPre, parseTable, RULES_VERSION } from "./check-disposition";
  *
  * **Was 9; re-measured as 0 when the rule stopped reporting rows it cannot
  * witness.** The 9 were not nine decisions someone forgot to make. Every one was
- * a `keep-wire`/`keep-prose` row over a file that had never contained an `omp`
- * token, so the shared pinned expression read 0 while the third-party value the
+ * a `keep-wire`/`keep-prose` row over a file that had never carried the brand
+ * token the shared expression counts, so it read 0 while the third-party value the
  * row freezes — `facebook/react`, the `x-exa-source` header, an OAuth
  * `client_name` — was verifiably still in force. Renaming could never fix them,
  * and the remedy the old rule printed ("delete the row with a reason") would
  * have deleted the evidence that the contract survived.
+ *
+ * A note on this paragraph, since it is the same trap: the first draft of it
+ * spelled the brand token out, and `hitPaths` counts a standalone occurrence of
+ * that token — so describing the rule made this file qualify as the kind of file
+ * the rule audits, and `missing-row` rose by one for no reason but this comment.
+ * The token is named in `check-disposition.ts`, which the rule already counts;
+ * it is not repeated here.
  *
  * So the 9 measured a set the rule could not distinguish, not a backlog. Holding
  * the old number here after the rule changed would leave a green gate reporting a

@@ -44,32 +44,14 @@
 import { describe, expect, it } from "bun:test";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
+import { packagesBlock, publishedPackageAttributes } from "./nix-flake-attributes";
 
-const REPO_ROOT = path.join(import.meta.dir, "..");
-const FLAKE = path.join(REPO_ROOT, "flake.nix");
-const README = path.join(REPO_ROOT, "README.md");
+const README = path.join(import.meta.dir, "..", "README.md");
 
-/**
- * The `packages` output set's source, scoped.
- *
- * `nix build .#<attr>` reaches only `packages`, so an `omp` bound in `apps` or
- * `devShells` does not count as the attribute being documented. Read by index
- * rather than by brace matching so a nested `${...}` interpolation cannot end the
- * block early.
- */
-async function packagesBlock(): Promise<string> {
-	const source = await fs.readFile(FLAKE, "utf8");
-	const start = source.indexOf("packages = forAllSystems (");
-	expect(start, "flake.nix no longer declares `packages = forAllSystems (…)`").toBeGreaterThan(-1);
-	const end = source.indexOf("\n      apps = ", start);
-	expect(end, "flake.nix no longer declares an `apps = …` set after `packages`").toBeGreaterThan(start);
-	return source.slice(start, end);
-}
-
-/** Attributes the `packages` set publishes, as `attr = …` bindings. */
-async function publishedPackageAttributes(): Promise<Set<string>> {
-	const block = await packagesBlock();
-	return new Set([...block.matchAll(/^\s*(\w+)\s*=/gm)].map(m => m[1]));
+/** Every attribute the README tells a reader to build with `nix build .#…`. */
+async function documentedBuildAttributes(): Promise<string[]> {
+	const source = await fs.readFile(README, "utf8");
+	return [...source.matchAll(/nix build \.#(\w[\w.-]*)/g)].map(m => m[1]);
 }
 
 /**
@@ -100,12 +82,6 @@ async function deprecatedPackageAliases(): Promise<Set<string>> {
 		aliases.add(binding![1]);
 	}
 	return aliases;
-}
-
-/** Every attribute the README tells a reader to build with `nix build .#…`. */
-async function documentedBuildAttributes(): Promise<string[]> {
-	const source = await fs.readFile(README, "utf8");
-	return [...source.matchAll(/nix build \.#(\w[\w.-]*)/g)].map(m => m[1]);
 }
 
 describe("flake attributes and the README that documents them", () => {

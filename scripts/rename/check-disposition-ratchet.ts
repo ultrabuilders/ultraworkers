@@ -281,12 +281,28 @@ async function main(): Promise<number> {
 	// every link after it. A gate earns its red by being able to go green first.
 	const drift = await measureRenameHitsDrift(root, rows);
 	// `check-disposition.ts` runs `--stage=pre` by DEFAULT (`:825`), and `checkPost` is
-	// the ONLY source of `rename-incomplete` and `keep-shrank`. Nothing in CI invokes
-	// that script at all — `check:disposition-ratchet` is the only disposition entry in
-	// `package.json`, and it calls `checkPre` alone. So running the gate by hand and
-	// reading its exit code reports the renames as DONE when `checkPost` never ran:
-	// that exact mistake closed `epic-m5.3` on 2026-10-03 with "0 rename-incomplete".
-	// Measured here instead, ungated, for the same reason as `drift` above.
+	// the ONLY source of `rename-incomplete` and `keep-shrank`. So running that script
+	// BY HAND and reading its exit code reports the renames as DONE when `checkPost`
+	// never ran: that exact mistake closed `epic-m5.3` on 2026-10-03 with
+	// "0 rename-incomplete". Measured here instead, ungated, for the same reason as
+	// `drift` above.
+	//
+	// This paragraph used to say more than that, and every extra clause was false:
+	// "Nothing in CI invokes that script at all", and "it calls `checkPre` alone" —
+	// the very next statement is the `checkPost` call below. Both described the
+	// arrangement BEFORE `checkPost` was wired in here, and were never corrected, so
+	// the docblock sat directly on top of the code contradicting it. That is the
+	// worst place for it: a reader trusts prose more than they trust the line under
+	// it, and the false "CI never runs it" clause is what carried the mistake.
+	//
+	// What actually reaches CI: `check:disposition-ratchet` is not a link in the
+	// `check:ts` `&&` chain (15 links, none of them this), but `GATES` in
+	// `scripts/ci-check-full.ts` lists it alongside `check:ts`, that runner spawns
+	// each gate with `Bun.spawn(["bun", "run", gate.script])` and has no early
+	// return, and `.github/workflows/ci.yml` runs `bun run ci:check:full`. So the
+	// ratchet DOES run in CI, and its numbers are printed on every such run — they
+	// are ungated in the sense that no rule here BLOCKS on them, not in the sense
+	// that nobody looks.
 	const postViolations = await checkPost(root, rows);
 	const countPost = (rule: string) => postViolations.filter(v => v.rule === rule).length;
 	// REPORTED, never gated, and NOT one of the ceilings above. Those are debt that

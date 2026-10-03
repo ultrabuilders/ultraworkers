@@ -70,7 +70,9 @@
  *
  * Measured, not asserted: `bun run ci:check:full` reports
  * `PASS check:disposition-ratchet (exit 0)` on a run where `check:ts` exited 1. The
- * ratchet re-implements no rule — it calls `checkPre` — so it cannot drift from here.
+ * ratchet re-implements no rule — it calls `checkPre` AND `checkPost` — so it cannot
+ * drift from here. (`checkPost` is what makes `rename-incomplete` and `keep-shrank`
+ * observable at all, since this file defaults to `--stage=pre`.)
  *
  * It is a RATCHET, not this gate in full, and that is deliberate. This gate reports
  * every way the table is incomplete, and the table is legitimately incomplete, so

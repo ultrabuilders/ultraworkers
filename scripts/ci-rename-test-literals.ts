@@ -53,6 +53,12 @@ const PATTERNS: readonly { label: string; needle: string }[] = [
 	{ label: '"oh-my-pi"', needle: '"oh-my-pi"' },
 ];
 
+/**
+ * The same PINNED expression `check-disposition` gates on, so "old brand" means one thing
+ * across both gates rather than two.
+ */
+const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
+
 /** One row of the disposition table, as this gate consumes it. */
 interface Row {
 	scope: string;
@@ -135,6 +141,64 @@ function countOccurrences(line: string, needle: string): number {
 	}
 }
 
+/**
+ * Matcher calls that make a line an assertion. A brand name that only ever appears in an
+ * import or a comment is not something a test can freeze, so it is out of scope for the
+ * token check below — that is what separates the 54 lines it reports from the ~1200 other
+ * lines carrying `omp` in test sources.
+ */
+const ASSERTION =
+	/\b(?:toBe|toEqual|toStrictEqual|toContain|toMatch|toHaveBeenCalledWith|toHaveBeenCalledTimes|stringContaining|stringMatching)\s*\(/;
+
+/**
+ * A matcher call reached through `.not`. These assert the old name is GONE
+ * (`expect(message).not.toContain("`omp plugin")`), so reporting one is a false alarm by
+ * construction — the assertion is defending the rename rather than fighting it. Measured at
+ * HEAD `fd5dba8a85`: 5 such lines, in 3 files, all of which must stay silent.
+ */
+const NEGATED =
+	/\.not\s*\.\s*(?:toBe|toEqual|toStrictEqual|toContain|toMatch|toHaveBeenCalledWith|toHaveBeenCalledTimes|stringContaining|stringMatching)\s*\(/;
+
+/**
+ * Whether `line` asserts on a bare product name rather than on something `omp` belongs to.
+ *
+ * The needles above are all substrings, so they cannot see a name carrying a flag or a
+ * following word: `toContain("omp --resume")` matched none of them, which is how an
+ * assertion froze the old name on the shared branch until `0783cf4125` rewrote it. Adding a
+ * seventh needle would catch that one line and miss `"omp --resume --foo"` tomorrow — the
+ * defect is matching substrings, not the needle list.
+ *
+ * So the token itself is recognised, via the PINNED expression above, and then excluded by
+ * the two characters touching it. A window of surrounding text does NOT work here: slicing
+ * around the token removes it from the string being matched, which made `/omp/` unmatchable
+ * and reported 1617 hits dominated by the very package scope the filter was written to skip.
+ *
+ * Excluded, each measured at `fd5dba8a85`: a `/`, `\` or `.` before or after is a path
+ * (`/omp/system-prompt/0.mdc`, `~/.omp/agent`, `C:\omp\bin\omp.exe`); a `.`, `-` or `/`
+ * starting what follows is a prefixed identifier or version (`omp.gen_ai.agent.*`,
+ * `omp-stats-theme`, `omp/18.2.4`); a digit starting it is a version segment. `omp.sh` is
+ * already excluded by PINNED's own lookahead.
+ *
+ * `omp://` is deliberately NOT excluded — it is a live first-party scheme, so a test pinning
+ * it pins a brand name. `retainContext: "omp"` is likewise reported: it is a business field,
+ * and the gate's contract is that a reviewer exempts it with a row carrying a reason, not
+ * that the linter guesses which fields are business.
+ */
+function assertsBareBrand(line: string): boolean {
+	if (!ASSERTION.test(line) || NEGATED.test(line)) return false;
+	for (const match of line.matchAll(new RegExp(PINNED, "g"))) {
+		const at = (match.index ?? 0) + match[1].length;
+		const prev = line[at - 1] ?? "";
+		const next = line[at + 3] ?? "";
+		const after = line.slice(at + 3, at + 19);
+		if (/[/\\.]/.test(prev) || /[/\\]/.test(next)) continue;
+		if (/^[.\-/\\]/.test(after)) continue;
+		if (/^\d/.test(after)) continue;
+		return true;
+	}
+	return false;
+}
+
 async function collectHits(): Promise<Hit[]> {
 	const hits: Hit[] = [];
 	const glob = new Bun.Glob("packages/*/test/**/*.ts");
@@ -146,6 +210,13 @@ async function collectHits(): Promise<Hit[]> {
 				for (let seen = countOccurrences(line, needle); seen > 0; seen--) {
 					hits.push({ file: relPath, pattern: label, line: index + 1, text: line.trim() });
 				}
+			}
+			// A name standing alone in an assertion is the product name even when no
+			// needle above is a substring of it. Counted separately so a line already
+			// reported by a needle is not double-counted.
+			const covered = PATTERNS.some(({ needle }) => line.includes(needle));
+			if (!covered && assertsBareBrand(line)) {
+				hits.push({ file: relPath, pattern: "bare omp", line: index + 1, text: line.trim() });
 			}
 		}
 	}

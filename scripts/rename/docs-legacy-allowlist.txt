@@ -274,3 +274,10 @@ scripts/session-stats/README.md	4
 # uses. Stated as that invariant, not as a count: the count moves, the two
 # functions above do not.
 docs/ui-comparison-ulw-vs-opencoding.md	8
+# `omp-plugins.ts` here is an internal path reference, not a retired brand: the
+# table names the module that registers the MCP provider, and
+# `packages/coding-agent/src/discovery/omp-plugins.ts` is a real tracked file
+# (`git ls-files` confirms it). Renaming the token in the doc would point the
+# table at a file that does not exist. Same class as the `omp-protocol.ts:10`
+# reference recorded in `disposition.tsv`.
+docs/mcp-server-contribution-by-extensions.md	1

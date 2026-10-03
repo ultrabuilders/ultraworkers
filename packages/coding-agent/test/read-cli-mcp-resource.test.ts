@@ -19,6 +19,20 @@ describe("ultraworkers read MCP resources", () => {
 		projectDir = path.join(root, "project");
 		agentDir = path.join(root, "agent");
 		await Promise.all([fs.mkdir(projectDir), fs.mkdir(agentDir)]);
+		// The server below is declared in a PROJECT `.mcp.json`, and
+		// `mcp.enableProjectConfig` defaults to FALSE — honouring a project-scope
+		// config means running code that arrived with a cloned repo (commit
+		// a183f4957d, the RCE fix). Without this opt-in the file is never read, the
+		// server is never discovered, and `read` reports "No MCP server has
+		// resource" with an empty list — which reads like a broken resource router
+		// rather than a config the test never enabled.
+		//
+		// `config.yml`, not `settings.json`: the CLI migrates a `settings.json` it
+		// finds to `config.yml` on startup, so writing the former here leaves the
+		// value in a file this test no longer controls and the assertion passes for
+		// the wrong reason. Verified by ablation both ways — with this line the probe
+		// prints the fixture content; deleting it returns the empty-resources error.
+		await Bun.write(path.join(agentDir, "config.yml"), "mcp:\n  enableProjectConfig: true\n");
 		await Bun.write(
 			path.join(projectDir, ".mcp.json"),
 			JSON.stringify({

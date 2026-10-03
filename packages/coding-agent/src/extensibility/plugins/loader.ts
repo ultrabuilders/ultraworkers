@@ -298,7 +298,7 @@ const PLUGIN_EXTENSION_DIRECTORY_OPTIONS = {
  *     {@link resolveExtensionDirectory} — its own package.json `ultraworkers`/`pi`
  *     `extensions`, then a direct index, then a one-level scan of
  *     sub-extensions — matching the pi `extensions/<name>/index.ts` convention
- *     and OMP's configured-directory (`-e`) extension loader
+ *     and our configured-directory (`-e`) extension loader
  *   - otherwise (tools/hooks/commands) only a direct index.{ts,js,mjs,cjs}.
  *     The sub-extension scan and the `ultraworkers`/`pi` `extensions` manifest are
  *     extensions-specific and must not hijack a non-extension directory entry

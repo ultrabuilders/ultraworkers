@@ -105,20 +105,33 @@ version that `98` has since replaced, so for a while this README documented an
 expression the gate no longer used. Read the constant; if it needs explaining, fix
 its docblock, which is where the next reader will look.
 
-It is a **locator, not a judgement**. Two properties matter to anyone reasoning about
-a count:
+It is a **locator, not a judgement**, and it carries an `i` flag, so `OMP` and `omp`
+are the same token. Every claim below is falsifiable — check it against the constant
+rather than trusting this file, which has now been wrong here twice:
 
-- The **leading** class excludes word characters, `.`, `/` and `-`, so a token joined
-  to a preceding word, dot, slash or hyphen does not match.
-- The **trailing** class excludes `.` and `-` **unless** they open `sh`. That is what
-  keeps the homepage wire value — which appears in install, join and stream URLs —
-  out of a rename sweep, while still counting a token followed by `.` or by `-`.
+| input     | matches | what that shows                                                     |
+| --------- | ------- | ------------------------------------------------------------------- |
+| `omp`     | yes     | the token itself                                                    |
+| `aomp`    | no      | **leading** class is `[^a-zA-Z0-9_-]` — word characters, `_`, `-`   |
+| `_omp`    | no      | ditto — the leading `-` in that class is a literal `-`, not a range |
+| `.omp`    | **yes** | the leading class does **not** exclude `.`                          |
+| `/omp`    | **yes** | the leading class does **not** exclude `/` either                   |
+| `omp.foo` | **yes** | **trailing** class is `[^a-zA-Z0-9]` — word characters only         |
+| `omp-foo` | **yes** | so `.`, `-` and `/` are all admitted after the token                |
+| `omp.sh`  | no      | the `(?![\.\-]sh(?![a-zA-Z0-9]))` lookahead, and nothing else       |
+| `omp.shx` | **yes** | that lookahead only covers `.sh` / `.sh-`; `omp-shell` matches too  |
 
-An earlier version of this file claimed the trailing class "does not exclude `/`, so
-a slash-prefixed path matches on its trailing edge". **That was never true**, for the
-same leading `/` that the leading class already excludes. The corrected docblock in
-`check-disposition.ts` says so explicitly; this file repeated the wrong claim after
-the code had already been fixed.
+The homepage wire value — which appears in install, join and stream URLs — is kept out
+of a rename sweep by that **lookahead**, not by the trailing class. Nothing else in the
+expression is doing the work, which is why the two failure modes above matter: a
+description claiming the classes exclude `.` and `/` describes an expression that would
+miss every path and dotted identifier in the tree.
+
+Two earlier versions of this file were wrong here in opposite directions — one claimed
+the trailing class let `/` through, the next claimed the leading class excluded `.` and
+`/`. Both were prose about the expression, and prose is what drifts. The table above is
+the replacement: each row is one `PINNED.test(...)` call, so the next reader can re-run
+it instead of re-reading it.
 
 Two classes are counted by **literal**, not by this expression, and the reason is
 measured rather than assumed:

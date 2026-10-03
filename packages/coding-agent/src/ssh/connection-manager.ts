@@ -73,6 +73,16 @@ export function controlPathFitsBudget(controlDir: string, platform: SshPlatform)
  * their boundaries are unambiguous. This preserves isolation when the same
  * profile resolves through different XDG state roots without spending variable
  * path bytes on the decimal uid.
+ *
+ * The prefix and digest length are one budget decision, not two. This path is
+ * itself a `sun_path` consumer: `controlPathFitsBudget` admits a dir up to 39
+ * bytes on macOS, and `/tmp/ultraworkers-` plus a 20-char digest is 38 — it
+ * fits, with 2 bytes spare instead of the 11 the shorter prefix bought. Since
+ * the length here is constant (production never passes `tmpBase`), that margin
+ * is spent on the product name and cannot be recovered. Trimming the digest to
+ * 11 hex chars holds the whole path at 29 bytes, so the rename costs no budget.
+ * 44 bits still separates every (uid, control dir) pair a machine actually
+ * holds, and a collision still has to pass `assertOwnerPrivateDir`.
  */
 export function sshControlFallbackDir(canonicalDir: string, uid: number, tmpBase = "/tmp"): string {
 	const key = new Bun.CryptoHasher("sha256")
@@ -80,8 +90,8 @@ export function sshControlFallbackDir(canonicalDir: string, uid: number, tmpBase
 		.update("\0")
 		.update(canonicalDir)
 		.digest("hex")
-		.slice(0, 20);
-	return path.join(tmpBase, `omp-${key}`);
+		.slice(0, 11);
+	return path.join(tmpBase, `ultraworkers-${key}`);
 }
 
 interface ControlDirChoice {

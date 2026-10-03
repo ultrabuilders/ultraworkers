@@ -132,7 +132,12 @@ describe("an extension's registered output format", () => {
 			formats: runner.getOutputFormats(),
 		});
 
-		expect(fs.readFileSync(pathWritten, "utf8")).toContain("<!DOCTYPE html>");
+		// The negative contract, stated as what a reader observes: an unknown id
+		// does not select an extension format. Asserting the doctype's letter case
+		// would test the HTML writer's capitalization, not the format lookup.
+		const written = fs.readFileSync(pathWritten, "utf8");
+		expect(written).not.toContain(FORMAT_MARKER);
+		expect(written.toLowerCase()).toContain("<!doctype html>");
 	});
 });
 
@@ -164,5 +169,108 @@ describe("parseExportArgs", () => {
 	it("rejects a --format with no id rather than exporting to a file named --format", () => {
 		expect(() => parseExportArgs("--format")).toThrow(/Usage/);
 		expect(() => parseExportArgs("--format --themes")).toThrow(/Usage/);
+	});
+});
+
+/**
+ * RPC is the third surface that names a format.
+ *
+ * The CLI reaches a registered format through `parseExportArgs`, and the exporter
+ * takes a `formatId` directly. RPC declared `export_html` with only `outputPath`,
+ * so the id never crossed the wire: a client could not select a format an extension
+ * registered, and the seam was unreachable from one of the three surfaces that are
+ * supposed to reach it.
+ *
+ * Asserted at the boundary a client actually crosses — the frame the client sends —
+ * rather than by reading the handler, because the failure was a field the frame did
+ * not carry. Asserting the handler forwards it would pass while the frame dropped it.
+ */
+describe("the export_html RPC command", () => {
+	// Its own scratch dir: the loader suite above owns a `tempDir` in ITS scope, and
+	// reaching across describe boundaries is how this block first failed with
+	// `ReferenceError: tempDir is not defined`.
+	let tempDir: TempDir;
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@output-format-rpc-");
+	});
+	afterEach(() => {
+		tempDir.removeSync();
+	});
+
+	/**
+	 * The frame `RpcClient.exportHtml` puts on the wire, read off a real transport.
+	 *
+	 * `#send` is a true private field writing to a subprocess stdin, so the frame is
+	 * captured where it is actually observable: a fake agent process that records
+	 * what it was sent and answers with the response shape `#send` waits for. Two
+	 * earlier attempts — reflecting over `#send`, then injecting a `send` port —
+	 * both failed, and that is the constraint stated plainly: a private field is not
+	 * a seam, so the only honest observation point is the pipe.
+	 */
+	async function frameFor(outputPath?: string, formatId?: string): Promise<{ type: string; formatId?: string }> {
+		const recorder = path.join(tempDir.path(), "frame.jsonl");
+		const responder = path.join(tempDir.path(), "fake-agent.mjs");
+		await Bun.write(
+			responder,
+			`import * as fs from "node:fs";
+let buf = "";
+// The client blocks in start() until it sees this frame (rpc-client.ts:391), so a
+// fake agent that omits it never answers the command at all.
+process.stdout.write(JSON.stringify({ type: "ready" }) + "\\n");
+// The reply must carry type: "response" — isRpcResponse (rpc-client.ts:168) rejects
+// anything else, and a rejected reply is not an error, it is silence: the request
+// stays in #pendingRequests until the test timeout.
+process.stdin.on("data", chunk => {
+	buf += chunk;
+	let nl;
+	while ((nl = buf.indexOf("\\n")) !== -1) {
+		const line = buf.slice(0, nl);
+		buf = buf.slice(nl + 1);
+		if (!line.trim()) continue;
+		const frame = JSON.parse(line);
+		fs.appendFileSync(${JSON.stringify(recorder)}, JSON.stringify(frame) + "\\n");
+		process.stdout.write(JSON.stringify({
+			type: "response",
+			id: frame.id,
+			success: true,
+			command: frame.type,
+			data: { path: "/tmp/out" },
+		}) + "\\n");
+	}
+});
+`,
+		);
+		const { RpcClient } = await import("@oh-my-pi/pi-coding-agent/modes/rpc/rpc-client");
+		using client = new RpcClient({
+			command: () => ["bun", responder],
+			provider: "openrouter",
+			model: "example/model",
+			args: ["--no-session"],
+		});
+		await client.start();
+		await client.exportHtml(outputPath, formatId);
+		await client.stop();
+		const frames = (await Bun.file(recorder).text())
+			.split("\n")
+			.filter(line => line.trim())
+			.map(line => JSON.parse(line) as { type: string; formatId?: string });
+		const exported = frames.find(frame => frame.type === "export_html");
+		expect(exported, "no export_html frame reached the agent process").toBeDefined();
+		return exported as { type: string; formatId?: string };
+	}
+
+	it("carries a format id across the wire", async () => {
+		const frame = await frameFor("/tmp/x.md", "notes");
+		// The assertion that fails on the unpatched tree: `formatId` was dropped here.
+		expect(frame.type).toBe("export_html");
+		expect(frame.formatId).toBe("notes");
+	});
+
+	it("omits the id when the caller names no format, so the default still applies", async () => {
+		const frame = await frameFor("/tmp/x.html", undefined);
+		// Control: an absent id must stay absent rather than becoming a value the
+		// server would have to distinguish from "no format requested".
+		expect(frame.type).toBe("export_html");
+		expect(frame.formatId).toBeUndefined();
 	});
 });

@@ -236,7 +236,7 @@ packages/coding-agent/examples/sdk/README.md	2
 packages/coding-agent/README.md	1
 # omp.sh is a live domain; on-disk config dir name
 packages/collab-web/README.md	3
-# /opt/omp/bin is a real install prefix (metaharness/src/tb/agent.ts:98)
+# /opt/omp/bin is a real mount prefix (metaharness/src/runner.ts:40-41 SOURCE_SRC_MOUNT/SOURCE_BIN_MOUNT)
 packages/metaharness/README.md	1
 # on-disk config dir name; npm package @oh-my-pi/omp-stats
 packages/stats/README.md	5

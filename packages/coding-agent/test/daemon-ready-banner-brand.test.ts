@@ -1,9 +1,30 @@
 import { describe, expect, it } from "bun:test";
 import { APP_NAME } from "@oh-my-pi/pi-utils";
-import { IDA_DAEMON_PREFIX, IDA_HOST_READY_PATTERN, idaDaemonName, idaHostReadyBanner } from "../src/ida/protocol";
-import { LSP_MUX_READY_PATTERN, lspMuxReadyBanner } from "../src/lsp/mux/protocol";
-import { TEXT_PREDICT_READY_PATTERN, textPredictReadyBanner } from "../src/predict/protocol";
-import { BLOB_BROKER_READY_PATTERN, blobBrokerReadyBanner } from "../src/blob-broker/protocol";
+import {
+	BLOB_BROKER_CONFIG_ENV,
+	BLOB_BROKER_READY_PATTERN,
+	BLOB_BROKER_SOCKET_ENV,
+	blobBrokerReadyBanner,
+} from "../src/blob-broker/protocol";
+import {
+	IDA_DAEMON_PREFIX,
+	IDA_HOST_CONFIG_ENV,
+	IDA_HOST_READY_PATTERN,
+	idaDaemonName,
+	idaHostReadyBanner,
+} from "../src/ida/protocol";
+import {
+	LSP_MUX_PROJECT_DIR_ENV,
+	LSP_MUX_READY_PATTERN,
+	LSP_MUX_SOCKET_ENV,
+	lspMuxReadyBanner,
+} from "../src/lsp/mux/protocol";
+import {
+	TEXT_PREDICT_AGENT_DIR_ENV,
+	TEXT_PREDICT_READY_PATTERN,
+	TEXT_PREDICT_SOCKET_ENV,
+	textPredictReadyBanner,
+} from "../src/predict/protocol";
 
 // Contract, shared by every broker-owned daemon in this repo.
 //
@@ -81,5 +102,37 @@ describe("ida daemon name", () => {
 		// hashed branch at protocol.ts:76.
 		expect(idaDaemonName("a/b:c d").length).toBeLessThanOrEqual(48);
 		expect(idaDaemonName("x".repeat(200)).length).toBeLessThanOrEqual(48);
+	});
+});
+
+// The other half of the same handshake: the endpoint a worker listens on never
+// travels as a string both sides recompute. The parent builds it, hands it over
+// in the child's environment, and the worker reads that key and deletes it
+// (`server.ts:747` for the mux, `host.ts:243` for ida). So these keys are the
+// only thing the two ends must agree on by name.
+//
+// That makes them internal by construction — set by our spawner, read by our
+// worker, absent from docs, scripts and CI — and a stale spelling here is a
+// mismatch between two files in this repo, not a contract with anything outside.
+describe("daemon spawn environment keys", () => {
+	const KEYS = [
+		["ida host config", IDA_HOST_CONFIG_ENV],
+		["lsp mux socket", LSP_MUX_SOCKET_ENV],
+		["lsp mux project dir", LSP_MUX_PROJECT_DIR_ENV],
+		["text-predict socket", TEXT_PREDICT_SOCKET_ENV],
+		["text-predict agent dir", TEXT_PREDICT_AGENT_DIR_ENV],
+		["blob broker socket", BLOB_BROKER_SOCKET_ENV],
+		["blob broker config", BLOB_BROKER_CONFIG_ENV],
+	] as const;
+
+	it.each(KEYS)("%s carries the current product prefix", (_label, key) => {
+		expect(key.startsWith("ULTRAWORKERS_")).toBe(true);
+	});
+
+	it.each(KEYS)("%s carries no legacy spelling", (_label, key) => {
+		// The failure is silent in both directions: a parent setting the old key
+		// and a worker reading the new one means the worker starts with no
+		// endpoint at all and the daemon never becomes ready.
+		expect(key).not.toMatch(/^OMP_/);
 	});
 });

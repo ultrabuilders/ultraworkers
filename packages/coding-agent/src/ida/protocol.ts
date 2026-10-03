@@ -12,7 +12,7 @@ import { APP_NAME } from "@oh-my-pi/pi-utils";
 export { IDA_HOST_WORKER_ARG } from "../cli/worker-selectors";
 
 /** Environment key carrying the JSON {@link IdaHostConfig} for the daemon. */
-export const IDA_HOST_CONFIG_ENV = "OMP_IDA_HOST_CONFIG";
+export const IDA_HOST_CONFIG_ENV = "ULTRAWORKERS_IDA_HOST_CONFIG";
 
 /**
  * Name prefix of every IDA daemon in a broker scope.

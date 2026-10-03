@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import * as path from "node:path";
-import { WIRE_NAME } from "@oh-my-pi/pi-utils";
+import { APP_NAME, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import {
 	installProfileAlias,
 	readProfileAliasConfigFile,
@@ -79,7 +79,7 @@ describe("profile alias installer", () => {
 		expect(command.powerShell).toBe(`'${runtime}' '${expectedScriptPath}'`);
 	});
 
-	it("can target the current source invocation instead of the installed omp binary", async () => {
+	it(`can target the current source invocation instead of the installed ${APP_NAME} binary`, async () => {
 		const files = new Map<string, string>();
 
 		const result = await installProfileAlias({

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import * as path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dir, "..", "..", "..");
@@ -49,7 +50,7 @@ const REASONS: Record<string, { why: string; patterns: string[] }> = {
 	},
 	/** stdout or stderr IS the product's output channel here. */
 	commandOutput: {
-		why: "These write the command's own output, so a logger would move it somewhere the user cannot see it. `omp compress f.md > out.md` needs stdout; `omp --model` prints why it is exiting 1; the blob broker's banner is the readiness channel; `mnemopi diagnose` emits a JSON report whose exit code is the result.",
+		why: `These write the command's own output, so a logger would move it somewhere the user cannot see it. \`${APP_NAME} compress f.md > out.md\` needs stdout; \`${APP_NAME} --model\` prints why it is exiting 1; the blob broker's banner is the readiness channel; \`mnemopi diagnose\` emits a JSON report whose exit code is the result.`,
 		patterns: [
 			"packages/coding-agent/src/compress/**",
 			"packages/coding-agent/src/config/model-resolver.ts",

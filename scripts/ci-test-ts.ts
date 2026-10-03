@@ -865,7 +865,7 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	// Which files each chunk was given, on disk before the first chunk starts. A quiet
 	// run names no file on a passing chunk, so without this a file that never executed is
 	// indistinguishable from one that passed. See formatChunkManifest.
-	const manifestPath = path.join(os.tmpdir(), `omp-test-chunks-${process.pid}.txt`);
+	const manifestPath = path.join(os.tmpdir(), `uw-test-chunks-${process.pid}.txt`);
 	try {
 		await Bun.write(manifestPath, formatChunkManifest(commands));
 		console.log(`chunk manifest: ${manifestPath}`);

@@ -65,9 +65,12 @@ describe("runs-on labels resolve to a runner", () => {
 	it("rejects a self-hosted label the repo does not declare", () => {
 		// The rename accident this defends: the label was de-branded in the workflow and
 		// nothing complained, because the job would simply never be picked up again.
-		const result = checkRunnerLabels([{ file: "w.yml", text: workflow("omp-katta") }], ACTIONLINT_DECLARING_OMP_KATA);
+		const result = checkRunnerLabels(
+			[{ file: "w.yml", text: workflow("ultraworkers-katta") }],
+			ACTIONLINT_DECLARING_OMP_KATA,
+		);
 
-		expect(result.offenders.map(use => use.label)).toEqual(["omp-katta"]);
+		expect(result.offenders.map(use => use.label)).toEqual(["ultraworkers-katta"]);
 		expect(result.offenders[0]?.file).toBe("w.yml");
 		// The line is what makes the failure actionable; without it the message names a file
 		// of several hundred lines and nothing else.
@@ -97,12 +100,12 @@ describe("runs-on labels resolve to a runner", () => {
 		]);
 		expect(expressionLabels("github.event_name != 'pull_request' && 'omp-kata'")).toEqual(["omp-kata"]);
 		// An undeclared label in the result position is still caught through the same path.
-		const source = workflow("${{ github.event_name == 'pull_request' && 'ubuntu-22.04' || 'omp-katta' }}");
+		const source = workflow("${{ github.event_name == 'pull_request' && 'ubuntu-22.04' || 'ultraworkers-katta' }}");
 		expect(
 			checkRunnerLabels([{ file: "w.yml", text: source }], ACTIONLINT_DECLARING_OMP_KATA).offenders.map(
 				u => u.label,
 			),
-		).toEqual(["omp-katta"]);
+		).toEqual(["ultraworkers-katta"]);
 	});
 
 	it("leaves a matrix reference alone instead of reporting it as a label", () => {

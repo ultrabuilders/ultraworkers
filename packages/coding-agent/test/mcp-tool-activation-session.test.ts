@@ -19,7 +19,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test"
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { type } from "@oh-my-pi/omptype";
 import { AuthStorage } from "@oh-my-pi/pi-ai";
+import type { CustomTool } from "@oh-my-pi/pi-coding-agent/extensibility/custom-tools/types";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
@@ -193,6 +195,80 @@ describe("a session's active tool set after the server pushes a new tool", () =>
 			// because of that tombstone, so it is gated as the push it is — registered
 			// and visible, never active.
 			expect(session.getEnabledToolNames()).not.toContain(BETA);
+		} finally {
+			await session.dispose();
+			removeSyncWithRetries(workDir);
+		}
+	}, 40_000);
+
+	function catalogTool(name: string, serverName: string): CustomTool {
+		return {
+			name,
+			label: `${serverName}/tool`,
+			description: `Tool from ${serverName}`,
+			parameters: type({ q: "string" }),
+			strict: true,
+			mcpServerName: serverName,
+			mcpToolName: "tool",
+			async execute() {
+				return { content: [{ type: "text", text: `${name} executed` }] };
+			},
+		} as CustomTool;
+	}
+
+	/**
+	 * The declared-intent contract, all three branches in one test so an ablation
+	 * means something: dropping any one of them has to turn this red, not merely
+	 * change which assertion trips.
+	 *
+	 *   A tool is active IF AND ONLY IF the user connected the server that offers
+	 *   it. `connect` is the user acting, so its catalog activates. `push` is a
+	 *   trusted server widening its own reach after approval, so it does not. And
+	 *   a refresh never widens the connected set.
+	 *
+	 * The middle assertion is the one that earns its place. It is a SECOND server
+	 * connecting after the first, so `previousMcpTools` is already non-empty — the
+	 * exact state the old `previousMcpTools.size === 0` proxy read as "a push".
+	 * Before the seam that made a deliberately connected server's tool registered
+	 * and never active: invisible to the model and absent from the xd:// route
+	 * guidance.
+	 */
+	it("activates a connected server's catalog and never a pushed tool", async () => {
+		const { session } = await createAgentSession({
+			cwd: workDir,
+			agentDir: workDir,
+			modelRegistry,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated({ "mcp.startupTimeoutMs": 15_000 }),
+			model: getBundledModel("openai", "gpt-4o-mini"),
+			disableExtensionDiscovery: true,
+			skills: [],
+			contextFiles: [],
+			promptTemplates: [],
+			slashCommands: [],
+			enableLsp: false,
+			skipPythonPreflight: true,
+			enableMCP: false,
+		});
+		try {
+			const one = catalogTool("mcp__one_alpha", "one");
+			await session.refreshMCPTools([one], "connect");
+			expect(session.getEnabledToolNames()).toContain("mcp__one_alpha");
+
+			// A second server connects later. Its tool must activate: the user
+			// connected it, exactly as they connected the first.
+			const two = catalogTool("mcp__two_beta", "two");
+			await session.refreshMCPTools([one, two], "connect");
+			expect(session.getEnabledToolNames()).toContain("mcp__two_beta");
+			const connected = session.getEnabledToolNames();
+
+			// That server then pushes a tool nobody connected: registered and
+			// visible, NOT active, and the connected set is left exactly as it was.
+			const pushed = catalogTool("mcp__two_gamma", "two");
+			await session.refreshMCPTools([one, two, pushed], "push");
+			expect(session.getAllToolNames()).toContain("mcp__two_gamma");
+			expect(session.getEnabledToolNames()).not.toContain("mcp__two_gamma");
+			expect(session.getEnabledToolNames()).toEqual(connected);
 		} finally {
 			await session.dispose();
 			removeSyncWithRetries(workDir);

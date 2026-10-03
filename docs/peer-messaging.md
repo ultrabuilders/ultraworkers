@@ -692,8 +692,21 @@ attention while testing nothing.
 
 Most of the abstraction is genuine — `PeerAskOutcome` duck-types rather than
 using `instanceof` so it survives multiple module realms, and a `generation`
-counter serves as a connection epoch. But the word "stable" is **marketing**: it
-conflates two meanings of *contract* in a single README sentence.
+counter serves as a connection epoch.
+
+**And yet this is the package with the best single idea in the whole set (§5.10),
+from the weakest package:** it turns *"did my message arrive?"* into a
+**typed fact in the first line of the reply** — the broker acks `delivered` or
+`delivery_failed`, a synchronous boolean, and that one flag separates the entire
+failure taxonomy. `true` means "asked, nobody answered", with the precise reason.
+`false` means "it may not have got there." **One flag and one ack frame** buy the
+whole distinction, and every other project in §5 had to reach it the expensive
+way.
+
+The word "stable" in the name is still **marketing** — it conflates two meanings
+of *contract* in one README sentence. But the idea above is worth copying exactly,
+and it belongs in §6.1: the cheapest projects here are the ones that made
+delivery state a value rather than an inference.
 
 ### 5.11 `mcp_agent_mail_rust` — the most complete, and the weakest boundary
 
@@ -922,9 +935,26 @@ printed verbatim for the recipient to quote back, and `answerTo` is **required**
 for `kind:"answer"` on the envelope side, so a malformed answer cannot go missing
 silently (`ext-lib/src/ipc.ts:335-336`).
 
+**The one thing it gets structurally wrong: there is no budget anywhere.** The
+write path (`ext-lib/src/ipc.ts:506-527`) validates the id, parses the envelope,
+matches `to`, `mkdirSync`s and writes — **no counting step, no comparison, before
+any write**. The only limit is `IPC_TEXT_CAP = 32 KiB` for a *single* message
+(`:54`). There is **no queue cap and no TTL**: no function deletes inbox files by
+age, and `drain()` deletes every file it reads (`:547-563`), so a file's lifetime
+is the inbox's lifetime. **If drain stalls, the inbox grows without bound** — and
+nothing stops it, not even a peer that has died mid-stream, because there is no
+count for anything to notice.
+
+That is the direct consequence of choosing at-least-once by read-then-delete
+(`:556-563`) without setting a budget: a deliberate trade, but **the receiving
+side ends up with no way to defend itself.** Note what this means for §6.1 — the
+question "when the queue fills, drop or reject?" has no answer here **because it
+can never fill.** A missing bound is a decision, and it should be a conscious one.
+
 *Verdict:* too small to be a reference architecture and far too well made to
 ignore. It is the counter-example to `agent-fleet`: 710 lines, one tool, four
-actions, no aliases — and it answers ambiguity by refusing.
+actions, no aliases — it answers ambiguity by refusing, and then forgets to bound
+its own inbox.
 
 ### 5.13 `pi-chat` — the only project here that leaves the machine
 
@@ -983,6 +1013,13 @@ Claude Code needed **five releases** (2.1.235 → 2.1.238) to close its own sile
 failures. That is the empirical form of the rule that **a gate which cannot fail
 is worse than no gate**: six codebases found this independently, and the one with
 the largest engineering budget found it last.
+
+**The cheapest instance is a typed value.** `pi-peer-messaging` (§5.10) splits
+delivery into `delivered | delivery_failed` — one boolean in the ack frame — and
+that single flag separates "asked, nobody answered" from "may not have got there".
+The other five systems reached the same distinction through incident response over
+months. A message whose delivery state is **inferred** rather than **returned** is
+where every one of them went wrong.
 
 ### 6.2 Injection, not transport, decides whether a system works
 
@@ -1166,6 +1203,10 @@ of §8 depends on the ridered code.
    rather than quietly passing them (§7).
 7. **Derived ownership** — where a component would otherwise accept a target's
    name, take the holder from the caller's identity instead (§6.6).
+8. **Make delivery state a returned value, not an inference** —
+   `pi-peer-messaging`'s `delivered | delivery_failed` (§5.10). One flag, one ack
+   frame, and the whole failure taxonomy falls out. **A message whose delivery is
+   reported but never confirmed is the same bug as a gate that cannot fail.**
 
 These are written as findings rather than as a mapping onto this codebase's
 architecture, because that mapping needs a reading of `docs/collab.md`,

@@ -460,7 +460,7 @@ describe("listClaudePluginRoots", () => {
 		expect(result3.roots).toHaveLength(2);
 	});
 
-	test("isolates cached OMP plugin roots by home when Claude config is shared", async () => {
+	test("isolates cached ultraworkers plugin roots by home when Claude config is shared", async () => {
 		const sharedClaudeConfig = path.join(tempDir, "shared-claude");
 		const firstHome = path.join(tempDir, "first-home");
 		const secondHome = path.join(tempDir, "second-home");
@@ -509,7 +509,7 @@ describe("listClaudePluginRoots", () => {
 	test("derives the namespace from the plugin name, not the Claude cache version segment (#12151)", async () => {
 		// Claude Code's own plugin cache keeps marketplace/plugin/version as
 		// three separate path segments (`.../cache/<marketplace>/<plugin>/<version>/skills/...`),
-		// unlike OMP's single joined `<marketplace>___<plugin>___<version>` cache
+		// unlike ultraworkers' single joined `<marketplace>___<plugin>___<version>` cache
 		// directory. Deriving the namespace from the path segment owning `skills/`
 		// would read the shared version ("1.0.0" → "1-0-0") for both plugins here,
 		// colliding them together instead of keeping their own plugin identities.
@@ -555,7 +555,7 @@ describe("listClaudePluginRoots", () => {
 		expect(warnings.some(warning => warning.message.includes("1-0-0"))).toBe(false);
 	});
 
-	test("loads OMP user skills without opting into foreign Claude skills", async () => {
+	test("loads ultraworkers user skills without opting into foreign Claude skills", async () => {
 		const ompPluginPath = path.join(tempDir, "plugins", "omp-owned");
 		const claudePluginPath = path.join(tempDir, "plugins", "claude-owned");
 		const ompRegistryPath = path.join(tempDir, ".omp", "plugins", "installed_plugins.json");
@@ -569,7 +569,7 @@ describe("listClaudePluginRoots", () => {
 		await Promise.all([
 			fs.writeFile(
 				path.join(ompPluginPath, "skills", "omp-demo", "SKILL.md"),
-				"---\nname: omp-demo\ndescription: OMP skill\n---\nBody\n",
+				"---\nname: omp-demo\ndescription: ultraworkers skill\n---\nBody\n",
 			),
 			fs.writeFile(
 				path.join(claudePluginPath, "skills", "claude-demo", "SKILL.md"),
@@ -619,7 +619,7 @@ describe("listClaudePluginRoots", () => {
 		await Promise.all([
 			fs.writeFile(
 				path.join(ompPluginPath, "skills", "omp-demo", "SKILL.md"),
-				"---\nname: omp-demo\ndescription: OMP skill\n---\nBody\n",
+				"---\nname: omp-demo\ndescription: ultraworkers skill\n---\nBody\n",
 			),
 			fs.writeFile(
 				path.join(claudePluginPath, "skills", "claude-demo", "SKILL.md"),
@@ -675,9 +675,12 @@ describe("listClaudePluginRoots", () => {
 		await Promise.all([
 			fs.writeFile(
 				path.join(ompPluginPath, "skills", "omp-demo", "SKILL.md"),
-				"---\nname: omp-demo\ndescription: OMP skill\n---\nBody\n",
+				"---\nname: omp-demo\ndescription: ultraworkers skill\n---\nBody\n",
 			),
-			fs.writeFile(path.join(ompPluginPath, "rules", "omp-rule.md"), "---\ndescription: OMP rule\n---\nBody\n"),
+			fs.writeFile(
+				path.join(ompPluginPath, "rules", "omp-rule.md"),
+				"---\ndescription: ultraworkers rule\n---\nBody\n",
+			),
 			fs.writeFile(
 				path.join(claudePluginPath, "skills", "claude-demo", "SKILL.md"),
 				"---\nname: claude-demo\ndescription: Claude skill\n---\nBody\n",

@@ -56,8 +56,29 @@ const PATTERNS: readonly { label: string; needle: string }[] = [
 /**
  * The same PINNED expression `check-disposition` gates on, so "old brand" means one thing
  * across both gates rather than two.
+ *
+ * Kept in step with `check-disposition.ts` on 2026-10-03, after this copy had drifted on
+ * both axes at once: its trailing class still excluded `_` while the shipping one stopped,
+ * and it carried no `i` while the shipping one gained one. Both matter independently.
+ * The trailing class decides whether `omp_capabilities` is a token or part of a longer
+ * name; the flag decides whether `OMP-PROFILE` is the product or an acronym.
+ *
+ * Syncing the expression alone would have changed nothing, because the only site that
+ * used it dropped the flags on the way in (see `assertsBareBrand`). The two edits are
+ * only worth anything together: the flag this expression now carries had been
+ * unreachable, and the trailing class alone accounted for 18 of the 515 occurrences the
+ * two expressions disagree on over this gate's own corpus — the other 497 were the flag,
+ * invisible until the call site passed it through.
+ *
+ * Syncing therefore surfaces 515 occurrences that each need a row in `disposition.tsv`
+ * carrying a reason. That is `ultraworkers-70`'s to write; it is not a reason to leave the
+ * copy stale, and this gate is expected to be red until those rows land.
+ *
+ * The corpus is the test tree this gate already globs (see `collectHits`); the glob is
+ * spelled out in the source rather than here, because writing it in this comment closes
+ * the comment early — the pattern contains the two characters that end a block comment.
  */
-const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
+const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9]|$)/i;
 
 /** One row of the disposition table, as this gate consumes it. */
 interface Row {
@@ -186,7 +207,14 @@ const NEGATED =
  */
 function assertsBareBrand(line: string): boolean {
 	if (!ASSERTION.test(line) || NEGATED.test(line)) return false;
-	for (const match of line.matchAll(new RegExp(PINNED, "g"))) {
+	// `source` AND `flags`, not the RegExp object plus a flags string: the second argument
+	// to `new RegExp` REPLACES the original's flags rather than merging with them, so
+	// `new RegExp(PINNED, "g")` silently measures a case-sensitive token and every flag
+	// `PINNED` carries is discarded. That is why adding the flag to `PINNED` alone changed
+	// nothing here: 497 occurrences on this gate's own corpus stay invisible until this
+	// line passes the flags through. `check-disposition.ts:705` builds it the safe way and
+	// documents the trap; this was the one site still using the broken form.
+	for (const match of line.matchAll(new RegExp(PINNED.source, `${PINNED.flags}g`))) {
 		const at = (match.index ?? 0) + match[1].length;
 		const prev = line[at - 1] ?? "";
 		const next = line[at + 3] ?? "";

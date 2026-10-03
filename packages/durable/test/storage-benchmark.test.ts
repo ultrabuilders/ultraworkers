@@ -4,7 +4,7 @@ import {
 	seedStorageWriteBenchmark,
 	STORAGE_READ_BENCHMARKS,
 	STORAGE_WRITE_BENCHMARKS,
-} from "@oh-my-pi/pi-durable/testing";
+} from "@ultraworkers/pi-durable/testing";
 import { MemoryStorage } from "../src/storage/memory";
 
 /**

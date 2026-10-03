@@ -1,4 +1,4 @@
-import { defineDoc, defineDocFamily } from "@oh-my-pi/pi-durable";
+import { defineDoc, defineDocFamily } from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { getReplicatedStateInternals } from "../../chord/src/services/state-internals";
 import { context, createConversation, documentChanges, flush, openTestSession, singleVersion } from "./session-support";

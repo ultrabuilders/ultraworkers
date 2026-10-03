@@ -13,7 +13,7 @@ import {
 	StorageRejected,
 	type TaskId,
 	type TaskRuntime,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { noModels, user } from "./harness-support";
 import { ControlledStorage, context, flush, singleVersion } from "./session-support";

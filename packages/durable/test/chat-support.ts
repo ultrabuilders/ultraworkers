@@ -10,7 +10,7 @@ import {
 	Harness,
 	type Registry,
 	type Storage,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import type { ModelLookup } from "../src/harness/types";
 import { context } from "./session-support";
 // `waitFor` already lives in `task-support.ts`; pi ships a second copy here. Re-export the

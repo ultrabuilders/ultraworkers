@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantMessage, Message } from "@oh-my-pi/pi-ai";
 import { fauxAssistantMessage } from "@oh-my-pi/pi-ai/testing";
-import { AssistantEntry, type Harness, LiveDoc, type LiveState, type TaskId } from "@oh-my-pi/pi-durable";
+import { AssistantEntry, type Harness, LiveDoc, type LiveState, type TaskId } from "@ultraworkers/pi-durable";
 import { afterEach, describe, expect, it } from "bun:test";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf, unanswered, waitFor } from "./chat-support";

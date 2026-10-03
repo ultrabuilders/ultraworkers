@@ -166,7 +166,7 @@
       },
     },
     "packages/durable": {
-      "name": "@oh-my-pi/pi-durable",
+      "name": "@ultraworkers/pi-durable",
       "version": "18.4.3",
       "dependencies": {
         "@oh-my-pi/chord": "catalog:",
@@ -857,7 +857,7 @@
 
     "@oh-my-pi/pi-coding-agent": ["@oh-my-pi/pi-coding-agent@workspace:packages/coding-agent"],
 
-    "@oh-my-pi/pi-durable": ["@oh-my-pi/pi-durable@workspace:packages/durable"],
+    "@ultraworkers/pi-durable": ["@ultraworkers/pi-durable@workspace:packages/durable"],
 
     "@oh-my-pi/pi-evals": ["@oh-my-pi/pi-evals@workspace:packages/evals"],
 

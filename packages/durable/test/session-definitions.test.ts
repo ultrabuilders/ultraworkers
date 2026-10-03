@@ -9,7 +9,7 @@ import {
 	type Session,
 	type TaskId,
 	type Tx,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { describe, expect, expectTypeOf, it } from "bun:test";
 import { idFromNumber } from "../src/ids";
 import { context } from "./session-support";

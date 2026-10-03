@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { defineTask, MemoryStorage, type TaskId, type TaskInspection } from "@oh-my-pi/pi-durable";
+import { defineTask, MemoryStorage, type TaskId, type TaskInspection } from "@ultraworkers/pi-durable";
 import { context } from "./session-support";
 import { completed, deferred, eventually, openTasks, waitFor } from "./task-support";
 

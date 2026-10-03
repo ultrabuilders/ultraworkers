@@ -1,5 +1,5 @@
 import type { Message } from "@oh-my-pi/pi-ai";
-import { type EntryDraft, type EntryId, type EntryRecord, MemoryStorage } from "@oh-my-pi/pi-durable";
+import { type EntryDraft, type EntryId, type EntryRecord, MemoryStorage } from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { assistant, describeMessage, openHarness, toolResult, user } from "./harness-support";
 import { context } from "./session-support";

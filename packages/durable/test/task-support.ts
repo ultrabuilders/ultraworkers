@@ -5,7 +5,7 @@ import {
 	type Registry,
 	type RegistryReader,
 	type Storage,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { noModels } from "./harness-support";
 import { context, flush } from "./session-support";
 

@@ -17,7 +17,7 @@ import {
 	type RegistrySnapshot,
 	type TaskId,
 	UserEntry,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import type { ModelLookup } from "../src/harness/types";
 import type { SessionImpl } from "../src/session/session";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf, unanswered, waitFor } from "./chat-support";

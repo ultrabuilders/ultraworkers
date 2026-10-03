@@ -7,7 +7,7 @@ import {
 	StorageRejected,
 	type StorageWrite,
 	type TaskId,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import {
 	context,

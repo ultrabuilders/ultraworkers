@@ -1,6 +1,6 @@
 import type { JsonValue } from "@oh-my-pi/chord";
 import { type } from "@oh-my-pi/pi-ai";
-import { createRegistry, defineTask, GenerationTask, type ToolRegistration } from "@oh-my-pi/pi-durable";
+import { createRegistry, defineTask, GenerationTask, type ToolRegistration } from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { ROOT_CONVERSATION_ID } from "../src/types";
 

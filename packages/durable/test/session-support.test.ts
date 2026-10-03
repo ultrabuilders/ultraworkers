@@ -1,4 +1,4 @@
-import { defineDoc } from "@oh-my-pi/pi-durable";
+import { defineDoc } from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { singleVersion } from "./session-support";
 

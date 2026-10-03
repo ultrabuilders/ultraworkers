@@ -8,7 +8,7 @@ import {
 	ReadAfterWrite,
 	type TaskId,
 	type TaskRecord,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { idFromNumber } from "../src/ids";
 import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support";

@@ -8,7 +8,7 @@ import {
 	type PromptSection,
 	SystemEntry,
 	type ToolRegistration,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { contributingEntries } from "../src/harness/context";
 import { planSystemEntries, renderSections, replaySections } from "../src/harness/prompt";

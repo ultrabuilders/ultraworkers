@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { Context, JsonValue } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
-import { registerStorageConformance } from "@oh-my-pi/pi-durable/testing";
+import { registerStorageConformance } from "@ultraworkers/pi-durable/testing";
 import { afterEach, describe, expect, it } from "bun:test";
 import { err, FileError, type FileSystem, type Result } from "../src/env/index";
 import { NodeExecutionEnv } from "../src/env/node";

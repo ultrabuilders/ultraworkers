@@ -15,7 +15,7 @@ import {
 	MemoryStorage,
 	ROOT_CONVERSATION_ID,
 	type TaskId,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { Effort } from "@oh-my-pi/pi-catalog/effort";
 import { afterEach, describe, expect, it } from "bun:test";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node";

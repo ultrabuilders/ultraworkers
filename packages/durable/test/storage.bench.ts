@@ -27,7 +27,7 @@ import {
 	seedStorageWriteBenchmark,
 	STORAGE_READ_BENCHMARKS,
 	STORAGE_WRITE_BENCHMARKS,
-} from "@oh-my-pi/pi-durable/testing";
+} from "@ultraworkers/pi-durable/testing";
 import { openNodeJsonlStorage } from "../src/storage/jsonl/node";
 import { MemoryStorage } from "../src/storage/memory";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node";

@@ -12,7 +12,7 @@ import {
 	type Task,
 	type TaskId,
 	type TaskRuntime,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import { afterEach, describe, expect, it } from "bun:test";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node";
 import { noModels } from "./harness-support";

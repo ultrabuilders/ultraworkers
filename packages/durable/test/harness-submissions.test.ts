@@ -20,7 +20,7 @@ import {
 	type SubmissionId,
 	type SubmissionRecord,
 	UserEntry,
-} from "@oh-my-pi/pi-durable";
+} from "@ultraworkers/pi-durable";
 import type { ModelLookup } from "../src/harness/types";
 import type { SessionImpl } from "../src/session/session";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node";

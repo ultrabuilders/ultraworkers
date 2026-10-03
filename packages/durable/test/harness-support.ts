@@ -1,6 +1,6 @@
 import type { AssistantMessage, Message, StopReason, ToolCall, ToolResultMessage, UserMessage } from "@oh-my-pi/pi-ai";
 import { type } from "@oh-my-pi/pi-ai";
-import { createRegistry, Harness, type Registry, type Storage, type ToolRegistration } from "@oh-my-pi/pi-durable";
+import { createRegistry, Harness, type Registry, type Storage, type ToolRegistration } from "@ultraworkers/pi-durable";
 import type { ModelLookup } from "../src/harness/types";
 import { context } from "./session-support";
 

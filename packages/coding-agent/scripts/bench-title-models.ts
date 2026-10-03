@@ -22,7 +22,7 @@ import { Database } from "bun:sqlite";
  */
 import * as os from "node:os";
 import * as path from "node:path";
-import { prompt } from "@oh-my-pi/pi-utils";
+import { getAgentDir, prompt } from "@oh-my-pi/pi-utils";
 import titleSystemPrompt from "../src/prompts/system/title-system.md" with { type: "text" };
 import { preprocessTinyMessage } from "../src/tiny/message-preproc";
 import { isTinyTitleLocalModelKey } from "../src/tiny/models";
@@ -218,7 +218,7 @@ function parseArgs(argv: string[]): BenchConfig {
 	const ollamaUrlArg = get("--ollama-url");
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	return {
-		dbPath: (get("--db") ?? path.join(os.homedir(), ".omp/agent/history.db")).replace(/^~/, os.homedir()),
+		dbPath: (get("--db") ?? path.join(getAgentDir(), "history.db")).replace(/^~/, os.homedir()),
 		count: Number(get("--count") ?? 20),
 		seed: Number(get("--seed") ?? Date.now() & 0xffffffff),
 		localModels: modelsArg

@@ -156,6 +156,7 @@ export const DISPOSITIONS = [
 	"keep-path",
 	"keep-filename",
 	"keep-prose",
+	"keep-fixture",
 ] as const;
 
 export type Disposition = (typeof DISPOSITIONS)[number];
@@ -681,6 +682,16 @@ export function classMatcher(disposition: Disposition): ClassMatcher {
 			return { literal: '".omp"' };
 		case "keep-filename":
 			return { filename: true };
+		case "keep-fixture":
+		// Pinned, and pinned deliberately. A fixture marker such as `.omp-plugin` is
+		// matched by PINNED, so counting it as `keep-path` would need a literal of its
+		// own — and `keep-path`'s literal is the QUOTED `".omp"`, which `.omp-plugin`
+		// does not contain. Pinning is what makes this class able to count at all
+		// without inventing a second literal to drift from the first.
+		//
+		// See `countClass` for what pinning costs: every pinned class counts the file
+		// total, so a file's `keep-fixture` and `rename` rows cannot be checked
+		// against each other — only their sum can.
 		case "rename":
 		case "keep-wire":
 		case "keep-prose":
@@ -688,7 +699,29 @@ export function classMatcher(disposition: Disposition): ClassMatcher {
 	}
 }
 
-/** Count a class's occurrences in one file's text. */
+/**
+ * Count a class's occurrences in one file's text.
+ *
+ * WHAT A PINNED CLASS CANNOT DO, measured rather than asserted. Every pinned class
+ * returns the file-wide total, so two rows of the same pinned class in one file are
+ * indistinguishable by count, and a sum over them proves consistency without
+ * proving the partition. Probed against the real `keep-path` split in
+ * `extension-outsider-install.test.ts` (6 occurrences: line 93 is the user scope,
+ * five are the project scope):
+ *
+ *     6+6 rejected   the two rows each claiming the file total  ← the bug it must catch
+ *     1+5 accepted   the true partition
+ *     2+4 ACCEPTED   a different split that also sums          ← still passes
+ *     5+1 ACCEPTED   the same split, rows swapped              ← still passes
+ *     1+4 rejected   1+6 rejected
+ *
+ * So a sum check catches double-counting and nothing else. It cannot certify WHICH
+ * occurrences belong to which row: that lives only in `reason`, which is prose and
+ * therefore uncheckable. A per-row scope would be the real fix, and it is a schema
+ * change — deliberately not taken here. Until then, `hits` in a pinned class is
+ * evidence of consistency, not of correctness, and a row claiming a partition is
+ * justified by its own line-level cites.
+ */
 export function countClass(text: string, disposition: Disposition): number {
 	const matcher = classMatcher(disposition);
 	// NOT disjoint from PINNED, and deliberately so — see OMP_FILENAME. Every quoted

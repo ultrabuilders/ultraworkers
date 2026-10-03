@@ -76,6 +76,43 @@ function rejectReason(cells: readonly string[]): string | null {
 	return null;
 }
 
+/**
+ * A `docs:<path>#<token>` citation inside a reason.
+ *
+ * The citation is worth something only if the page it names really does say the
+ * token is a contract. A path alone proves nothing — every file in the repo has
+ * a path — so the token is carried alongside it and checked against the page.
+ */
+interface DocsCitation {
+	readonly path: string;
+	readonly token: string;
+}
+
+const DOCS_CITATION = /docs:([^\s#]+)#(\S+)/g;
+
+export function parseDocsCitations(reason: string): DocsCitation[] {
+	const found: DocsCitation[] = [];
+	for (const match of reason.matchAll(DOCS_CITATION)) {
+		found.push({ path: match[1]!, token: match[2]! });
+	}
+	return found;
+}
+
+/**
+ * True when `token` occurs in `page` delimited by word characters.
+ *
+ * `OMP` must NOT match inside `OMP_PROFILE`. That substring match put fourteen
+ * wrong rows in one batch: the filter asked "does this page mention OMP", the
+ * page mentioned a different variable that merely starts with the same three
+ * letters, and the row claimed a contract that the page never states. `_` and
+ * `-` count as word characters here precisely so that `OMP_PROFILE` and `OMP`
+ * are two tokens rather than one.
+ */
+export function pageContainsToken(page: string, token: string): boolean {
+	const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`).test(page);
+}
+
 /** True when no process holds this pid. The one question a lock file can answer. */
 function pidAlive(pid: number): boolean {
 	try {
@@ -202,6 +239,34 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 				});
 				continue;
 			}
+		}
+
+		// A `docs:` citation is a claim ABOUT a page, so the page gets read. This is
+		// the one claim in a row that can be disproved mechanically: the token either
+		// appears on the cited page as a whole word or it does not. A row asserting
+		// otherwise is asserting something its author did not read, and the whole-word
+		// rule is the part that matters — see `pageContainsToken`.
+		let docsFailure: string | null = null;
+		for (const citation of parseDocsCitations(cells[4] ?? "")) {
+			const where = `docs:${citation.path}#${citation.token}`;
+			let page: string | null = null;
+			try {
+				page = await Bun.file(path.join(ROOT, citation.path)).text();
+			} catch {
+				page = null; // unreadable here is unreadable for the gate too
+			}
+			if (page === null) {
+				docsFailure = `reason cites ${where}, but that page is not readable here`;
+				break;
+			}
+			if (!pageContainsToken(page, citation.token)) {
+				docsFailure = `reason cites ${where}, but that token does not appear on the page as a whole word`;
+				break;
+			}
+		}
+		if (docsFailure !== null) {
+			outcomes.push({ line: lineNo, raw, verdict: "reject", reason: docsFailure });
+			continue;
 		}
 
 		// Where does this row go? Matched on (path, disposition) — the same key the

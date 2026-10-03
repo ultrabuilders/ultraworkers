@@ -124,7 +124,13 @@ type FlagValue<D extends FlagDescriptor> = D["kind"] extends "boolean"
 			? string[] | undefined
 			: string | undefined;
 
-type ArgValue<D extends ArgDescriptor> = D extends { multiple: true } ? string[] | undefined : string | undefined;
+type ArgValue<D extends ArgDescriptor> = D extends { multiple: true }
+	? string[] | undefined
+	: // A declared default is always delivered now, so the argument is never absent.
+		// Typing it as optional would leave every author a guard that cannot run.
+		D extends { default: string }
+		? string
+		: string | undefined;
 
 type FlagValues<T extends Record<string, FlagDescriptor>> = { [K in keyof T]: FlagValue<T[K]> };
 type ArgValues<T extends Record<string, ArgDescriptor>> = { [K in keyof T]: ArgValue<T[K]> };

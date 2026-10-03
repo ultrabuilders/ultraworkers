@@ -281,3 +281,15 @@ docs/ui-comparison-ulw-vs-opencoding.md	8
 # table at a file that does not exist. Same class as the `omp-protocol.ts:10`
 # reference recorded in `disposition.tsv`.
 docs/mcp-server-contribution-by-extensions.md	1
+#
+# This README is the rename programme's own SPECIFICATION of the legacy token, so
+# the token is its subject rather than a stale name in it. Three measured anchors:
+#   :117  "| `.omp`    | **yes** | the leading class does **not** exclude `.`" — the
+#          sentence exists to state whether the leading dot is matched; rewriting
+#          the token deletes the question the table is answering.
+#   :122  "`omp.shx` | **yes** | that lookahead only covers `.sh` / `.sh-`" — a
+#          boundary case about the spelling itself.
+#   :355  "The concrete case: `.omp/skills/a.md` is the right control" — the
+#          legacy path is the fixture the matcher is verified against.
+# Pinned at the count the gate itself reported (15), so a 16th occurrence reds.
+scripts/rename/README.md	15

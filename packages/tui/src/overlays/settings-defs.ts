@@ -114,6 +114,12 @@ export type SubmenuOption<V extends string = string> = {
 	value: V;
 	label: string;
 	description?: string;
+	/**
+	 * Set when the choice exists but cannot be selected — a capability the host may
+	 * not have. The row still renders (so the user can see the choice and learn why
+	 * it is inert) but navigation skips it. Renders as `SelectItem.disabled`.
+	 */
+	unavailableReason?: string;
 };
 
 export interface UiBase {

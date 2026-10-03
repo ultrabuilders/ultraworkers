@@ -191,7 +191,7 @@ function createSettingsTextField(
 function createSettingsSelectField(
 	title: string,
 	description: string,
-	options: ReadonlyArray<SelectItem>,
+	options: ReadonlyArray<SubmenuOption>,
 	currentValue: string,
 	onSelect: (value: string) => void,
 	onCancel: () => void,
@@ -201,11 +201,25 @@ function createSettingsSelectField(
 	requestRender?: () => void,
 	picker?: SelectPickerOptions,
 ): SelectFormField {
+	// A choice can exist but be unselectable — a composer shape whose glyph set or
+	// feature flag the host lacks. `SelectItem.disabled` already exists for this
+	// ("stays visible but skipped by navigation and cannot activate"), so the row
+	// renders and the user learns what is missing instead of tapping a dead row.
+	//
+	// The reason REPLACES the description rather than joining it: the description
+	// explains what the choice does, and once the choice is inert the reason is the
+	// only thing the user can act on.
+	const items = options.map((option): SelectItem => ({
+		value: option.value,
+		label: option.label,
+		description: option.unavailableReason ?? option.description,
+		disabled: option.unavailableReason !== undefined,
+	}));
 	return new SelectFormField({
 		theme: formTheme,
 		label: title,
 		description: description || undefined,
-		items: options,
+		items,
 		currentValue,
 		maxVisible: 10,
 		selectTheme: getSelectListTheme(),
@@ -966,7 +980,11 @@ export class SettingsSelectorComponent implements Component {
 				const options = this.#submenuOptions(def).map(o => ({
 					value: o.value,
 					label: o.label,
-					detail: o.description,
+					// Same rule as the submenu: an unavailable choice explains itself
+					// with its reason. The wire `choice` control has no `disabled`
+					// option, so this row cannot be greyed out here — the submenu it
+					// opens is where the row is actually skipped and unactivatable.
+					detail: o.unavailableReason ?? o.description,
 				}));
 				// Few short plain choices segment; described ones and live-previewed ones
 				// (hovering the menu previews, see #createSubmenu) keep the menu.

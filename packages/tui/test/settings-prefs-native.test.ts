@@ -4,6 +4,8 @@ import type { DescribeContext, NativeNode, NativeUiEvent } from "@oh-my-pi/pi-tu
 import type { PluginSettingsHost } from "@oh-my-pi/pi-tui/overlays/plugin-settings";
 import type { SettingsDisplayEntry, SettingsHost } from "@oh-my-pi/pi-tui/overlays/settings-defs";
 import { SettingsSelectorComponent } from "@oh-my-pi/pi-tui/overlays/settings-selector";
+import { installExtensionComposerShape } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
+import { boxComposerStyle } from "@oh-my-pi/pi-tui";
 import { getThemeByName, setThemeInstance } from "@oh-my-pi/pi-tui/theme";
 
 const ENTER = "\n";
@@ -59,6 +61,18 @@ const ENTRIES: SettingsDisplayEntry[] = [
 				{ value: "b", label: "B" },
 				{ value: "c", label: "C" },
 			],
+		},
+	},
+	{
+		path: "composer.shape",
+		type: "string",
+		defaultValue: "box",
+		ui: {
+			tab: "appearance",
+			group: "Composer",
+			label: "Composer shape",
+			description: "Prompt frame",
+			options: "runtime",
 		},
 	},
 ];
@@ -153,13 +167,13 @@ describe("settings as a native prefs page", () => {
 	});
 
 	it("falls back to the overlay card when the terminal lacks prefs", () => {
-		const { selector } = harness();
+		const { selector, values, changes } = harness();
 		const card = selector.describe({ ...PREFS, supports: kind => kind !== "prefs" });
 		expect(card.k).toBe("card");
 	});
 
 	it("docks beside the transcript only where the terminal advertises aside", () => {
-		const { selector } = harness();
+		const { selector, values, changes } = harness();
 		expect(selector.nativeSheet(PREFS)).toBe(true);
 		expect(selector.nativeSheet({ ...PREFS, feature: name => name !== "aside" })).toBe(false);
 		expect(selector.nativeSheet({ ...PREFS, supports: kind => kind !== "prefs" })).toBe(false);
@@ -174,7 +188,7 @@ describe("settings as a native prefs page", () => {
 		expect(props.pages.find(p => p.id === "context")?.changed).toBe(1);
 		expect(props.pages.find(p => p.id === "shell")?.changed).toBeUndefined();
 		expect(props.pages.at(-1)).toMatchObject({ id: "plugins", group: "Plugins" });
-		expect(props.sections.map(s => s.id)).toEqual(["theme", "status-line"]);
+		expect(props.sections.map(s => s.id)).toEqual(["theme", "composer", "status-line"]);
 
 		expect(row(props, "theme.dark").control).toMatchObject({ k: "choice", value: "dark", style: "menu", mono: true });
 		expect(row(props, "display.colorBlind")).toMatchObject({
@@ -187,7 +201,7 @@ describe("settings as a native prefs page", () => {
 	});
 
 	it("puts the status-line preview after its section on Appearance only", () => {
-		const { selector } = harness();
+		const { selector, values, changes } = harness();
 		const roles = (n: NativeNode) => (n.c ?? []).map(c => ("k" in c && c.p && "role" in c.p ? c.p.role : undefined));
 		expect(roles(prefs(selector).node)).toContain("ultraworkers.prefs.preview.status");
 		send(selector, { type: "action", key: "", act: "page", value: "shell", mods: [] });
@@ -262,6 +276,57 @@ describe("settings as a native prefs page", () => {
 		expect(prefs(selector).props.editing).toBeNull();
 	});
 
+	it("renders an unavailable composer shape inert: the cursor skips it and selecting it does nothing", () => {
+		// `SelectItem.disabled` already existed at components/select-list.ts:53 — the
+		// reach from an extension's composer-shape definition to that state is the new
+		// part. What the user must experience: the shape is still listed, it says why it
+		// is inert, and the cursor refuses to land on it.
+		const uninstall = installExtensionComposerShape({
+			label: "Sixel Shape",
+			style: { ...boxComposerStyle, id: "sixel-shape" },
+			availability: () => false,
+			unavailableReason: "requires sixel image support",
+		});
+		try {
+			const { selector, values, changes } = harness();
+			send(selector, { type: "activate", key: "", item: "composer.shape" });
+
+			// The collapsed native row carries the reason in the existing `detail`
+			// field — the wire `choice` control has no `disabled`, so this is the most
+			// the inline-menu path can express, and it is what the user reads.
+			const control = row(prefs(selector).props, "composer.shape").control;
+			if (control?.k !== "choice") throw new Error(`composer.shape control is ${control?.k}, not a choice`);
+			const choices = control.options;
+			expect(choices.find(choice => choice.value === "sixel-shape")?.detail).toBe("requires sixel image support");
+
+			// Navigation: walk the whole list and a full lap again. A row that was only
+			// styled grey would come to rest here; a skipped one never does. Read through
+			// `editing`, which reports the SelectFormField's own cursor.
+			const visited: (string | undefined)[] = [];
+			for (let step = 0; step < choices.length + 2; step++) {
+				selector.handleInput(DOWN);
+				visited.push(prefs(selector).props.editing?.option);
+			}
+			expect(visited).not.toContain("sixel-shape");
+			// …and it is skipping THIS row, not a list stuck on one entry.
+			expect(new Set(visited).size).toBeGreaterThan(1);
+
+			// Selecting it changes nothing — while a built-in, through the SAME event,
+			// does. That built-in is the control this assertion needs: without it,
+			// "nothing moved" would be indistinguishable from "submenus ignore this
+			// event entirely", and the test would pass for the wrong reason.
+			send(selector, { type: "change", key: "", item: "composer.shape", value: "sixel-shape" });
+			expect(values.get("composer.shape")).toBe("box");
+			expect(changes).toEqual([]);
+
+			send(selector, { type: "change", key: "", item: "composer.shape", value: "rule" });
+			expect(values.get("composer.shape")).toBe("rule");
+			expect(changes).toEqual([["composer.shape", "rule"]]);
+		} finally {
+			uninstall();
+		}
+	});
+
 	it("applies a reordered multiselect as the submenu would", () => {
 		const { selector, values, changes } = harness();
 		send(selector, { type: "action", key: "", act: "page", value: "providers", mods: [] });
@@ -280,7 +345,7 @@ describe("settings as a native prefs page", () => {
 	});
 
 	it("searches across pages, grouping results by page and section, and a page click leaves the search", () => {
-		const { selector } = harness();
+		const { selector, values, changes } = harness();
 		selector.handleInput("t");
 		selector.handleInput("h");
 		const { props } = prefs(selector);
@@ -295,7 +360,7 @@ describe("settings as a native prefs page", () => {
 	});
 
 	it("keyboard focus follows the list selection", () => {
-		const { selector } = harness();
+		const { selector, values, changes } = harness();
 		selector.handleInput(DOWN);
 		expect(prefs(selector).props.focus).toBe("display.colorBlind");
 		send(selector, { type: "select", key: "", item: "display.risky" });

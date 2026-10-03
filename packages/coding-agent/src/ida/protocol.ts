@@ -8,6 +8,7 @@
 import type * as net from "node:net";
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 export { IDA_HOST_WORKER_ARG } from "../cli/worker-selectors";
 
 /** Environment key carrying the JSON {@link IdaHostConfig} for the daemon. */
@@ -19,12 +20,19 @@ export const IDA_DAEMON_PREFIX = "omp.ida.";
 /** Broker daemon names are capped at 48 characters (`broker.ts`). */
 const DAEMON_NAME_MAX = 48;
 
-/** Broker readiness regex matched against the banner the host prints once it listens. */
-export const IDA_HOST_READY_PATTERN = String.raw`omp ida host listening on \S+`;
+/**
+ * Broker readiness regex matched against the banner the host prints once it listens.
+ *
+ * Deliberately carries NO product name. The banner below leads with {@link APP_NAME},
+ * so a brand-free pattern is what keeps the two ends matched across a rename: pinning
+ * a name here would silently desync the client from the host the moment either side
+ * moved. `relay/daemon.ts:26` is the same shape, already brand-free.
+ */
+export const IDA_HOST_READY_PATTERN = String.raw`ida host listening on \S+`;
 
 /** Banner printed on stdout once the host socket accepts connections. */
 export function idaHostReadyBanner(endpoint: string): string {
-	return `omp ida host listening on ${endpoint}`;
+	return `${APP_NAME} ida host listening on ${endpoint}`;
 }
 
 /**

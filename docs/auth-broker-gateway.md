@@ -141,26 +141,26 @@ ultraworkers auth-gateway check   [--strict] [--json]
 
 ### Endpoints
 
-| Method | Path                    | Auth   | Purpose                                                      |
-| ------ | ----------------------- | ------ | ------------------------------------------------------------ |
-| `GET`  | `/healthz`              | none   | Liveness + version                                           |
-| `GET`  | `/v1/usage`             | bearer | Aggregate `UsageReport[]` (proxied through `AuthStorage`)    |
-| `GET`  | `/v1/models`            | bearer | Bundled-model catalog filtered to providers with credentials |
-| `GET`  | `/v1/credentials/check` | bearer | Per-credential auth health probe                             |
-| `POST` | `/v1/chat/completions`  | bearer | OpenAI Chat Completions wire format                          |
-| `POST` | `/v1/messages`          | bearer | Anthropic Messages wire format                               |
-| `POST` | `/v1/responses`         | bearer | OpenAI Responses wire format                                 |
-| `POST` | `/v1/pi/stream`         | bearer | Native `pi-ai` stream wire format                            |
-| `POST` | `/v1/systemone`         | bearer | TypeSafe System One judgments (`judge` models, e.g. `typesafe/jev-latest`); `/alpha/decisions` is the OpenRouter Decisions alias |
-| `POST` | `/v1/images/generations` | bearer | Image generation, OpenAI Images JSON wire; `/v1/images` is the OpenRouter alias (`image` models) |
-| `POST` | `/v1/images/edits`      | bearer | Image edits: OpenAI multipart or OpenRouter JSON input images |
-| `POST` | `/v1/audio/speech`      | bearer | Text-to-speech, OpenAI/OpenRouter JSON wire; answers raw audio bytes (`tts` models: `xai-tts`, `openai-speech`) |
-| `POST` | `/v1/audio/transcriptions` | bearer | Speech-to-text, OpenAI multipart `file` or OpenRouter JSON `input_audio` base64 (`stt` models on `openai-transcriptions`; 25 MiB cap) |
-| `POST` | `/v1/embeddings`        | bearer | Embeddings, OpenAI wire (`embedding` models on `openai-embeddings`; OpenAI + OpenRouter; 8 MiB cap) |
-| `POST` | `/v1/rerank`            | bearer | Rerank, OpenRouter wire (`rerank` models on `openrouter-rerank`) |
-| `POST` | `/v1/videos`            | bearer | Submit a video generation job, OpenRouter wire (`video` models on `openrouter-video`); answers `202` with gateway-rewritten polling/content URLs |
-| `GET`  | `/v1/videos/:id`        | bearer | Poll a video job. `:id` is gateway-issued and stateless: it encodes provider, model, and upstream job id |
-| `GET`  | `/v1/videos/:id/content` | bearer | Stream the finished video bytes with the upstream content type |
+| Method | Path                       | Auth   | Purpose                                                                                                                                          |
+| ------ | -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/healthz`                 | none   | Liveness + version                                                                                                                               |
+| `GET`  | `/v1/usage`                | bearer | Aggregate `UsageReport[]` (proxied through `AuthStorage`)                                                                                        |
+| `GET`  | `/v1/models`               | bearer | Bundled-model catalog filtered to providers with credentials                                                                                     |
+| `GET`  | `/v1/credentials/check`    | bearer | Per-credential auth health probe                                                                                                                 |
+| `POST` | `/v1/chat/completions`     | bearer | OpenAI Chat Completions wire format                                                                                                              |
+| `POST` | `/v1/messages`             | bearer | Anthropic Messages wire format                                                                                                                   |
+| `POST` | `/v1/responses`            | bearer | OpenAI Responses wire format                                                                                                                     |
+| `POST` | `/v1/pi/stream`            | bearer | Native `pi-ai` stream wire format                                                                                                                |
+| `POST` | `/v1/systemone`            | bearer | TypeSafe System One judgments (`judge` models, e.g. `typesafe/jev-latest`); `/alpha/decisions` is the OpenRouter Decisions alias                 |
+| `POST` | `/v1/images/generations`   | bearer | Image generation, OpenAI Images JSON wire; `/v1/images` is the OpenRouter alias (`image` models)                                                 |
+| `POST` | `/v1/images/edits`         | bearer | Image edits: OpenAI multipart or OpenRouter JSON input images                                                                                    |
+| `POST` | `/v1/audio/speech`         | bearer | Text-to-speech, OpenAI/OpenRouter JSON wire; answers raw audio bytes (`tts` models: `xai-tts`, `openai-speech`)                                  |
+| `POST` | `/v1/audio/transcriptions` | bearer | Speech-to-text, OpenAI multipart `file` or OpenRouter JSON `input_audio` base64 (`stt` models on `openai-transcriptions`; 25 MiB cap)            |
+| `POST` | `/v1/embeddings`           | bearer | Embeddings, OpenAI wire (`embedding` models on `openai-embeddings`; OpenAI + OpenRouter; 8 MiB cap)                                              |
+| `POST` | `/v1/rerank`               | bearer | Rerank, OpenRouter wire (`rerank` models on `openrouter-rerank`)                                                                                 |
+| `POST` | `/v1/videos`               | bearer | Submit a video generation job, OpenRouter wire (`video` models on `openrouter-video`); answers `202` with gateway-rewritten polling/content URLs |
+| `GET`  | `/v1/videos/:id`           | bearer | Poll a video job. `:id` is gateway-issued and stateless: it encodes provider, model, and upstream job id                                         |
+| `GET`  | `/v1/videos/:id/content`   | bearer | Stream the finished video bytes with the upstream content type                                                                                   |
 
 The model id is read from the top-level `model` field for foreign wire formats and from the pi-native request body for `/v1/pi/stream`. It may be provider-qualified (`typesafe/jev-latest`) or bare (`jev-latest`). The gateway resolves it against the served catalog — every registry model of a kind the gateway has a route for (`chat`, `judge`, `image`, `tts`, `stt`, `embedding`, `rerank`, `video`), scoped to providers the broker holds credentials for — parses the inbound wire format, resolves the provider credential from broker-backed `AuthStorage`, dispatches through the matching `pi-ai` client (`streamSimple()` for chat, `TypeSafeJudge` for judgments, `generateImage` / `synthesizeSpeech` / `transcribeAudio` / `embed` / `rerank` / `submitVideo` for the modality routes), and re-encodes the result to the inbound format (SSE for streamed chat responses).
 
@@ -170,7 +170,7 @@ Non-chat OpenRouter rosters are discovered live (`/embeddings/models`, `/videos/
 
 Cost attribution is uniform: every route records observed usage against the caller's `x-omp-*` identity and carries the computed cost in `x-litellm-response-cost`. Upstreams that report tokens only (TypeSafe) are priced from the catalog model; the response body's own `cost` field (OpenRouter shape) is only present when the upstream billed one.
 
-Pointing a TypeSafe SDK or ultraworkers's own `judge` role at the gateway means `TYPESAFE_BASE_URL=http://gateway:4000` with `TYPESAFE_API_KEY=<gateway token>`; OpenAI-SDK-style clients set their base URL to `http://gateway:4000/v1`.
+Pointing a TypeSafe SDK or ultraworkers' own `judge` role at the gateway means `TYPESAFE_BASE_URL=http://gateway:4000` with `TYPESAFE_API_KEY=<gateway token>`; OpenAI-SDK-style clients set their base URL to `http://gateway:4000/v1`.
 
 There is no raw provider passthrough path. All supported routes go through `pi-ai` provider logic so credential-specific request shaping, OAuth refresh-on-auth-error, and provider quirks stay centralized.
 
@@ -210,8 +210,8 @@ Broker clients can restrict their visible OAuth accounts by setting `OMP_AUTH_BR
 
 ```json
 {
-  "anthropic": ["email:alice@example.com|org:org-team"],
-  "openai-codex": []
+	"anthropic": ["email:alice@example.com|org:org-team"],
+	"openai-codex": []
 }
 ```
 
@@ -234,13 +234,13 @@ The broker is **off** unless `OMP_AUTH_BROKER_URL` (or `auth.broker.url` in `con
 
 ### Environment variables
 
-| Variable                            | Purpose                                                                                                                                                                | Required when                                                                                                             |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `OMP_AUTH_BROKER_URL`               | Base URL of the remote auth-broker (e.g. `https://broker.tailnet:8765`). Selecting this puts the client in broker mode — local SQLite is bypassed.                     | Any time the ultraworkers client should resolve credentials through a broker (and required by `ultraworkers auth-gateway serve`).           |
-| `OMP_AUTH_BROKER_TOKEN`             | Bearer token used for every broker endpoint except `/v1/healthz`.                                                                                                      | When `OMP_AUTH_BROKER_URL` is set and no token is available from `auth.broker.token` or `<config-dir>/auth-broker.token`. |
-| `OMP_AUTH_BROKER_SNAPSHOT_TTL_MS`   | Freshness window for the encrypted local snapshot cache. Default `3600000` (1 h); `0` disables cache reads and writes.                                                 | Optional in broker mode.                                                                                                  |
-| `OMP_AUTH_BROKER_SNAPSHOT_CACHE`    | Path override for the encrypted local snapshot cache. Default `~/.omp/cache/auth-broker-snapshot.enc` (or XDG cache equivalent).                                       | Optional in broker mode.                                                                                                  |
-| `OMP_AUTH_BROKER_ACCOUNT_POOL_FILE` | JSON file mapping provider IDs to OAuth `identityKey` values visible to this trusted client. Parsed once; invalid files abort initialization. API keys are unaffected. | Optional in broker mode.                                                                                                  |
+| Variable                            | Purpose                                                                                                                                                                | Required when                                                                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `OMP_AUTH_BROKER_URL`               | Base URL of the remote auth-broker (e.g. `https://broker.tailnet:8765`). Selecting this puts the client in broker mode — local SQLite is bypassed.                     | Any time the ultraworkers client should resolve credentials through a broker (and required by `ultraworkers auth-gateway serve`). |
+| `OMP_AUTH_BROKER_TOKEN`             | Bearer token used for every broker endpoint except `/v1/healthz`.                                                                                                      | When `OMP_AUTH_BROKER_URL` is set and no token is available from `auth.broker.token` or `<config-dir>/auth-broker.token`.         |
+| `OMP_AUTH_BROKER_SNAPSHOT_TTL_MS`   | Freshness window for the encrypted local snapshot cache. Default `3600000` (1 h); `0` disables cache reads and writes.                                                 | Optional in broker mode.                                                                                                          |
+| `OMP_AUTH_BROKER_SNAPSHOT_CACHE`    | Path override for the encrypted local snapshot cache. Default `~/.omp/cache/auth-broker-snapshot.enc` (or XDG cache equivalent).                                       | Optional in broker mode.                                                                                                          |
+| `OMP_AUTH_BROKER_ACCOUNT_POOL_FILE` | JSON file mapping provider IDs to OAuth `identityKey` values visible to this trusted client. Parsed once; invalid files abort initialization. API keys are unaffected. | Optional in broker mode.                                                                                                          |
 
 Resolution order in `resolveAuthBrokerConfig()`:
 
@@ -259,8 +259,8 @@ The gateway has no dedicated env vars — it inherits `OMP_AUTH_BROKER_*` becaus
 
 ### Token files
 
-| Path                              | Owner                                                | Mode                          |
-| --------------------------------- | ---------------------------------------------------- | ----------------------------- |
+| Path                              | Owner                                                         | Mode                          |
+| --------------------------------- | ------------------------------------------------------------- | ----------------------------- |
 | `<config-dir>/auth-broker.token`  | `ultraworkers auth-broker serve` (created at first start)     | `0600` in a `0700` parent dir |
 | `<config-dir>/auth-gateway.token` | `ultraworkers auth-gateway serve` (skipped under `--no-auth`) | `0600` in a `0700` parent dir |
 

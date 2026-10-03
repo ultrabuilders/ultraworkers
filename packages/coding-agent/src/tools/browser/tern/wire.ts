@@ -447,7 +447,7 @@ export class TernSocketClient {
 					this.#fail(
 						new TernBrowserError(
 							"refused",
-							`Tern refused ultraworkers's browser connection: ${reply.reason} (ultraworkers speaks Tern protocol ${TERN_WIRE_VERSION})`,
+							`Tern refused ultraworkers' browser connection: ${reply.reason} (ultraworkers speaks Tern protocol ${TERN_WIRE_VERSION})`,
 						),
 					);
 					return;

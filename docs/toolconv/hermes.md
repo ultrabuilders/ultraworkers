@@ -8,17 +8,17 @@ Verified against: the NousResearch `Hermes-Function-Calling` README (read in ful
 
 Only the ChatML markers are control tokens; the tool and reasoning markers are text-level strings inside the turn body. Token **IDs are model-specific** (each Hermes release has its own tokenizer), so they are deliberately not listed here.
 
-| Marker (verbatim) | Kind | Purpose |
-|---|---|---|
-| `<\|im_start\|>` | ChatML control token | Start of a turn; followed immediately by the role name + `\n` |
-| `<\|im_end\|>` | ChatML control token | End of a turn |
-| `<tool_call>` | Text-level marker | Opens one tool call |
-| `</tool_call>` | Text-level marker | Closes one tool call |
-| `<tool_response>` | Text-level marker | Opens one tool result |
-| `</tool_response>` | Text-level marker | Closes one tool result |
-| `<tools>` … `</tools>` | Plain text | Wrapper around the tool list in the system turn |
-| `<scratch_pad>` … `</scratch_pad>` | Text-level marker (Hermes 3) | GOAP reasoning sections before calls |
-| `<think>` … `</think>` | Not in the Hermes 2 Pro spec | Thinking markers recognized by the ultraworkers scanner (R1-style fine-tunes) |
+| Marker (verbatim)                  | Kind                         | Purpose                                                                       |
+| ---------------------------------- | ---------------------------- | ----------------------------------------------------------------------------- |
+| `<\|im_start\|>`                   | ChatML control token         | Start of a turn; followed immediately by the role name + `\n`                 |
+| `<\|im_end\|>`                     | ChatML control token         | End of a turn                                                                 |
+| `<tool_call>`                      | Text-level marker            | Opens one tool call                                                           |
+| `</tool_call>`                     | Text-level marker            | Closes one tool call                                                          |
+| `<tool_response>`                  | Text-level marker            | Opens one tool result                                                         |
+| `</tool_response>`                 | Text-level marker            | Closes one tool result                                                        |
+| `<tools>` … `</tools>`             | Plain text                   | Wrapper around the tool list in the system turn                               |
+| `<scratch_pad>` … `</scratch_pad>` | Text-level marker (Hermes 3) | GOAP reasoning sections before calls                                          |
+| `<think>` … `</think>`             | Not in the Hermes 2 Pro spec | Thinking markers recognized by the ultraworkers scanner (R1-style fine-tunes) |
 
 Notes on exactness:
 
@@ -142,27 +142,27 @@ The repository's `hermes` dialect is an **owned in-band converter**, registered 
 
 Force the dialect with `tools.format: hermes` or `PI_DIALECT=hermes` (`resolveOwnedDialectFromEnv`, `packages/agent/src/agent-loop.ts:188-208`, consumed at `agent-loop.ts:1774`). The `tools.format` enum (`cfgToolsFormat`, `packages/coding-agent/src/session/context-settings.ts:344-358`; UI labels at `366-384`) offers:
 
-| `tools.format` value | UI label | Meaning |
-|---|---|---|
-| `auto` | Auto | Native tool calls unless the model is marked as not supporting them, then the model-family owned dialect (GLM fallback) |
-| `native` | Native | Provider-native tool calls |
-| `glm` | GLM | GLM-style in-band tool calls |
-| `hermes` | Hermes | This dialect |
-| `kimi` | Kimi | Kimi-style in-band tool calls |
-| `xml` | XML | Generic XML in-band tool calls |
-| `anthropic` | Anthropic | Anthropic-style in-band tool calls |
-| `deepseek` | DeepSeek | DeepSeek-style in-band tool calls |
-| `harmony` | Harmony | Harmony-style in-band tool calls |
-| `qwen3` | Qwen3 | The Qwen3 owned dialect |
-| `gemini` | Gemini | The Gemini owned dialect |
-| `gemma` | Gemma | The Gemma owned dialect |
-| `minimax` | MiniMax | The MiniMax owned dialect |
+| `tools.format` value | UI label  | Meaning                                                                                                                 |
+| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `auto`               | Auto      | Native tool calls unless the model is marked as not supporting them, then the model-family owned dialect (GLM fallback) |
+| `native`             | Native    | Provider-native tool calls                                                                                              |
+| `glm`                | GLM       | GLM-style in-band tool calls                                                                                            |
+| `hermes`             | Hermes    | This dialect                                                                                                            |
+| `kimi`               | Kimi      | Kimi-style in-band tool calls                                                                                           |
+| `xml`                | XML       | Generic XML in-band tool calls                                                                                          |
+| `anthropic`          | Anthropic | Anthropic-style in-band tool calls                                                                                      |
+| `deepseek`           | DeepSeek  | DeepSeek-style in-band tool calls                                                                                       |
+| `harmony`            | Harmony   | Harmony-style in-band tool calls                                                                                        |
+| `qwen3`              | Qwen3     | The Qwen3 owned dialect                                                                                                 |
+| `gemini`             | Gemini    | The Gemini owned dialect                                                                                                |
+| `gemma`              | Gemma     | The Gemma owned dialect                                                                                                 |
+| `minimax`            | MiniMax   | The MiniMax owned dialect                                                                                               |
 
 No model family maps to `hermes` automatically: `preferredDialect` (`packages/catalog/src/identity/dialect.ts:18-42`) never returns it, and `auto`'s fallback is `glm` (`packages/coding-agent/src/sdk.ts:628-633`). The dialect is reachable only by forcing it explicitly.
 
 ### Prompt and catalog
 
-Owned mode appends `renderInbandToolPrompt`'s output (`packages/ai/src/dialect/catalog.ts:24-29`): a `# Tools` header, the `<tools>` block with **one OpenAI-style JSON tool object per line** (`catalog.ts:9-22`, template at `packages/ai/src/dialect/prompt-template.md`), then the Hermes format guide (`packages/ai/src/dialect/hermes.md`). The guide shows the exact `<tool_call>`/`<tool_response>` shapes, requires `arguments` to be a JSON object ("never a stringified JSON"), forbids HTML-escaping argument strings, and instructs the model to write the complete call before stopping and to never emit `<tool_response>` itself. This wrapper is ultraworkers's own — it is not the 2 Pro prose + `FunctionCall` schema sentence quoted above.
+Owned mode appends `renderInbandToolPrompt`'s output (`packages/ai/src/dialect/catalog.ts:24-29`): a `# Tools` header, the `<tools>` block with **one OpenAI-style JSON tool object per line** (`catalog.ts:9-22`, template at `packages/ai/src/dialect/prompt-template.md`), then the Hermes format guide (`packages/ai/src/dialect/hermes.md`). The guide shows the exact `<tool_call>`/`<tool_response>` shapes, requires `arguments` to be a JSON object ("never a stringified JSON"), forbids HTML-escaping argument strings, and instructs the model to write the complete call before stopping and to never emit `<tool_response>` itself. This wrapper is ultraworkers' own — it is not the 2 Pro prose + `FunctionCall` schema sentence quoted above.
 
 ### Rendering
 
@@ -172,7 +172,7 @@ The renderer always writes:
 - results as `<tool_response>\n{bare result text}\n</tool_response>` blocks, newline-delimited (`packages/ai/src/dialect/rendering.ts:5-7`);
 - the transcript as ChatML turns with a **dedicated `tool` result role** (`hermes.ts:186-193` → `renderChatMlTranscript` with `toolResultRole: "tool"`, `rendering.ts:107-136`; turn envelope at `rendering.ts:275-277`). Consecutive tool results coalesce into one run (`rendering.ts:125-129`); `developer` messages render as `system` (`rendering.ts:131`).
 
-Two deliberate divergences from classic Hermes 2 Pro rendering: result bodies are **bare text** (not the `{"name": …, "content": …}` wrapper — the injected format guide shows the model the bare form), and the tool advertisement is ultraworkers's `# Tools` catalog. An assistant turn renders thinking first, then prose, then calls (`rendering.ts:116-123`); stored thinking round-trips as `<think>\n{text}\n</think>` with nested blocks unwrapped and joined by newlines (`hermes.ts:182-184` → `renderDelimitedThinking`, `rendering.ts:250-273`).
+Two deliberate divergences from classic Hermes 2 Pro rendering: result bodies are **bare text** (not the `{"name": …, "content": …}` wrapper — the injected format guide shows the model the bare form), and the tool advertisement is ultraworkers' `# Tools` catalog. An assistant turn renders thinking first, then prose, then calls (`rendering.ts:116-123`); stored thinking round-trips as `<think>\n{text}\n</think>` with nested blocks unwrapped and joined by newlines (`hermes.ts:182-184` → `renderDelimitedThinking`, `rendering.ts:250-273`).
 
 ### Scanning
 
@@ -188,17 +188,17 @@ The owned stream also watches for the model fabricating a `<tool_response>` of i
 
 This is the inverse of the sibling dialects, whose scanners default it ON: `qwen3` (`packages/ai/src/dialect/qwen3.ts:37`), `kimi` (`kimi.ts:45`), `glm` (`glm.ts:87`), `gemini` (`gemini.ts:52`), and `gemma` (`gemma.ts:45`) all use `options.parseThinking !== false`, and `deepseek` uses `options.parseThinking ?? true` (`deepseek.ts:107`). (`anthropic` shares the off-by-default shape, `anthropic.ts:107`.) The divergence is flagged in [#9257](https://github.com/can1357/oh-my-pi/issues/9257) and kept as-is pending a maintainer decision.
 
-ultraworkers's own agent flow is unaffected either way: the owned-tool stream always constructs its scanners with `parseThinking: true` (`owned-stream.ts:200-204`), so under `tools.format: hermes` the agent loop parses `<think>` blocks into thinking events exactly like its siblings. The off-by-default constructor only matters for direct scanner consumers. When parsing is on, thinking events stream incrementally and an unterminated `<think>` block is logically closed on flush (`hermes.ts:48-75`).
+ultraworkers' own agent flow is unaffected either way: the owned-tool stream always constructs its scanners with `parseThinking: true` (`owned-stream.ts:200-204`), so under `tools.format: hermes` the agent loop parses `<think>` blocks into thinking events exactly like its siblings. The off-by-default constructor only matters for direct scanner consumers. When parsing is on, thinking events stream incrementally and an unterminated `<think>` block is logically closed on flush (`hermes.ts:48-75`).
 
 ## Parsing notes & gotchas
 
-- **Arguments object vs string:** on the wire `arguments` is a nested JSON object; the OpenAI layer hands it back as a JSON string. Code that reads the raw stream must parse an object; code that reads the API must `json.loads` the string. Do not double-encode. (ultraworkers's scanner tolerates the stringified form for robustness; its renderer never emits it.)
+- **Arguments object vs string:** on the wire `arguments` is a nested JSON object; the OpenAI layer hands it back as a JSON string. Code that reads the raw stream must parse an object; code that reads the API must `json.loads` the string. Do not double-encode. (ultraworkers' scanner tolerates the stringified form for robustness; its renderer never emits it.)
 - **`<tools>` is not a control token.** Only `<|im_start|>`/`<|im_end|>` delimit turns; everything else is substring matching on decoded text.
 - **Regex/streaming parse:** the vLLM `hermes` parser keys on the literal `<tool_call>`/`</tool_call>` substrings and JSON-decodes the body, buffering from `<tool_call>` until it can incrementally parse `name` then `arguments` — full detail in [qwen3.md](qwen3.md) §Parsing notes.
 - **Result binding:** classic Hermes 2 Pro includes the function name as metadata in the `{"name": …, "content": …}` nesting under a `tool` turn, but call/result binding remains positional because names need not be unique. Qwen3 also relies on ordering, with bare content under a `user` turn.
-- **No thinking channel in the spec:** Hermes 2 Pro's function-calling prompt defines none, and Hermes 3's `<scratch_pad>` GOAP markup is **not** parsed by ultraworkers's hermes scanner (it recognizes only `<tool_call>` and `<think>`, `hermes.ts:15-19`) — scratchpad text stays visible. R1-style `<think>` blocks are handled (see the thinking default above).
+- **No thinking channel in the spec:** Hermes 2 Pro's function-calling prompt defines none, and Hermes 3's `<scratch_pad>` GOAP markup is **not** parsed by ultraworkers' hermes scanner (it recognizes only `<tool_call>` and `<think>`, `hermes.ts:15-19`) — scratchpad text stays visible. R1-style `<think>` blocks are handled (see the thinking default above).
 - **History rerender:** ultraworkers re-renders stored `<think>` blocks for **every** assistant turn (`rendering.ts:116-123`), unlike Qwen3's chat template, which trims reasoning from all but the trailing assistant turns — keep that asymmetry in mind when comparing transcripts across the two dialects.
-- **Robustness:** the format is prompt-driven, so malformed output is possible (truncated JSON, missing `</tool_call>`, prose mixed into a call, stringified arguments). ultraworkers's scanner consumes a recognized block and emits no call when the outer JSON/name cannot be recovered; EOF mid-call leaves a started call with empty arguments (see Scanning).
+- **Robustness:** the format is prompt-driven, so malformed output is possible (truncated JSON, missing `</tool_call>`, prose mixed into a call, stringified arguments). ultraworkers' scanner consumes a recognized block and emits no call when the outer JSON/name cannot be recovered; EOF mid-call leaves a started call with empty arguments (see Scanning).
 
 ## Sources
 

@@ -40,7 +40,7 @@
  *
  * ## Not ported
  *
- * senpi's third transform, `clearOldToolResults`, is ultraworkers's `pruneToolOutputs`
+ * senpi's third transform, `clearOldToolResults`, is ultraworkers' `pruneToolOutputs`
  * already. Porting it would give ultraworkers two passes blanking the same results.
  *
  * ## How an extension reaches this

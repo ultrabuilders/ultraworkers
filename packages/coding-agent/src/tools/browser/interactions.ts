@@ -36,7 +36,7 @@ export interface ScrollOptions {
 	selector?: string;
 }
 
-/** A browser element handle with ultraworkers's additional interaction methods. */
+/** A browser element handle with ultraworkers' additional interaction methods. */
 export type InteractionHandle = ElementHandle & {
 	dblclick(): Promise<void>;
 	check(): Promise<void>;

@@ -990,7 +990,7 @@ export class AssistantMessageComponent extends Container {
 		return card({ role: "ultraworkers.error", tone: "error", key: "error" }, children);
 	}
 
-	/** Error frame action clicks: omp's own retry, clipboard and model-picker paths. */
+	/** Error frame action clicks: ultraworkers' own retry, clipboard and model-picker paths. */
 	#handleErrorAction(act: string): void {
 		if (act === "retry") runTranscriptAction({ act: "retry" });
 		else if (act === "switch-model") runTranscriptAction({ act: "switch-model" });

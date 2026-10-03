@@ -1397,7 +1397,7 @@ function deepinfraTags(metadata: Record<string, unknown>): readonly string[] {
  * Map one DeepInfra catalog entry to a chat model spec. Non-`chat` entries
  * (`tts`, `stt`, `embed`, `image-gen`, `video-gen`) are dropped — those
  * surfaces are served by dedicated tool backends, not the chat catalog.
- * DeepInfra reports token prices in USD per 1M tokens — ultraworkers's `ModelCost`
+ * DeepInfra reports token prices in USD per 1M tokens — ultraworkers' `ModelCost`
  * unit, used verbatim. A bundled reference (when the generated catalog has
  * one) is spread first so compat/tooling metadata can contribute, but the
  * live metadata always wins for limits, pricing, and modalities.
@@ -3054,7 +3054,7 @@ function openCodeModelManagerOptions(
 					apiKey,
 					// Live discovery hits the OpenCode gateway outside any
 					// conversation: attribute with the stable install id
-					// (x-opencode-session required from 09/06) and ultraworkers's UA
+					// (x-opencode-session required from 09/06) and ultraworkers' UA
 					// instead of Bun's default.
 					headers: { "User-Agent": USER_AGENT, "x-opencode-session": getInstallId() },
 					mapModel: (entry, defaults) => {

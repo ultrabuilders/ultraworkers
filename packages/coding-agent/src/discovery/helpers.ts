@@ -428,7 +428,7 @@ export interface ScanSkillsFromDirOptions {
 	includeSelf?: boolean;
 	/**
 	 * Registry/CLI origin of the plugin root supplying these skills, forwarded
-	 * to {@link SourceMeta.origin} so user-scope gating can tell ultraworkers's own
+	 * to {@link SourceMeta.origin} so user-scope gating can tell ultraworkers' own
 	 * installs (`ultraworkers`, `plugin-dir`) from the foreign Claude tree (`claude`).
 	 */
 	origin?: string;

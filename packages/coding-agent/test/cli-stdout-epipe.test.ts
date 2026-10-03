@@ -26,7 +26,7 @@ it.skipIf(process.platform === "win32")(
 		try {
 			// `| true` closes the read end of the pipe immediately, so `ultraworkers`'s help
 			// write hits a broken pipe regardless of output size. PIPESTATUS[0] is
-			// the middle command's (ultraworkers's) exit code, not the pipeline's.
+			// the middle command's (ultraworkers') exit code, not the pipeline's.
 			const script = `"${process.execPath}" "${cliEntry}" --help 2>"${errPath}" | true; echo "\${PIPESTATUS[0]}"`;
 			const proc = Bun.spawn(["bash", "-c", script], {
 				cwd: repoRoot,

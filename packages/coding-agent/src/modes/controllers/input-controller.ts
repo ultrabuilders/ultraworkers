@@ -1535,7 +1535,7 @@ export class InputController {
 			// pid=0 (foreground process group, not just our PID): ultraworkers is not
 			// always the shell's direct child. Package-manager launchers (`npx`,
 			// `pnpm exec`, `bunx`, …) wait on the real CLI from a parent shim
-			// that shares ultraworkers's process group, and a `ultraworkers … | tee log` style
+			// that shares ultraworkers' process group, and a `ultraworkers … | tee log` style
 			// pipeline puts a sibling foreground job member in the same group
 			// too. The shell sees the job as stopped only when its direct
 			// child / pipeline leader is stopped, so suspending only our PID

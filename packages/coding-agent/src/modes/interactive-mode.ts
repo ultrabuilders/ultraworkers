@@ -2409,7 +2409,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		);
 		// The preset may have switched before this listener existed.
 		this.#refreshSlashCommandIcons();
-		// A confirmed Glyph Protocol handshake means ultraworkers's own icons render in
+		// A confirmed Glyph Protocol handshake means ultraworkers' own icons render in
 		// this terminal without a Nerd Font, so the default `unicode` preset is
 		// upgraded to `nerd` for this session. The persisted setting is left
 		// alone: it travels to terminals (ssh, tmux) where the upgrade would

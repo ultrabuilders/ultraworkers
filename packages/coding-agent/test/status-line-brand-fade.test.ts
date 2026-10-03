@@ -1,6 +1,6 @@
 /**
  * Contract for the `pi` brand segment's working transition (port of rust
- * ultraworkers's status-band brand fade): idle renders the ultraworkers icon in the dim color;
+ * ultraworkers' status-band brand fade): idle renders the ultraworkers icon in the dim color;
  * a turn start swaps the glyph to a spinner + turn timer whose foreground
  * fades dim → accent over 450ms (never an instant color swap), and a turn end
  * fades back from the color currently on screen. Regression: the first cut of

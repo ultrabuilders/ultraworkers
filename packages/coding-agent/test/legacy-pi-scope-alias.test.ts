@@ -74,7 +74,7 @@ describe("the ultraworkers scope alias", () => {
 	test("does not admit an unknown scope just because the basename matches", async () => {
 		// The mirror image. The package list is shared across every accepted scope,
 		// so the scope half of the filter is what stops a third party from claiming
-		// `@anything/pi-utils` and inheriting ultraworkers's bundled copy of it.
+		// `@anything/pi-utils` and inheriting ultraworkers' bundled copy of it.
 		const rewritten = await rewriteSpecifier("@evil/pi-utils");
 
 		expect(rewritten).toContain("@evil/pi-utils");

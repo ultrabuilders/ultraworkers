@@ -62,7 +62,7 @@ export interface Config {
 	thinking: string | null;
 	/** Extra args forwarded verbatim to the in-container ultraworkers CLI invocation (repeatable). */
 	agentArgs: string[];
-	/** ultraworkers tool allowlist (`--tools`); `null` keeps ultraworkers's default tool set. */
+	/** ultraworkers tool allowlist (`--tools`); `null` keeps ultraworkers' default tool set. */
 	tools: string[] | null;
 	/** Extra ultraworkers settings written into the container config (dotted key → JSON value). */
 	settings: Record<string, unknown>;
@@ -1261,7 +1261,7 @@ const PI_UPSTREAM_SYSTEM_PROMPT = path.join(AGENT_DIR, "pi-upstream-system.md");
 /**
  * Catalog facts for each `provider/model` the upstream agent needs in its
  * `models.json`: wire api, limits, modalities and cost, so its usage accounting
- * matches ultraworkers's for the same model.
+ * matches ultraworkers' for the same model.
  */
 function upstreamModelSpecs(cfg: Config): Array<Record<string, unknown>> {
 	return cfg.models.map(spec => {

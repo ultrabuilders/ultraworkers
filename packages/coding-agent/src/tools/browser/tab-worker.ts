@@ -491,7 +491,7 @@ function asElementHandle(handle: unknown): ElementHandle | null {
 	return handle ? (handle as ElementHandle) : null;
 }
 
-/** ElementHandle enriched with ultraworkers's additional direct interaction and query methods. */
+/** ElementHandle enriched with ultraworkers' additional direct interaction and query methods. */
 export type ActionableHandle = InteractionHandle & ElementQueryHelpers & { fill(value: string): Promise<void> };
 
 /**

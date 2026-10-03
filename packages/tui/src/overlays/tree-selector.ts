@@ -701,7 +701,7 @@ class TreeList implements Component {
 
 	/**
 	 * The visible entries as a native `list` keyed `"list"`, items keyed by
-	 * entry id. Selection stays ultraworkers's; the terminal scrolls and virtualizes.
+	 * entry id. Selection stays ultraworkers'; the terminal scrolls and virtualizes.
 	 * Branch heads carry a `branch` icon and the active path an accent bullet
 	 * instead of drawn tree connectors.
 	 */

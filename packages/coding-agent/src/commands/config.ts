@@ -49,13 +49,13 @@ export default class Config extends Command {
 			flags: {
 				json: flags.json,
 				apply: flags.apply,
-				// Both positions, because both are real and they are not alternatives:
-				// the documented spelling puts `--config` ahead of the command, where
-				// the runner strips it and hands it over on `this.config`, while a
-				// command-position flag is parsed here. Order follows
-				// `docs/config-usage.md`: `PI_CONFIG_FILES` first, then the `--config`
-				// files in the order they were typed, so a later overlay still wins.
-				config: [...(this.config.configFiles ?? []), ...(flags.config ?? [])],
+				// Only the command-position spelling. The documented one — `ultraworkers
+				// --config <path> config get <key>`, ahead of the command token — is
+				// stripped by `resolveCliArgv` and recorded by the runner through
+				// `setGlobalConfigFiles`, which every settings instance reads. Both
+				// spellings are `--config` overlays and are merged in typed order by
+				// the Settings constructor, so a later one still wins.
+				config: flags.config,
 			},
 		};
 

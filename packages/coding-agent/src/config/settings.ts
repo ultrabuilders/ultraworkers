@@ -670,6 +670,11 @@ export class Settings {
 		this.#agentDir = path.normalize(options.agentDir ?? getAgentDir());
 		this.#configPath = options.inMemory ? null : path.join(this.#agentDir, MAIN_CONFIG_FILENAMES[0]);
 		const configFiles = process.env.PI_CONFIG_FILES?.split(path.delimiter).filter(Boolean) ?? [];
+		// Global `--config` overlays sit between the environment variable and this
+		// call's own `configFiles`, because that is the order they were typed:
+		// `docs/config-usage.md` has `PI_CONFIG_FILES` loading before the `--config`
+		// files, and a command-position `--config` is a `--config` file like any other.
+		configFiles.push(...globalConfigFiles);
 		if (options.configFiles) configFiles.push(...options.configFiles);
 		this.#configFiles = configFiles.map(file => path.resolve(this.#cwd, expandTilde(file)));
 		this.#persist = !options.inMemory && options.readOnly !== true;
@@ -3839,6 +3844,40 @@ export function withActiveSettings<T>(instance: Settings | undefined, fn: () => 
 
 let globalInstance: Settings | null = null;
 let globalInstancePromise: Promise<Settings> | null = null;
+
+/**
+ * Overlays requested on the global flag surface (`ultraworkers --config <path>`),
+ * before the command token.
+ *
+ * The CLI runner removes those flags from the argv a subcommand parses — a command
+ * that declares no `--config` rejects the token outright (#8891) — so the value
+ * cannot reach {@link Settings} through `SettingsOptions` at the call sites. About
+ * twenty of them under `src/cli/` each initialize settings with their own `cwd`, and
+ * threading a parameter through every one to carry a value they all share would put
+ * the same overlay in twenty places to forget.
+ *
+ * Hence one place, set once before dispatch, read by every instance. The
+ * alternative — an explicit field threaded from the runner — was built first and is
+ * exactly this problem with more code: it fixed one call site out of twenty and
+ * needed the other nineteen edited individually.
+ *
+ * Ambient by design, like `PI_CONFIG_FILES` on the line above it and like
+ * {@link getProjectDir}: these describe the launch, not any one command.
+ */
+let globalConfigFiles: readonly string[] = [];
+
+/**
+ * Record the `--config` overlays this launch asked for. Called by the CLI runner
+ * before it dispatches a command, so every settings instance built afterwards
+ * loads them. A later call replaces the list rather than adding to it, because a
+ * runner runs once per process and an accumulating setter would make a second
+ * call's overlays silently apply to a run that never asked for them.
+ *
+ * @internal
+ */
+export function setGlobalConfigFiles(files: readonly string[]): void {
+	globalConfigFiles = [...files];
+}
 let boundSettingsInstance: Settings | null = null;
 let boundSettingsMethods = new Map<PropertyKey, unknown>();
 

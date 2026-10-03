@@ -643,6 +643,17 @@ export async function runCli(argv: string[]): Promise<void> {
 			process.exitCode = 1;
 			return;
 		}
+		// A deliberate lazy load (see `bun run check:await-import`, which exempts
+		// this file under AGENTS.md's `entryDispatch` rule): the settings graph stays
+		// out of the entry until a `--config` overlay actually exists. Every verb that
+		// reads settings initializes its own instance with its own `cwd`, so the
+		// overlay is recorded once here rather than threaded through twenty call sites
+		// that would each have to remember it — and skipped entirely on the common run
+		// where no overlay was asked for.
+		if (resolved.configFiles !== undefined && resolved.configFiles.length > 0) {
+			const { setGlobalConfigFiles } = await import("./config/settings");
+			setGlobalConfigFiles(resolved.configFiles);
+		}
 		runningCommand = resolved.argv[0];
 		await run({
 			bin: APP_NAME,
@@ -656,12 +667,6 @@ export async function runCli(argv: string[]): Promise<void> {
 			// what makes a verb registered under a built-in name inert — which is why
 			// `registerSubcommand` refuses those registrations outright.
 			commands: [...commands, ...extensionCommandEntries()],
-			// `--config` sits on the global flag surface, ahead of the command token,
-			// and is stripped for any command that does not share the launch flag
-			// surface. Handing it over as data is what keeps `ultraworkers --config
-			// <path> config get <key>` — the spelling `docs/config-usage.md` documents —
-			// reaching the settings a subcommand initializes.
-			configFiles: resolved.configFiles,
 			metadataHelp: showHelp,
 		});
 	} finally {

@@ -169,6 +169,55 @@ describe("commitStagedPaths", () => {
 			await fs.promises.rm(dir, { force: true, recursive: true });
 		}
 	});
+
+	it("commits a staged deletion instead of resurrecting the file", async () => {
+		// A deletion leaves NO index entry — `git rm` removes the row — so a tool that
+		// enumerates staged entries cannot see one. The tree is built with `read-tree
+		// HEAD`, which puts the file back, so the commit lands resurrecting a file the
+		// caller deleted while reporting only the paths it did commit. Deletions are not
+		// a rare shape here: this tree's last 200 commits delete 59 tracked source files.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "keep.txt", "keep v1\n");
+			await write(dir, "gone.txt", "should not survive\n");
+			await run(["add", "keep.txt", "gone.txt"], dir);
+			await run(["commit", "-q", "-m", "add both"], dir);
+
+			await write(dir, "keep.txt", "keep v2\n");
+			await run(["add", "keep.txt"], dir);
+			await run(["rm", "-q", "gone.txt"], dir);
+
+			const result = await commitStagedPaths(["keep.txt", "gone.txt"], "modify and delete", { cwd: dir });
+
+			// The deletion is reported as committed — it is part of what the caller staged.
+			expect([...result.committed].sort()).toEqual(["gone.txt", "keep.txt"]);
+			const inHead = (await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).split("\n").sort();
+			expect(inHead).toEqual(["keep.txt", "seed.txt"]);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a deletion that is the only staged change, rather than reporting nothing staged", async () => {
+		// The single-deletion shape reaches the emptiness check first, so it is a separate
+		// failure: the tool reported "nothing is staged" for a path whose only change was
+		// to stop existing, and told the caller to stage lines for a file that is gone.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "gone.txt", "should not survive\n");
+			await run(["add", "gone.txt"], dir);
+			await run(["commit", "-q", "-m", "add gone"], dir);
+			await run(["rm", "-q", "gone.txt"], dir);
+
+			const result = await commitStagedPaths(["gone.txt"], "delete only", { cwd: dir });
+
+			expect(result.wroteCommit).toBe(true);
+			expect(result.committed).toEqual(["gone.txt"]);
+			expect(await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).toBe("seed.txt");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
 });
 
 describe("parseArgs", () => {

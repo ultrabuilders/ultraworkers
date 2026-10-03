@@ -35,6 +35,10 @@ export interface ScriptTestClassification {
 
 /** Files CI executes. */
 export const RUN: readonly ScriptTestClassification[] = [
+	// The commit-safety tool on a shared tree. Every assertion here runs against a real
+	// `.git/index` in a temp repo, because the property IS the index: a mock would only
+	// prove the function was called.
+	{ file: "commit-scoped.test.ts", reason: "" },
 	{ file: "ci-failure-extract.test.ts", reason: "" },
 	{ file: "ci-release-build-binaries.test.ts", reason: "" },
 	{ file: "ci-release-checksums.test.ts", reason: "" },
@@ -52,6 +56,13 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "merge-pr.test.ts", reason: "" },
 	{ file: "musl-release.test.ts", reason: "" },
 	{ file: "release.test.ts", reason: "" },
+	// The other two stages of the same shared-tree commit guard: `stage-files` stages a
+	// whole file you own, `stage-lines` stages only your lines out of one a peer is also
+	// editing, and `diff-row-moves` checks the row-move diff they share. Ungated, the three
+	// ways this tree loses a peer's commit are all unguarded.
+	{ file: "stage-files.test.ts", reason: "" },
+	{ file: "rename/stage-lines.test.ts", reason: "" },
+	{ file: "rename/diff-row-moves.test.ts", reason: "" },
 	// Pins the local render path only — `rewrite-changelog`'s model call is not
 	// exercised, so this needs no credentials and no network.
 	{ file: "rewrite-changelog.test.ts", reason: "" },

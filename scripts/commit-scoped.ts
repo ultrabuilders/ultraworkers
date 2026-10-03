@@ -129,6 +129,26 @@ async function stagedEntries(files: string[], cwd: string): Promise<IndexEntry[]
 	return entries;
 }
 
+/**
+ * The paths among `files` that HEAD records and the index no longer does.
+ *
+ * A deletion has no index entry: `git rm` removes the row, so `ls-files -s` cannot
+ * report one and the deleted path is indistinguishable from a path that was never
+ * touched. Enumerating only staged entries therefore drops the deletion — the tree is
+ * built with `read-tree HEAD`, which puts the file BACK, and the commit lands
+ * reporting only the paths it did commit.
+ *
+ * Subtracting the two sets is what makes this correct, because neither alone is the
+ * answer: `ls-files -s` also lists CLEAN tracked paths (the caller filters those out
+ * by comparing blobs), and `ls-tree HEAD` also lists untouched ones. Only a path in
+ * HEAD and absent from the index was actually removed.
+ */
+async function deletedPaths(head: string, files: string[], indexed: readonly string[], cwd: string): Promise<string[]> {
+	const inHead = await git(["ls-tree", "--name-only", "-r", head, "--", ...files], cwd);
+	const present = new Set(indexed);
+	return inHead.split("\n").filter(line => line.trim() !== "" && !present.has(line));
+}
+
 /** Parse argv for the CLI wrapper. Kept separate so the shapes are testable. */
 export function parseArgs(argv: string[]): { files: string[]; message: string; dryRun: boolean } {
 	let dryRun = false;
@@ -193,7 +213,16 @@ export async function commitStagedPaths(
 		if (headBlob === entry.blob) continue;
 		entries.push(entry);
 	}
-	if (entries.length === 0) {
+	// Resolved BEFORE the emptiness check, because a deletion produces no entry and
+	// would otherwise read as "nothing is staged" — telling the caller to stage lines
+	// for a file that no longer exists.
+	const deleted = await deletedPaths(
+		head,
+		files,
+		allEntries.map(e => e.file),
+		cwd,
+	);
+	if (entries.length === 0 && deleted.length === 0) {
 		throw new Error(
 			`nothing is staged for ${files.join(", ")} — stage the lines first (scripts/rename/stage-lines.ts)`,
 		);
@@ -213,13 +242,20 @@ export async function commitStagedPaths(
 				scopedEnv,
 			);
 		}
+		// `read-tree` above restored every deleted path, so each one has to be removed
+		// again or the commit would resurrect the file the caller just deleted.
+		for (const file of deleted) {
+			await git(["update-index", "--force-remove", "--", file], cwd, scopedEnv);
+		}
 
-		// Every entry above differs from the blob HEAD records for its path, so this tree
-		// cannot equal HEAD's and no separate empty-commit check is needed here.
+		// Every entry above differs from the blob HEAD records for its path, and each
+		// deletion removes a path HEAD has, so this tree cannot equal HEAD's and no
+		// separate empty-commit check is needed here.
 		const tree = (await git(["write-tree"], cwd, scopedEnv)).trim();
+		const committed = [...entries.map(e => e.file), ...deleted];
 
 		if (dryRun) {
-			return { commit: "", base: head, tree, committed: entries.map(e => e.file), wroteCommit: false };
+			return { commit: "", base: head, tree, committed, wroteCommit: false };
 		}
 
 		const messageFile = path.join(scratchDir, "message");
@@ -237,7 +273,7 @@ export async function commitStagedPaths(
 			);
 		}
 
-		return { commit, base: head, tree, committed: entries.map(e => e.file), wroteCommit: true };
+		return { commit, base: head, tree, committed, wroteCommit: true };
 	} finally {
 		await fs.promises.rm(scratchDir, { force: true, recursive: true });
 	}

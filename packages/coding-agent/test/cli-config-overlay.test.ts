@@ -190,4 +190,32 @@ describe("a --config overlay reaches the commands that read settings", () => {
 			});
 		}
 	}, 120_000);
+
+	it("does not rewrite a legitimate path that ends in whitespace", async () => {
+		// The blank-operand fix filters this list. A first version normalised the entries
+		// as it filtered -- `configFiles.map(file => file.trim())` -- which silently
+		// destroyed a legal POSIX filename whose LAST character is a space: the file
+		// `trail.yml ` exists, and `trim()` yields `trail.yml`, which does not. It failed
+		// as a missing overlay, a long way from the flag that caused it.
+		//
+		// So the contract is narrower than "ignore blanks": blankness is a property to
+		// TEST FOR, not to normalise away. A path naming a file the user can see in their
+		// own directory listing has to reach the reader exactly as typed.
+		//
+		// Whitespace in the middle is already safe -- `a b.yml` never had its interior
+		// touched -- so the trailing character is the only interesting case.
+		const dir = TempDir.createSync("@ultraworkers-config-overlay-trailing-");
+		const trailing = path.join(dir.path(), "trail.yml ");
+		fs.writeFileSync(trailing, OVERLAY);
+
+		try {
+			const result = await runArgv(["--config", trailing, "config", "get", "theme.dark"]);
+			expect({ exitCode: result.exitCode, stdout: result.stdout.trim() }).toEqual({
+				exitCode: 0,
+				stdout: "overlay-applied",
+			});
+		} finally {
+			dir[Symbol.dispose]?.();
+		}
+	}, 120_000);
 });

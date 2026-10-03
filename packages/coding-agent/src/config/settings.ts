@@ -677,20 +677,24 @@ export class Settings {
 		configFiles.push(...globalConfigFiles);
 		if (options.configFiles) configFiles.push(...options.configFiles);
 		this.#configFiles = configFiles
-			.map(file => file.trim())
 			// A blank operand is not a path. `--config=` parses to `""`, and `path.resolve`
 			// turns it into the cwd DIRECTORY, which the strict overlay reader then rejects
 			// with "Directories cannot be read like files" — a hard error about a file the
 			// user never named.
 			//
 			// Filtered HERE, at the one line every source passes through, rather than at
-			// each producer. Filtering upstream covers only the producers you remembered:
-			// `PI_CONFIG_FILES` has always filtered its own entries (line above), the
-			// launch-flag channel re-arms on every invoke, and a command-position
-			// `--config` never reaches the launch-flag parser at all — it arrives straight
-			// in `options.configFiles`. Two of the three are fixed by the callers; only
-			// this line is fixed for all three.
-			.filter(file => file.length > 0)
+			// each producer. Filtering upstream covers only the producers you remembered,
+			// and there are five, not the three this originally claimed: `PI_CONFIG_FILES`
+			// (line above), the launch-flag channel (re-arms on every invoke), and three
+			// call-sites passing `options.configFiles` — `main.ts`, `cli/models-cli.ts`, and
+			// `cli/config-cli.ts`. Only the first two are reachable from the launch-flag
+			// parser; the last two never touch it.
+			//
+			// The test trims but the VALUE is passed through untouched. Trimming the value
+			// instead would reject a legal POSIX filename ending in whitespace:
+			// `/tmp/x/trail.yml ` exists, and `trim()` turns it into `/tmp/x/trail.yml`,
+			// which does not. Blankness is a property to test for, not to normalise away.
+			.filter(file => file.trim().length > 0)
 			.map(file => path.resolve(this.#cwd, expandTilde(file)));
 		this.#persist = !options.inMemory && options.readOnly !== true;
 		liveSettingsInstances.add(new WeakRef(this));

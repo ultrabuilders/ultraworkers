@@ -30,6 +30,7 @@ import {
 	parseTable,
 	requiresKeepRefs,
 	tallyByRule,
+	checkPreWithCoverage,
 } from "./check-disposition";
 
 const HEADER = "scope\tpath\thits\tdisposition\treason\tkeep_refs";
@@ -855,5 +856,106 @@ describe("findUnreconciledPinned", () => {
 		// throw ENOENT and take the whole gate down instead of the one path that is wrong.
 		const found = await findUnreconciledPinned(root, rows);
 		expect(found.map(u => u.path)).toEqual(["present.ts"]);
+	});
+});
+
+/**
+ * `stale-row`'s coverage, which its own silence used to hide.
+ *
+ * The failure this defends against is not a wrong count — it is a count that
+ * could be wrong without anyone noticing. `tallyByRule` only walks rules that
+ * HAVE violations, so a rule that finds nothing prints no line at all. Measured
+ * 2026-10-03 at `403cd0e2dc`: `stale-row` reported zero violations, the summary
+ * said nothing about it, and a reader seeing two other rules printed could
+ * reasonably conclude it had passed, did not exist, or had never been run.
+ *
+ * Two distinct claims, so two rows. Each fails if the number is faked.
+ */
+describe("the coverage stale-row's silence used to hide", () => {
+	/**
+	 * A file carrying `__omp_worker_` and nothing the pinned expression matches.
+	 *
+	 * This is the ONLY shape the `stale-row` rule ever examines, and that is not an
+	 * accident of the fixture — it is what the two guards produce. `keep-path` is a
+	 * literal-counted class too, but every file holding `".omp"` also matches
+	 * PINNED (which was widened on 2026-10-03 to admit a leading `.`), so guard 1
+	 * skips those paths before any counting. Verified against the gate's own
+	 * `countClass` and `PINNED`, not by reading the regex: measured at
+	 * `403cd0e2dc`, 1 path examined of 644, and that 1 is a `keep-worker-selector`
+	 * row. Declared here rather than borrowed from the `findUnreconciledPinned`
+	 * block, whose copy is a `const` inside its own `describe`.
+	 */
+	const CARRIES_SELECTOR = `const w = "__omp_worker_stats_sync";\n`;
+	/**
+	 * The number is computed, not declared.
+	 *
+	 * A fixture chosen so the two numbers DIFFER is what makes this a contract:
+	 * a hard-coded "1 of 644" — the real repository's values — would fail here,
+	 * and so would one that reported the whole table as examined.
+	 *
+	 * The tree holds one path per way out of the rule, and each escapes by a
+	 * DIFFERENT guard, so a counter that conflated them would fail:
+	 *   - `survivor.ts`  — examined, and still carries its literal ⇒ no violation
+	 *   - `emptied.ts`   — examined, and carries none ⇒ `stale-row`
+	 *   - `selector.ts`  — examined; the only literal class whose files do not
+	 *                     also match PINNED, so it is the only shape that reaches
+	 *                     the counter at all
+	 *   - `pinned.ts`    — pinned-counted row, so guard 2 skips it unread
+	 *   - `has-hit.ts`   — a `keep-path` file, which matches PINNED, so guard 1
+	 *                     skips it even though its class is literal-counted
+	 */
+	it("counts only the paths the rule actually opened a file for", async () => {
+		const root = await tree({
+			"survivor.ts": CARRIES_SELECTOR,
+			"emptied.ts": "const unrelated = 1;\n",
+			"selector.ts": CARRIES_SELECTOR,
+			"pinned.ts": 'const brand = "omp";\n',
+			"has-hit.ts": 'const dir = ".omp";\n',
+		});
+		const rows = [
+			row_("survivor.ts", 1, "keep-worker-selector", "d", "W1:d"),
+			row_("emptied.ts", 1, "keep-worker-selector", "d", "W1:d"),
+			row_("selector.ts", 1, "keep-worker-selector", "d", "W1:d"),
+			row_("pinned.ts", 1, "rename", "d"),
+			row_("has-hit.ts", 1, "keep-path", "d", "W1:d"),
+		];
+
+		const { violations, coverage } = await checkPreWithCoverage(root, rows);
+
+		// The numerator: the three paths that got past both guards and were opened.
+		// `pinned.ts` (no literal of its own) and `has-hit.ts` (matches PINNED) are
+		// NOT in it — counting either would overstate the reach, and they are
+		// unreached for two different reasons, which is the distinction worth
+		// pinning.
+		expect(coverage.staleRow.examined).toBe(3);
+		// The denominator: every path the table says something about, including the
+		// two the rule cannot look at. That ratio is the whole point of the number.
+		expect(coverage.staleRow.of).toBe(5);
+		expect(coverage.staleRow.examined).toBeLessThan(coverage.staleRow.of);
+
+		// The verdict is unchanged by the reporting: only the path that lost its
+		// literal is stale. The two survivors were examined and passed.
+		expect(violations.filter(v => v.rule === "stale-row").map(v => v.detail)).toEqual(["emptied.ts"]);
+	});
+
+	/**
+	 * The wrapper every other consumer calls is the same function's output.
+	 *
+	 * `check-disposition-ratchet.ts` calls `checkPre`, so the two shapes have to
+	 * agree on violations or the gate and its own ratchet would measure different
+	 * things. Asserting equality on the sorted set — not just the length — is what
+	 * makes this a contract rather than a count.
+	 */
+	it("leaves checkPre's violations identical, since the ratchet calls that one", async () => {
+		const root = await tree({ "a.ts": CARRIES_SELECTOR, "b.ts": 'const brand = "omp";\n' });
+		const rows = [row_("a.ts", 1, "keep-path", "d", "W1:d"), row_("b.ts", 1, "rename", "d")];
+
+		const viaOld = await checkPre(root, rows);
+		const viaNew = await checkPreWithCoverage(root, rows);
+
+		expect(viaNew.violations.length).toBe(viaOld.length);
+		expect(viaNew.violations.map(v => `${v.rule} ${v.detail}`).sort()).toEqual(
+			viaOld.map(v => `${v.rule} ${v.detail}`).sort(),
+		);
 	});
 });

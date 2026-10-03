@@ -1011,7 +1011,44 @@ export function tallyByRule(
  * rows accumulate. Both directions fail.
  */
 export async function checkPre(root: string, rows: readonly Row[]): Promise<readonly Violation[]> {
+	return (await checkPreWithCoverage(root, rows)).violations;
+}
+
+/**
+ * How much of the table the `stale-row` rule actually reached.
+ *
+ * `examined` is the count of paths where the rule reached its own content-based
+ * decision — it found the file, and the group carried at least one
+ * literal-counted row, so `countClass` had something to count. A path that fails
+ * either test is skipped by a `continue` and is NOT examined; it is also not
+ * reported, which is what makes a zero here unreadable on its own.
+ *
+ * A path whose file is GONE is a deliberate exception: it is reported as
+ * `stale-row` without needing a counter, so it counts as examined too — the rule
+ * reached a verdict about it.
+ *
+ * Measured 2026-10-03 at `403cd0e2dc`: 1 examined of 644. The rule's own comment
+ * records that it is "structurally blind" to live-but-miscounted rows; this
+ * number is that blindness made countable, per run.
+ */
+export interface PreCoverage {
+	readonly staleRow: { readonly examined: number; readonly of: number };
+}
+
+/**
+ * `checkPre` plus the coverage its silence hides.
+ *
+ * `checkPre` keeps its signature and stays the thing every other caller uses
+ * (`check-disposition-ratchet.ts` calls it directly) — this exists so the
+ * summary can print what the rule skipped, without changing what any consumer
+ * receives.
+ */
+export async function checkPreWithCoverage(
+	root: string,
+	rows: readonly Row[],
+): Promise<{ violations: readonly Violation[]; coverage: PreCoverage }> {
 	const violations: Violation[] = [];
+	let staleRowExamined = 0;
 	const paths = await hitPaths(root);
 	const byPath = new Map<string, Row[]>();
 	for (const row of rows) {
@@ -1060,9 +1097,18 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 			// counter, and a row pointing at nothing is wrong whoever wrote it.
 			const literalRows = group.filter(row => classMatcher(row.disposition).literal !== undefined);
 			if (literalRows.length === 0) continue;
+			// Past this line the rule has opened the file and has a literal-counted row
+			// to test it against, so it reaches a verdict either way — that is what
+			// "examined" counts, and it is counted BEFORE the verdict is applied so a
+			// row that turns out still-valid is not silently excluded from coverage.
+			staleRowExamined++;
 			const text = await handle.text();
 			const stillCarriesIt = literalRows.some(row => countClass(text, row.disposition) > 0);
 			if (stillCarriesIt) continue;
+		} else {
+			// GONE: reported for every class without needing a counter, and still a
+			// verdict this rule reached on its own.
+			staleRowExamined++;
 		}
 		violations.push({ rule: "stale-row", detail: filePath });
 	}
@@ -1127,7 +1173,10 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 			});
 		}
 	}
-	return violations;
+	// `of` is every path the table says something about — the denominator that makes
+	// `examined` legible. Counting rows instead would double-count a path holding
+	// several rows and understate the rule's blind spot.
+	return { violations, coverage: { staleRow: { examined: staleRowExamined, of: byPath.size } } };
 }
 
 /**
@@ -1268,7 +1317,8 @@ async function main(): Promise<void> {
 	}
 
 	const { rows, problems } = parseTable(await file.text());
-	const violations = stage === "pre" ? await checkPre(root, rows) : await checkPost(root, rows);
+	const pre = stage === "pre" ? await checkPreWithCoverage(root, rows) : null;
+	const violations = pre ? pre.violations : await checkPost(root, rows);
 
 	for (const problem of problems) console.log(`FAIL parse ${problem}`);
 	for (const violation of violations) console.log(`FAIL ${violation.rule} ${violation.detail}`);
@@ -1280,6 +1330,31 @@ async function main(): Promise<void> {
 	else {
 		for (const [rule, count] of tally) console.log(`disposition(${stage}): ${rule} = ${count}`);
 		console.log(`disposition(${stage}): ${violations.length + problems.length} failures over ${rows.length} rows`);
+	}
+	// The rule whose absence reads as a pass.
+	//
+	// `tallyByRule` walks rules that HAVE violations, so a rule that found nothing
+	// prints NO line at all — not a line reading 0. Measured 2026-10-03: `stale-row`
+	// reported zero violations, so the summary said nothing about it, and a reader
+	// seeing `hits-imbalance = N` and `missing-row = N` could reasonably conclude the
+	// rule did not exist, had passed, or had never been run. All three are wrong: it
+	// ran, and its own comment records that it is structurally blind to the one
+	// population that matters most.
+	//
+	// Silence and a clean result are indistinguishable here, so the number is printed
+	// unconditionally with the denominator that makes it mean something. Both figures
+	// are computed per run; neither is a constant, because a constant here would
+	// freeze the exact number this exists to keep honest.
+	//
+	// The wording deliberately avoids naming any other rule. `args.test.ts` asserts a
+	// refused flag prints no `missing-row`, so putting that word here would make an
+	// unrelated argument test red for a reason no reader could reconstruct.
+	if (pre) {
+		const { examined, of } = pre.coverage.staleRow;
+		console.log(
+			`disposition(${stage}): stale-row = ${tally.get("stale-row") ?? 0}` +
+				`  (examined ${examined} of ${of} paths — structurally blind to the rest)`,
+		);
 	}
 	// Reported, not enforced. These refs have no definition site to resolve
 	// against (see countUnverifiableKeepRefs), so failing them would be failing

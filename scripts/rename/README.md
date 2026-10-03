@@ -5,20 +5,25 @@ saying how many occurrences of the legacy token in that file were _decided_, and
 what rule. It exists because a bare `grep` count cannot tell a wire contract from a
 stale comment, and a sweep that treats them alike breaks live clients.
 
-| file                        | what it is                                                  |
-| --------------------------- | ----------------------------------------------------------- |
-| `disposition.tsv`           | the decision table (6 columns, tab-separated, no quoting)   |
-| `check-disposition.ts`      | the gate: re-derives every number and fails on disagreement |
-| `check-disposition.test.ts` | fixture-driven tests for the gate's pure logic              |
-| `check-docs-rename.ts`      | W13 — markdown surface, allow-list by path                  |
-| `check-runtime-rename.ts`   | W14 — `console.*` output, allow-list by (path, line)        |
-| `bucket-legacy-token.ts`    | measurement only; reports, does not gate                    |
+| file                        | what it is                                                   |
+| --------------------------- | ------------------------------------------------------------ |
+| `disposition.tsv`           | the decision table (6 columns + optional `rules`; see below) |
+| `check-disposition.ts`      | the gate: re-derives every number and fails on disagreement  |
+| `check-disposition.test.ts` | fixture-driven tests for the gate's pure logic               |
+| `check-docs-rename.ts`      | W13 — markdown surface, allow-list by path                   |
+| `check-runtime-rename.ts`   | W14 — `console.*` output, allow-list by (path, line)         |
+| `bucket-legacy-token.ts`    | measurement only; reports, does not gate                     |
 
 ## The schema
 
 ```
-scope	path	hits	disposition	reason	keep_refs
+scope	path	hits	disposition	reason	keep_refs	rules
 ```
+
+**Both headers parse.** The six-cell header is the base schema; `rules` is a
+seventh, optional column. A table written before the column existed still carries
+the six-cell header, and rejecting it would fail every row at once — the gate would
+report one problem per file for a change that changed no decision.
 
 - **`scope`** — grouping label for the row's origin (`src`, `test`, …).
 - **`path`** — repo-relative path. One file may have several rows.
@@ -26,6 +31,21 @@ scope	path	hits	disposition	reason	keep_refs
 - **`disposition`** — one of a **closed** vocabulary (below).
 - **`reason`** — free text, never empty. This is where ownership goes.
 - **`keep_refs`** — required for every `keep-*` row: which contract authorises it.
+- **`rules`** — optional. The `RULES_VERSION` this row's `hits` was measured under,
+  or **empty** when the row predates the column. Non-empty it must equal the
+  `RULES_VERSION` the checker implements (`2026-10-03.2`); a mismatch is a gate
+  failure.
+
+**Why the column exists.** `hits` is a claim about a file, and a claim is only as
+good as the rule that produced it. Measured 2026-10-03: `PINNED` had been widened
+twice since the table was filled and `countRename` had gained a subtraction, so rows
+written under the old rules drifted by +104 and +32 on two files while the code itself
+moved −3 and −1. Nothing reported it — `RULES_VERSION` guards the _ratchet's_ ceiling,
+which is a different contract from row-to-rule. This column is that contract.
+
+**Optional on purpose.** `""` means "not stated", which is **not** the same as
+"wrong". Treating a missing value as drift would redden every existing row at once,
+and a gate that floods is a gate that gets switched off rather than fixed.
 
 **No comment lines and no quoting.** A parser that can skip a line is a parser that
 can silently skip a decision, so every explanation belongs in `reason` or here.

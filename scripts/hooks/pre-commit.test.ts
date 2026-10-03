@@ -128,4 +128,35 @@ describe("pre-commit guard", () => {
 		expect(r.code).toBe(0);
 		expect(git(dir, ["rev-list", "--count", "HEAD"]).out.trim()).toBe("1");
 	});
+
+	it("does not block commit-scoped.ts, the tool it tells you to use instead", async () => {
+		// The failure that would make this guard worse than no guard: it refuses the
+		// bare commit, names a replacement in the message, and then blocks that
+		// replacement too. Nothing here proves the guard is silent for
+		// `commit-scoped.ts` because it builds its commit with `git commit-tree`,
+		// which runs no hooks — verified against the real script, not assumed.
+		const dir = await makeRepo();
+		await fs.mkdir(path.join(dir, "scripts"), { recursive: true });
+		await fs.copyFile(
+			path.join(import.meta.dir, "..", "commit-scoped.ts"),
+			path.join(dir, "scripts", "commit-scoped.ts"),
+		);
+		git(dir, ["config", "core.hooksPath", ".git/hooks"]);
+		await seed(dir, "a.txt", "a\n");
+		git(dir, ["commit", "-qm", "seed"]);
+		await seed(dir, "b.txt", "mine\n");
+		// A peer's row, which commit-scoped must leave staged and uncommitted.
+		await seed(dir, "peer.txt", "theirs\n");
+
+		const r = Bun.spawnSync(["bun", "scripts/commit-scoped.ts", "b.txt", "-m", "mine"], {
+			cwd: dir,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		expect(r.stderr.toString()).not.toContain("belongs to every agent");
+		expect(git(dir, ["log", "-1", "--format=%s"]).out.trim()).toBe("mine");
+		// The point of the replacement tool: the peer's row is still staged, and
+		// the commit named only the path it was given.
+		expect(git(dir, ["diff", "--cached", "--name-only"]).out.trim()).toBe("peer.txt");
+	});
 });

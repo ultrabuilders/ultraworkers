@@ -1089,7 +1089,10 @@ export class MCPManager {
 		const refresh = (() => {
 			switch (kind) {
 				case "tools":
-					return this.refreshServerTools(serverName);
+					// A `notifications/tools/list_changed` frame IS the push case: the
+					// server moved its own catalog after the user approved the
+					// connection, so the arriving tools must not activate themselves.
+					return this.refreshServerTools(serverName, "push");
 				case "resources":
 					return this.refreshServerResources(serverName);
 				case "prompts":
@@ -1788,8 +1791,15 @@ export class MCPManager {
 
 	/**
 	 * Refresh tools from a specific server.
+	 *
+	 * `reason` is required rather than defaulted: it is the manager's declaration of WHY
+	 * the catalog changed, and the receiver cannot recover it — a connect, a
+	 * `notifications/tools/list_changed` push and a disconnect all arrive as the same
+	 * array of tools. A default here would be a guess that silently decides whether an
+	 * arriving tool gets activated, which is the trust boundary. Callers that know their
+	 * intent must say so.
 	 */
-	async refreshServerTools(name: string): Promise<void> {
+	async refreshServerTools(name: string, reason: McpCatalogRefreshReason): Promise<void> {
 		const connection = this.#connections.get(name);
 		if (!connection) return;
 
@@ -1804,14 +1814,19 @@ export class MCPManager {
 
 		// Replace tools from this server
 		this.#replaceServerTools(name, customTools);
-		await this.#onToolsChanged?.(this.#tools, "push");
+		await this.#onToolsChanged?.(this.#tools, reason);
 	}
 
 	/**
 	 * Refresh tools from all servers.
+	 *
+	 * `reason` is required and is the caller's to state: this method is entered for
+	 * different causes (a bulk re-list, a reconnect sweep), and only the caller knows
+	 * which. Defaulting it would let a future caller silently pick the trust-relevant
+	 * behaviour, so the parameter stays mandatory.
 	 */
-	async refreshAllTools(): Promise<void> {
-		const promises = Array.from(this.#connections.keys()).map(name => this.refreshServerTools(name));
+	async refreshAllTools(reason: McpCatalogRefreshReason): Promise<void> {
+		const promises = Array.from(this.#connections.keys()).map(name => this.refreshServerTools(name, reason));
 		await Promise.allSettled(promises);
 	}
 

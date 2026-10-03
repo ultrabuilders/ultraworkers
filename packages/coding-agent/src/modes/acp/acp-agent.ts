@@ -58,7 +58,7 @@ import { runExtensionCompact } from "../../extensibility/extensions/compact-hand
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
 import { buildSkillPromptMessage, parseSkillInvocation } from "../../extensibility/skills";
 import { MCPManager } from "../../mcp/manager";
-import type { MCPServerConfig } from "../../mcp/types";
+import type { MCPServerConfig, McpCatalogRefreshReason } from "../../mcp/types";
 import { loadAllExtensions } from "../../modes/components/extensions/state-manager";
 import { getAvailableThemesWithPaths } from "@oh-my-pi/pi-tui";
 import { theme } from "@oh-my-pi/pi-tui/theme";
@@ -2722,10 +2722,10 @@ export class AcpAgent implements Agent {
 		// The returned promise propagates failures (the initial awaited refresh below must
 		// fail session setup, as the pre-queue code did); the stored chain swallows them
 		// after logging so background firings only warn and the chain never rejects.
-		const enqueueMcpToolsRefresh = (): Promise<void> => {
+		const enqueueMcpToolsRefresh = (reason: McpCatalogRefreshReason): Promise<void> => {
 			const run = (record.mcpRefreshChain ?? Promise.resolve()).then(async () => {
 				if (record.mcpManager !== manager) return;
-				await record.session.refreshMCPTools(manager.getTools());
+				await record.session.refreshMCPTools(manager.getTools(), reason);
 			});
 			record.mcpRefreshChain = run.catch(error => {
 				logger.warn("ACP MCP tool refresh failed", {
@@ -2734,9 +2734,15 @@ export class AcpAgent implements Agent {
 			});
 			return run;
 		};
-		manager.setOnToolsChanged(() => {
+		// The reason is the manager's declaration of WHY the catalog changed, and the
+		// receiver cannot recover it: a connect, a `notifications/tools/list_changed`
+		// push and a disconnect all arrive as the same array of tools. Dropping it here
+		// sent every ACP refresh down the absent-reason branch, which is handled as
+		// `push` — so on ACP a server's FIRST connection never activated its tools at
+		// all, and `sdk.ts` (which forwards it) did not have that bug.
+		manager.setOnToolsChanged((_tools, reason) => {
 			// Failures are logged once via the stored chain's catch above.
-			enqueueMcpToolsRefresh().catch(() => {});
+			enqueueMcpToolsRefresh(reason).catch(() => {});
 		});
 		const configs: MCPConfigMap = {};
 		const sources: MCPSourceMap = {};
@@ -2760,7 +2766,11 @@ export class AcpAgent implements Agent {
 		}
 
 		record.mcpManager = manager;
-		await enqueueMcpToolsRefresh();
+		// The catalog arriving here is the result of `connectServers` — every server the
+		// client just authorized. That is the one case where activating the arriving
+		// catalog is right: the user connected these servers, so a tool absent from the
+		// approved set is not one the server slipped past them.
+		await enqueueMcpToolsRefresh("connect");
 	}
 
 	#toMcpConfig(server: McpServer): MCPServerConfig {

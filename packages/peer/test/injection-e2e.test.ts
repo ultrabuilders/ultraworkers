@@ -38,10 +38,48 @@ const cliEntry = path.join(repoRoot, "packages/coding-agent/src/cli.ts");
  * checkable with no model at all: that the harness's own premise holds — the
  * entry it would spawn exists and is runnable. A skipped test that verifies
  * nothing is a hole; this one verifies the thing that makes the rest possible.
+ *
+ * ## THE SKIP IS LOUD ON PURPOSE, and it is still not enough
+ *
+ * Measured 2026-10-04: no CI script sets `PEER_E2E` (grep across `scripts/`,
+ * `.github/` and `package.json` returns nothing), so this row has never run. It
+ * therefore does not currently provide the evidence this file's own docblock
+ * claims it does, and that gap is a reason `epic-jwsy.14` cannot be recorded
+ * green.
+ *
+ * It stays a skip rather than becoming a permanent failure because a
+ * permanently-red row stops the rest of the suite being read for anything else,
+ * and the bead's requirement — *"must be runnable in CI"* — is a claim about CI
+ * configuration that no edit to this file can satisfy. The warning below makes
+ * the skip impossible to miss in the output; closing the gap means enabling the
+ * variable in CI, not editing this row.
+ *
+ * ## THE HARNESS HAS A DEFECT THIS FILE DOES NOT YET FIX
+ *
+ * Measured, not inferred: a receiver booted exactly as below and then left
+ * alone writes NOTHING under its agent directory — no `sessions/`, no
+ * transcript. It is spawned with `stdin: "pipe"` and never written to, and
+ * `--mode json` dispatches on an RPC, so it never starts a turn and never has a
+ * transcript for a message to be injected into. `files.length > 0` below is
+ * therefore unsatisfiable *whether or not injection works*, which makes a
+ * failure here a harness defect rather than a delivery failure.
+ *
+ * The pinned form of that measurement is `injection-e2e-premise.test.ts` ("a
+ * transcript implies a turn"), which needs no credentials. Fixing this row means
+ * giving the receiver an actual turn to be interrupted into — which needs
+ * credentials, and is why it is recorded here rather than attempted blind.
  */
 const enabled = process.env.PEER_E2E === "1";
 const roots: string[] = [];
 const procs: Bun.Subprocess[] = [];
+
+if (!enabled) {
+	// Stderr, not a comment. A comment is read once by its author; this has to be
+	// read by whoever is looking at a green CI run and deciding what it covered.
+	process.stderr.write(
+		"[peer] injection E2E NOT RUN — set PEER_E2E=1. The recipient's transcript assertion is UNPROVEN.\n",
+	);
+}
 
 function track<T extends { kill: (n?: number) => void }>(p: T): T {
 	procs.push(p as unknown as Bun.Subprocess);

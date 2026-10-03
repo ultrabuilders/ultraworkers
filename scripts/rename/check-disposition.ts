@@ -1113,11 +1113,31 @@ export function parseTable(text: string): ParseResult {
  * neither the directory nor the exclusion, so this line is free there and load-
  * bearing on a developer machine — the same walk reading a different corpus in
  * the two places is the drift this gate must not have.
+ *
+ * `.lavish-wip/` is the one exclusion that DOES cost coverage, so it is here
+ * with its cost stated rather than on the "free" reasoning above. The directory
+ * holds 478 tracked files (301 markdown, 167 json, 2 mjs, 1 py) — research
+ * notes and one-off generators for milestone documents, none of it shipped and
+ * nothing in `package.json` or any workflow references it. Only two of those
+ * files ever reach `PINNED`, both under `.lavish-wip/m5-md/`, and both are
+ * absolute-path generators whose whole content is prose about the rebrand:
+ * `gen-back2b.mjs` writes `90-back2b.md` from a corrections JSON, and
+ * `verify-back2b.mjs` re-reads that markdown.
+ *
+ * So the exclusion removes 2 `missing-row` violations and hides no contract.
+ * That is the whole justification, and it is narrow: were a `.lavish-wip/`
+ * source file to grow a token somebody outside this repo depends on, this line
+ * would hide it. The alternative — two `keep-prose` rows over a scratch
+ * generator — spends the same coverage on a decision that a reviewer would have
+ * to re-derive anyway, and puts a permanent "this is fine" in a table whose
+ * purpose is to force that decision. The exclusion is the honest form: it says
+ * "not source", which is true, rather than "source, and we decided".
  */
 const EXCLUDED_PREFIXES = [
 	"node_modules/",
 	".git/",
 	".claude/",
+	".lavish-wip/",
 	"python/robomp/src/static/",
 	"python/robomp/web/dist/",
 ];

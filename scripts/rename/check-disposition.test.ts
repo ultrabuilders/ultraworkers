@@ -570,6 +570,27 @@ describe("hit discovery", () => {
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
 
+	it("skips session scratch under .lavish-wip but keeps a tracked dot-directory beside it", async () => {
+		// `.lavish-wip/` is 478 tracked files of milestone research notes and
+		// one-off document generators, excluded because it is not source. It is the
+		// only exclusion here that costs coverage, so the rule worth defending is
+		// not "does it skip scratch" but "does it skip ONLY scratch".
+		//
+		// The two controls are what make this a claim. `.omp/tools/tui.ts` is a
+		// tracked file of THIS repository that carries a live token: an exclusion
+		// written as "any dot-directory that is not source" would drop it silently,
+		// which is the failure `.claude/` above is careful to avoid. And a `.lavish-wip`
+		// file with no token must stay out too, or the exclusion would be reporting
+		// work rather than hiding any.
+		const root = await tree({
+			".omp/tools/tui.ts": `const x = "omp";\n`,
+			".lavish-wip/m5-md/gen-back2b.mjs": `const LEAD = "omp text-predict listening on";\n`,
+			".lavish-wip/m5-index/corrections-b.json": `{"lead":"used by omp"}\n`,
+		});
+		expect(await hitPaths(root)).toEqual([".omp/tools/tui.ts"]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
 	it("keeps the vocabulary closed and every class mappable", () => {
 		for (const disposition of DISPOSITIONS) {
 			expect(classMatcher(disposition)).toBeDefined();

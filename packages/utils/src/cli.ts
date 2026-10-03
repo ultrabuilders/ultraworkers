@@ -62,6 +62,14 @@ export interface ArgDescriptor {
 	required?: boolean;
 	multiple?: boolean;
 	options?: readonly string[];
+	/**
+	 * Applied when the argument is absent. Declared here because commands have
+	 * always passed one — `Args.string` inferred it into the descriptor — while
+	 * the parser read `default` for flags only, so the value was carried and
+	 * dropped. `ultraworkers session` reached its refusal branch with nothing to
+	 * name and printed `Unknown action "undefined"`.
+	 */
+	default?: unknown;
 }
 
 interface FlagInput {
@@ -78,6 +86,7 @@ interface ArgInput {
 	required?: boolean;
 	multiple?: boolean;
 	options?: readonly string[];
+	default?: unknown;
 }
 
 /** Builders that match the `Flags.*()` / `Args.*()` API from oclif. */
@@ -293,7 +302,12 @@ export abstract class Command {
 				posIdx = positionals.length;
 			} else {
 				const val = positionals[posIdx];
-				args[argName] = val;
+				// A declared default is what the descriptor promises, and it used to be
+				// read only for flags. A command whose positional declared one therefore
+				// received `undefined` for its own no-argument form — `ultraworkers
+				// session` reached a `default:` branch that had nothing to report but the
+				// raw value, and printed `Unknown action "undefined"`.
+				args[argName] = val === undefined ? desc.default : val;
 				posIdx++;
 			}
 			// Validate required

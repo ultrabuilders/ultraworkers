@@ -1264,9 +1264,7 @@ export class SessionTools {
 					const built = await untilAborted(
 						signal,
 						this.#promptSurfaceScope.run(candidate, () =>
-							console.error('[RB@1267] names=', JSON.stringify(promptToolNames));
-							console.error('[RB@1988] names=', JSON.stringify(promptToolNames));
-				rebuildSystemPrompt(promptToolNames, this.#toolRegistry, { directToolNames }),
+							rebuildSystemPrompt(promptToolNames, this.#toolRegistry, { directToolNames }),
 						),
 					);
 					rebuiltSystemPrompt = built.systemPrompt;

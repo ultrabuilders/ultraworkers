@@ -90,10 +90,26 @@ interface DocsCitation {
 
 const DOCS_CITATION = /docs:([^\s#]+)#(\S+)/g;
 
+/** Punctuation that can close a sentence or bracket after a citation. */
+const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
+
 export function parseDocsCitations(reason: string): DocsCitation[] {
 	const found: DocsCitation[] = [];
 	for (const match of reason.matchAll(DOCS_CITATION)) {
-		found.push({ path: match[1]!, token: match[2]! });
+		// `(\S+)` runs to the next whitespace, so a citation that ends a sentence
+		// arrives carrying that sentence's punctuation. It has to be trimmed AFTER
+		// the capture: making the group lazy to stop at the delimiter instead would
+		// silently shorten `OMP_MCP_TIMEOUT_MS` to `OMP`, and a token that is a
+		// prefix of the real one is exactly what the whole-word rule exists to
+		// reject — the citation would fail on a page that does carry it.
+		//
+		// Left unfixed this is worse than a false alarm: every citation placed at
+		// the end of a sentence can never pass, so the workaround is to move
+		// citations into the middle of sentences, and `reason` becomes prose
+		// shaped to dodge its own check.
+		const token = match[2]!.replace(TRAILING_PUNCTUATION, "");
+		if (token === "") continue;
+		found.push({ path: match[1]!, token });
 	}
 	return found;
 }

@@ -79,4 +79,31 @@ describe("parseDocsCitations", () => {
 	it("ignores a docs path that names no token", () => {
 		expect(parseDocsCitations("documented at docs/reference/env.md")).toEqual([]);
 	});
+
+	// The regression a peer hit on the first real batch. `(\S+)` runs to the next
+	// whitespace, so a citation closing a sentence arrived carrying the full stop,
+	// and the whole-word check then rejected a page that does carry the token.
+	// Left alone it teaches authors to move citations into the middle of sentences
+	// to dodge the check, which is prose shaped around its own guard.
+	it("drops the sentence punctuation from a citation that ends one", () => {
+		expect(
+			parseDocsCitations("set it in .env: docs:docs/mcp-config.md#OMP_MCP_TIMEOUT_MS. The name also lives there."),
+		).toEqual([{ path: "docs/mcp-config.md", token: "OMP_MCP_TIMEOUT_MS" }]);
+	});
+
+	it("drops closing brackets too, and keeps the token whole", () => {
+		expect(parseDocsCitations("see (docs:docs/a.md#ALPHA), then docs:docs/b.md#BETA")).toEqual([
+			{ path: "docs/a.md", token: "ALPHA" },
+			{ path: "docs/b.md", token: "BETA" },
+		]);
+	});
+
+	// The control, and the reason trimming after the capture is specified the way
+	// it is: the trimmed token really does match the page the cited one did not.
+	// A lazy group would instead shorten this to `OMP` and fail here.
+	it("still matches the real token after the sentence punctuation is dropped", async () => {
+		const [{ path, token }] = parseDocsCitations("see docs:docs/mcp-config.md#OMP_MCP_TIMEOUT_MS.");
+		const page = await Bun.file(path).text();
+		expect(pageContainsToken(page, token)).toBe(true);
+	});
 });

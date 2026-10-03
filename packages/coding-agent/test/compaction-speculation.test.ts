@@ -167,6 +167,18 @@ describe("async speculative compaction", () => {
 		}
 	}
 
+	// Speculation resolution reads the ambient Anthropic route. `resolveDirectAnthropicBaseUrl`
+	// only short-circuits on a NON-official model baseUrl, so for a stock Anthropic model it
+	// falls through to ANTHROPIC_BASE_URL — and `isSupportedCompactionEndpoint` refuses any
+	// route it does not recognise. A developer running behind a local proxy therefore got every
+	// remote/native speculation case here failing, with no failure on a clean CI machine to
+	// explain it: 22 pass / 5 fail locally, 27 / 0 in CI.
+	//
+	// Scoped to this file and restored in `afterAll` — clearing it process-wide and leaving it
+	// cleared would leak into every later file in the same run.
+	const savedAnthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+	delete process.env.ANTHROPIC_BASE_URL;
+
 	beforeAll(async () => {
 		authStorage = await AuthStorage.create(":memory:");
 		authStorage.keys.setRuntime("anthropic", "test-key");
@@ -190,6 +202,8 @@ describe("async speculative compaction", () => {
 	});
 
 	afterAll(() => {
+		if (savedAnthropicBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+		else process.env.ANTHROPIC_BASE_URL = savedAnthropicBaseUrl;
 		authStorage.close();
 	});
 

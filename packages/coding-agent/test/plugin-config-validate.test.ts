@@ -72,7 +72,9 @@ describe("runPluginCommand({ action: 'config', args: ['validate'] })", () => {
 			errors: Array<{ plugin: string; key: string }>;
 		};
 		expect(report.valid).toBe(false);
-		expect(report.errors).toContainEqual(expect.objectContaining({ plugin: "ultraworkers-commit", key: "splitMode" }));
+		expect(report.errors).toContainEqual(
+			expect.objectContaining({ plugin: "ultraworkers-commit", key: "splitMode" }),
+		);
 	});
 
 	test("validates against the active project schema over a same-named user plugin", async () => {
@@ -123,6 +125,8 @@ describe("runPluginCommand({ action: 'config', args: ['validate'] })", () => {
 			errors: Array<{ plugin: string; key: string }>;
 		};
 		expect(report.valid).toBe(false);
-		expect(report.errors).toContainEqual(expect.objectContaining({ plugin: "ultraworkers-commit", key: "splitMode" }));
+		expect(report.errors).toContainEqual(
+			expect.objectContaining({ plugin: "ultraworkers-commit", key: "splitMode" }),
+		);
 	});
 });

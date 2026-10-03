@@ -8,11 +8,11 @@ has no owner and no milestone; see [§6](#6-what-this-document-deliberately-does
 An installed package can already contribute an MCP server **declaratively**. Three discovery
 modules register an `MCPServer` provider:
 
-| Module | Line | Call |
-| --- | --- | --- |
-| `packages/coding-agent/src/discovery/omp-plugins.ts` | **424** | `registerProvider<MCPServer>(mcpCapability.id, …)` |
-| `packages/coding-agent/src/discovery/agent-plugins.ts` | **342** | `registerProvider<MCPServer>(mcpCapability.id, …)` |
-| `packages/coding-agent/src/discovery/claude-plugins.ts` | **761** | `registerProvider<MCPServer>(mcpCapability.id, …)` |
+| Module | Registers |
+| --- | --- |
+| `discovery/omp-plugins.ts` | `registerProvider<MCPServer>(mcpCapability.id, …)` |
+| `discovery/agent-plugins.ts` | `registerProvider<MCPServer>(mcpCapability.id, …)` |
+| `discovery/claude-plugins.ts` | `registerProvider<MCPServer>(mcpCapability.id, …)` |
 
 The plan and the bead both cite `:423`, `:335` and `:737`. **All three are wrong**, and the third
 one fails in a way worth stating because it is the kind of citation that survives a spot-check:
@@ -29,17 +29,22 @@ nothing, and `ExtensionAPI` never names the capability registry. So the honest s
 contribute MCP servers at all."
 
 **A name collision to know before reading further.** `registerProvider` means two unrelated
-things. On `ExtensionAPI` at `extensibility/extensions/types.ts:2317` it registers an **LLM
-provider** — `config: ProviderConfig`, i.e. `baseUrl` / `apiKey` / `api` / `streamSimple`. The
-capability registry's `registerProvider<T>` lives at `capability/index.ts:133` and is what the
-three modules above call; the four-argument form with `sourceId` at `types.ts:2615` is the same
-registry. Anyone who greps `registerProvider`, sees it on the extension API, and concludes the
-seam already exists will be wrong. This collision is already recorded in
-`docs/extension-writing-surfaces.md:34`; it is repeated here because it is the single easiest way
-to misread this document.
+things. `ExtensionAPI.registerProvider(name, config)` — the two-argument form — registers an **LLM
+provider**: `config: ProviderConfig`, i.e. `baseUrl` / `apiKey` / `api` / `streamSimple`. The
+capability registry's `registerProvider<T>(capabilityId, provider, sourceId?)` is what the three
+modules above call; the four-argument `registerProvider(name, config, sourceId)` in
+`extensions/types.ts` is the same registry seen from its other side. Anyone who greps
+`registerProvider`, sees it on the extension API, and concludes the seam already exists will be
+wrong. This collision is already recorded in `docs/extension-writing-surfaces.md`; it is repeated
+here because it is the single easiest way to misread this document.
+
+*This document cites symbols rather than line numbers throughout, on purpose.* A line number is the
+cheapest citation to write and the fastest to rot: three of the anchors this file replaced had
+already drifted, and one of them pointed at a real `registerProvider` call for a **different
+capability**, which survives a spot-check because it looks right.
 
 The direction this design may take is settled and is not reopened below. `M2-OQ2 = YES`,
-owner-ratified 2026-10-01, `docs/extension-trust-model.md` §8: the capability registry is **in
+owner-ratified 2026-10-01, §8 of `docs/extension-trust-model.md`: the capability registry is **in
 scope for decomposition**. That ruling settles ownership; it does not by itself create the seam.
 
 ## 1. The two architectures
@@ -91,24 +96,24 @@ The options, none chosen:
 
 Why it cannot be settled here: the credential question and the trust question are the same
 question. An MCP server is an outbound network connection whose credential is the user's. Option
-3 needs a stance on project-local inputs that `docs/extension-trust-model.md` states but that
+3 needs a stance on project-local inputs that that document states but
 has never been applied to this surface.
 
 ## 4. Approval parity, written against the tiers that actually exist
 
-The tiers are ranked `read` (0) < `write` (1) < `exec` (2) — `TIER_RANK`,
-`tools/approval.ts:103-105`, folded by `strictestApproval` (`:114`).
+The tiers are ranked `read` (0) < `write` (1) < `exec` (2) — the `TIER_RANK` record in
+`tools/approval.ts`, folded by `strictestApproval`.
 
-The MCP bridge hardcodes its tier per tool class, in three places:
+The MCP bridge hardcodes its tier as a class field, once per tool class:
 
-| Class | Line | Tier | Rank |
+| Class | Field | Tier | Rank |
 | --- | --- | --- | --- |
-| `MCPTool` (live) | `mcp/tool-bridge.ts:656` | `write` | 1 |
-| `WithdrawnMCPTool` | `mcp/tool-bridge.ts:799` | `exec` | 2 |
-| `DeferredMCPTool` | `mcp/tool-bridge.ts:861` | `write` | 1 |
+| `MCPTool` (live) | `MCPTool.approval` | `write` | 1 |
+| `WithdrawnMCPTool` | `WithdrawnMCPTool.approval` | `exec` | 2 |
+| `DeferredMCPTool` | `DeferredMCPTool.approval` | `write` | 1 |
 
-An extension-registered tool defaults to `exec` — `ToolDefinition.approval`, declared at
-`extensibility/extensions/types.ts:851-853` ("Defaults to `"exec"` when omitted").
+An extension-registered tool defaults to `exec` — `ToolDefinition.approval`, documented as
+"Defaults to `"exec"` when omitted".
 
 **This inverts the promise the plan is built on, and it inverts it silently.** The plan asks for
 *approval parity* between extension-contributed MCP servers and extension-registered tools. The
@@ -122,22 +127,22 @@ Nothing in the plan draws this out, because the plan states the two tiers and st
 single fact a reviewer needs before accepting the recommendation in §2, and it is why §2 is not a
 recommendation without this caveat attached.
 
-The plan cites `mcp/tool-bridge.ts:656` and `:771`; `:656` is exact, and the second `write` is at
-`:861`, not `:771`. It cites the extension default at `types.ts:658`, which is a `clearTimer`
-docblock; the declaration is at `:851`.
+For reference when auditing the plan: it names `MCPTool.approval`'s line correctly but attributes
+the second `write` to the wrong class, and points the extension default at a `clearTimer` docblock
+rather than `ToolDefinition.approval`. All three of those are the same defect this document is
+written to avoid, which is why it cites no line numbers at all.
 
-**Correction to the plan — position only.** The plan cites `tools/approval.ts:369-371` for the
-`'Origin: MCP server tool'` line. The line is at **`:416`**, inside `formatApprovalPrompt`. The
-plan's *conclusion* that the line is unreachable is **correct**, and the reason is the hardcoded
-tier above: the guard reads
+**Correction to the plan — position only.** The plan says the `'Origin: MCP server tool'` line is
+unreachable by execution. That conclusion is **correct**; only its line reference is off. The
+guard inside `formatApprovalPrompt` reads:
 
 ```ts
 if (tool.name.startsWith("mcp__") && tool.approval === undefined) {
 ```
 
-and every MCP tool class declares `approval` as a definite field — `write` at `:656`, `exec` at
-`:799`, `write` at `:861`. So `tool.approval` is never `undefined`, the guard never passes, and
-the line never runs.
+and every MCP tool class declares `approval` as a definite field — `MCPTool.approval` is `write`,
+`WithdrawnMCPTool.approval` is `exec`, `DeferredMCPTool.approval` is `write`. So `tool.approval` is
+never `undefined`, the guard never passes, and the line never runs.
 
 That is worth stating precisely because it is a coupling, not an accident: the origin banner is
 unreachable **because** the tier is hardcoded. Anyone who ever makes an MCP tool's tier
@@ -148,13 +153,13 @@ configurable must revisit this guard at the same time, or the banner silently st
 No new lifecycle is needed, and this is the strongest reason the design is cheap.
 
 `MCPManager.connectServers(configs, sources, onStatus?, startupTimeoutMs?)`
-(`mcp/manager.ts:760-765`) already takes a per-server `SourceMeta` map. Provenance is already a
+`MCPManager.connectServers` already takes a per-server `SourceMeta` map. Provenance is already a
 first-class parameter, not something a new path would have to bolt on.
 
 Single-server connect, disconnect and status are already driven from an extensions-scoped module:
-`modes/components/extensions/mcp-runtime.ts` (65 lines) defines an `MCPToggleManager` with
-`connectServers` / `disconnectServer` / `getConnectionStatus` and applies one server's toggle at
-`:63`. That module is the `/extensions` panel toggling servers that **already exist in config** —
+`modes/components/extensions/mcp-runtime.ts` defines an `MCPToggleManager` with
+`connectServers` / `disconnectServer` / `getConnectionStatus`, and `applyMcpToggleRuntime` applies
+one server's toggle. That module is the `/extensions` panel toggling servers that **already exist in config** —
 it is not a contribution path, and it does not pre-build Option A. What it establishes is that
 the manager seam is reusable one server at a time from outside the session, which is the part
 Option A would have needed to invent.
@@ -162,16 +167,16 @@ Option A would have needed to invent.
 **One lifecycle consequence worth naming, because it is a consequence and not a detail.** When a
 server is refreshed and stops offering a tool it used to offer, the manager leaves a tombstone so
 a call already in flight gets an answer instead of reading as a hallucinated tool name
-(`mcp/manager.ts:1077-1083`). That tombstone is a `WithdrawnMCPTool`, and per §4 it sits at tier
+(the block that maps each withdrawn tool to `new WithdrawnMCPTool(t, name)`). That tombstone is a `WithdrawnMCPTool`, and per §4 it sits at tier
 `exec` — **rank 2, the strictest** — while the live `MCPTool` it replaced sat at `write`, rank 1.
 
 So withdrawing a tool from an extension-contributed server would *raise* its approval tier rather
 than lower it. The tombstone is deliberately carried across refreshes as itself
-(`isWithdrawnMCPTool` at `:843`) precisely so it does not churn, which means this is a steady
+(the `isWithdrawnMCPTool` type guard in `mcp/tool-bridge.ts`) precisely so it does not churn, which means this is a steady
 state and not a one-frame artifact. Any design that lets an extension contribute a server has to
 say what happens to its tier when the server changes its tool list underneath a running session.
-This was verified against live code: `WithdrawnMCPTool` is constructed at `manager.ts:1080` and is
-not dead.
+This was verified against live code: `manager.ts` calls `new WithdrawnMCPTool(t, name)` on that
+path, so it is not dead.
 
 ## 6. What this document deliberately does not decide
 
@@ -192,7 +197,7 @@ not dead.
 Written by `IcyMaple` (agent) from measured code, under assignment from `a4`.
 
 Decisions in §2 rest on an owner ruling that exists in the repository
-(`M2-OQ2 = YES`, `docs/extension-trust-model.md` §8, ratified 2026-10-01).
+(`M2-OQ2 = YES`, §8 of `docs/extension-trust-model.md`, ratified 2026-10-01).
 
 **There is no maintainer sign-off on §3.** The owner delegated the decision to `a4`, and `a4`
 is not a human maintainer; the owner was not available to answer. So §3 is left open rather than

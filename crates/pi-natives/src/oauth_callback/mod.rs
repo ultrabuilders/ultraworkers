@@ -344,7 +344,7 @@ fn start_blocking(core: &Core, cancel: CancelToken) -> AnyResult<StartOutcome> {
 	{
 		let home = fs::canonicalize(&core.home)
 			.with_context(|| format!("failed to resolve user home {}", core.home.display()))?;
-		let root = storage_root(&home, &core.scheme);
+		let root = storage_root(&core.env, &home, &core.scheme);
 		ensure_storage_root(&root)?;
 		let lease_path = root.join("lease");
 		let lease = FileLock::try_acquire_path(&lease_path)?;
@@ -765,9 +765,27 @@ fn environment_home(env: &BTreeMap<String, String>) -> Option<PathBuf> {
 		.or_else(|| Some(PathBuf::from(format!("{}{}", env.get("HOMEDRIVE")?, env.get("HOMEPATH")?))))
 }
 
-fn storage_root(home: &Path, scheme: &str) -> PathBuf {
+/// The config directory a native-OAuth file lives under, honouring the same
+/// overrides as `getConfigDirName()` in `packages/utils/src/dirs.ts`.
+///
+/// Shared with `legacy_recovery_path` so the two writers of `~/.omp/oauth/`
+/// cannot drift: an earlier version hardcoded `.omp` here while
+/// `darwin.rs` read the environment, so setting `ULTRAWORKERS_CONFIG_DIR`
+/// split the tree in two with no error. The `.omp` fallback is the legacy
+/// spelling and stays last for the same reason `dirs.ts` keeps it last — the
+/// resolved read/write roots are not available in this crate, and these files
+/// must remain readable by the versions that wrote them.
+pub(super) fn config_dir_name(env: &BTreeMap<String, String>) -> &str {
+	env.get("ULTRAWORKERS_CONFIG_DIR")
+		.or_else(|| env.get("PI_CONFIG_DIR"))
+		.map(|value| value.trim())
+		.filter(|value| !value.is_empty())
+		.unwrap_or(".omp")
+}
+
+fn storage_root(env: &BTreeMap<String, String>, home: &Path, scheme: &str) -> PathBuf {
 	home
-		.join(".omp")
+		.join(config_dir_name(env))
 		.join("oauth")
 		.join("native")
 		.join(platform_name())

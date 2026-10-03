@@ -173,7 +173,7 @@ fn activation_failure_restores_even_after_mutating_os_state() {
 	assert!(error.to_string().contains("injected activation failure"));
 	assert!(!home.join(".oauth-owner-ultraworkers-test").exists());
 	assert!(
-		!storage_root(&home, "ultraworkers-test")
+		!storage_root(&core.env, &home, "ultraworkers-test")
 			.join("registration.json")
 			.exists()
 	);
@@ -192,7 +192,7 @@ fn uncertain_restore_retains_journal_and_ownership() {
 	assert!(error.to_string().contains("recovery journal retained"));
 	assert!(home.join(".oauth-owner-ultraworkers-test").exists());
 	assert!(
-		storage_root(&home, "ultraworkers-test")
+		storage_root(&core.env, &home, "ultraworkers-test")
 			.join("registration.json")
 			.exists()
 	);
@@ -203,10 +203,10 @@ fn uncertain_restore_retains_journal_and_ownership() {
 fn stale_journal_is_recovered_before_successor_activation() {
 	let _serial = TEST_SERIAL.blocking_lock();
 	let home = temp_home("stale");
-	let root = storage_root(&home, "ultraworkers-test");
+	let old_env = environment(&[]);
+	let root = storage_root(&old_env, &home, "ultraworkers-test");
 	ensure_storage_root(&root).unwrap();
 	let old_id = "0123456789abcdef0123456789abcdef";
-	let old_env = environment(&[]);
 	let old_context = Context::new(
 		home.clone(),
 		root.join(old_id),
@@ -364,4 +364,63 @@ fn darwin_sdk_root_prefers_explicit_sdkroot() {
 	// discovery.
 	let empty = super::darwin_compiler::darwin_sdk_root(Some(OsStr::new("")));
 	assert_ne!(empty.as_deref(), Some(Path::new("")));
+}
+
+#[test]
+fn storage_root_honours_the_config_dir_override() {
+	let home = Path::new("/tmp/oauth-home");
+
+	// Asserted against a path spelled out here, not against `storage_root`:
+	// an oracle built from the function under test agrees with every version of
+	// it, which is how the hardcoded `.omp` survived while `darwin.rs` already
+	// read the environment.
+	for (env, expected) in [
+		(
+			BTreeMap::from([("ULTRAWORKERS_CONFIG_DIR".to_owned(), "uw-profile".to_owned())]),
+			"uw-profile",
+		),
+		(BTreeMap::from([("PI_CONFIG_DIR".to_owned(), "pi-profile".to_owned())]), "pi-profile"),
+		(
+			BTreeMap::from([
+				("ULTRAWORKERS_CONFIG_DIR".to_owned(), "newest".to_owned()),
+				("PI_CONFIG_DIR".to_owned(), "older".to_owned()),
+			]),
+			"newest",
+		),
+		// A blank override must not produce an empty path segment.
+		(BTreeMap::from([("ULTRAWORKERS_CONFIG_DIR".to_owned(), "   ".to_owned())]), ".omp"),
+		(BTreeMap::new(), ".omp"),
+	] {
+		let root = storage_root(&env, home, "ultraworkers-test");
+		assert_eq!(
+			root,
+			home
+				.join(expected)
+				.join("oauth")
+				.join("native")
+				.join(super::platform_name())
+				.join("ultraworkers-test"),
+			"env {env:?} must resolve to {expected}"
+		);
+	}
+}
+
+#[test]
+fn both_oauth_writers_resolve_the_same_config_directory() {
+	// The defect: `darwin.rs` read the environment while `storage_root` hardcoded
+	// `.omp`, so setting ULTRAWORKERS_CONFIG_DIR split `~/.omp/oauth/` in two.
+	let env = BTreeMap::from([("ULTRAWORKERS_CONFIG_DIR".to_owned(), "uw-profile".to_owned())]);
+	assert_eq!(super::config_dir_name(&env), "uw-profile");
+	// `legacy_recovery_path` joins the same resolver onto the same home.
+	assert_eq!(
+		super::config_dir_name(&env),
+		storage_root(&env, Path::new("/tmp/oauth-home"), "ultraworkers-test")
+			.strip_prefix("/tmp/oauth-home")
+			.unwrap()
+			.to_str()
+			.unwrap()
+			.split('/')
+			.next()
+			.unwrap()
+	);
 }

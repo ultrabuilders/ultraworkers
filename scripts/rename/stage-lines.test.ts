@@ -186,9 +186,7 @@ describe("committing through a throwaway index", () => {
 		// My commit carries my row and not the peer's line in the same file.
 		expect(await $`git show HEAD:rows.tsv`.cwd(repo!).quiet().text()).toBe("a\nMINE\nc\n");
 		// And it does not carry the peer's path, which the real index had staged.
-		expect(await $`git show --name-only --format= HEAD`.cwd(repo!).quiet().text()).not.toContain(
-			"peer.tsv",
-		);
+		expect(await $`git show --name-only --format= HEAD`.cwd(repo!).quiet().text()).not.toContain("peer.tsv");
 		// The peer's row is STILL STAGED. Losing it would trade one accident for another.
 		expect(await $`git show :peer.tsv`.cwd(repo!).quiet().text()).toBe("peer's row\n");
 		expect(await $`git status --porcelain peer.tsv`.cwd(repo!).quiet().text()).toContain("A ");
@@ -204,9 +202,7 @@ describe("committing through a throwaway index", () => {
 
 		await $`git commit -qm bare`.cwd(repo!).quiet();
 
-		expect(await $`git show --name-only --format= HEAD`.cwd(repo!).quiet().text()).toContain(
-			"peer.tsv",
-		);
+		expect(await $`git show --name-only --format= HEAD`.cwd(repo!).quiet().text()).toContain("peer.tsv");
 	});
 });
 
@@ -232,9 +228,9 @@ describe("staging a path the repository ignores", () => {
 		await $`git commit -qm seed`.cwd(root).quiet();
 		await fs.writeFile(path.join(root, ".scratch/note.md"), "scratch\n");
 
-		await expect(
-			stageLines(".scratch/note.md", "scratch\n", "", root),
-		).rejects.toThrow(/refusing to stage .*\.scratch\/note\.md/);
+		await expect(stageLines(".scratch/note.md", "scratch\n", "", root)).rejects.toThrow(
+			/refusing to stage .*\.scratch\/note\.md/,
+		);
 		// The refusal must actually leave the index alone, not merely complain.
 		expect(await $`git ls-files`.cwd(root).quiet().text()).not.toContain(".scratch/note.md");
 		await fs.rm(root, { recursive: true, force: true });
@@ -280,9 +276,7 @@ describe("staging a path the repository ignores", () => {
 		// Control: git itself says the path is NOT ignored without --no-index.
 		expect((await $`git check-ignore -q .scratch/n.md`.cwd(root).quiet().nothrow()).exitCode).toBe(1);
 
-		await expect(stageLines(".scratch/n.md", "new\n", "old\n", root)).rejects.toThrow(
-			/refusing to stage/,
-		);
+		await expect(stageLines(".scratch/n.md", "new\n", "old\n", root)).rejects.toThrow(/refusing to stage/);
 		await fs.rm(root, { recursive: true, force: true });
 	});
 });

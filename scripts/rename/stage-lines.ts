@@ -87,7 +87,9 @@ async function assertStagingIsAllowed(file: string, cwd: string): Promise<void> 
 	// git failure, and treating that as permission would make a broken probe an
 	// all-clear.
 	if (result.exitCode !== 1) {
-		throw new Error(`git check-ignore exited ${result.exitCode} for ${file}; refusing to stage on an unanswered question`);
+		throw new Error(
+			`git check-ignore exited ${result.exitCode} for ${file}; refusing to stage on an unanswered question`,
+		);
 	}
 }
 

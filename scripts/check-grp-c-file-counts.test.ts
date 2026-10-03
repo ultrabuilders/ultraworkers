@@ -56,7 +56,7 @@ const runGate = (dir: string) =>
 
 describe("R0 GRP-C file-count gate", () => {
 	test("a deletion that never reached the index is still a loss", async () => {
-		using dir = TempDir.createSync("omp-grp-c-gate-");
+		using dir = TempDir.createSync("uw-grp-c-gate-");
 		await seed(dir.absolute());
 
 		expect((await runGate(dir.absolute())).exitCode).toBe(0);
@@ -74,7 +74,7 @@ describe("R0 GRP-C file-count gate", () => {
 	}, 30_000);
 
 	test("a staged removal fails the same way, and adding files never does", async () => {
-		using dir = TempDir.createSync("omp-grp-c-gate-staged-");
+		using dir = TempDir.createSync("uw-grp-c-gate-staged-");
 		await seed(dir.absolute());
 
 		await ptree.exec(["git", "rm", "-q", "packages/utils/src/c.ts"], { cwd: dir.absolute() });

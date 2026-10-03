@@ -146,7 +146,7 @@ async function installUnreconcilableSuite(dir: string): Promise<void> {
 
 describe("R0 GRP-C test-baseline gate", () => {
 	test("a failure list it cannot reconcile is not a clean list", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-discrepant-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-discrepant-");
 		await installUnreconcilableSuite(dir.absolute());
 		const gate = await installGate(dir.absolute(), "./");
 
@@ -172,7 +172,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 		expect(result.stdout).not.toContain("all present in the baseline");
 	}, 60_000);
 	test("a suite that cannot load is not a clean suite", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-broken-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-broken-");
 		await Bun.write(
 			path.join(dir.absolute(), "broken.test.ts"),
 			'import { nope } from "./does-not-exist";\nconsole.log(nope);\n',
@@ -193,7 +193,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("a clean suite is green, and a known failure stays tolerated", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-clean-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-clean-");
 		await Bun.write(
 			path.join(dir.absolute(), "fine.test.ts"),
 			'import { test, expect } from "bun:test";\ntest("passes", () => { expect(1).toBe(1); });\n',
@@ -209,7 +209,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("a failure absent from the baseline goes red, and names itself", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-new-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-new-");
 		await Bun.write(
 			path.join(dir.absolute(), "regressed.test.ts"),
 			'import { test, expect } from "bun:test";\ntest("a regression the baseline never tolerated", () => { expect(1).toBe(2); });\n',
@@ -229,7 +229,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("a failure that is in the baseline does not go red", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-tolerated-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-tolerated-");
 		await Bun.write(
 			path.join(dir.absolute(), "known.test.ts"),
 			'import { test, expect } from "bun:test";\ntest("a failure the baseline already tolerates", () => { expect(1).toBe(2); });\n',
@@ -249,7 +249,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("a failure that does not reproduce on re-run is load, not a regression", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-flaky-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-flaky-");
 		// Fails on the first run of the process and passes on the second, which is
 		// what a load-dependent failure looks like from the gate's side — and is
 		// produced deterministically here by a counter file, so the test asserts
@@ -285,7 +285,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("a failure that reproduces on re-run is still red", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-confirmed-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-confirmed-");
 		// Deterministically failing, so it fails on the second run as well. This is
 		// the direction that must NOT be forgiven: it is the whole reason the
 		// re-run stops after one attempt. A gate that kept retrying until green
@@ -307,7 +307,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("two failures are red even though a third run would be green", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-thirdrun-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-thirdrun-");
 		// The failure a LOOPING gate would forgive: red, red, then green. This is
 		// the whole reason the re-run stops after one attempt, so it is the case
 		// that decides whether that limit is a contract or a comment.
@@ -345,7 +345,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("an unnamed failure keeps one identity across runs", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-unnamed-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-unnamed-");
 		// `test("")` makes bun print `(fail)  [0.19ms]`, so a duration-stripping
 		// parse takes the DURATION as the name. Measured on identical code: run A
 		// produced the identity `[0.11ms]` and run B `[0.87ms]` — so such a test
@@ -380,7 +380,7 @@ describe("R0 GRP-C test-baseline gate", () => {
 	}, 60_000);
 
 	test("two unnamed failures in different files get different identities", async () => {
-		using dir = TempDir.createSync("omp-grp-c-baseline-unnamed-two-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-unnamed-two-");
 		// The single-file case above cannot catch this: with one unnamed failure
 		// there is exactly one site, so scanning the whole log returns the right
 		// answer for the wrong reason. Two files are what separate "picked the only
@@ -438,7 +438,7 @@ describe("R0 GRP-C baseline gate: the run must belong to one commit", () => {
 		// something. A shim that answered nothing at all would also produce VOID, from
 		// `liveHead` returning null rather than from a changed head — the same verdict
 		// for a completely different reason, and the test would pass for the wrong one.
-		using dir = TempDir.createSync("omp-grp-c-baseline-still-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-still-");
 		await Bun.write(
 			path.join(dir.absolute(), "clean.test.ts"),
 			'import { test, expect } from "bun:test";\ntest("passes", () => { expect(1).toBe(1); });\n',
@@ -456,7 +456,7 @@ describe("R0 GRP-C baseline gate: the run must belong to one commit", () => {
 		// exactly why the case needs the guard to be load-bearing: a void run that fell
 		// through to the normal verdict would report "no new failures" for a corpus that
 		// was never the captured one.
-		using dir = TempDir.createSync("omp-grp-c-baseline-void-");
+		using dir = TempDir.createSync("uw-grp-c-baseline-void-");
 		await Bun.write(
 			path.join(dir.absolute(), "clean.test.ts"),
 			'import { test, expect } from "bun:test";\ntest("passes", () => { expect(1).toBe(1); });\n',

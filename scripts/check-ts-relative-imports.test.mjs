@@ -18,7 +18,7 @@ const nodePath = resolveNode();
  * that names a real JavaScript file" — the second is legal and must stay legal.
  */
 async function check(t, sources, assets = {}) {
-	const root = await mkdtemp(join(tmpdir(), "omp-ts-relative-imports-"));
+	const root = await mkdtemp(join(tmpdir(), "uw-ts-relative-imports-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	for (const [path, contents] of Object.entries({ ...sources, ...assets })) {
 		const fullPath = join(root, path);

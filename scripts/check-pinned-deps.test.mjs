@@ -16,7 +16,7 @@ const nodePath = resolveNode();
 
 /** The gate walks the whole tree from its cwd, so each case gets a temp root. */
 async function check(t, manifest, extraFiles = {}) {
-	const root = await mkdtemp(join(tmpdir(), "omp-pinned-deps-"));
+	const root = await mkdtemp(join(tmpdir(), "uw-pinned-deps-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const files = { "packages/example/package.json": JSON.stringify(manifest), ...extraFiles };
 	for (const [path, contents] of Object.entries(files)) {

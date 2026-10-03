@@ -15,7 +15,7 @@ const script = fileURLToPath(new URL("./check-lockfile-commit.mjs", import.meta.
  * throwaway repository with a committed baseline and a staged change.
  */
 async function repo(t, { staged = {}, committed = {} } = {}) {
-	const root = await mkdtemp(join(tmpdir(), "omp-lockfile-"));
+	const root = await mkdtemp(join(tmpdir(), "uw-lockfile-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
 	const write = async (name, value) => writeFile(join(root, name), value);

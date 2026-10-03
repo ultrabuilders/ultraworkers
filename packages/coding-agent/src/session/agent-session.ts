@@ -5223,7 +5223,7 @@ export class AgentSession implements SettingsScope {
 	 * `metadata.user_id` shaped like real Claude Code's `getAPIMetadata` output:
 	 * `{ session_id, account_uuid, device_id }`. `account_uuid` is included only
 	 * when an Anthropic OAuth credential with a known account UUID is loaded;
-	 * `device_id` is derived from both the persistent omp install id and that
+	 * `device_id` is derived from both the persistent ultraworkers install id and that
 	 * account UUID. Resolving live keeps the value in sync with auth-state changes
 	 * (login/logout, token refresh that surfaces a new account UUID) without
 	 * needing to re-call `#syncAgentSessionId()` on every such event.
@@ -12367,7 +12367,7 @@ export class AgentSession implements SettingsScope {
 	async exportToHtml(
 		options: {
 			outputPath?: string;
-			/** Bundle the user's TUI themes rather than the omp web themes. */
+			/** Bundle the user's TUI themes rather than the ultraworkers web themes. */
 			useUserThemes?: boolean;
 			formatId?: string;
 			/** Defaults to the formats this session's extensions registered. */

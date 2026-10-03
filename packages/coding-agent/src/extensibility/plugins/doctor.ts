@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import { $which, APP_NAME, getLogsDir } from "@oh-my-pi/pi-utils";
+import { $which, APP_NAME, getLogsDir, getProjectDir } from "@oh-my-pi/pi-utils";
 import { getAvailableThemes, getBuiltinThemes, resolveThemeJson } from "@oh-my-pi/pi-tui/theme";
 import type { CheckOutcome, DoctorCheck } from "./types";
 import { isUnavailable } from "./types";
@@ -133,7 +133,14 @@ async function readLogDirMode(): Promise<{ logDirMode?: number }> {
 async function findPluginExtensionFailures(): Promise<Array<{ path: string; error: string }>> {
 	let plugins;
 	try {
-		plugins = await getEnabledPlugins(process.cwd());
+		// `getProjectDir()`, not `process.cwd()`. The CLI resolves the project once and
+		// `--cwd` (and the auto-chdir away from $HOME) sets it there WITHOUT calling
+		// `process.chdir`, so the two disagree exactly when the user pointed the run
+		// somewhere. `process.cwd()` would then scan the directory they launched from
+		// and report it healthy while the tree they asked about is the broken one.
+		// Every other plugin-discovery caller already passes a resolved project dir;
+		// this was the only one reading the process cwd directly.
+		plugins = await getEnabledPlugins(getProjectDir());
 	} catch (err) {
 		return [{ path: "<plugin registry>", error: `could not be read: ${String(err)}` }];
 	}

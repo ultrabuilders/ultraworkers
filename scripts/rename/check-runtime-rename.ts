@@ -172,16 +172,66 @@ export async function loadAllowlist(root: string): Promise<AllowlistEntry[]> {
  * by line: the token's meaning is a property of the sentence, and a file can
  * hold both a stale one and a correct one.
  */
+/**
+ * One writer call and the token, wherever the formatter put them.
+ *
+ * Scanning LINE by LINE made this gate's coverage a function of formatting. A call
+ * whose message did not fit the width limit was folded by `oxfmt` into
+ *
+ *     logger.warn(
+ *         `[omp-plugins] MCP server "${name}": invalid requestIdFormat …`,
+ *     );
+ *
+ * so the line carrying the token matched neither `LEGACY_TOKEN` alone (no writer)
+ * nor `RUNTIME_WRITER` alone (no token), and the site did not exist as far as the
+ * gate was concerned. Measured on this tree: `0 ungated of 1 sites` while the file
+ * held three such messages — only the one short enough to fit on a single line was
+ * counted. No allow-list entry was needed, because there was nothing to allow-list.
+ *
+ * Joining the statement is what makes the trigger a property of the CODE rather
+ * than of the line breaks. It stays bounded to one statement on purpose: the whole
+ * file would pull in migration lists and allow-list constants that store the token
+ * without ever emitting it, which is the flood this gate's header refuses.
+ */
+const CALL_BOUNDARY = /;|\)\s*$/;
+
+/** Ceiling on how many lines one statement may span before it stops being one. */
+const CALL_MAX_LINES = 40;
+
 export async function scanRuntime(root: string): Promise<RuntimeViolation[]> {
 	const glob = new Bun.Glob("packages/*/src/**/*.ts");
 	const violations: RuntimeViolation[] = [];
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {
 		if (isExcluded(relPath)) continue;
 		const lines = (await Bun.file(path.join(root, relPath)).text()).split("\n");
-		for (const [index, line] of lines.entries()) {
-			if (!LEGACY_TOKEN.test(line)) continue;
-			if (!RUNTIME_WRITER.test(line)) continue;
-			violations.push({ path: relPath, line: index + 1, text: line.trim() });
+		let start = 0;
+		while (start < lines.length) {
+			// Accumulate forward until the statement closes, so a folded call is read
+			// whole. The bound is what keeps this from becoming a file-wide scan.
+			let end = start;
+			while (end < lines.length && !CALL_BOUNDARY.test(lines[end]!) && end - start < CALL_MAX_LINES) {
+				end++;
+			}
+			// Comment lines are dropped before the statement is assembled. A leading
+			// `// … "omp"` docblock above a logger call is prose ABOUT the call, not
+			// output from it, and folding it in reported a site the moment a sentence
+			// near a writer mentioned the token. Without this, the fix for folded calls
+			// traded a formatting-dependent miss for a comment-dependent false positive.
+			const statement = lines
+				.slice(start, end + 1)
+				.filter(line => !line.trimStart().startsWith("//"))
+				.join("\n");
+			if (LEGACY_TOKEN.test(statement) && RUNTIME_WRITER.test(statement)) {
+				// Reported at the line the WRITER is on, so the allow-list entry points a
+				// human at the call rather than at whichever line happens to hold the text.
+				const writerOffset = lines.slice(start, end + 1).findIndex(line => RUNTIME_WRITER.test(line));
+				violations.push({
+					path: relPath,
+					line: start + (writerOffset === -1 ? 0 : writerOffset) + 1,
+					text: lines[start]!.trim(),
+				});
+			}
+			start = end + 1;
 		}
 	}
 	return violations.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);

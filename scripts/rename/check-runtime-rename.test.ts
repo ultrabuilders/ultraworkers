@@ -165,4 +165,51 @@ describe("scanRuntime over a fixture root", () => {
 			"packages/x/src/levels.ts:4",
 		]);
 	});
+
+	// MEASURED ON THE REAL TREE, NOT HYPOTHESISED
+	// ---------------------------------------------
+	// `check-runtime-rename` reported `0 ungated of 1 sites` while
+	// `discovery/omp-plugins.ts` carried THREE `[omp-plugins]` log messages. Two of
+	// them are the same call shape, folded by the formatter:
+	//
+	//     logger.warn(
+	//         `[omp-plugins] MCP server "${name}": invalid requestIdFormat …`,
+	//     );
+	//
+	// The trigger required the writer and the token on the SAME LINE, so the token
+	// line matched neither test and the site did not exist as far as the gate was
+	// concerned. Only the one call short enough to fit on a single line was counted.
+	//
+	// That makes the gate's coverage a function of FORMATTING: oxfmt reflowing a
+	// message to fit the width limit silently removes it from the census, and no
+	// allow-list entry is needed because there is nothing to allow-list. Proven by
+	// collapsing one of those calls onto one line — the site count went 1 → 2.
+	it("reports a token that a line break separated from its writer call", async () => {
+		expect(
+			await scanFixture({
+				"packages/x/src/multiline.ts": [
+					'import { logger } from "@oh-my-pi/pi-utils";',
+					"logger.warn(",
+					'\t`[omp-plugins] MCP server "${name}": invalid requestIdFormat`,',
+					");",
+					"",
+				].join("\n"),
+			}),
+		).toEqual(["packages/x/src/multiline.ts:2"]);
+	});
+
+	// The other direction, and the reason the fix cannot simply widen the writer
+	// test to the whole file: a token in a MIGRATION LIST that never writes is not
+	// runtime output, and gating it would put a permanently-red site in the census.
+	it("does not report a token that no runtime writer emits", async () => {
+		expect(
+			await scanFixture({
+				"packages/x/src/list.ts": [
+					'const LEGACY = ["omp-one", "omp-two"];',
+					"export const MIGRATION = LEGACY.map(name => `use ultraworkers, not ${name}`);",
+					"",
+				].join("\n"),
+			}),
+		).toEqual([]);
+	});
 });

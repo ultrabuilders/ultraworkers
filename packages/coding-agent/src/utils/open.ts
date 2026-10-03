@@ -106,8 +106,12 @@ export function openPath(urlOrPath: string): void {
 	}
 	// Detect delayed failures (exec succeeded but the opener exited non-zero)
 	// without blocking the caller. Recording them makes silent misconfigurations
-	// (e.g. `xdg-open` present but no MIME handler for `https`) diagnosable from
-	// `~/.omp/logs/omp.*.log`.
+	// (e.g. `xdg-open` present but no MIME handler for `https`) diagnosable from the
+	// process logs. Both halves of the old pointer were wrong: the files are named
+	// from APP_NAME, so they are `ultraworkers.<date>.<pid>.log`, and the logs
+	// directory itself is whichever of `.ultraworkers` / `.omp` `getLogsDir`
+	// resolves — not one fixed spelling. A reader following the old comment greps a
+	// path with no files in it.
 	child.exited.then(
 		exitCode => {
 			if (typeof exitCode === "number" && exitCode !== 0) {

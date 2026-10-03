@@ -18,3 +18,22 @@
 # Log TAG, not a command. `[omp-plugins]` labels this loader's own diagnostics in
 # the log stream; no user types it and nothing parses it.
 packages/coding-agent/src/discovery/omp-plugins.ts:315
+# Surfaced by fixing the gate's trigger, not by a sweep. The trigger required the
+# writer and the token on ONE line, so a message `oxfmt` had folded across three
+# lines matched neither test and the site did not exist — no allow-list entry was
+# needed, because there was nothing to allow-list. Coverage was a function of
+# formatting. `scanRuntime` now reads a whole statement; these are the sites that
+# appeared the moment it did. Two of them are the SAME message as the entry above,
+# in the same file, in the shape the formatter chose.
+
+# Same `[omp-plugins]` log tag as the entry above: PROVIDER_ID is a data identity
+# ("omp-plugins"), not prose, so the tag reports the provider that emitted the line.
+packages/coding-agent/src/discovery/omp-plugins.ts:339
+packages/coding-agent/src/discovery/omp-plugins.ts:345
+
+# `omp://` is the internal URL scheme. It is a published, typed identifier a user
+# types by hand and that appears in stored sessions, so it binds out-of-repo and is
+# kept (W13, closed). This log line is that scheme named in a diagnostic; renaming
+# the scheme is a separate, owner-owned decision and renaming it HERE would leave
+# the message lying about the scheme it is reporting.
+packages/coding-agent/src/internal-urls/docs-index.ts:115

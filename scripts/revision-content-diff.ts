@@ -102,11 +102,7 @@ export interface ClassifyTsvOptions {
  * whose `hits` moved from 8 to 9 is reported as an edit to that one cell rather
  * than as one row removed plus one unrelated row added.
  */
-export function classifyTsvRevision(
-	before: string,
-	after: string,
-	options: ClassifyTsvOptions = {},
-): TsvCellChange {
+export function classifyTsvRevision(before: string, after: string, options: ClassifyTsvOptions = {}): TsvCellChange {
 	const rowsOf = (text: string): Map<string, string[]> => {
 		const out = new Map<string, string[]>();
 		for (const line of splitLines(text)) {

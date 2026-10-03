@@ -16,6 +16,11 @@ export default function helloExtension(pi: ExtensionAPI) {
 		name: "hello_extension",
 		label: "Hello",
 		description: "Greet someone by name. Use when the user asks for a greeting.",
+		// Extension tools otherwise arrive "discoverable", which means they are not
+		// listed at all until something asks for them by name — the opposite of what
+		// an example is for. "essential" keeps it top-level, so a new user sees the
+		// tool their extension registered.
+		loadMode: "essential",
 		parameters: z.object({
 			name: z.string().describe("Who to greet"),
 		}),

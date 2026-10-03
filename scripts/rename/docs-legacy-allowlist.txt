@@ -293,3 +293,10 @@ docs/mcp-server-contribution-by-extensions.md	1
 #          legacy path is the fixture the matcher is verified against.
 # Pinned at the count the gate itself reported (15), so a 16th occurrence reds.
 scripts/rename/README.md	15
+# Quoted source, not prose. §7.1 reproduces the Windows branch of lspMuxEndpoint
+# verbatim from packages/coding-agent/src/lsp/mux/protocol.ts:66-72 so readers can
+# check the citation. The one token is the live pipe name `omp-lsp-mux`, and the
+# doc quotes it exactly — rewriting the token here would make the quotation
+# disagree with the file it cites, so the class is keep-wire.
+# Pinned at the count the gate itself reported (1), so a 2nd occurrence reds.
+docs/peer-messaging.md	1

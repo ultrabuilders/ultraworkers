@@ -18,7 +18,23 @@ import { getDbBusyTimeoutMs } from "@oh-my-pi/pi-utils";
  */
 
 /** Schema version. Bumping this is the migration entry point — see {@link migrate}. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
+
+/**
+ * Ceiling on how long ONE lease may live, however often it is renewed.
+ *
+ * This is not the same ceiling as {@link MAX_TTL_MS}. That one bounds a single
+ * TTL; this one bounds the whole lifetime of a claim, and it is the only thing
+ * that stops a holder which is alive and well — so renews perfectly on schedule —
+ * from sitting on a path forever. Liveness and renewal are one signal, so no
+ * amount of watching the holder catches that case; only a deadline does.
+ *
+ * Past this a renew is REFUSED rather than quietly shortened, because silently
+ * returning a shorter lease is the one failure the holder cannot detect: it would
+ * believe it holds the path for the TTL it asked for. The caller must release and
+ * acquire again, which mints a fresh token and a fresh lifetime.
+ */
+export const PEER_LEASE_MAX_LIFETIME_MS = 30 * 60 * 1000;
 
 /**
  * Default lease lifetime.
@@ -55,6 +71,16 @@ export interface Lease {
 	readonly fenceToken: number;
 	readonly expiresTs: number;
 	readonly releasedTs: number | null;
+	/**
+	 * When the holder first took this claim, i.e. before any renewal.
+	 *
+	 * The lifetime cap is measured from here, not from the last renew — a cap
+	 * reset by each renew is not a cap. Absent on a lease written by schema v1,
+	 * which is why {@link renewLease} treats a missing value as "cap unknown"
+	 * rather than as zero: zero would expire every inherited lease on its first
+	 * renewal.
+	 */
+	readonly acquiredTs: number | null;
 }
 
 /** Options for {@link acquireLease}. */
@@ -80,6 +106,27 @@ export interface FenceOptions {
 	readonly fenceToken: number;
 	readonly now?: number;
 }
+
+/**
+ * Why a renew did not extend the lease.
+ *
+ * These are separate values rather than one `false`, because the two mean
+ * opposite things to a holder and collapsing them teaches it the wrong response:
+ *
+ *   `reaped` — you do NOT hold this lease. Someone else may hold it now. Stop.
+ *   `capped` — you DO still hold it; you just may not extend it. Release and
+ *              acquire again to get a fresh lifetime.
+ *
+ * A single boolean makes `capped` look like `reaped`, and a holder that reacts
+ * to `reaped` by stopping is the safe reaction — but one that retries blindly is
+ * the common reaction, and it becomes a hot loop against a lease it still owns.
+ */
+export type RenewRefusal = "reaped" | "capped";
+
+/** Outcome of a renew: the new expiry, or why the lease was not extended. */
+export type RenewResult =
+	| { readonly ok: true; readonly expiresTs: number }
+	| { readonly ok: false; readonly reason: RenewRefusal };
 
 /**
  * Open the lease database and bring its schema up to date.
@@ -117,6 +164,27 @@ export function pragmaValue(db: Database, name: string): unknown {
 }
 
 /**
+ * True when `table` already has `column`.
+ *
+ * Asked of the table rather than inferred from `user_version`, because the two
+ * disagree in both directions: a fresh file is at version 0 with the column
+ * already created, and a migration interrupted before its version bump is at
+ * version 1 with the column present. Only the table itself is authoritative.
+ */
+function tableHasColumn(db: Database, table: string, column: string): boolean {
+	// The table name is interpolated because PRAGMA takes no bind parameter. Every
+	// caller passes a literal from this file, never caller-supplied text.
+	//
+	// `PRAGMA table_info` yields one row per column with the name in a `name`
+	// field. The row type is stated rather than left to inference, because an
+	// untyped `.all()` makes every field `unknown` and `row.name === column`
+	// stops compiling — which is how an unread `.all()` and a wrong one look
+	// identical until the typechecker forces the question.
+	const rows = db.query<{ name: string }, []>(`PRAGMA table_info(${table})`).all();
+	return rows.some(row => row.name === column);
+}
+
+/**
  * Apply schema migrations by `user_version`.
  *
  * The version counter lives in the database rather than in the code so that a
@@ -142,7 +210,8 @@ function migrate(db: Database): void {
 			  exclusive    INTEGER NOT NULL,
 			  fence_token  INTEGER NOT NULL,
 			  expires_ts   INTEGER NOT NULL,
-			  released_ts  INTEGER
+			  released_ts  INTEGER,
+			  acquired_ts  INTEGER
 			)`);
 		db.run("CREATE INDEX IF NOT EXISTS idx_peer_leases_expires ON peer_leases(expires_ts)");
 
@@ -157,6 +226,32 @@ function migrate(db: Database): void {
 			  next_token INTEGER NOT NULL
 			)`);
 		db.run("INSERT OR IGNORE INTO peer_fence (id, next_token) VALUES (1, 1)");
+
+		// v1 → v2: the lifetime cap needs the moment a claim was FIRST taken, and
+		// `CREATE TABLE IF NOT EXISTS` above will not add a column to a table that
+		// already exists — so on an inherited database this ALTER is the only thing
+		// that adds it.
+		//
+		// `acquired_ts` is backfilled as NULL rather than derived. Deriving it
+		// would mean `expires_ts − ttl`, and the TTL in force at acquire time is
+		// not recorded anywhere: a caller may have passed its own, and a lease that
+		// has since been renewed no longer knows it. A guessed first-acquire time
+		// would silently shorten an old holder's remaining lifetime, so the NULL
+		// says "unknown" and `renewLease` refuses to apply a cap it cannot check —
+		// visible, rather than a quiet wrong number. Inherited leases are re-taken
+		// by releasing and acquiring again.
+		//
+		// The ALTER is guarded on the column being ABSENT, not on `value < 2`. Those
+		// are not the same condition, and reading them as one breaks the commonest
+		// case there is: on a brand-new file `value` is 0, the CREATE above has
+		// already made the column, and the ALTER then adds it a second time —
+		// "duplicate column name", so the store cannot be created at all. SQLite has
+		// no `ADD COLUMN IF NOT EXISTS`, so the table is asked directly. It also
+		// covers a migration interrupted between the DDL and the version bump, where
+		// the columns are present but `user_version` still reads 1.
+		if (!tableHasColumn(db, "peer_leases", "acquired_ts")) {
+			db.run("ALTER TABLE peer_leases ADD COLUMN acquired_ts INTEGER");
+		}
 
 		db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 	})();
@@ -231,10 +326,12 @@ function toLease(row: Record<string, unknown>): Lease {
 		fenceToken: row.fence_token as number,
 		expiresTs: row.expires_ts as number,
 		releasedTs: (row.released_ts as number | null) ?? null,
+		acquiredTs: (row.acquired_ts as number | null) ?? null,
 	};
 }
 
-const SELECT_COLUMNS = "id, owner, idempotency, path_pattern, exclusive, fence_token, expires_ts, released_ts";
+const SELECT_COLUMNS =
+	"id, owner, idempotency, path_pattern, exclusive, fence_token, expires_ts, released_ts, acquired_ts";
 
 /**
  * Take out a lease, or report what stands in the way.
@@ -293,9 +390,17 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 
 		db.run(
 			`INSERT INTO peer_leases
-			   (owner, idempotency, path_pattern, exclusive, fence_token, expires_ts, released_ts)
-			 VALUES (?, ?, ?, ?, ?, ?, NULL)`,
-			[options.owner, options.idempotency ?? null, options.pathPattern, exclusive ? 1 : 0, fenceToken, now + ttl],
+			   (owner, idempotency, path_pattern, exclusive, fence_token, expires_ts, released_ts, acquired_ts)
+			 VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+			[
+				options.owner,
+				options.idempotency ?? null,
+				options.pathPattern,
+				exclusive ? 1 : 0,
+				fenceToken,
+				now + ttl,
+				now,
+			],
 		);
 		const row = db
 			.query<Record<string, unknown>, [string, number]>(
@@ -366,22 +471,55 @@ function isAncestorClaim(claim: string, path: string): boolean {
 }
 
 /**
- * Push out a lease's expiry.
+ * Push out a lease's expiry, or report why it could not be pushed.
  *
  * The match is on owner AND fence token AND `released_ts IS NULL`. Dropping the
  * third predicate lets a renewed row match its own tombstone: after the lease is
  * released, this would change one row, report success, and leave the holder
  * renewing a lease nobody can see.
+ *
+ * Two refusals, deliberately distinguishable — see {@link RenewRefusal}. The cap
+ * check runs INSIDE the transaction that does the update, and it is an UPDATE
+ * with an extra `acquired_ts` predicate rather than a read-then-write, so a
+ * decision to extend cannot be taken against a row another writer has since
+ * released.
  */
-export function renewLease(db: Database, options: FenceOptions & { ttlMs?: number }): boolean {
+export function renewLease(db: Database, options: FenceOptions & { ttlMs?: number }): RenewResult {
 	const now = options.now ?? Date.now();
-	const ttl = options.ttlMs ?? DEFAULT_TTL_MS;
-	const result = db.run(
-		`UPDATE peer_leases SET expires_ts = ?
-		 WHERE owner = ? AND fence_token = ? AND released_ts IS NULL`,
-		[now + ttl, options.owner, options.fenceToken],
-	);
-	return result.changes === 1;
+	const ttl = Math.min(options.ttlMs ?? DEFAULT_TTL_MS, MAX_TTL_MS);
+
+	db.run("BEGIN IMMEDIATE");
+	try {
+		// `acquired_ts IS NOT NULL AND ? - acquired_ts >= ?` folds the cap into the
+		// same UPDATE. Writing it as "read the row, compare, then update" would let
+		// the row change underneath between the two statements — which is the same
+		// window the fence token exists to close, reopened inside the fence.
+		const result = db.run(
+			`UPDATE peer_leases SET expires_ts = ?
+			 WHERE owner = ? AND fence_token = ? AND released_ts IS NULL
+			   AND (acquired_ts IS NULL OR ? - acquired_ts < ?)`,
+			[now + ttl, options.owner, options.fenceToken, now, PEER_LEASE_MAX_LIFETIME_MS],
+		);
+		if (result.changes === 1) {
+			db.run("COMMIT");
+			return { ok: true, expiresTs: now + ttl };
+		}
+
+		// Zero rows is ambiguous on its own: it is either "you no longer hold this"
+		// or "you hold it but are past the cap". One more read separates them, and
+		// it is read-only so it cannot itself lose the lease.
+		const row = db
+			.query<Record<string, unknown>, [string, number]>(
+				"SELECT acquired_ts FROM peer_leases WHERE owner = ? AND fence_token = ? AND released_ts IS NULL",
+			)
+			.get(options.owner, options.fenceToken);
+		db.run("COMMIT");
+		if (row === null) return { ok: false, reason: "reaped" };
+		return { ok: false, reason: "capped" };
+	} catch (error) {
+		db.run("ROLLBACK");
+		throw error;
+	}
 }
 
 /**

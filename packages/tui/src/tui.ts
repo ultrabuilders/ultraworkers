@@ -20,7 +20,7 @@ import * as logger from "@oh-my-pi/pi-utils/logger";
 import * as postmortem from "@oh-my-pi/pi-utils/postmortem";
 import type { TspFrame, TspNode, TspText } from "@oh-my-pi/pi-wire";
 import { DEFAULT_MAX_INLINE_IMAGES, ImageBudget } from "./components/image";
-import { TuiDebugServer } from "./debug-server";
+import { resolveTuiDebugSocketPath, TuiDebugServer } from "./debug-server";
 import { isKeyRelease, matchesKey } from "./keys";
 import { KITTY_PLACEHOLDER } from "./kitty-graphics";
 import { LoopWatchdog } from "./loop-watchdog";
@@ -1462,8 +1462,8 @@ export class TUI extends Container {
 		this.#debugPaint = undefined;
 		this.#debugServer?.stop();
 		this.#debugServer = undefined;
-		const debugPath = process.env.OMP_TUI_DEBUG;
-		if (debugPath !== undefined && debugPath.length > 0) {
+		const debugPath = resolveTuiDebugSocketPath(process.env);
+		if (debugPath !== undefined) {
 			this.#debugServer = new TuiDebugServer(this, debugPath);
 			this.#debugServer.start();
 		}

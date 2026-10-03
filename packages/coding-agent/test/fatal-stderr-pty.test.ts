@@ -36,6 +36,11 @@ describe.skipIf(process.platform === "win32")("fatal stderr terminal handoff", (
 			// (ci-test-ts children inherit PI_TEST_RUNTIME=1).
 			env: {
 				...process.env,
+				// Both spellings: the TUI reads the canonical variable first and
+				// falls back to the pre-rebrand one, so clearing only the legacy
+				// name would leave an inherited `ULTRAWORKERS_TUI_DEBUG` live and
+				// start a debug server the fixture never asked for.
+				ULTRAWORKERS_TUI_DEBUG: undefined,
 				OMP_TUI_DEBUG: undefined,
 				PI_TEST_RUNTIME: undefined,
 				BUN_ENV: undefined,

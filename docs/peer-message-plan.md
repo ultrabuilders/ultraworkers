@@ -150,6 +150,40 @@ catch in a package with its own test suite and no agent in the loop.
 
 *The thing Claude Code does not do at all.*
 
+### 3.0 Who actually releases files — measured across eight repos
+
+The owner's premise, checked rather than assumed:
+
+| Project | Deletes lock / socket / registration? | Evidence used | Leaks on crash |
+| --- | --- | --- | --- |
+| `pi-parley` | **Yes** — socket, port, pid | kernel lock **+ live probe** | files, but nothing that *blocks* |
+| `pi-cross-session` | **Yes** — socket + registration | probe **AND** `kill(pid,0)` | yes, until another session runs |
+| `armory-mesh` | **Yes** — registration, socket | mtime TTL / broken probe | `cursors/` forever |
+| `pi-peer-sting8k` | **Yes** — whole session artifacts | mtime TTL + two-observation grace | `.tmp` only |
+| `agent-fleet` | Yes, but the lock is **never auto-stolen** | operator `--force` only | **yes, permanently** |
+| `pi-mail` | Yes — presence files | **mtime TTL only, no probe** | **yes, permanently** |
+| `pi-peer-cryptolibertus` | **No — filters only** | TTL+probe, but never deletes | descriptors + socket **forever** |
+| `my-pi-spences10` | No (nothing to delete) | n/a | `.tmp`, WAL forever |
+
+**Two projects release nothing at all, and two more release only on a timestamp with
+no liveness probe.** The pattern that works is the first row: **release on a probe,
+not on an age.**
+
+Two failures worth naming because they are easy to reproduce:
+
+- **`agent-fleet`'s lock never expires**, by explicit choice: *"No stale-lock
+  stealing: recovery is an explicit operator decision"*
+  (`bin/lib/workspace-safety.js:38-51`). That is defensible — but its release path is
+  a **silent `catch {}`** (`:57-64`), so a torn lock body is a permanent wedge **with
+  no diagnostic**. Deliberate and quiet is not the same as safe.
+- **A pid-only temp name is a permanent failure.** `agent-fleet`'s temp file is
+  `${path}.tmp-${process.pid}` (`bin/lib/transaction.js:82`). A recycled pid makes
+  every later transaction fail `EEXIST` forever. **Put something unguessable in the
+  temp name, not the pid** — and reap orphans by age.
+
+**Not one of the eight calls `fsync` except `agent-fleet`, and only partially
+`pi-parley`.** See §4.3.
+
 ### 3.1 Stale socket reclaim
 
 Claude Code registers `/tmp/cc-socks/<PID>.sock` and never removes it, so a crashed
@@ -275,7 +309,44 @@ that collides loses nothing.
 | `UNIQUE` + `INSERT OR IGNORE` | `mail-rust` | Retry is idempotent |
 | Refuse an ambiguous target; never pick one | `pi-ipc`, `sting8k` | §6.1 |
 
-### 4.3 Two-phase claim by rename
+### 4.3 Durability: `rename` is atomic but **not durable**
+
+Across eight projects, **only `agent-fleet` calls `fsync`** — and `pi-parley` only
+partially. This is the one repo that gets both halves right, and it is the half
+almost everyone skips (`bin/lib/transaction.js:81-88`, verified):
+
+```js
+function fsyncPath(path) {
+	const fd = openSync(path, "r");
+	try { fsyncSync(fd); } finally { closeSync(fd); }
+}
+function durableJson(path, value) {
+	const temp = `${path}.tmp-${process.pid}`;
+	const fd = openSync(temp, "wx", 0o600);
+	try { writeSync(fd, JSON.stringify(value, null, 2) + "\n"); fsyncSync(fd); } finally { closeSync(fd); }
+	renameSync(temp, path);
+	// Persist the directory entry after the atomic replacement.
+	fsyncPath(dirname(path));
+}
+```
+
+The last two lines are the lesson and the comment names it: **`rename()` is atomic
+but not durable.** Until you `fsync` the *directory*, the rename itself can be lost
+by a power failure even though no reader ever sees a torn file. Every inbox write in
+this package does both.
+
+Even that repo is inconsistent — the payload path that writes every installed file
+has none of it (`bin/lib/apply.js:710-714`). **A durable-write helper that only some
+call sites use is the same shape as a gate that cannot fail.**
+
+### 4.4 Idempotency conflicts are hard errors
+
+`agent-fleet` keys its journal on `requestId` **plus an intent hash**
+(`monitor-invoke-journal.ts:68-83`): the same id with a different intent is a hard
+`idempotency_conflict`, **never a silent replay**. Retry that quietly changes its
+payload is how a message gets delivered twice with different content.
+
+### 4.5 Two-phase claim by rename
 
 `sting8k` (`service.ts:322-327`) claims the drain by `rename` — atomic on POSIX,
 only one drainer wins, losers `continue` (§5.2). This is the filesystem mutex, and
@@ -747,25 +818,37 @@ pub const AUTOCOMMIT_CONCURRENT_MODE_PRAGMA: &str = "PRAGMA fsqlite.concurrent_m
 `pool.rs:7126-7135` **fails startup** unless it reads back `1`, and `:7099-7101`
 documents the values: `-1` not observed, `0` serialized, `1` **MVCC concurrent**.
 
-Two consequences for this plan:
+Two consequences for this plan, and the second is the important one:
 
 1. **Its lock primitives are not portable.** Every lock is `flock(2)` via `fs2`.
    Node has no `flock`. Worse, `flock` semantics differ by platform — **per
    open-file-description on Linux, per *process* on BSD/macOS** — so on our target
    platform a second `open`+`flock` in the same process **succeeds** and silently
    converts a shared lock to exclusive. `mail-rust` pays for this with a two-tier
-   scheme (in-process refcounts shadowing the flock, `server/lib.rs:1341-1353`). We
-   must not copy the flock half without the shadow half, or we get a lock that lies
-   on macOS.
-2. **`run_with_mvcc_retry` retries MVCC conflicts, not `SQLITE_BUSY`.** A TypeScript
-   port has no MVCC, so §9's retry reasoning has to be re-derived, not inherited.
+   scheme (in-process refcounts shadowing the flock, `server/lib.rs:1341-1353`),
+   which its own design doc attributes to exactly this
+   (`docs/DESIGN_git_lock.md:141`: *"POSIX says the same process holding a lock can't
+   block itself, but this makes reasoning about correctness hard"*). We must not
+   copy the flock half without the shadow half, or we get a lock that lies on macOS.
+2. **The MVCC mode is the least-proven thing in the project, not the strongest.**
+   Its own `docs/VISION.md` (verified) qualifies it three ways: `BEGIN CONCURRENT`
+   is opt-in **"pending the upstream MVCC snapshot-drift fix"**; **85 `BEGIN
+   IMMEDIATE` sites remain**, so most explicit transactions are still fully
+   serialized; and **"a serialized-autocommit A/B has not been run."** One thing it
+   does well is *pinning* the mode explicitly so an upstream default flip cannot
+   silently change the write path — worth copying even though the engine is not.
+
+   So the direction of my earlier reading was inverted: this is not a proven
+   mechanism the rest of the design leans on. **It is an unresolved one**, with
+   snapshot drift named as the open bug.
 
 What *does* survive is the part that never needed an engine: **no daemon, open the
-durable layer directly, spawn nothing** (§6.5). That is still the most transferable
-sentence in the project, and it is the one the plan actually builds on.
+durable layer directly, spawn nothing** (§6.5). That is the most transferable
+sentence in the project, and it is the one the plan builds on. Everything about *how*
+they serialise writers does not transfer — and neither does theirs.
 
 **Rule carried into §9: a concurrency claim sourced from `mail-rust` must always be
-read with *which engine did it assume?***
+read with *which engine did it assume?* and *has its A/B actually been run?***
 
 ### 11.1 Licence
 

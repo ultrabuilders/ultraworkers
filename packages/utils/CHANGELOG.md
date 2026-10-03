@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- The archive size ceilings no longer claim to mirror a Rust type that is not in the tree. `ar/limits.ts` said it mirrored `Limits` in a crate named `omp-ar`, and no such crate exists at HEAD — the sentence pointed a reader at something they could not go and read, and invited the next person to keep a cross-language "mirror" in sync that was never written.
+
 - The Bun floor is now checked at every place it is written down, not only in the package manifests. `engines.bun` is read from exactly one manifest, but `scripts/install.sh` and the two npm-manifest generators each carry their own copy, and those were unchecked: a release raised the installer's floor while the manifest the runtime actually reads stayed behind, so the installer refused users the app ran fine on — with no error from any gate. The sources are compared against the manifest `dirs.ts` imports, so the next bump cannot be a silent no-op.
 
 - `sanitizeText` no longer truncates its input at a BEL-terminated escape sequence. Command output

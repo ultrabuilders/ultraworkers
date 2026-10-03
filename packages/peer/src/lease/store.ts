@@ -20,8 +20,25 @@ import { getDbBusyTimeoutMs } from "@oh-my-pi/pi-utils";
 /** Schema version. Bumping this is the migration entry point — see {@link migrate}. */
 const SCHEMA_VERSION = 1;
 
-/** Default lease lifetime. Callers may ask for longer; see {@link acquireLease}. */
-export const DEFAULT_TTL_MS = 30 * 60 * 1000;
+/**
+ * Default lease lifetime.
+ *
+ * 30s, NOT 30 minutes. A lease is a liveness assertion, not a claim on a file: it
+ * says "this session is working here right now", so the useful lifetime is a
+ * couple of missed heartbeats, not a workday. A long default only delays the
+ * moment a crashed holder stops blocking everyone.
+ */
+export const DEFAULT_TTL_MS = 30_000;
+
+/**
+ * Ceiling on a caller-supplied TTL.
+ *
+ * A caller can ask for shorter — that is how a short task opts out of waiting —
+ * but not for longer. Without a ceiling the TTL becomes a way to hold a path
+ * indefinitely with no live session behind it, which is the exact failure the
+ * lease exists to prevent.
+ */
+export const MAX_TTL_MS = 30 * 60 * 1000;
 
 /** A held or released lease. */
 export interface Lease {
@@ -48,6 +65,8 @@ export interface AcquireOptions {
 	readonly idempotency?: string;
 	readonly ttlMs?: number;
 	readonly now?: number;
+	/** Observes the reap → probe → insert sequence. Used to assert order, not outcome. */
+	readonly trace?: (step: "reap" | "probe" | "insert") => void;
 }
 
 /** Outcome of an acquire attempt. */
@@ -154,22 +173,42 @@ const REGEX_META = new Set([".", "+", "?", "^", "$", "{", "}", "(", ")", "|", "[
 /**
  * Translate a lease glob into a matcher over concrete paths.
  *
- * Only `**` (any run of segments, including none) and `*` (any run of characters
- * within one segment) are supported; every other character is literal. A glob
- * that reached outside the tree would let one session claim another's files, so
- * the leading `**` segment is allowed but the match stays anchored at the root.
+ * Two wildcards, and the difference between them is the whole reason this is not
+ * a one-line `split`:
+ *
+ *   `**` any run of *characters*, including none and including separators
+ *   `*`  any run of characters within ONE segment — never crosses `/`
+ *
+ * The `**` followed by a separator has to be handled as ONE token rather than as
+ * two. Read that way it becomes the regex `^src/.*[^/]*\.ts$`, and `src/a.ts` does
+ * not match it: the `.*` has to swallow at least the separator that follows, so the
+ * pattern misses every file directly inside `src` — which is the overwhelmingly
+ * common case. As a single token it becomes a non-capturing group whose second
+ * half is optional, so the zero-segment alternative is exactly what "any run of
+ * segments, including none" means.
+ *
+ * (The token is written out as "two stars then a slash" rather than inline, because
+ * a literal `*` immediately followed by `/` would close this comment where it
+ * stands.)
+ *
+ * Every other character is literal. A glob that reached outside the tree would let
+ * one session claim another's files, so the leading `**` segment is allowed but
+ * the match stays anchored at the root.
  */
 function globToRegExp(pattern: string): RegExp {
 	let source = "";
 	for (let i = 0; i < pattern.length; i++) {
 		const char = pattern[i];
-		if (char === "*") {
-			if (pattern[i + 1] === "*") {
-				source += ".*";
-				i++;
+		if (char === "*" && pattern[i + 1] === "*") {
+			if (pattern[i + 2] === "/") {
+				source += "(?:.*/)?";
+				i += 2;
 			} else {
-				source += "[^/]*";
+				source += ".*";
+				i += 1;
 			}
+		} else if (char === "*") {
+			source += "[^/]*";
 		} else {
 			source += REGEX_META.has(char) ? "\\" + char : char;
 		}
@@ -206,11 +245,21 @@ const SELECT_COLUMNS = "id, owner, idempotency, path_pattern, exclusive, fence_t
  */
 export function acquireLease(db: Database, options: AcquireOptions): AcquireResult {
 	const now = options.now ?? Date.now();
-	const ttl = options.ttlMs ?? DEFAULT_TTL_MS;
+	const ttl = Math.min(options.ttlMs ?? DEFAULT_TTL_MS, MAX_TTL_MS);
 	const exclusive = options.exclusive ?? true;
+	// The order reap → probe → insert is the contract, and asserting the outcome
+	// does not establish it: reaping after the probe would still let every
+	// assertion below pass, because an expired lease is filtered out of the probe
+	// either way. The trace makes the sequence itself observable.
+	const trace = options.trace;
 
 	db.run("BEGIN IMMEDIATE");
 	try {
+		// Reap first. An expired lease must not merely be ignored by the probe but
+		// be marked dead, or its holder still reads as the last owner of the path.
+		trace?.("reap");
+		reapExpiredLeases(db, now);
+
 		// A replayed acquire with the same key must return the original lease
 		// rather than mint a second token, or a retried call would silently
 		// invalidate the caller's first one.
@@ -220,18 +269,21 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 					`SELECT ${SELECT_COLUMNS} FROM peer_leases
 					 WHERE idempotency = ? AND owner = ? AND released_ts IS NULL`,
 				)
-				.get([options.idempotency, options.owner]);
+				.get(options.idempotency, options.owner);
 			if (prior) {
 				db.run("COMMIT");
 				return { ok: true, lease: toLease(prior) };
 			}
 		}
 
+		trace?.("probe");
 		const conflicts = findConflicts(db, options.pathPattern, exclusive, now);
 		if (conflicts.length > 0) {
 			db.run("ROLLBACK");
 			return { ok: false, conflicts };
 		}
+
+		trace?.("insert");
 
 		const fenceToken = db
 			.query<{ next_token: number }, []>("SELECT next_token FROM peer_fence WHERE id = 1")
@@ -249,7 +301,7 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 			.query<Record<string, unknown>, [string, number]>(
 				`SELECT ${SELECT_COLUMNS} FROM peer_leases WHERE owner = ? AND fence_token = ?`,
 			)
-			.get([options.owner, fenceToken]);
+			.get(options.owner, fenceToken);
 		if (!row) throw new Error("lease row vanished inside its own transaction");
 		db.run("COMMIT");
 		return { ok: true, lease: toLease(row) };
@@ -282,12 +334,35 @@ export function findConflicts(
 	const out: Lease[] = [];
 	for (const row of rows) {
 		const lease = toLease(row);
-		const overlaps =
-			leasePatternMatches(lease.pathPattern, pathPattern) || leasePatternMatches(pathPattern, lease.pathPattern);
-		if (!overlaps) continue;
+		if (!patternsOverlap(lease.pathPattern, pathPattern)) continue;
 		if (exclusive || lease.exclusive) out.push(lease);
 	}
 	return out;
+}
+
+/**
+ * True when one lease's ground could contain the other's.
+ *
+ * Three forms, and dropping any of them lets one path be held twice over:
+ *
+ *   exact     `src/a.ts`    vs `src/a.ts`      — identical
+ *   glob      `src/**` + a  vs `src/a.ts`      — the pattern covers the path
+ *             `.ts` suffix
+ *   ancestor  `src/`        vs `src/a.ts`      — a directory claim covers what is under it
+ *
+ * The ancestor form is why a trailing slash is load-bearing rather than cosmetic. Glob
+ * matching alone cannot express it: `src/` as a glob matches the literal three-character
+ * string `src/` and nothing else, so without this a session holding `src/` and a session
+ * holding `src/a.ts` would both win and neither would know.
+ */
+export function patternsOverlap(a: string, b: string): boolean {
+	if (leasePatternMatches(a, b) || leasePatternMatches(b, a)) return true;
+	return isAncestorClaim(a, b) || isAncestorClaim(b, a);
+}
+
+/** A pattern ending in `/` claims everything beneath it. */
+function isAncestorClaim(claim: string, path: string): boolean {
+	return claim.endsWith("/") && path.startsWith(claim);
 }
 
 /**
@@ -333,8 +408,21 @@ export function reapExpiredLeases(db: Database, now: number = Date.now()): numbe
 		.changes;
 }
 
-/** Every lease for a pattern, tombstones included. */
-export function listLeases(db: Database, pathPattern?: string): Lease[] {
+/**
+ * Every lease matching `pathPattern`, or every lease in the store when it is omitted.
+ *
+ * The two branches must answer the SAME question, and they did not: the
+ * unfiltered branch returned released and expired rows while the filtered one
+ * returned neither. A caller asking "who holds this path?" got the live holder
+ * under one call and the whole history under another, so a stale holder could
+ * read as a live one depending only on which argument it passed.
+ *
+ * `now` is injected rather than read from the clock so that "live" is decided
+ * against the same instant the caller is reasoning about; a test that acquires at
+ * a synthetic `now` and lists against the wall clock would filter out the lease
+ * it just took.
+ */
+export function listLeases(db: Database, pathPattern?: string, now: number = Date.now()): Lease[] {
 	const rows =
 		pathPattern === undefined
 			? db.query<Record<string, unknown>, []>(`SELECT ${SELECT_COLUMNS} FROM peer_leases ORDER BY id`).all()
@@ -344,6 +432,25 @@ export function listLeases(db: Database, pathPattern?: string): Lease[] {
 				 WHERE path_pattern = ? AND released_ts IS NULL AND expires_ts > ?
 				 ORDER BY id`,
 					)
-					.all(pathPattern, Date.now());
+					.all(pathPattern, now);
+	return rows.map(toLease);
+}
+
+/**
+ * Every lease matching `pathPattern`, released and expired ones included.
+ *
+ * The history view, for answering "was this ever held, and by whom". Separate from
+ * {@link listLeases} rather than a flag on it, because the two questions have
+ * opposite defaults and a flag makes the wrong one the easy call.
+ */
+export function listLeaseHistory(db: Database, pathPattern?: string): Lease[] {
+	const rows =
+		pathPattern === undefined
+			? db.query<Record<string, unknown>, []>(`SELECT ${SELECT_COLUMNS} FROM peer_leases ORDER BY id`).all()
+			: db
+					.query<Record<string, unknown>, [string]>(
+						`SELECT ${SELECT_COLUMNS} FROM peer_leases WHERE path_pattern = ? ORDER BY id`,
+					)
+					.all(pathPattern);
 	return rows.map(toLease);
 }

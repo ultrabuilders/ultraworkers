@@ -434,7 +434,7 @@ describe("leading-colon path recovery (issue #5508)", () => {
 	}
 
 	it("strips a leading colon before an absolute path in resolveToCwd", () => {
-		expect(resolveToCwd(":/tmp/omp-colon-test.txt", tmpDir)).toBe("/tmp/omp-colon-test.txt");
+		expect(resolveToCwd(":/tmp/ultraworkers-colon-test.txt", tmpDir)).toBe("/tmp/ultraworkers-colon-test.txt");
 	});
 
 	it("strips a leading colon before `./` and `../` relative paths in resolveToCwd", () => {

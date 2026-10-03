@@ -87,7 +87,7 @@ describe("extension renderCall theme slot (upstream pi compat)", () => {
 		expect(await renderToolCall(piOrderRenderer, { query: "needle" })).toContain("aft_search needle");
 	});
 
-	test("an omp-order renderer still reads render options from its second argument", async () => {
+	test("an ultraworkers-order renderer still reads render options from its second argument", async () => {
 		expect(
 			await renderToolCall(ompOrderRenderer, { query: "needle" }, { expanded: true, isPartial: false }),
 		).toContain("aft_search needle [expanded]");

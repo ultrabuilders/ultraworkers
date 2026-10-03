@@ -126,17 +126,22 @@ The plan cites `mcp/tool-bridge.ts:656` and `:771`; `:656` is exact, and the sec
 `:861`, not `:771`. It cites the extension default at `types.ts:658`, which is a `clearTimer`
 docblock; the declaration is at `:851`.
 
-**Correction to the plan, and the second half matters more than the first.** The plan cites
-`tools/approval.ts:369-371` for the `'Origin: MCP server tool'` line and records that it "is not
-reachable by execution." Both halves are wrong, and they are wrong in different ways:
+**Correction to the plan — position only.** The plan cites `tools/approval.ts:369-371` for the
+`'Origin: MCP server tool'` line. The line is at **`:416`**, inside `formatApprovalPrompt`. The
+plan's *conclusion* that the line is unreachable is **correct**, and the reason is the hardcoded
+tier above: the guard reads
 
-- **Position** — `:369-371` → **`:416`**. This half is cheap; anyone can go look.
-- **Meaning** — "not reachable" → **it does run.** What is actually true is that it renders an
-  origin the user can do nothing with, because an MCP tool's tier is a hardcoded class field
-  rather than anything the user, the server, or a policy can influence.
+```ts
+if (tool.name.startsWith("mcp__") && tool.approval === undefined) {
+```
 
-Only the second half is worth anything. A reader who fixes the line number and leaves the claim
-alone has corrected the citation and kept the error.
+and every MCP tool class declares `approval` as a definite field — `write` at `:656`, `exec` at
+`:799`, `write` at `:861`. So `tool.approval` is never `undefined`, the guard never passes, and
+the line never runs.
+
+That is worth stating precisely because it is a coupling, not an accident: the origin banner is
+unreachable **because** the tier is hardcoded. Anyone who ever makes an MCP tool's tier
+configurable must revisit this guard at the same time, or the banner silently starts rendering.
 
 ## 5. Lifecycle — most of it already exists
 

@@ -13,7 +13,10 @@ session, a place to put a message it may not read for hours, and a way to say
   a closed space of 9,900 and never recomputed. Not from the working directory,
   not from the PID, not from a counter, because a name derived from mutable
   ambient state cannot be an address. A restart mints a new name: the session
-  that restarted genuinely is not the session its peers were talking to.
+  that restarted genuinely is not the session its peers were talking to. `/rename`
+  accepts any string, and a vacated name is **held for 24 hours** rather than
+  deleted — so a send can distinguish *that name expired* from *unknown name*, and
+  the sender can ask for the new one instead of assuming the peer never existed.
 - **Inbox** — durable per-session mailboxes. Overflow **refuses** the send rather
   than dropping the oldest message, because discarding unread mail because a
   backlog built while nothing was running is the one failure a durable store

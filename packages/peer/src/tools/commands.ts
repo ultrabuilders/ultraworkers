@@ -11,7 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import type { ExtraReserved } from "../identity/index";
+import type { ExtraReserved, RenameOutcome } from "../identity/index";
 import { renameName } from "../identity/index";
 import type { PeerRosterEntry } from "./verbs";
 
@@ -29,6 +29,19 @@ export interface PeerCommandDeps {
 	readonly notify: (message: string) => void;
 	/** Role words this agent may not claim for itself. */
 	readonly reservedNames?: ExtraReserved;
+	/**
+	 * Rename against the durable registry, atomically.
+	 *
+	 * When supplied it is **authoritative** — it decides uniqueness, applies the
+	 * write, and leaves the old name held rather than deleted, so a send to it
+	 * refuses as `expired` instead of `unknown`. `isNameTaken` is then only the
+	 * fallback for hosts with no registry attached.
+	 *
+	 * It does not replace `applyName`: this returns the outcome and the host still
+	 * mirrors the label onto the live session, so the command layer keeps no
+	 * opinion about how a session renames itself.
+	 */
+	readonly renameInRegistry?: (next: string) => RenameOutcome | Promise<RenameOutcome>;
 }
 
 /** Register `/list-agents`, `/peers` and `/rename`. Call once per session. */
@@ -59,21 +72,21 @@ export function registerPeerCommands(api: ExtensionAPI, deps: PeerCommandDeps): 
 	api.registerCommand("rename", {
 		description: "Rename this session. Accepts any string; reserved names are refused.",
 		handler: async args => {
-			const outcome = renameName(
-				deps.currentName(),
-				args,
-				deps.isNameTaken,
-				deps.reservedNames ?? new Set<string>(),
-			);
+			const outcome = deps.renameInRegistry
+				? await deps.renameInRegistry(args)
+				: renameName(deps.currentName(), args, deps.isNameTaken, deps.reservedNames ?? new Set<string>());
 			if (outcome.kind === "refused") {
-				// Each refusal names its own cause: "taken" means a peer has it,
-				// "reserved" means policy, "empty" means the input was unusable.
+				// Each refusal names its own cause *and* its own repair, because they
+				// are different problems: `taken` needs the peer to give it up, `held`
+				// frees itself, `reserved` is policy, `empty` means unusable input.
 				deps.notify(
 					outcome.reason === "taken"
 						? `Another session already holds ${outcome.requested ?? "that name"}.`
-						: outcome.reason === "reserved"
-							? `${outcome.requested ?? "That name"} is reserved.`
-							: "A name is required, and must contain something a reader can see.",
+						: outcome.reason === "held"
+							? `${outcome.requested ?? "That name"} was recently vacated and is still held. Try another name, or that one again later.`
+							: outcome.reason === "reserved"
+								? `${outcome.requested ?? "That name"} is reserved.`
+								: "A name is required, and must contain something a reader can see.",
 				);
 				return;
 			}

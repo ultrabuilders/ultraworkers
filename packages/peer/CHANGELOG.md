@@ -9,9 +9,12 @@
 - `peer.list`, `peer.send`, `peer.lock` and `peer.release` — the agent-facing surface, four verbs and nothing else. Server administration is deliberately **not** exposed as agent tools.
 - `/list-agents` (alias `/peers`) reports the live roster with this session first, so an agent can learn its own name without guessing. `/rename` renames the current session and accepts any string; reserved names are refused.
 - Presence judging from four independent signals. Only a dead process counts as dead — an idle agent, a quiet mailbox and a still-reachable host are all evidence of life, not death.
+- A **name tombstone**, so a send can tell three cases apart instead of two: a name that is live, a name that was recently vacated (`expired`), and a name that never existed (`unknown`). Without it, mail addressed to a peer that renamed away is refused exactly as a typo is, and the sender has no way to know a peer existed to ask for its new name.
+- `/rename` against the durable registry is atomic. A refused rename is a true no-op — the session keeps the name it had — instead of vacating its address and then failing to take the new one.
 
 ### Changed
 
+- **A vacated name is held for 24 hours rather than deleted, so renaming back to a recent name is refused while the hold stands.** Re-minting it earlier would resurrect the exact ambiguity the tombstone removes. The cost is deliberate and bounded: holds are reaped on expiry, and after one expires the name reads as `unknown` again — by then that is the truth rather than a loss of information.
 - **A full inbox now refuses the message instead of dropping the oldest one.** This is a behaviour change: the in-process bus still shifts the oldest message out when its mailbox fills, but a durable store discarding unread mail because a backlog accumulated while no session was running is the one failure mode it must not have. A send that would exceed the horizon raises `MailboxFullError` (`code: "mailbox_full"`) and the caller decides what to do.
 
 ### Security

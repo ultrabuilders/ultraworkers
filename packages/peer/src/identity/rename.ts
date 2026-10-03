@@ -15,8 +15,16 @@
 import { RESERVED_NAMES, nameKey } from "./allocate";
 import { sanitiseName } from "./sanitise";
 
-/** Why a rename was refused. Each value is a distinct hole, not a mood. */
-export type RenameRefusal = "empty" | "reserved" | "taken";
+/**
+ * Why a rename was refused. Each value is a distinct hole, not a mood.
+ *
+ * `held` is the one that needs a durable registry to exist: the name was vacated
+ * recently enough that its tombstone still stands, so re-minting it now would
+ * recreate the ambiguity the tombstone prevents. It is deliberately separate from
+ * `taken` because the caller's repair differs — a held name becomes available on
+ * its own, a taken one never will while that session lives.
+ */
+export type RenameRefusal = "empty" | "reserved" | "taken" | "held";
 
 /** Outcome of a rename attempt. */
 export type RenameOutcome =

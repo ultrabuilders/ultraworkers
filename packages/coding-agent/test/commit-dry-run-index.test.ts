@@ -176,13 +176,26 @@ describe("resolveStagedFiles honours --dry-run", () => {
 			"split_commit",
 		]);
 
-		// The one tool that can legitimately be absent. Asserting its ABSENCE rather
-		// than a count: a count stays green if it is swapped for any other tool, which
-		// is exactly the substitution this row exists to make noticeable.
+		// The one tool that can legitimately be absent. Asserting the WHOLE disabled
+		// list, not a count and not analyze_files's absence: under
+		// `enableAnalyzeFiles: false` the toolset must be the default one MINUS
+		// analyze_files. Measured — a count and an absence check BOTH stay green when
+		// a different tool is swapped into the disabled branch, so neither catches the
+		// substitution this row exists to make noticeable. The expected list is written
+		// out rather than filtered from the call above, because deriving it from the
+		// code's own output would make the assertion compare it to itself.
 		expect(
 			createCommitTools({ ...options, enableAnalyzeFiles: false })
 				.map(tool => tool.name)
-				.filter(name => name === "analyze_files"),
-		).toEqual([]);
+				.sort(),
+		).toEqual([
+			"git_file_diff",
+			"git_hunk",
+			"git_overview",
+			"propose_changelog",
+			"propose_commit",
+			"recent_commits",
+			"split_commit",
+		]);
 	});
 });

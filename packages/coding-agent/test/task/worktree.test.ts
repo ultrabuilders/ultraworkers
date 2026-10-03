@@ -1051,7 +1051,7 @@ describe("applyNestedPatches", () => {
 			runGit(nestedDir, ["stash", "list"]),
 		]);
 		expect(committedFiles.trim()).toBe("file.txt");
-		expect(stashList).toContain("omp-isolation-");
+		expect(stashList).toContain("ultraworkers-isolation-");
 	});
 });
 

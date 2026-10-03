@@ -39,6 +39,14 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// `.git/index` in a temp repo, because the property IS the index: a mock would only
 	// prove the function was called.
 	{ file: "commit-scoped.test.ts", reason: "" },
+	// The guard those tools depend on. Its own test asserts the tracked mode is
+	// executable, which is the assertion that matters most: a hook committed as 100644
+	// is ignored by git in every clone, so the guard silently protects nothing while
+	// every other test here keeps passing. That is not hypothetical — the mode was
+	// tracked 644 from the guard's introduction until a54591aca, and this file was
+	// in neither RUN nor EXCLUDED, so `test:scripts` ran nothing of it and refused
+	// to run at all.
+	{ file: "hooks/pre-commit.test.ts", reason: "" },
 	{ file: "ci-failure-extract.test.ts", reason: "" },
 	{ file: "ci-release-build-binaries.test.ts", reason: "" },
 	{ file: "ci-release-checksums.test.ts", reason: "" },

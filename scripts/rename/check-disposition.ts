@@ -114,9 +114,13 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * out while counting `omp.` and `omp-oauth-test-`. `omp.shs` is not the domain and is
  * counted, so the lookahead is bounded by `(?![a-zA-Z0-9])` rather than open-ended.
  *
- * `_` stays excluded on both edges, and that is load-bearing too: `__omp_worker_*` is
- * the `keep-worker-selector` class, counted by its own literal. Allowing `_` makes every
- * worker selector a pinned hit — measured at one per file across 1467 files.
+ * `_` stays excluded on the LEADING edge, and that is load-bearing: `__omp_worker_*` is
+ * the `keep-worker-selector` class, counted by its own literal, and the leading class is
+ * what keeps every worker selector out — allowing `_` there makes each one a pinned hit,
+ * measured at one per file across 1467 files. The trailing edge does NOT exclude `_` as of
+ * 2026-10-03 (`epic-cpws`), so a bare `omp_worker_*` written without the leading underscores
+ * IS counted; only the `__`-prefixed form the host actually dispatches on is protected, and
+ * it is protected by the leading edge alone.
  *
  * `/` is excluded on neither edge as of 2026-10-03 (`epic-skwz`). It used to sit in the
  * LEADING class, which made every occurrence preceded by a path separator invisible: a
@@ -124,10 +128,29 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * covering one, so those sites could never be given a disposition at all. Measured on the
  * tracked corpus: 120 sites across 65 files became countable, 911 → 1031.
  *
- * Only the LEADING edge changed. The trailing class keeps `.` and `-`, so `.omp/` is still
- * not matched and `omp-like` still is — both are separate axes, not this one.
+ * The trailing edge admits `_` and the literal is case-blind, as of 2026-10-03
+ * (`epic-cpws`, delegated decision — see the bead for the recorded reasoning). Two
+ * blind spots closed together, because both were the same defect: a contract the tree
+ * honours and the gate cannot see reads as a file that is finished.
+ *
+ * `_` on the trailing edge: `omp_capabilities` scored 0, and `--stage=post` accepts a row
+ * once its count reaches 0, so a file whose occurrences are all snake_case env names
+ * reported itself clean with the token still in it.
+ *
+ * The `i` flag: `OMP_AUTH_BROKER_URL` and `OMP-CAPABILITIES` scored 0. `PINNED`'s only
+ * case-SENSITIVE element is the literal `omp` itself — both character classes already
+ * admit either case — so widening the literal's case is a strict superset, and every
+ * uppercase occurrence was invisible to all six classes at once.
+ *
+ * What the flag deliberately does NOT reach, and this is the load-bearing control rather
+ * than an omission: the LEADING class still excludes `_`, so `PI_OMP_X` stays 0. Widening
+ * that edge instead would sweep the entire `@oh-my-pi` namespace into scope and invalidate
+ * every figure recorded in the ledger.
+ *
+ * Only the LEADING edge changed as far as `.` and `-` go, so `.omp/` is still not matched
+ * and `omp-like` still is — both are separate axes, not this one.
  */
-const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
+const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9]|$)/i;
 
 /** Repo-relative path of the table. */
 const TABLE_PATH = "scripts/rename/disposition.tsv";
@@ -686,7 +709,11 @@ export function countClass(text: string, disposition: Disposition): number {
 	// class unwritable again.
 	if (matcher.filename === true) return (text.match(new RegExp(OMP_FILENAME.source, "g")) ?? []).length;
 	if (matcher.pinned !== true) return text.split(matcher.literal as string).length - 1;
-	const pinned = text.match(new RegExp(PINNED.source, "g")) ?? [];
+	// Flags are carried across rather than retyped, and `source` does not include them.
+	// Rebuilding as `new RegExp(PINNED.source, "g")` drops the case-blind flag and measures
+	// a narrower token than every other site in this file — the census would then disagree
+	// with `hitPaths` and with itself.
+	const pinned = text.match(new RegExp(PINNED.source, `${PINNED.flags}g`)) ?? [];
 	// `PINNED` was widened on 2026-10-03 to admit a leading `.`, so `~/.omp/…` counts
 	// at all — it returned 0 before, and `--stage=post` accepts a row once the count
 	// reaches zero, so a file whose occurrences are all dotfile paths read as finished
@@ -727,6 +754,120 @@ export function countClass(text: string, disposition: Disposition): number {
  */
 export function countRename(text: string, _keepDispositions: readonly Disposition[] = []): number {
 	return countClass(text, "rename");
+}
+
+/**
+ * `PINNED` widened by one flag each, for the case-blind report below.
+ *
+ * Built from `PINNED.source` AND `PINNED.flags` rather than transcribed. Transcribing
+ * the flags is the failure this pairing exists to prevent, and it is silent: dropping
+ * the flag off a derived copy leaves every number internally consistent while measuring
+ * a different token. `PINNED.flags` is therefore read from the original at construction
+ * time, so widening `PINNED` itself carries through to both copies with no edit here.
+ *
+ * `PINNED_CASE_BLIND` is the superset — the same expression, case-blind.
+ * `PINNED_STICKY` is the original, pinned to a position, so a match found by the wide
+ * expression can be asked "would the real one have matched HERE?" without re-scanning.
+ *
+ * Flags are ADDED rather than appended. `PINNED` carries `i` itself as of 2026-10-03
+ * (`epic-cpws`), so appending would build `"ii"` and throw at module load; more to the
+ * point, an append makes this file's correctness depend on a flag `PINNED` does not
+ * currently have, so the day the flag lands this throws instead of going quiet. Adding
+ * is idempotent, and an idempotent widening is the only version whose result means
+ * something after the fix it was written to detect.
+ */
+function withFlag(flags: string, flag: string): string {
+	// Per-character, not substring: `includes("gi")` against `"i"` is false, so a
+	// substring test appends the pair verbatim and builds `"igi"`, which the RegExp
+	// constructor rejects at runtime rather than at load. Testing one character at a
+	// time is what makes the helper idempotent for any combination a caller passes.
+	for (const char of flag) if (!flags.includes(char)) flags += char;
+	return flags;
+}
+const PINNED_CASE_BLIND = new RegExp(PINNED.source, withFlag(PINNED.flags, "i"));
+const PINNED_STICKY = new RegExp(PINNED.source, withFlag(PINNED.flags, "y"));
+
+/** One path holding occurrences that a case-blind `PINNED` sees and the real one cannot. */
+export interface PinnedCaseBlind {
+	path: string;
+	blind: number;
+	samples: readonly string[];
+}
+
+/**
+ * Occurrences in `text` that `PINNED` is structurally unable to count.
+ *
+ * The subtraction is exact rather than approximate, and it is what makes the number
+ * meaningful: `PINNED`'s only case-sensitive element is the literal `omp` itself. Both
+ * of its character classes are already case-symmetric (`[^a-zA-Z0-9_-]` admits either
+ * case alike), so widening only the literal's case produces a strict superset of what
+ * `PINNED` already sees. Every case-blind match is therefore classified by one test —
+ * is the matched literal spelled `omp`, or not — with no overlap left to reason about.
+ *
+ * Read the result as REACH, not as a verdict. A blind occurrence is a token the gate
+ * cannot see, which says nothing about whether it is a wire contract or prose; a
+ * majority of the uppercase population is ordinary prose (`OMP-owned`, `OMP-native`).
+ * Deciding what any of them ARE is a table question, and this reports only that they
+ * are currently being looked at through a matcher that skips them.
+ */
+export function countPinnedCaseBlind(text: string, pinned: RegExp = PINNED): { blind: number; samples: string[] } {
+	// Fresh instances per call, carrying BOTH their own flags: `lastIndex` is mutable
+	// state on the object, and rebuilding from `.source` alone would drop the flags that
+	// `source` does not carry — a rebuild that reads `"gi"` off the constant rather than
+	// inheriting it is the difference between this function working and returning zero
+	// on a repository full of blind spots.
+	//
+	// Derived from the `pinned` argument rather than from the module constants, so the
+	// report can be asked about a DIFFERENT base expression without a second code path.
+	// Production passes the default; a caller that widens the base must see the report
+	// fall silent, and routing both through here is what makes that true rather than
+	// merely intended.
+	// `matcher` MUST be global. A non-global `exec` ignores `lastIndex` and restarts at
+	// 0 every call, so a text that matches at all never terminates this loop — the scan
+	// hangs silently with no output rather than failing, which is the harder of the two
+	// to notice. `sticky` below deliberately is not global; it is repositioned by hand.
+	const matcher = new RegExp(pinned.source, withFlag(pinned.flags, "gi"));
+	const sticky = new RegExp(pinned.source, withFlag(pinned.flags, "y"));
+	const samples: string[] = [];
+	let blind = 0;
+	for (let m = matcher.exec(text); m !== null; m = matcher.exec(text)) {
+		// Sticky, so this asks the real question — "would PINNED match at THIS offset?"
+		// — rather than the cheaper-looking one of comparing the matched text against a
+		// literal spelling. Those two disagree the moment PINNED changes, and the
+		// comparison is the one that cannot notice: widening PINNED with the case flag
+		// would leave a spelling test still counting the very occurrences PINNED had
+		// just learned to see. Asking PINNED itself makes the report go quiet exactly
+		// when — and only when — the blind spot is genuinely closed.
+		sticky.lastIndex = m.index;
+		if (sticky.test(text)) continue;
+		blind++;
+		// `m[1]` is the leading class, one character wide unless the match sits at the
+		// very start of the file, where the `^` alternative contributes the empty string.
+		const literalAt = m.index + (m[1] ?? "").length;
+		if (samples.length < CASE_BLIND_SAMPLES) samples.push(text.slice(literalAt, literalAt + 3));
+	}
+	return { blind, samples };
+}
+
+/**
+ * Every scanned path holding occurrences `PINNED` cannot count.
+ *
+ * Scoped with `hitPaths`, the same corpus every other stage walks, so the blind set is
+ * a subset of the pinned set's world rather than a second, differently-scoped census.
+ */
+export async function findPinnedCaseBlind(root: string): Promise<readonly PinnedCaseBlind[]> {
+	const found: PinnedCaseBlind[] = [];
+	for (const relPath of await hitPaths(root)) {
+		let text: string;
+		try {
+			text = await Bun.file(path.join(root, relPath)).text();
+		} catch {
+			continue; // unreadable here is unreadable for every other stage too
+		}
+		const { blind, samples } = countPinnedCaseBlind(text);
+		if (blind > 0) found.push({ path: relPath, blind, samples });
+	}
+	return found;
 }
 
 /** True when the line is prose: a comment opener introduces the whole line. */
@@ -986,7 +1127,11 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
 		if (isBuildOutput(relPath)) continue;
 		if (isInsideNestedRepository(root, relPath, nestedRepos)) continue;
 		const text = await Bun.file(path.join(root, relPath)).text();
-		if (new RegExp(PINNED.source).test(text)) found.push(relPath);
+		// Carries `PINNED.flags` for the same reason the counter above does: without the
+		// case-blind flag this list of paths and the counts reported against it describe
+		// two different corpora, and a file whose only occurrences are uppercase is absent
+		// from one and present in the other.
+		if (new RegExp(PINNED.source, PINNED.flags).test(text)) found.push(relPath);
 	}
 	return found.sort();
 }
@@ -1336,6 +1481,9 @@ export async function findUnreconciledPinned(root: string, rows: readonly Row[])
 /** How many of a per-run list are named outright; the tail is counted, never dropped. */
 const NAMED = 8;
 
+/** Per-path sample cap for the case-blind report. See `countPinnedCaseBlind`. */
+const CASE_BLIND_SAMPLES = 3;
+
 async function main(): Promise<void> {
 	// Every unrecognised argument is refused rather than defaulted past. `--gate0`
 	// is documented in MILESTONE_5_EXECUTION_PLAN.md as W8b's Gate 0, but nothing
@@ -1445,6 +1593,42 @@ async function main(): Promise<void> {
 		const rest = unreconciled.slice(NAMED);
 		if (rest.length > 0) {
 			const restRows = rest.reduce((sum, u) => sum + u.occurrences, 0);
+			console.log(
+				`disposition(${stage}):   …and ${rest.length} more path(s) over ${restRows} occurrence(s), not listed`,
+			);
+		}
+	}
+
+	// The gate's last honest limit, and the only one about its own matcher rather than
+	// about the table. `PINNED` spells its literal in lowercase and carries no case flag,
+	// so an occurrence written `OMP-…` is invisible to EVERY class — `rename`,
+	// `keep-wire` and `keep-prose` all share `{pinned: true}` and would each report zero
+	// for a file holding nothing but those. A file in that state reads as finished while
+	// the token is still in it, which is under-reporting rather than a missing row, so no
+	// table edit can close it.
+	//
+	// Reported, not enforced, for the same reason as the two limits above: deciding
+	// whether any given occurrence is a contract is a judgement about intent, and a gate
+	// that failed them would be failing something it cannot decide. The wording says
+	// "cannot count" rather than "is a contract" for the same reason — the uppercase
+	// population is mostly ordinary prose (`OMP-owned`, `OMP-native`), so a reader must
+	// not take this line as a work list.
+	//
+	// Widening `PINNED` itself is the owner's call and is deliberately NOT made here:
+	// it would change what every existing row means, in every stage, at once.
+	const caseBlind = await findPinnedCaseBlind(root);
+	if (caseBlind.length > 0) {
+		const blindTotal = caseBlind.reduce((sum, b) => sum + b.blind, 0);
+		console.log(
+			`disposition(${stage}): pinned-case-blind = ${caseBlind.length} path(s) / ${blindTotal} occurrence(s) ` +
+				`a case-blind matcher sees and PINNED cannot (reach, not verdict — most are prose)`,
+		);
+		for (const b of caseBlind.slice(0, NAMED)) {
+			console.log(`disposition(${stage}):   ${b.blind} occurrence(s): ${b.path} — ${b.samples.join(", ")}`);
+		}
+		const rest = caseBlind.slice(NAMED);
+		if (rest.length > 0) {
+			const restRows = rest.reduce((sum, b) => sum + b.blind, 0);
 			console.log(
 				`disposition(${stage}):   …and ${rest.length} more path(s) over ${restRows} occurrence(s), not listed`,
 			);

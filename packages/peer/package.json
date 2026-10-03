@@ -55,5 +55,8 @@
   "fix": "oxlint --fix --fix-suggestions . && bun run fmt",
   "fmt": "oxfmt --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts'",
   "test": "bun test --parallel"
+ },
+ "dependencies": {
+  "@oh-my-pi/pi-utils": "catalog:"
  }
 }

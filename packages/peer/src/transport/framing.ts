@@ -14,6 +14,8 @@
  * ended, because the prefix said so.
  */
 
+import type { SenderMode } from "../fence/index";
+
 /** Bytes in the length prefix. */
 export const PREFIX_BYTES = 4;
 
@@ -107,6 +109,13 @@ export function decodeFrames(buffer: Buffer): Decoded {
  *
  * Not a "protocol" — a struct the fields must come in, kept here so a caller
  * cannot invent a third spelling of the same message.
+ *
+ * `chain` and `fromMode` are the two fields the fence needs and cannot infer.
+ * Both are copied from Claude Code 2.1.288's `hopChain` / `fromMode`, which the
+ * binary builds at SEND time by appending the sending session's own token to the
+ * chain it received — so the receiver can compare against tokens it recognises as
+ * its own. A receiver that has to reconstruct that history has already lost it,
+ * which is why these travel on the wire rather than being recomputed.
  */
 export interface PeerFrame {
 	readonly kind: "hello" | "message" | "ack" | "notice";
@@ -115,6 +124,32 @@ export interface PeerFrame {
 	readonly body?: unknown;
 	/** Sequence the receiver acknowledges up to. Present on `ack`. */
 	readonly upto?: number;
+	/**
+	 * Tokens this message has already passed through, oldest first.
+	 *
+	 * Absent on a DIRECT message and present on a relayed one, which is the
+	 * distinction the fence's loop bound turns on: a chain that has come back to the
+	 * receiver several times is a different condition from one that is merely deep.
+	 */
+	readonly chain?: readonly string[];
+	/** The sender's asserted permission mode, for the receiver's class comparison. */
+	readonly fromMode?: SenderMode;
+}
+
+/**
+ * Build the chain to send onward.
+ *
+ * COPIED from the binary's send-side construction: a relayed message's chain is
+ * the chain it arrived with, plus THIS sender's token. Appending the sender is what
+ * lets the next hop count how many entries are its own — without it, a message that
+ * has looped back to the same session looks like a fresh one to every intermediate.
+ *
+ * An empty result is returned rather than a one-element chain containing `""`, so
+ * "direct" and "passed through an unnamed hop" do not become the same wire value.
+ */
+export function extendChain(chain: readonly string[] | undefined, ownToken: string): string[] {
+	if (ownToken === "") return [...(chain ?? [])];
+	return [...(chain ?? []), ownToken];
 }
 
 /** True when `frame` is a `PeerFrame` of `kind`. Narrows without a cast at the callsite. */

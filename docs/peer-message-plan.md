@@ -111,6 +111,39 @@ bridge, so the direction is sanctioned.
 propose it, on the grounds that the file is a contract document and a new row is a
 commitment. That boundary is respected here.
 
+### 2.2 Yes — own package. The owner's call, and mine was wrong
+
+An earlier draft recommended *against* a package, on the reasoning that the
+transport is only a few hundred lines and a package adds an export surface for
+nothing. That was wrong, and the reason it was wrong is structural rather than
+numerical:
+
+**Everything the transport needs to do is filesystem work, and none of it needs an
+agent.** Reaping a stale registration on four-signal corroboration, two-phase claim
+by rename, fencing tokens, atomic tmp+rename, symlink defence, monotonic cursors,
+retention with an unacked-item guard — none of that mentions `IrcBus`, `AgentRegistry`
+or a turn. Putting it inside `coding-agent/src/irc/` means none of it can be tested
+without booting a whole agent, and none of it can be reused.
+
+```
+packages/peer-bus/            ← owns the filesystem, knows nothing about IrcBus
+  transport/    socket, inbox, reaper
+  locking/      election, claim, fencing token
+  naming/       closed name space, allocation
+  cursor/       monotonic sequence, expiry witness
+```
+
+The boundary rule is one sentence: **the package owns everything that touches the
+filesystem; `IrcBus` keeps everything in memory.** They meet at `PeerTransport`, which
+is one interface with one method. The package has no dependency on `coding-agent`,
+and `coding-agent` depends on the package — which is the normal direction, and is why
+the core change in §2.1 stays three lines.
+
+A second reason to keep it separate: this is the code where a bug is **silent**. A
+reaper that fires early, or a fencing token that is not checked, does not throw — it
+lets two agents believe they own the same thing. That class of bug is cheapest to
+catch in a package with its own test suite and no agent in the loop.
+
 ---
 
 ## 3. File lifecycle — RELEASE
@@ -416,6 +449,56 @@ that §5 exists to handle.
 
 Either way the name must be **discoverable but not guessable into someone else's
 identity** — §6.3's impersonation risk, and `sting8k`'s exact failure.
+
+### 6.2 `mcp_agent_mail_rust` solves this better than either of us
+
+Its name space is **closed and enumerable**: `VALID_ADJECTIVES` is **75** words,
+`VALID_NOUNS` is **132**, and a name is valid **iff it decomposes into a known
+adjective and a known noun**. `split_valid_agent_name`
+(`mcp-agent-mail-core/src/models.rs:887-917`) tries every adjective length in
+descending order and binary-searches each half against sorted lookup tables.
+`normalize_agent_name` (`:588`) canonicalises to `PascalCase`, so names are
+**case-insensitively unique**.
+
+**75 × 132 = 9,900 names.** On one machine, with dozens of live agents, that is
+generous — and crucially, **exhaustion is a finite, measurable event** rather than a
+surprise. You can compute the collision probability instead of discovering it.
+
+Three properties transfer, and the third is why this matters more than the ergonomics:
+
+1. **The name space contains no role words.** The tool contract states it outright:
+   *"INVALID examples: `BackendHarmonizer`, `DatabaseMigrator`, `UIRefactorer` … names
+   should be memorable identifiers, not role descriptions."* A descriptive name is a
+   claim about what the agent does, which goes stale, and it lets an agent claim a
+   role it does not hold.
+2. **No counter suffix.** `GreenLake` is one name, not a family. `Anna-2` encodes
+   occurrence order, which is not identity and is not meaningful to another process.
+3. **It makes impersonation by name structurally impossible.** With a free-form name,
+   any agent may call itself `DatabaseMigrator`, or another agent's name. With a
+   closed space, **the complete set of claims an agent can make in its own name is
+   enumerable, role-free, and contains nothing to impersonate with.** That is §6.3's
+   impersonation risk closed at the naming layer rather than at the permission layer.
+
+**This replaces the composite-address recommendation above.** Adopt the closed name
+space, machine-scoped, case-insensitively unique — and keep `{ instanceId, name }` as
+the *transport* address so a stale socket is still attributable. The name becomes the
+human-facing identity; the composite stays the wire identity.
+
+Note the asymmetry that makes this trustworthy: registration in `mail-rust` can be
+strong — there is an **optional Ed25519 proof gate** that binds identity, project,
+program, model and capability scope, and **fails closed** when enabled — while its
+*send* path has no gate at all (§5.11). Good naming does not fix a missing
+authorisation check; it just removes one whole class of attack before it starts.
+
+### 6.3 Naming hygiene worth stealing verbatim
+
+- **`return_registration_token: false`** exists so a secret is not echoed into MCP
+  scrollback — and the contract is honest that opting out costs you
+  `verified_sender: false` unless you obtain the token another way. A capability whose
+  absence is *priced* in the response is a better contract than one that silently
+  degrades.
+- `register_agent` **updates** an existing identity; `create_agent_identity` **always
+  creates a new one**. Two verbs, so "reuse" and "spawn fresh" cannot be confused.
 
 ---
 

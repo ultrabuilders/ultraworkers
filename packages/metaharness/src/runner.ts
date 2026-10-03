@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { type GeneratedProvider, getBundledModel } from "@oh-my-pi/pi-catalog/models";
-import { APP_NAME } from "@oh-my-pi/pi-utils";
+import { APP_NAME, logger } from "@oh-my-pi/pi-utils";
 /**
  * Harbor benchmark runner for the local `ultraworkers` build.
  *
@@ -799,6 +799,22 @@ export function readTrials(jobDir: string, agent: string): Trial[] {
 	try {
 		entries = fs.readdirSync(jobDir, { withFileTypes: true });
 	} catch {
+		return [];
+	}
+	// An agent with no known transcript cannot be probed, and `transcriptFilename`
+	// throws for it by design. Absorbing that HERE is what keeps the throw honest:
+	// the alternative — letting it escape — walks all the way out through
+	// `readBenchmarkSnapshot`, `syncRun`, `RunStore.discover`'s per-entry loop and
+	// `Server.start`, so one unreadable job dir would take down discovery for every
+	// job dir after it, not just its own.
+	//
+	// It used to reach this point at all because `readHarborConfig` substituted
+	// "omp" for an agent it could not read, which is the same class of substitution
+	// this function refuses: a wrong agent reads a transcript nobody wrote, and
+	// `parseTrial` folds the resulting null into `?? 0` — a real trial reported at
+	// zero cost, with no error and no log.
+	if (!AGENT_TRANSCRIPT_FILENAME[agent]) {
+		logger.warn(`no transcript filename known for agent ${JSON.stringify(agent)}; skipping trials in ${jobDir}`);
 		return [];
 	}
 	const trials: Trial[] = [];

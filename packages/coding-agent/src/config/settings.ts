@@ -3935,6 +3935,12 @@ export function resetSettingsForTest(): void {
 	liveSettingsInstances.clear();
 	globalInstance = null;
 	globalInstancePromise = null;
+	// The recorded global `--config` overlay is process state too. Without this a
+	// test that sets it hands the overlay to every later test in the same process,
+	// and to any second `runCli` call — which is exactly what an in-process runner
+	// or an SDK embedding does. It is never cleared on the production path either,
+	// because there the runner is documented to run once.
+	globalConfigFiles = [];
 	clearBoundSettingsMethods();
 	// Effect-owned process state (theme, redaction, request limits, …) returns to its defaults.
 	resetRegistryForTest(Settings.isolated());

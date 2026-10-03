@@ -647,9 +647,18 @@ function stripLaunchGlobalFlags(leading: readonly string[]): { kept: string[]; c
 				// settings a filename that was never typed — which, because overlays are
 				// strict, turns a flag the user typed with no operand into a hard error
 				// about a file they never named.
+				//
+				// Empty means absent on BOTH spellings, so the test is for a non-empty
+				// string rather than for `undefined`. `--config=` yields an inline `""`,
+				// which is not `undefined`, and `settings` resolves it with
+				// `path.resolve(cwd, "")` — the cwd directory. The overlay reader then
+				// fails with "Directories cannot be read like files" about a path the
+				// user never named, which is the exact outcome the note above exists to
+				// prevent. `--config` followed by a separate `""` reaches the same state
+				// through `consumesNext`, so one predicate covers both.
 				const inline = arg.startsWith(`${CONFIG_FLAG}=`) ? arg.slice(CONFIG_FLAG.length + 1) : undefined;
 				const value = inline ?? (consumesNext ? leading[index + 1] : undefined);
-				if (value !== undefined) configFiles.push(value);
+				if (value) configFiles.push(value);
 			}
 			if (consumesNext) index += 1;
 			continue;
@@ -693,10 +702,11 @@ export function resolveCliArgv(argv: string[]): ResolvedCliArgv {
 		const trailing = argv.slice(subIndex + 1);
 		if (LAUNCH_FLAG_COMMANDS[sub] === true) {
 			// Launch-shaped commands share the launch flag surface and re-parse it
-			// themselves, so their leading tokens are forwarded untouched. That makes
-			// them the one case where the argv already carries the overlays — reported
-			// here too so a command can read one place regardless of which branch it
-			// came through, but their own parse remains the authority for the value.
+			// themselves, so their leading tokens are forwarded untouched and their own
+			// parse stays the authority for every value. They are deliberately NOT routed
+			// through the recorded global channel: they pass their parsed `--config` as
+			// their own `options.configFiles`, which lands in the last merge slot, so
+			// reporting it here as well would apply one overlay twice.
 			return { argv: [sub, ...leading, ...trailing] };
 		}
 		const { kept, configFiles } = stripLaunchGlobalFlags(leading);

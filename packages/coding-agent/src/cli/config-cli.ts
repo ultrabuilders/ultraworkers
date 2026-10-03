@@ -39,10 +39,12 @@ export interface ConfigCommandArgs {
 		 *
 		 * Both `--config` spellings arrive here already merged by the caller: the
 		 * documented one, ahead of the command token (`ultraworkers --config <path>
-		 * config get <key>`), reaches the command on `CliConfig.configFiles` because
-		 * the runner strips it for every command that does not share the launch flag
-		 * surface; the command-position spelling is parsed as an ordinary flag.
-		 * Order is the order they were typed, and `PI_CONFIG_FILES` loads before both.
+		 * config get <key>`), is stripped out of the argv for every command that does
+		 * not share the launch flag surface and recorded on the process-wide overlay
+		 * channel (`setGlobalConfigFiles` in `config/settings.ts`), which every
+		 * `Settings.init` afterwards merges; the command-position spelling is parsed
+		 * as an ordinary flag and reaches this field directly. Order is the order they
+		 * were typed, and `PI_CONFIG_FILES` loads before both.
 		 *
 		 * Before this existed, `Settings.init` saw no overlay at all and fell back to
 		 * `PI_CONFIG_FILES` — which is why `--config` was documented, parsed, and

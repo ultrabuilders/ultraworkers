@@ -87,8 +87,40 @@ describe("a global --config overlay reaches every settings instance", () => {
 
 		// And the middle of the order, isolated: drop the caller's own overlay and the
 		// recorded flag must be what wins over the environment.
+		//
+		// The channel is re-armed after the reset rather than carried across it. It used
+		// to be carried across — `resetSettingsForTest` cleared the instance cache but
+		// left `globalConfigFiles`, so this second `init` inherited the overlay by
+		// accident and passed for the wrong reason. Re-recording is what a second
+		// `runCli` does anyway (the runner calls `setGlobalConfigFiles` per invocation),
+		// so the state under test is the state production reaches.
 		resetSettingsForTest();
+		setGlobalConfigFiles([globalOverlay]);
 		const withoutOwn = await Settings.init({ cwd: dir.path(), agentDir: agentDir.path(), inMemory: true });
 		expect(readDark(withoutOwn)).toBe("from-global-flag");
+	});
+
+	// The reset has to cover the recorded overlays too, not only the instance cache.
+	// `globalConfigFiles` is module state of the same kind as `globalInstance`: leave
+	// it behind and every later `Settings.init` in the process — including the next
+	// `runCli` of an in-process runner or an SDK embedding — inherits an overlay the
+	// caller never passed. The cache is cleared, so the second `init` below really
+	// does rebuild from the constructor; if the overlay channel leaked, that rebuild
+	// is exactly where the stale value would reappear.
+	it("drops the recorded overlays on reset, not just the cached instance", async () => {
+		using dir = TempDir.createSync("@ultraworkers-settings-overlay-");
+		using agentDir = TempDir.createSync("@ultraworkers-settings-agent-");
+		setGlobalConfigFiles([overlay(dir.path(), "a.yml", "from-global-flag")]);
+
+		const first = await Settings.init({ cwd: dir.path(), agentDir: agentDir.path(), inMemory: true });
+		expect(readDark(first)).toBe("from-global-flag");
+
+		// Nothing re-arms the channel between the two calls — no `setGlobalConfigFiles`,
+		// and `process.env.PI_CONFIG_FILES` is empty — so any value that survives here
+		// survived the reset.
+		resetSettingsForTest();
+		const second = await Settings.init({ cwd: dir.path(), agentDir: agentDir.path(), inMemory: true });
+
+		expect(readDark(second)).not.toBe("from-global-flag");
 	});
 });

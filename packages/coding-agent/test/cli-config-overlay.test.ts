@@ -126,4 +126,36 @@ describe("a --config overlay reaches the commands that read settings", () => {
 			overlay.dispose();
 		}
 	}, 120_000);
+
+	// An empty operand is the shape that turns the flag into a crash. `--config=`
+	// carries `""` inline and `--config` followed by a separate `""` reaches the same
+	// state, so one predicate has to reject both — and the failure it prevents is not
+	// a wrong value but a hard error about a path nobody typed. `settings` resolves an
+	// empty entry with `path.resolve(cwd, "")`, which is the cwd *directory*, and the
+	// overlay reader then refuses it: "Directories cannot be read like files".
+	//
+	// The assertion is the no-flag run, so the contract stays "the flag with no
+	// operand behaves as if it had not been typed" rather than a literal. Naming the
+	// error text alone would leave the row green if a future reader failed for some
+	// other reason, and the cwd is a real directory here, so the control genuinely
+	// exercises the path that used to break.
+	it("treats an empty --config operand as no flag at all, on both spellings", async () => {
+		// The control: what this host prints when the flag is simply absent. Both
+		// spellings below must land on exactly this.
+		const withoutFlag = await runArgv(["config", "get", "theme.dark"]);
+		expect(withoutFlag.exitCode).toBe(0);
+
+		for (const args of [
+			["--config=", "config", "get", "theme.dark"],
+			["--config", "", "config", "get", "theme.dark"],
+		]) {
+			const result = await runArgv(args);
+
+			expect({ args, exitCode: result.exitCode, stdout: result.stdout.trim() }).toEqual({
+				args,
+				exitCode: 0,
+				stdout: withoutFlag.stdout.trim(),
+			});
+		}
+	}, 120_000);
 });

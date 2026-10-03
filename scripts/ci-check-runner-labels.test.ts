@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	checkRunnerLabels,
 	declaredSelfHostedLabels,
+	documentedScaleSetNames,
 	expressionLabels,
 	isGitHubHosted,
 	resolveLabels,
@@ -135,5 +136,69 @@ describe("runs-on labels resolve to a runner", () => {
 
 		expect(result.checked).toBe(0);
 		expect(result.offenders).toEqual([]);
+	});
+});
+
+/**
+ * The deployed runner group is configured outside this repository, so the ARC doc and
+ * `actionlint.yaml` are the only two in-repo statements of what the runner answers to. Nothing
+ * connects them, so a rename applied to one drifts from the other silently — and a drifted label
+ * is the queue-forever case above, reached by a different route.
+ */
+const ARC_DOC_DECLARING_OMP_KATA = [
+	"# setup",
+	"",
+	"```yaml",
+	"runnerScaleSetName: omp-kata",
+	"minRunners: 0",
+	"```",
+	"",
+	"Field by field:",
+	"",
+	"- **`runnerScaleSetName: omp-kata`** - the runner label. This is the string that",
+	"  goes in a workflow's `runs-on:`.",
+	"",
+	"Set it per repo:",
+	"",
+	"  helm upgrade \\",
+	"    --set runnerScaleSetName=<other-repo>-kata \\",
+	"#runnerScaleSetName: commented-out-stale-name",
+	"runnerScaleSetName: annotated-value  # trailing note, not a bare assignment",
+	"```",
+].join("\n");
+
+describe("the ARC doc and the repo's declaration name the same runner", () => {
+	it("finds the declaration and ignores every other mention of the key", () => {
+		// The doc mentions `runnerScaleSetName` four ways. Only one is an assignment; reading
+		// the others would gate on prose — red whenever a sentence is reworded — and the
+		// `--set key=<other-repo>-kata` example would be taken for a real label named
+		// `<other-repo>-kata`, which is a placeholder, not a runner.
+		expect(documentedScaleSetNames(ARC_DOC_DECLARING_OMP_KATA)).toEqual(["omp-kata"]);
+	});
+
+	it("is quiet when the doc and the declaration agree", () => {
+		const result = checkRunnerLabels([], ACTIONLINT_DECLARING_OMP_KATA, ARC_DOC_DECLARING_OMP_KATA);
+
+		expect(result.drift).toEqual([]);
+	});
+
+	it("reports drift when the doc names a group the repo does not declare", () => {
+		// The rename applied to the doc but not to actionlint.yaml: every workflow still asks for
+		// `omp-kata`, the cluster now answers to something else, and no gate in the repo said so.
+		const renamed = ARC_DOC_DECLARING_OMP_KATA.replace(
+			"runnerScaleSetName: omp-kata",
+			"runnerScaleSetName: ultraworkers-kata",
+		);
+
+		const result = checkRunnerLabels([], ACTIONLINT_DECLARING_OMP_KATA, renamed);
+
+		expect(result.drift.map(entry => entry.name)).toEqual(["ultraworkers-kata"]);
+		expect(result.drift[0]?.line).toBeGreaterThan(0);
+	});
+
+	it("skips the cross-check when there is no ARC doc", () => {
+		// A repository without ARC infrastructure has nothing to cross-check, and that must read
+		// as clean rather than as a missing file.
+		expect(checkRunnerLabels([], ACTIONLINT_DECLARING_OMP_KATA).drift).toEqual([]);
 	});
 });

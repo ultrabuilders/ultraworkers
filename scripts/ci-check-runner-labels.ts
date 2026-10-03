@@ -32,9 +32,18 @@
 
 import * as path from "node:path";
 
-/** Files whose `runs-on:` is meaningful. Composite actions declare it per-step, not per-job. */
+/** Files whose `runs-on:` is meaningful. Composite actions have none — they run on the caller's runner. */
 const WORKFLOW_GLOB = ".github/workflows/*.{yml,yaml}";
 const ACTIONLINT_PATH = ".github/actionlint.yaml";
+/**
+ * Where the deployed scale set's name is written down.
+ *
+ * The Helm values that create the runner group are not in this repository, so the label a
+ * runner actually answers to is documented rather than configured here. That makes the doc
+ * the only in-repo statement of the real name, which is worth cross-checking against the
+ * declaration in `actionlint.yaml` — otherwise the two drift and the drift is invisible.
+ */
+const ARC_DOC_PATH = "infra/docs/04-arc-and-caching.md";
 
 /**
  * GitHub-hosted runner labels. Matched by prefix because GitHub ships new images on new
@@ -164,9 +173,35 @@ function findLine(lines: readonly string[], label: string): number {
 	return 0;
 }
 
+/**
+ * The `runnerScaleSetName:` assignments in the ARC doc — the deployed scale set's real name.
+ *
+ * Anchored to the start of a line and to the whole line being the assignment, because the same
+ * file mentions the key three other ways that are NOT declarations: a bolded prose sentence
+ * naming the value, a sentence that lists the key among fields, and a `--set key=value` form in
+ * a rename example. Matching any of those would either gate on prose — red whenever the
+ * sentence is reworded — or read a placeholder like `<other-repo>-kata` as a real label.
+ */
+export function documentedScaleSetNames(source: string): string[] {
+	const names: string[] = [];
+	const pattern = /^\s*runnerScaleSetName:\s*(\S+)\s*$/gm;
+	for (const match of source.matchAll(pattern)) {
+		const name = match[1];
+		if (name !== undefined) names.push(name);
+	}
+	return names;
+}
+
+export interface ScaleSetDrift {
+	readonly name: string;
+	readonly line: number;
+}
+
 export interface CheckResult {
 	readonly offenders: readonly RunnerLabelUse[];
 	readonly checked: number;
+	/** Scale-set names the ARC doc declares that `actionlint.yaml` does not. */
+	readonly drift: readonly ScaleSetDrift[];
 }
 
 /**
@@ -176,7 +211,11 @@ export interface CheckResult {
  * invisible in CI precisely because nothing reads the workflow files, so testing it needs
  * inputs no amount of running the real gate would produce.
  */
-export function checkRunnerLabels(sources: readonly { file: string; text: string }[], actionlint: string): CheckResult {
+export function checkRunnerLabels(
+	sources: readonly { file: string; text: string }[],
+	actionlint: string,
+	arcDoc?: string,
+): CheckResult {
 	const declared = declaredSelfHostedLabels(actionlint);
 	const offenders: RunnerLabelUse[] = [];
 	let checked = 0;
@@ -195,7 +234,15 @@ export function checkRunnerLabels(sources: readonly { file: string; text: string
 			offenders.push(use);
 		}
 	}
-	return { offenders, checked };
+	const drift: ScaleSetDrift[] = [];
+	if (arcDoc !== undefined) {
+		const lines = arcDoc.split("\n");
+		for (const name of documentedScaleSetNames(arcDoc)) {
+			if (declared.has(name)) continue;
+			drift.push({ name, line: findLine(lines, `runnerScaleSetName: ${name}`) });
+		}
+	}
+	return { offenders, checked, drift };
 }
 
 async function collectSources(root: string): Promise<{ file: string; text: string }[]> {
@@ -213,13 +260,36 @@ async function main(): Promise<void> {
 	const sources = await collectSources(root);
 	const actionlintPath = path.join(root, ACTIONLINT_PATH);
 	const actionlint = (await Bun.file(actionlintPath).exists()) ? await Bun.file(actionlintPath).text() : "";
+	const arcDocPath = path.join(root, ARC_DOC_PATH);
+	const arcDoc = (await Bun.file(arcDocPath).exists()) ? await Bun.file(arcDocPath).text() : undefined;
 
-	const { offenders, checked } = checkRunnerLabels(sources, actionlint);
+	const { offenders, checked, drift } = checkRunnerLabels(sources, actionlint, arcDoc);
 
-	if (offenders.length === 0) {
+	if (offenders.length === 0 && drift.length === 0) {
 		console.log(`runner-labels: ${checked} runs-on label(s) across ${sources.length} workflow(s) — all resolvable`);
 		return;
 	}
+
+	// Each failure mode reports on its own and exits there. Falling through would print the
+	// "unknown label" heading with an empty list under a drift-only failure, which reads as a
+	// second, unstated problem.
+	if (drift.length > 0) {
+		console.error(
+			`runner-labels: the runner group the ARC doc declares is not the one this repo declares.\n\n` +
+				`${ARC_DOC_PATH} documents:\n`,
+		);
+		for (const entry of drift) {
+			console.error(`  ${ARC_DOC_PATH}:${entry.line}  runnerScaleSetName: ${entry.name}`);
+		}
+		console.error(
+			`\nbut \`${ACTIONLINT_PATH}\` does not list ${drift.map(entry => `\`${entry.name}\``).join(", ")} under\n` +
+				`\`self-hosted-runner.labels\`. The scale set is deployed outside this repository, so these\n` +
+				`two files are the only in-repo statements of what the runner answers to — if they drift,\n` +
+				`jobs queue forever and nothing reports it.`,
+		);
+		if (offenders.length === 0) process.exit(1);
+	}
+
 	console.error("runner-labels: a runs-on label names no runner this repo declares.\n");
 	for (const use of offenders) {
 		console.error(`  ${use.file}:${use.line}  ${use.label}`);

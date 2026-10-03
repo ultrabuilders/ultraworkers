@@ -1,4 +1,4 @@
-import { describe, expect, it, spyOn } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -15,7 +15,7 @@ import { MarketplaceManager } from "@oh-my-pi/pi-coding-agent/extensibility/plug
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { executeAcpBuiltinSlashCommand } from "@oh-my-pi/pi-coding-agent/slash-commands/acp-builtins";
-import { getProjectDir, removeWithRetries, setProjectDir } from "@oh-my-pi/pi-utils";
+import { getConfigRootDir, getProjectDir, removeWithRetries, setAgentDir, setProjectDir } from "@oh-my-pi/pi-utils";
 
 import { cfgBrowserEnabled, cfgBrowserHeadless } from "@oh-my-pi/pi-coding-agent/tools/browser/settings";
 import { cfgExtendedContext } from "@oh-my-pi/pi-coding-agent/session/context-settings";
@@ -81,6 +81,38 @@ interface FakeAcpBuiltinSession {
 	listResetCredits: () => Promise<ResetCreditAccountStatus[]>;
 	redeemResetCredit: (target: ResetCreditTarget) => Promise<ResetCreditRedeemOutcome>;
 }
+
+// `/mcp` reads real MCP config off disk: `getMcpConfiguredServers`
+// (src/slash-commands/helpers/mcp.ts:83-85) resolves the USER scope to
+// `getAgentDir()/mcp.json` (packages/utils/src/dirs.ts:1305). `Settings.isolated()`
+// inside `createRuntime` does NOT redirect that — the name promises isolation the
+// behaviour does not provide, verified directly:
+//
+//     Settings.isolated(); getAgentDir()  →  unchanged
+//
+// So on a machine whose user config lists any MCP server, `/mcp resources` reports
+// that server and `/mcp add` writes to the developer's real config. Those tests then
+// assert against the host's configuration rather than a fixture, and they pass or
+// fail with whatever MCP servers the machine happens to have registered. Point the
+// agent dir at an empty temp directory for the whole file; restore it afterwards so
+// the leak cannot reach the rest of a suite sharing this process.
+const originalAgentDirEnv = process.env.PI_CODING_AGENT_DIR;
+const fallbackAgentDir = path.join(getConfigRootDir(), "agent");
+const isolatedAgentRoot = await fs.mkdtemp(path.join(os.tmpdir(), "acp-builtins-agent-"));
+
+beforeAll(() => {
+	setAgentDir(path.join(isolatedAgentRoot, "agent"));
+});
+
+afterAll(async () => {
+	if (originalAgentDirEnv) {
+		setAgentDir(originalAgentDirEnv);
+	} else {
+		setAgentDir(fallbackAgentDir);
+		delete process.env.PI_CODING_AGENT_DIR;
+	}
+	await fs.rm(isolatedAgentRoot, { recursive: true, force: true });
+});
 
 function createRuntime() {
 	const settings = Settings.isolated();

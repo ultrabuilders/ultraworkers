@@ -181,6 +181,46 @@ describe("pre-commit guard", () => {
 		expect(git(dir, ["rev-list", "--count", "HEAD"]).out.trim()).toBe("1");
 	});
 
+	it("lets a bare commit through when the hook is NOT installed, so 'it is set up' is a claim someone must check", async () => {
+		// The inverse of every refusal above, and the reason they cannot be read as
+		// "the tree is protected". `makeRepo` copies the hook into .git/hooks and
+		// chmods the COPY, so every other row proves the LOGIC fires once git
+		// invokes it. None of them proves git invokes it — and git silently does
+		// NOT when the hook is absent or non-executable: no failure, just a hint
+		// that scrolls past, and the bare commit succeeds.
+		//
+		// That is the exact shape of the two incidents this guard exists for
+		// (`d985fe7dc9`, `f9b23a9cba`), and it has already happened twice on this
+		// repo for the same reason: shipped 100644, then 100755 in the wrong place.
+		// Both times every test above stayed green.
+		//
+		// `core.hooksPath` is per-clone local config and is NOT shipped, so a fresh
+		// clone starts with no hook until someone runs the install step. This row is
+		// what keeps that step from being a promise: it asserts the UNPROTECTED
+		// state is observable, so "the guard is active here" stops being an
+		// assumption and becomes something a reader can go verify.
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "precommit-uninstalled-"));
+		const run = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+		run(["init", "-q", "."]);
+		run(["config", "user.email", "guard@test"]);
+		run(["config", "user.name", "guard"]);
+		await Bun.write(path.join(dir, "a.txt"), "a\n");
+		run(["add", "a.txt"]);
+		run(["commit", "-qm", "seed"]);
+		// A peer's row, which an installed guard would refuse to carry.
+		await Bun.write(path.join(dir, "peer.txt"), "theirs\n");
+		run(["add", "peer.txt"]);
+
+		const before = run(["rev-parse", "HEAD"]).stdout.toString().trim();
+		const r = run(["commit", "-qm", "mine"]);
+
+		// No hook at .git/hooks/pre-commit, so nothing refuses: git reports SUCCESS
+		// and the peer's row rides along. This is the hazard, demonstrated.
+		expect(r.exitCode).toBe(0);
+		expect(git(dir, ["rev-parse", "HEAD"]).out.trim()).not.toBe(before);
+		expect(git(dir, ["show", "--name-only", "--format=", "HEAD"]).out).toContain("peer.txt");
+	});
+
 	it("does not block commit-scoped.ts, the tool it tells you to use instead", async () => {
 		// The failure that would make this guard worse than no guard: it refuses the
 		// bare commit, names a replacement in the message, and then blocks that

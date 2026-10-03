@@ -38,6 +38,7 @@ import {
 	isImageProtocolForced,
 	isInsideHerdr,
 	isInsideTerminalMultiplexer,
+	isPaseoEmbedder,
 	parseKittyDirectPlacementLine,
 	setCellDimensions,
 	setTerminalImageProtocol,
@@ -2324,6 +2325,12 @@ export class TUI extends Container {
 	#finishSixelProbe(supported: boolean): void {
 		this.#clearSixelProbeState();
 		if (!supported || TERMINAL.imageProtocol) return;
+		// The refusal these embedders get from `resolveImageProtocol` has to survive
+		// a probe. That layer answers null for renderers whose xterm.js draws neither
+		// Kitty APC nor placeholders — which is exactly the state this probe runs in,
+		// so without this check a positive reply installs a protocol the capability
+		// layer refused a moment earlier. Nothing downstream re-reads that refusal.
+		if (isPaseoEmbedder() || isInsideHerdr()) return;
 
 		setTerminalImageProtocol(ImageProtocol.Sixel);
 		this.#queryCellSize();

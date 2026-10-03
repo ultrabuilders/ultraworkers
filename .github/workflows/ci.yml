@@ -87,7 +87,7 @@ env:
    # the SQLite/subprocess-heavy coding-agent suites 1.5-2x slower, which put
    # several cases (model-registry refresh, session fork, credential bridge)
    # over the 30 s default; 120 s still catches a real hang.
-   OMP_TEST_TIMEOUT: "120"
+   ULTRAWORKERS_TEST_TIMEOUT: "120"
 
 permissions:
    contents: read
@@ -605,9 +605,9 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test coding-agent native/unit bucket
            env:
-              OMP_TEST_CONCURRENCY: "4"
-              OMP_TEST_SHARD: ${{ matrix.shard }}
-              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_SHARD: ${{ matrix.shard }}
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:native
 
    test_workspace:
@@ -625,8 +625,8 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test workspace packages and repo scripts (TS)
            env:
-              OMP_TEST_CONCURRENCY: "4"
-              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: |
               bun run ci:test:ts:workspace
               # The whole classified group, through the manifest, instead of three
@@ -660,7 +660,7 @@ jobs:
            # Keep global Settings/env/fake-timer tests serial; native addon
            # artifacts are still available like every other coding-agent bucket.
            env:
-              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:singleton
 
    test_ts_native:
@@ -678,8 +678,8 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test native/TUI/browser-ish packages (TS)
            env:
-              OMP_TEST_CONCURRENCY: "4"
-              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:ts:native
 
    test_coding_agent_ui:
@@ -697,8 +697,8 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test coding-agent UI/TUI bucket
            env:
-              OMP_TEST_CONCURRENCY: "2"
-              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+              ULTRAWORKERS_TEST_CONCURRENCY: "2"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:ui
 
    test_coding_agent_runtime:
@@ -718,8 +718,8 @@ jobs:
            # Runtime/session tests import native-backed barrels too; keep this
            # separate for concurrency, not as a native-free guardrail.
            env:
-              OMP_TEST_CONCURRENCY: "4"
-              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:runtime
 
    test_smoke:
@@ -772,7 +772,22 @@ jobs:
          needs.test_coding_agent_native.result == 'success' &&
          needs.test_smoke.result == 'success' && needs.check.result == 'success' &&
          needs.install_methods.result == 'success' }}
-      needs: [release_metadata, check, rust_validate, native_addons, native_addons_cross, test_workspace, test_coding_agent_singleton, test_ts_native, test_coding_agent_ui, test_coding_agent_runtime, test_coding_agent_native, test_smoke, install_methods]
+      needs:
+         [
+            release_metadata,
+            check,
+            rust_validate,
+            native_addons,
+            native_addons_cross,
+            test_workspace,
+            test_coding_agent_singleton,
+            test_ts_native,
+            test_coding_agent_ui,
+            test_coding_agent_runtime,
+            test_coding_agent_native,
+            test_smoke,
+            install_methods,
+         ]
       runs-on: ubuntu-22.04
       steps:
          - uses: actions/checkout@v4
@@ -1102,27 +1117,27 @@ jobs:
          - name: Install Bun (Windows ARM64 build)
            shell: pwsh
            run: |
-            $ErrorActionPreference = "Stop"
-            $release = Invoke-RestMethod "https://api.github.com/repos/oven-sh/bun/releases/latest"
-            $asset = $release.assets | Where-Object { $_.name -eq "bun-windows-aarch64.zip" } | Select-Object -First 1
-            if (-not $asset) { throw "bun-windows-aarch64.zip missing from bun $($release.tag_name); Windows ARM64 unit runs cannot install Bun" }
-            $zip = Join-Path $env:RUNNER_TEMP "bun.zip"
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
-            $dest = Join-Path $env:RUNNER_TEMP "bun"
-            Expand-Archive -Path $zip -DestinationPath $dest -Force
-            # The archive nests a `bun-windows-aarch64/` directory; put the real
-            # executable on PATH rather than depending on that layout.
-            $exe = Get-ChildItem -Path $dest -Filter "bun.exe" -Recurse | Select-Object -First 1
-            if (-not $exe) { throw "bun.exe not found inside $zip" }
-            echo "$($exe.DirectoryName)" >> $env:GITHUB_PATH
+              $ErrorActionPreference = "Stop"
+              $release = Invoke-RestMethod "https://api.github.com/repos/oven-sh/bun/releases/latest"
+              $asset = $release.assets | Where-Object { $_.name -eq "bun-windows-aarch64.zip" } | Select-Object -First 1
+              if (-not $asset) { throw "bun-windows-aarch64.zip missing from bun $($release.tag_name); Windows ARM64 unit runs cannot install Bun" }
+              $zip = Join-Path $env:RUNNER_TEMP "bun.zip"
+              Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+              $dest = Join-Path $env:RUNNER_TEMP "bun"
+              Expand-Archive -Path $zip -DestinationPath $dest -Force
+              # The archive nests a `bun-windows-aarch64/` directory; put the real
+              # executable on PATH rather than depending on that layout.
+              $exe = Get-ChildItem -Path $dest -Filter "bun.exe" -Recurse | Select-Object -First 1
+              if (-not $exe) { throw "bun.exe not found inside $zip" }
+              echo "$($exe.DirectoryName)" >> $env:GITHUB_PATH
          - name: Report Bun version
            shell: pwsh
            run: |
-            $ErrorActionPreference = "Stop"
-            $version = & bun --version
-            echo "bun $version on $env:RUNNER_OS/$env:RUNNER_ARCH"
-            if ($version -notmatch '^1\.(\d+)\.') { throw "unexpected bun version: $version" }
-            if ([int]$Matches[1] -lt 4) { throw "repo pins bun@>=1.4; runner has $version" }
+              $ErrorActionPreference = "Stop"
+              $version = & bun --version
+              echo "bun $version on $env:RUNNER_OS/$env:RUNNER_ARCH"
+              if ($version -notmatch '^1\.(\d+)\.') { throw "unexpected bun version: $version" }
+              if ([int]$Matches[1] -lt 4) { throw "repo pins bun@>=1.4; runner has $version" }
          - name: Install dependencies
            shell: pwsh
            run: bun install --frozen-lockfile
@@ -1136,18 +1151,18 @@ jobs:
            if: github.event_name == 'pull_request'
            shell: pwsh
            run: |
-            $ErrorActionPreference = "Stop"
-            $tarball = (& npm view "@oh-my-pi/pi-natives-win32-arm64@latest" dist.tarball).Trim()
-            echo "Fetching $tarball"
-            $tgz = Join-Path $env:RUNNER_TEMP "addon.tgz"
-            Invoke-WebRequest -Uri $tarball -OutFile $tgz
-            & tar -xzf $tgz -C $env:RUNNER_TEMP
-            Copy-Item "$env:RUNNER_TEMP/package/pi_natives.win32-arm64.node" "packages/natives/native/"
+              $ErrorActionPreference = "Stop"
+              $tarball = (& npm view "@oh-my-pi/pi-natives-win32-arm64@latest" dist.tarball).Trim()
+              echo "Fetching $tarball"
+              $tgz = Join-Path $env:RUNNER_TEMP "addon.tgz"
+              Invoke-WebRequest -Uri $tarball -OutFile $tgz
+              & tar -xzf $tgz -C $env:RUNNER_TEMP
+              Copy-Item "$env:RUNNER_TEMP/package/pi_natives.win32-arm64.node" "packages/natives/native/"
          - name: Install the native addon
            if: github.event_name != 'pull_request'
            uses: ./.github/actions/native-artifacts
            with:
-            targets: win32-arm64
+              targets: win32-arm64
            # The point of the job. `bun test <file>` rather than a ci:test:* bucket:
            # a full Windows unit run is a much wider claim, and this one file is the
            # only thing currently asserted nowhere.
@@ -1359,7 +1374,15 @@ jobs:
       # release_native_leaves must finish first: the core package lists the
       # leaf packages as lockstep-versioned optionalDependencies, so installs
       # resolve them the moment the core version is live.
-      needs: [release_metadata, release_binary, release_binary_hosted, release_smoke_win32_arm64, release_github_verify, release_native_leaves]
+      needs:
+         [
+            release_metadata,
+            release_binary,
+            release_binary_hosted,
+            release_smoke_win32_arm64,
+            release_github_verify,
+            release_native_leaves,
+         ]
       runs-on: ubuntu-22.04
       # `id-token: write` lets npm mint the GitHub OIDC token it exchanges for a
       # short-lived publish token (trusted publishing + provenance). When a

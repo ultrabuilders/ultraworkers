@@ -557,9 +557,9 @@ function buildChildEnv(): Record<string, string | undefined> {
 // parallel path awaits the child's stdout/stderr pipes, which stay open as
 // long as the wedged process — or any grandchild that inherited them — lives.
 // After this many seconds the child is SIGKILLed and reported as a failure.
-// Override with OMP_TEST_CHUNK_TIMEOUT (seconds).
+// Override with ULTRAWORKERS_TEST_CHUNK_TIMEOUT (seconds).
 function chunkTimeoutMs(): number {
-	const raw = Number(Bun.env.OMP_TEST_CHUNK_TIMEOUT?.trim());
+	const raw = Number(Bun.env.ULTRAWORKERS_TEST_CHUNK_TIMEOUT?.trim());
 	if (Number.isFinite(raw) && raw >= 1) return raw * 1000;
 	return 600_000;
 }
@@ -590,10 +590,10 @@ const MAX_CHUNK_ATTEMPTS = 3;
 // two very different ways -- the per-chunk watchdog firing, or the kernel OOM
 // killer reaping a chunk that outgrew the runner -- and the bare exit code
 // cannot tell them apart. Which one it was is the difference between "raise
-// OMP_TEST_CHUNK_TIMEOUT" and "lower this bucket's chunkSize", so say it.
+// ULTRAWORKERS_TEST_CHUNK_TIMEOUT" and "lower this bucket's chunkSize", so say it.
 export function describeChunkFailure(exitCode: number, timedOut: boolean): string {
 	if (timedOut) {
-		return `exceeded the ${Math.round(chunkTimeoutMs() / 1000)}s chunk watchdog and was killed (exit ${exitCode}; OMP_TEST_CHUNK_TIMEOUT to change)`;
+		return `exceeded the ${Math.round(chunkTimeoutMs() / 1000)}s chunk watchdog and was killed (exit ${exitCode}; ULTRAWORKERS_TEST_CHUNK_TIMEOUT to change)`;
 	}
 	if (exitCode === 137) {
 		return "was SIGKILLed (exit 137) without reaching the chunk watchdog, which on a CI runner means the OOM killer; lower this bucket's chunkSize";
@@ -613,11 +613,11 @@ function isCI(): boolean {
 }
 
 // Fan-out width for the local parallel path, clamped to the command count.
-// Defaults to the machine's available parallelism; `OMP_TEST_CONCURRENCY`
+// Defaults to the machine's available parallelism; `ULTRAWORKERS_TEST_CONCURRENCY`
 // overrides it — a positive integer to pick an exact width (dial down on a
 // memory-constrained laptop), or `all`/`max` to launch every chunk at once.
 function testConcurrency(total: number): number {
-	const raw = Bun.env.OMP_TEST_CONCURRENCY?.trim().toLowerCase();
+	const raw = Bun.env.ULTRAWORKERS_TEST_CONCURRENCY?.trim().toLowerCase();
 	if (!raw) return Math.min(Math.max(1, os.availableParallelism()), total);
 	if (raw === "all" || raw === "max") {
 		return total;
@@ -626,7 +626,7 @@ function testConcurrency(total: number): number {
 	if (Number.isFinite(override) && override >= 1) {
 		return Math.min(Math.floor(override), total);
 	}
-	throw new Error(`Invalid OMP_TEST_CONCURRENCY=${JSON.stringify(raw)}; expected a positive integer, all, or max`);
+	throw new Error(`Invalid ULTRAWORKERS_TEST_CONCURRENCY=${JSON.stringify(raw)}; expected a positive integer, all, or max`);
 }
 
 // Test files interleave real IO — sqlite writes, temp dirs, spawned CLIs — with
@@ -656,9 +656,9 @@ function budgetedParallel(requested: number, poolWidth: number): number {
 // timeout that says nothing about the code. Timing out is still worth catching,
 // so keep a ceiling — just one loose enough to only fire on a real hang. The
 // per-chunk watchdog (chunkTimeoutMs) remains the backstop for a wedged process.
-// Override with OMP_TEST_TIMEOUT (seconds); per-test `it(name, fn, ms)` still wins.
+// Override with ULTRAWORKERS_TEST_TIMEOUT (seconds); per-test `it(name, fn, ms)` still wins.
 function testTimeoutMs(): number {
-	const raw = Number(Bun.env.OMP_TEST_TIMEOUT?.trim());
+	const raw = Number(Bun.env.ULTRAWORKERS_TEST_TIMEOUT?.trim());
 	if (Number.isFinite(raw) && raw >= 1) return raw * 1000;
 	return 30_000;
 }
@@ -858,7 +858,7 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	const fileWidths = [...new Set(commands.map(c => c.parallel).filter(p => p !== undefined))].sort((a, b) => a - b);
 	console.log(
 		`Running ${commands.length} test command(s), up to ${concurrency} in parallel ` +
-			`(OMP_TEST_CONCURRENCY=<n>|all to change); ${os.availableParallelism()} cores, ` +
+			`(ULTRAWORKERS_TEST_CONCURRENCY=<n>|all to change); ${os.availableParallelism()} cores, ` +
 			`--parallel=${fileWidths.join("/") || "n/a"} per chunk.`,
 	);
 
@@ -953,7 +953,7 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 			// glue itself onto the front of the first probe line and hide it from a
 			// start-of-line anchor — the probe would then be reported as never run.
 			probeEntries: countProbeEntries(stdout.text) + countProbeEntries(stderr.text),
-			output: `${stdout.text}${stderr.text}${timedOut ? `\n[watchdog] chunk exceeded ${Math.round(chunkTimeoutMs() / 1000)}s; killed with SIGKILL (OMP_TEST_CHUNK_TIMEOUT to change)\n` : ""}`,
+			output: `${stdout.text}${stderr.text}${timedOut ? `\n[watchdog] chunk exceeded ${Math.round(chunkTimeoutMs() / 1000)}s; killed with SIGKILL (ULTRAWORKERS_TEST_CHUNK_TIMEOUT to change)\n` : ""}`,
 		};
 	}
 
@@ -1104,7 +1104,7 @@ export function countProbeEntries(output: string): number {
  * - **It names the count.** The failure being defended is invisible by construction, so
  *   the report has to be a number. "Some probes may have run" is indistinguishable from
  *   the silence it is warning about.
- * - **Suppression still prints.** `OMP_TEST_QUIET_DISCARD_WARN=0` mutes the alarm, not
+ * - **Suppression still prints.** `ULTRAWORKERS_TEST_QUIET_DISCARD_WARN=0` mutes the alarm, not
  *   the fact. A configuration that produced no output at all would be a quieter way to
  *   rebuild the exact hole this closes, so opting out leaves a line saying so.
  * - **It names the way out.** `--full` already replays everything; a warning that did
@@ -1118,7 +1118,7 @@ export function formatDiscardedProbeWarning(entries: number, chunks: number, sup
 	if (suppressed) {
 		return style.dim(
 			`⚠ ${scope} were discarded because the ${chunks === 1 ? "chunk" : "chunks"} passed` +
-				` (warning muted by OMP_TEST_QUIET_DISCARD_WARN=0; --full replays them).`,
+				` (warning muted by ULTRAWORKERS_TEST_QUIET_DISCARD_WARN=0; --full replays them).`,
 		);
 	}
 	return style.yellow(
@@ -1129,7 +1129,7 @@ export function formatDiscardedProbeWarning(entries: number, chunks: number, sup
 
 /** Whether the discarded-probe warning is muted. Opting out never silences the fact. */
 function discardWarningSuppressed(): boolean {
-	return Bun.env.OMP_TEST_QUIET_DISCARD_WARN?.trim() === "0";
+	return Bun.env.ULTRAWORKERS_TEST_QUIET_DISCARD_WARN?.trim() === "0";
 }
 
 /**
@@ -1239,7 +1239,7 @@ export function selectAffected(commands: TestCommand[], changedFiles: string[] |
 	return selected.size > 0 ? [...selected] : commands;
 }
 
-// `OMP_TEST_SHARD=i/n` splits a mode's chunk commands across n CI jobs; job i
+// `ULTRAWORKERS_TEST_SHARD=i/n` splits a mode's chunk commands across n CI jobs; job i
 // runs every chunk whose index ≡ i-1 (mod n). Round-robin rather than
 // contiguous ranges because the chunk list follows sorted file order, so slow
 // neighbouring suites spread evenly instead of piling into one shard. Every
@@ -1251,24 +1251,24 @@ export function selectShard<T>(commands: T[], spec: string | undefined): T[] {
 	const index = match ? Number(match[1]) : 0;
 	const count = match ? Number(match[2]) : 0;
 	if (!match || count < 1 || index < 1 || index > count) {
-		throw new Error(`Invalid OMP_TEST_SHARD=${JSON.stringify(trimmed)}; expected i/n with 1 <= i <= n`);
+		throw new Error(`Invalid ULTRAWORKERS_TEST_SHARD=${JSON.stringify(trimmed)}; expected i/n with 1 <= i <= n`);
 	}
 	const selected = commands.filter((_, i) => i % count === index - 1);
 	if (selected.length === 0) {
-		throw new Error(`OMP_TEST_SHARD=${trimmed} selects no chunks (${commands.length} available)`);
+		throw new Error(`ULTRAWORKERS_TEST_SHARD=${trimmed} selects no chunks (${commands.length} available)`);
 	}
 	return selected;
 }
 
 // Changed-file list for the selector. Two sources, in priority order:
-// `OMP_TEST_AFFECTED` is a newline/comma-separated list some caller already
-// computed; `OMP_TEST_DIFF_BASE` is a commit the workflow can see the PR's
+// `ULTRAWORKERS_TEST_AFFECTED` is a newline/comma-separated list some caller already
+// computed; `ULTRAWORKERS_TEST_DIFF_BASE` is a commit the workflow can see the PR's
 // merge base through (`github.event.pull_request.base.sha`), fetched shallow
 // because CI checks out depth 1. With neither, the working tree is the diff.
 // Every failure returns "no diff", which runs everything — a diff nobody could
 // compute must never turn into a suite nobody ran.
 async function changedFilesForSelection(): Promise<string[] | undefined> {
-	const supplied = Bun.env.OMP_TEST_AFFECTED?.trim();
+	const supplied = Bun.env.ULTRAWORKERS_TEST_AFFECTED?.trim();
 	if (supplied) {
 		return supplied
 			.split(/[\n,]/)
@@ -1279,9 +1279,9 @@ async function changedFilesForSelection(): Promise<string[] | undefined> {
 	// base, and must resolve the same way: run everything. Falling through to
 	// the working tree here would make the two spellings of "no diff" disagree,
 	// and a caller cannot tell which one it used.
-	if (Bun.env.OMP_TEST_AFFECTED !== undefined) return undefined;
+	if (Bun.env.ULTRAWORKERS_TEST_AFFECTED !== undefined) return undefined;
 
-	const base = Bun.env.OMP_TEST_DIFF_BASE;
+	const base = Bun.env.ULTRAWORKERS_TEST_DIFF_BASE;
 	if (base !== undefined) {
 		// Set but blank means the workflow had no PR base to diff against — a
 		// push to main. That is a full run, never a narrow one: main has no
@@ -1421,7 +1421,7 @@ if (import.meta.main) {
 	await reportTreeState();
 	// Sharding is reported before the diff filter runs, so a wrong chunk set is
 	// visible as a sharding-layer problem rather than a selector-layer one.
-	const shardSpec = Bun.env.OMP_TEST_SHARD?.trim();
+	const shardSpec = Bun.env.ULTRAWORKERS_TEST_SHARD?.trim();
 	const shardedCommands = selectShard(allCommands, shardSpec);
 	console.log(`shard ${shardSpec ?? "(unset)"} of ${allCommands.length} chunks -> ${shardedCommands.length} selected`);
 	const changedFiles = await changedFilesForSelection();
@@ -1443,13 +1443,13 @@ if (import.meta.main) {
 			console.log(
 				style.yellow(
 					`⚠ diff-scoped run selected ${affectedCommands.length} chunk(s) and none of them invokes a test runner — ` +
-						`0 test files will execute and this run cannot fail. Unset OMP_TEST_AFFECTED to run everything.`,
+						`0 test files will execute and this run cannot fail. Unset ULTRAWORKERS_TEST_AFFECTED to run everything.`,
 				),
 			);
 		}
 	}
 	const requestedCommands = affectedCommands;
-	const explicitConcurrency = Boolean(Bun.env.OMP_TEST_CONCURRENCY?.trim());
+	const explicitConcurrency = Boolean(Bun.env.ULTRAWORKERS_TEST_CONCURRENCY?.trim());
 	// CI defaults to one process at a time, but memory-sized workflow buckets
 	// explicitly opt into bounded process concurrency. Local runs fan out by
 	// default and may use the same override. Resolved before the dry-run check so

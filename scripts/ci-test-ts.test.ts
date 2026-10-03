@@ -14,7 +14,7 @@ import {
 describe("test runner watchdog", () => {
 	// Parent fake timers cannot drive the real watchdog inside the isolated runner process.
 	test("kills a stalled chunk, reports failure, and continues the queue", async () => {
-		using dir = TempDir.createSync("omp-test-runner-watchdog-");
+		using dir = TempDir.createSync("uw-test-runner-watchdog-");
 		const started = dir.join("started");
 		const completed = dir.join("completed");
 		const continued = dir.join("continued");
@@ -35,7 +35,7 @@ describe("test runner watchdog", () => {
 				`import { runTestCommandsInParallel } from ${JSON.stringify(import.meta.resolve("./ci-test-ts.ts"))}; await runTestCommandsInParallel(${JSON.stringify(commands)}, 1);`,
 			],
 			{
-				env: { ...Bun.env, OMP_TEST_CHUNK_TIMEOUT: "1", NO_COLOR: "1" },
+				env: { ...Bun.env, ULTRAWORKERS_TEST_CHUNK_TIMEOUT: "1", NO_COLOR: "1" },
 				timeout: 10_000,
 				detached: true,
 				allowNonZero: true,
@@ -50,7 +50,7 @@ describe("test runner watchdog", () => {
 	}, 15_000);
 });
 
-describe("OMP_TEST_SHARD", () => {
+describe("ULTRAWORKERS_TEST_SHARD", () => {
 	test("shards partition every chunk exactly once, balanced to within one", () => {
 		const chunks = Array.from({ length: 79 }, (_, i) => i);
 		const shards = [1, 2, 3].map(i => selectShard(chunks, `${i}/3`));
@@ -63,7 +63,7 @@ describe("OMP_TEST_SHARD", () => {
 
 	test("rejects malformed specs instead of running an empty or partial shard", () => {
 		for (const spec of ["0/2", "3/2", "1/0", "2", "a/b", "1/2/3"]) {
-			expect(() => selectShard([1, 2, 3], spec)).toThrow("Invalid OMP_TEST_SHARD");
+			expect(() => selectShard([1, 2, 3], spec)).toThrow("Invalid ULTRAWORKERS_TEST_SHARD");
 		}
 	});
 
@@ -74,7 +74,7 @@ describe("OMP_TEST_SHARD", () => {
 });
 
 // The selector's env comes from the process, so these run the real entrypoint
-// the way CI does: same argv, same `OMP_TEST_SHARD`, same `--dry-run` that
+// the way CI does: same argv, same `ULTRAWORKERS_TEST_SHARD`, same `--dry-run` that
 // prints the chunk set instead of running it. A helper called with arguments
 // would never touch the env path CI depends on.
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -104,9 +104,9 @@ async function runRunner(mode: string, env: Record<string, string | undefined>):
 		// Absent by default: an empty value is a *different* input to the
 		// selector (a caller that had a base and found it blank), so the two
 		// "no diff" shapes have to be set deliberately, not by omission.
-		OMP_TEST_AFFECTED: undefined,
-		OMP_TEST_DIFF_BASE: undefined,
-		OMP_TEST_CONCURRENCY: "",
+		ULTRAWORKERS_TEST_AFFECTED: undefined,
+		ULTRAWORKERS_TEST_DIFF_BASE: undefined,
+		ULTRAWORKERS_TEST_CONCURRENCY: "",
 		NO_COLOR: "1",
 		...env,
 	};
@@ -134,14 +134,14 @@ function plannedChunks(stdout: string): string[] {
 }
 
 describe("ci-test-ts diff selection through the runner", () => {
-	const savedAffected = Bun.env.OMP_TEST_AFFECTED;
-	const savedBase = Bun.env.OMP_TEST_DIFF_BASE;
+	const savedAffected = Bun.env.ULTRAWORKERS_TEST_AFFECTED;
+	const savedBase = Bun.env.ULTRAWORKERS_TEST_DIFF_BASE;
 
 	afterEach(() => {
-		if (savedAffected === undefined) delete Bun.env.OMP_TEST_AFFECTED;
-		else Bun.env.OMP_TEST_AFFECTED = savedAffected;
-		if (savedBase === undefined) delete Bun.env.OMP_TEST_DIFF_BASE;
-		else Bun.env.OMP_TEST_DIFF_BASE = savedBase;
+		if (savedAffected === undefined) delete Bun.env.ULTRAWORKERS_TEST_AFFECTED;
+		else Bun.env.ULTRAWORKERS_TEST_AFFECTED = savedAffected;
+		if (savedBase === undefined) delete Bun.env.ULTRAWORKERS_TEST_DIFF_BASE;
+		else Bun.env.ULTRAWORKERS_TEST_DIFF_BASE = savedBase;
 	});
 
 	// A PR that only edits markdown selects no chunk. The job must still run
@@ -157,7 +157,7 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// that branch was standing in for.
 	test("a diff that touches no test runs every chunk rather than nothing", async () => {
 		const result = await runRunner("coding-agent-runtime", {
-			OMP_TEST_AFFECTED: "docs/readme.md\nAGENTS.md",
+			ULTRAWORKERS_TEST_AFFECTED: "docs/readme.md\nAGENTS.md",
 		});
 		expect(result.exitCode).toBe(0);
 		// Both files are reported as mapping to nothing, so the fallback is a
@@ -190,14 +190,14 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// changed file, and no shard reports having run nothing.
 	test("the shard owning the changed file narrows, and no shard runs nothing", async () => {
 		const affected = "packages/coding-agent/test/extension-stale-context.test.ts";
-		const full = await runRunner("coding-agent-runtime", { OMP_TEST_AFFECTED: affected });
+		const full = await runRunner("coding-agent-runtime", { ULTRAWORKERS_TEST_AFFECTED: affected });
 		expect(full.exitCode).toBe(0);
 		const expected = plannedCommands(full.stdout).filter(cmd => cmd.includes("extension-stale-context"));
 		expect(expected.length).toBe(1);
 
 		const shards = await Promise.all(
 			["1/3", "2/3", "3/3"].map(shard =>
-				runRunner("coding-agent-runtime", { OMP_TEST_SHARD: shard, OMP_TEST_AFFECTED: affected }),
+				runRunner("coding-agent-runtime", { ULTRAWORKERS_TEST_SHARD: shard, ULTRAWORKERS_TEST_AFFECTED: affected }),
 			),
 		);
 		for (const shard of shards) {
@@ -226,8 +226,8 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// main sends. Turning the new path off must return today's behaviour exactly,
 	// because a seam that cannot be turned off breaks current users.
 	test("with no diff supplied the runner still runs every chunk", async () => {
-		const withDiff = await runRunner("workspace", { OMP_TEST_AFFECTED: "packages/utils/src/index.ts" });
-		const withoutDiff = await runRunner("workspace", { OMP_TEST_DIFF_BASE: "" });
+		const withDiff = await runRunner("workspace", { ULTRAWORKERS_TEST_AFFECTED: "packages/utils/src/index.ts" });
+		const withoutDiff = await runRunner("workspace", { ULTRAWORKERS_TEST_DIFF_BASE: "" });
 		expect(withoutDiff.exitCode).toBe(0);
 		expect(withoutDiff.stdout).toContain("mode=shard-only");
 		expect(plannedChunks(withoutDiff.stdout).length).toBeGreaterThan(plannedChunks(withDiff.stdout).length);
@@ -238,14 +238,14 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// working tree there reads "nothing changed" and narrows a push to the
 	// suites that happened to be touched locally. Main must run everything.
 	test("a blank diff base runs every chunk instead of reading the clean CI checkout", async () => {
-		const pushedToMain = await runRunner("workspace", { OMP_TEST_DIFF_BASE: "" });
+		const pushedToMain = await runRunner("workspace", { ULTRAWORKERS_TEST_DIFF_BASE: "" });
 		expect(pushedToMain.exitCode).toBe(0);
 		expect(pushedToMain.stdout).toContain("no diff available");
 		expect(pushedToMain.stdout).toContain("mode=shard-only");
 		// The empty affected list is the "caller supplied nothing" shape, so the
 		// two must agree chunk-for-chunk: both run everything.
 		expect(plannedChunks(pushedToMain.stdout)).toEqual(
-			plannedChunks((await runRunner("workspace", { OMP_TEST_AFFECTED: "" })).stdout),
+			plannedChunks((await runRunner("workspace", { ULTRAWORKERS_TEST_AFFECTED: "" })).stdout),
 		);
 	}, 130_000);
 
@@ -254,7 +254,7 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// everything and a green job that ran nothing.
 	test("an unfetchable diff base warns and runs every chunk", async () => {
 		const result = await runRunner("workspace", {
-			OMP_TEST_DIFF_BASE: "0000000000000000000000000000000000000000",
+			ULTRAWORKERS_TEST_DIFF_BASE: "0000000000000000000000000000000000000000",
 		});
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toContain("failed to fetch diff base");
@@ -293,15 +293,15 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// never be consulted. `coding-agent-runtime` with a diff that touches no test
 	// does shard, and reports its count on the same line.
 	test("a shard past the chunk count still fails the job", async () => {
-		const planned = await runRunner("coding-agent-runtime", { OMP_TEST_AFFECTED: "docs/readme.md" });
+		const planned = await runRunner("coding-agent-runtime", { ULTRAWORKERS_TEST_AFFECTED: "docs/readme.md" });
 		const reported = planned.stdout.match(/of (\d+) chunks -> \d+ selected/);
 		expect(reported?.[1], `runner did not report a chunk count:\n${planned.stdout}`).toBeDefined();
 		const chunkCount = Number(reported?.[1]);
 		expect(chunkCount).toBeGreaterThan(0);
 
 		const result = await runRunner("coding-agent-runtime", {
-			OMP_TEST_AFFECTED: "docs/readme.md",
-			OMP_TEST_SHARD: `${chunkCount + 1}/${chunkCount + 1}`,
+			ULTRAWORKERS_TEST_AFFECTED: "docs/readme.md",
+			ULTRAWORKERS_TEST_SHARD: `${chunkCount + 1}/${chunkCount + 1}`,
 		});
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stdout + result.stderr).toContain("selects no chunks");
@@ -312,24 +312,24 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// than passing because a bad shard quietly ran an empty selection. Asserting
 	// "the guard exists" by reading the source is a source grep; this observes it.
 	test("the last valid shard still runs, so the row above is not passing on a blanket failure", async () => {
-		const planned = await runRunner("coding-agent-runtime", { OMP_TEST_AFFECTED: "docs/readme.md" });
+		const planned = await runRunner("coding-agent-runtime", { ULTRAWORKERS_TEST_AFFECTED: "docs/readme.md" });
 		const chunkCount = Number(planned.stdout.match(/of (\d+) chunks -> \d+ selected/)?.[1]);
 		expect(chunkCount).toBeGreaterThan(0);
 
 		// In range: must run. If everything failed, the row above would pass for
 		// the wrong reason and the gate would look proven while permitting any spec.
 		const result = await runRunner("coding-agent-runtime", {
-			OMP_TEST_AFFECTED: "docs/readme.md",
-			OMP_TEST_SHARD: `1/${chunkCount}`,
+			ULTRAWORKERS_TEST_AFFECTED: "docs/readme.md",
+			ULTRAWORKERS_TEST_SHARD: `1/${chunkCount}`,
 		});
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).not.toContain("selects no chunks");
 	}, 260_000);
 
 	test("a malformed shard spec still fails the job", async () => {
-		const result = await runRunner("workspace", { OMP_TEST_SHARD: "0/2" });
+		const result = await runRunner("workspace", { ULTRAWORKERS_TEST_SHARD: "0/2" });
 		expect(result.exitCode).not.toBe(0);
-		expect(result.stdout + result.stderr).toContain("Invalid OMP_TEST_SHARD");
+		expect(result.stdout + result.stderr).toContain("Invalid ULTRAWORKERS_TEST_SHARD");
 	}, 130_000);
 });
 
@@ -428,7 +428,7 @@ describe("formatChunkManifest", () => {
  */
 describe("chunk manifest through the real runner", () => {
 	test("names a file whose chunk died at import, and still fails that chunk", async () => {
-		using dir = TempDir.createSync("omp-test-manifest-e2e-");
+		using dir = TempDir.createSync("uw-test-manifest-e2e-");
 		// Two files in one chunk, which is the shape that makes the hole visible: the broken
 		// one dies loading, so its name is the only one the replayed output mentions, and the
 		// green one is passed over in silence.
@@ -557,7 +557,7 @@ describe("discarded probe reporting", () => {
 		// all would be a quieter way to rebuild the hole this exists to close.
 		const muted = formatDiscardedProbeWarning(3, 2, true);
 		expect(muted).toContain("3 probe entries");
-		expect(muted).toContain("OMP_TEST_QUIET_DISCARD_WARN=0");
+		expect(muted).toContain("ULTRAWORKERS_TEST_QUIET_DISCARD_WARN=0");
 		expect(formatDiscardedProbeWarning(1, 1, false)).toContain("1 probe entry from 1 passing chunk");
 	});
 

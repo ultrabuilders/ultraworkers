@@ -322,6 +322,20 @@ touched. This has already produced cross-contaminated commits twice in one day (
   | stage | `bun scripts/rename/stage-lines.ts <file> <line>...` | a peer is editing the **same** file — takes only your lines |
   | commit | `bun scripts/commit-scoped.ts <file>... -m "<msg>"` | always; commits in a tree of its own |
 
+  **Staging correctly is not enough — the commit verb must then read the index, not the working
+  tree.** These are two independent boundaries and the second one is the easier to walk into:
+
+  - `git commit --only -- <path>` **rebuilds the path from the working tree**, discarding the
+    blob you just staged. Measured: index holding `INDEX_VERSION`, working tree holding
+    `WORKING_TREE_VERSION`, `git commit --only -- f.txt` ⇒ the commit contains
+    `WORKING_TREE_VERSION`. So `--only` silently undoes `stage-lines.ts` and undoes a peer's row
+    you deliberately excluded. **Never combine `--only` with line-scoped staging.**
+  - A bare `git commit` reads the index as staged — which is right when the index is yours alone,
+    and wrong the moment a peer has staged something. Verified in the same experiment: the bare
+    commit took `INDEX_VERSION` and left the working tree untouched.
+  - `commit-scoped.ts` is the only verb here that is correct in **both** halves, because it builds
+    its tree from the staged blobs rather than from either source.
+
   `commit-scoped.ts` builds its commit from HEAD plus only the named paths' staged entries and
   moves the ref with a compare-and-swap, so a peer who committed in the meantime makes the swap
   fail instead of losing their commit. It reads your real index only for the paths you name, and

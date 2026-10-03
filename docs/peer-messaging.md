@@ -801,15 +801,46 @@ refusing symlinks on both the parent directory and the file, and it also clears 
 debounce key. The **debounce key is `(signals_dir, project, agent)` — not per
 message** — so two messages to one agent within 100 ms produce **one signal file,
 the second overwriting the first**. No message is lost (they remain in the
-database); a *hint* is, which the append-only receipt table compensates for.
+database); a *hint* is.
+
+**The compensation is the interesting half, and it is not "make the file better".**
+`schema.rs:2316-2322` (v26, GH#218) says so in its own comment: *"A recipient's
+`.signal` file is a debounced latest-state indicator and **cannot prove which of
+several concurrent messages it represents**. Keep the durable, append-only
+observation separate from that mutable file."* The ledger is
+`message_delivery_signal_receipts`, PK `(message_id, agent_id, delivery_route)`,
+written `INSERT OR IGNORE … WHERE EXISTS (SELECT 1 FROM message_recipients WHERE
+message_id = ? AND agent_id = ?)` (`queries.rs:10089-10111`). Three details carry:
+`WHERE EXISTS` means a receipt is **not** proof the signal wrote — it is proof the
+message-recipient pair is real; the column is `signal_path_digest`, **not** the
+path, because storing the path would turn evidence into a re-identification
+vector; and `delivery_route` is in the PK because one pair can travel by more than
+one path.
+
+Net three states, and **the middle one is the one that collides**:
+`persisted` (row exists) ≠ `signaled` (a receipt exists) ≠ `acknowledged`
+(`ack_ts`). **General rule: when a lossy channel is unavoidable, do not try to make
+it lossless — make the durable record independent of it and let the lossy channel be
+only a hint.**
 
 **Concurrency:** two writers wait up to `busy_timeout=20000` and then receive
-`SQLITE_BUSY`. **No retry or backoff wrapper was found** — busy is an error
-returned, not a loop. *This is an absence-of-evidence finding: the search found no
-retry; it did not prove none exists.* In a system designed for many concurrent
-agents, that is a real gap rather than a detail. Filesystem locking uses `fs2`
-flock separately, plus a global activity lockfile that **both** stdio and HTTP must
-contend for.
+`SQLITE_BUSY`. **No retry or backoff wrapper was found on the send path** — busy is
+an error returned, not a loop. *This is an absence-of-evidence finding scoped to the
+send path: `append_message_delivery_signal_receipt` does wrap itself in
+`run_with_mvcc_retry` (`queries.rs:10080`), so the absence is not general.* In a
+system designed for many concurrent agents, an unretried send path is a real gap
+rather than a detail. Filesystem locking uses `fs2` flock separately, plus a global
+activity lockfile that **both** stdio and HTTP must contend for.
+
+**Reservation expiry — four signals must agree.** `force_release_file_reservation`
+(`reservations.rs:2689`) will release another agent's reservation only when
+`all_signals_stale = agent_inactive && mail_stale && !recent_fs && !recent_git`
+(≈`:2852`). The two negative terms are the point: **positive evidence of continued
+life vetoes the reap**, so absence of evidence never kills — only corroborated
+absence does. It returns `stale_reasons[]`, and `notify_previous` (default true)
+messages the holder it just displaced. TTLs clamp to `[60s, 1 year]` and the clamp
+**warns** rather than silently correcting (`macros.rs:231-237`,
+`build_slots.rs:465`).
 
 **File reservations are the most carefully built mechanism here.** `overlaps()`
 writes **both arms** of the swap, so glob matching is genuinely symmetric;

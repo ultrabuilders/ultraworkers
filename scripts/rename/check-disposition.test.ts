@@ -252,6 +252,25 @@ describe("occurrence counting", () => {
 		expect(isCommentLine(" * omp is the agent")).toBe(true);
 		expect(isCommentLine(`const x = "omp"; // note`)).toBe(false);
 	});
+
+	it("reads the comment opener as a property of the language, not of the line", () => {
+		// `#` opens a comment in YAML and shell. The path-free form cannot know
+		// that, and answering "not prose" put every one of these occurrences in
+		// the code bucket — silently, because a wrong answer here looks like a
+		// correct one.
+		expect(isCommentLine("  # pins omp to 1.4.2", ".github/workflows/ci.yml")).toBe(true);
+		expect(isCommentLine("#!/usr/bin/env bash", "scripts/run.sh")).toBe(true);
+		expect(isCommentLine("  # the omp provider", "tools/x.py")).toBe(true);
+
+		// The same character in TypeScript is ordinary syntax. A classifier that
+		// keyed on the character instead of the language would invert this.
+		expect(isCommentLine("  #private readonly omp = 1;", "src/dirs.ts")).toBe(false);
+		expect(isCommentLine('  const s = "#omp";', "src/dirs.ts")).toBe(false);
+
+		// Without a path the C-family openers remain the only claimable ones, so
+		// the default is unchanged rather than silently widened.
+		expect(isCommentLine("  # pins omp to 1.4.2")).toBe(false);
+	});
 });
 
 describe("rules column", () => {

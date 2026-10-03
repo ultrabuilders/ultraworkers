@@ -859,10 +859,51 @@ export async function findPinnedCaseBlind(root: string): Promise<readonly Pinned
 	return found;
 }
 
-/** True when the line is prose: a comment opener introduces the whole line. */
-export function isCommentLine(line: string): boolean {
+/**
+ * Extensions whose line comment opener is `#` rather than a C-family token.
+ *
+ * Keyed by extension because the opener is a property of the LANGUAGE, not of the
+ * line: `#` opens a comment in YAML and in shell, and is an ordinary character in
+ * TypeScript — where `#private` and a shebang-free `#!` line are both real syntax.
+ * Matching on the character alone would call every `#` a comment and turn a
+ * language-blind classifier into a language-inverted one.
+ */
+const HASH_COMMENT_EXTENSIONS: ReadonlySet<string> = new Set([
+	".yml",
+	".yaml",
+	".sh",
+	".bash",
+	".zsh",
+	".py",
+	".rb",
+	".toml",
+]);
+
+/**
+ * True when the line is prose: a comment opener introduces the whole line.
+ *
+ * `path` is optional and its absence is the documented default, not an oversight:
+ * with no path the C-family openers are all that can be claimed, and a caller that
+ * has the path should pass it. Measured 2026-10-03, the path-free form classified
+ * ZERO of the `#` comments in this repo's YAML, shell and Python — 27 rows' worth
+ * of files — and reported those occurrences as code. That is silent in the way
+ * that matters: the answer is wrong, and nothing about the wrong answer looks wrong.
+ *
+ * Known residual, and it stays known rather than being half-fixed: a line INSIDE a
+ * C-family block comment is a comment too, but a continuation that begins with
+ * ordinary code (`const x = 1;` inside such a block) matches no opener here.
+ * Widening would need the block state carried across lines, which a per-line
+ * predicate cannot see — that is why `path` fixes the language and cannot fix the
+ * nesting. (The opener pair is spelled out rather than written literally: a block
+ * comment's terminator inside this docblock would end the docblock.)
+ */
+export function isCommentLine(line: string, path?: string): boolean {
 	const trimmed = line.trimStart();
-	return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
+	if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return true;
+	if (path === undefined) return false;
+	const dot = path.lastIndexOf(".");
+	if (dot < 0) return false;
+	return HASH_COMMENT_EXTENSIONS.has(path.slice(dot).toLowerCase()) && trimmed.startsWith("#");
 }
 
 export interface Row {
@@ -1309,6 +1350,24 @@ export async function checkPreWithCoverage(
 		const node = planNodeOf(row.keepRefs);
 		if (node !== null && !definedPlanIds.has(node)) {
 			violations.push({ rule: "dangling-keep-ref", detail: `${row.path} (line ${row.line}) -> ${node}` });
+		}
+		// A `keep_refs` value is a NAME, not a sentence. `missing-keep-refs` proves the
+		// cell is non-empty and `dangling-keep-ref` proves a plan owner resolves;
+		// between them a whole paragraph of prose passes, because prose is non-empty
+		// and `planNodeOf` returns null for it, which is the one answer that silences
+		// both. Found in the wild at `disposition.tsv:474`: an entire justification
+		// paragraph sat in the ref column of `auth-broker-config.ts`, parsed as a
+		// valid cell, reported as its own "kind" by the vocabulary report, and
+		// unreachable by every rule.
+		//
+		// The discriminator is whitespace rather than a grammar. Every legitimate value
+		// is a single token — `W11:first-party-telemetry-span-name` is the longest at 35
+		// characters, and the shapes in use are `W<n>`, `W<n>:name`, `<bead>:name`,
+		// `N<n>`, `internal-path-reference`, `windows-named-pipe-endpoint` — so "no
+		// whitespace" separates prose from every one of them without a rule that would
+		// have to be widened every time a new shape was coined.
+		if (row.keepRefs.trim() !== "" && /\s/.test(row.keepRefs.trim())) {
+			violations.push({ rule: "keep-ref-shape", detail: `${row.path} (line ${row.line})` });
 		}
 	}
 	for (const [filePath, group] of byPath) {

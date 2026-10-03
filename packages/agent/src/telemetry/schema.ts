@@ -53,9 +53,13 @@ export type {
  *
  * `omp.*` is what the rest of the OTel surface already uses: the twelve instruments
  * in `telemetry-export-otlp.ts` (`omp.log`, `omp.agent.runs`, `omp.gen_ai.agent.id`,
- * …). A new span family under a third prefix would be the odd one out. The ruling is
- * `ultraworkers-a4`'s, made under the owner's delegation; flipping it is one commit
- * over two constants and one string.
+ * …). A new span family under a third prefix would be the odd one out.
+ *
+ * That is an inference from the prefix already being live on the wire, not a ruling
+ * anyone signed: `disposition.tsv` carries no row for this file. Treat the argument as
+ * the reason and the question as open — closing it needs the owner, and flipping it is
+ * one commit over two constants and one string. Do not read this paragraph as authority
+ * not to revisit it.
  *
  * ## What was adapted, and why it is not a rewrite
  *

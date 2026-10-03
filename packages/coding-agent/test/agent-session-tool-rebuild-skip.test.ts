@@ -1144,6 +1144,15 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 			.spyOn(SessionMaintenance.prototype, "runPrePromptCompactionIfNeeded")
 			.mockImplementationOnce(async () => {
 				await session.refreshMCPTools([search, fetch]);
+				// `2aac13437d` gates activation: this refresh is a push, so `fetch` is
+				// registered and visible but not mounted. The notice under test is the
+				// MOUNTED-route delta, so the mount has to be declared for the delta to
+				// exist — adding it to the current mounted set rather than replacing it,
+				// because that is what a real activation does.
+				await session.setActiveToolPresentation(
+					[...session.getEnabledToolNames(), fetch.name],
+					[...session.getMountedXdevToolNames(), fetch.name],
+				);
 			});
 		await session.prompt("first");
 

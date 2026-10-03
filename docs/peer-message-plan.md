@@ -175,6 +175,21 @@ properties break across processes:
 **Adopted:** machine-scoped allocation from the closed space, case-insensitively
 unique, allocated under a lock from §5.
 
+**One platform fact that constrains this.** The default macOS volume is
+**case-insensitive**, so `BlueLake` and `BlueLake` are *the same file*.
+`mcp_agent_mail_rust` normalises to lowercase in several places for exactly this
+reason (`storage/lib.rs:9604-9611`, `seen.insert(name.to_ascii_lowercase())`).
+
+⇒ **Uniqueness must be enforced by the store, never by the filesystem.** A
+directory named after the agent cannot be the uniqueness check, because on our
+default volume the filesystem will happily fold two names onto one path. The
+allocator holds the lock from §5, checks the store, and the store is the only
+authority.
+
+**Second platform fact:** `/tmp` is a symlink to `/private/tmp`. Any path
+comparison must canonicalise first (`mcp_agent_mail_rust` does, `cli/lib.rs:6462`,
+GH#230). Otherwise a test passes or fails depending on how it built its tmpdir.
+
 ### 3.3 Two addresses, on purpose
 
 - **Name** — the human-facing identity, from the closed space. This is what peers
@@ -245,6 +260,31 @@ asked.
 registration and does *not* filter on `updatedAt`; `livePeers` opens the real
 socket with a 350 ms timeout.
 
+### 4.4 The PID signal is weaker on macOS than it looks — reweight the four
+
+`mcp_agent_mail_rust` reads `/proc/<pid>/stat` field 22 to catch PID reuse on
+Linux, and the fallback is **explicitly a stub**:
+
+```rust
+// crates/mcp-agent-mail-storage/src/lib.rs:6999-7002
+#[cfg(not(target_os = "linux"))]
+fn process_start_ticks(_pid: u32) -> Option<u64> {
+	None
+}
+```
+
+So on macOS **a PID in a registration file cannot distinguish a live process from a
+recycled one.** `pi-ipc` makes the same mistake from the other direction: it reads
+`/proc` unconditionally, so on macOS the read returns `null` and a session is
+unroutable for its entire lifetime with no retry (`index.ts:148-151`).
+
+**Two projects, two opposite failures, same root cause: they treated a platform
+probe as if it were portable.**
+
+⇒ On our platform the **socket connect probe becomes the primary signal**; the pid
+is demoted to a hint, and liveness rests on *can I open the socket*, which cannot be
+faked by a recycled PID.
+
 ### 4.3 Release: on a probe, never on an age
 
 Measured across eight projects — the owner's premise, checked rather than assumed:
@@ -265,6 +305,14 @@ with no probe.** The pattern that works is the first row.
 Stale socket reclaim, from `armory-mesh`'s `probeStale`: connect with a 250 ms
 timeout, treat failure as stale, unlink, rebind.
 
+**Release by quarantine, not deletion.** `mcp_agent_mail_rust`'s `RULE 1`, applied
+uniformly to locks, evidence and packs: **rename the stale artifact into a
+quarantine directory; never `unlink` it.** A stale registration that was
+misclassified stays on disk and stays recoverable, the path is freed immediately
+because `rename` is atomic, and nothing is destroyed on a bad heuristic. This is
+strictly better than the "release on a probe" rule above, and it is the form we
+adopt — deletion only after the quarantine horizon expires.
+
 Two failure modes worth naming because they are easy to reproduce:
 
 - **`agent-fleet`'s lock never expires**, by explicit choice — *"No stale-lock
@@ -276,6 +324,12 @@ Two failure modes worth naming because they are easy to reproduce:
   `${path}.tmp-${process.pid}`; a recycled pid makes every later transaction fail
   `EEXIST` forever. **Put something unguessable in the temp name, not the pid**,
   and reap orphans by age.
+- **A fence that is only a `debug_assert` is not a fence.**
+  `ARCHIVE_PUBLICATION_FENCE` is a process-global, non-reentrant mutex whose only
+  guard against a permanent whole-process hang is `debug_assert_eq!`
+  (`storage/lib.rs:815-821`), and **it has already wedged once in production**.
+  Worth noting the asymmetry: in a single-threaded Node runtime this hazard class
+  largely disappears, which is an argument *for* the port rather than against it.
 
 ---
 
@@ -301,6 +355,32 @@ Two failure modes worth naming because they are easy to reproduce:
 - **An ABA epoch** — `pi-parley`'s `endpointEpoch`, a fresh UUID per registration,
   mismatch is `E_TARGET_REBOUND`. If the target re-registers between your read and
   your write, the epoch tells you.
+
+### 5.1a The `flock` substitute, and why not a native addon
+
+Node has no `flock`. The nearest thing is **`fs.openSync(path, "wx")`** —
+`O_CREAT|O_EXCL`:
+
+- It is the **only** primitive in Node with atomic test-and-set, so it is the only
+  candidate for an election lock.
+- It beats `mkdir` because you do not have to `rmdir` first, and the file can carry
+  the owner's metadata — which is what makes quarantine-by-rename (§4.3) possible.
+- **POSIX requires `O_EXCL` to fail when the path is a symlink**, so it *substitutes*
+  for `O_NOFOLLOW`, which Node does not expose.
+
+**Acquire order: in-process lock first, then `O_EXCL`.** `mcp_agent_mail_rust`'s
+`git_lock.rs:6-13` puts a mutex *below* the OS lock and releases in reverse, for a
+reason it writes down (`docs/DESIGN_git_lock.md:92-95`):
+
+> *"Mutex-then-flock avoids the pathological case where two threads in the same
+> process both wait on flock while one of them could have been parked on the mutex."*
+
+**Do not add a native `flock` addon.** `flock` is per-process on BSD/macOS, so a
+second `open`+`flock` in one process **succeeds and silently converts** a shared
+lock to exclusive — while the same code in Linux CI **fails**. Your concurrency tests
+would then pass everywhere except the machine your developers actually use. Keeping
+the in-process layer above is what stops the platform difference from reaching the
+critical section.
 
 ### 5.2 Fencing — the fourth kind, and why TTL alone is not enough
 
@@ -689,8 +769,39 @@ Two consequences:
 What survives is the part that never needed an engine: **no daemon, open the durable
 layer directly, spawn nothing** (§6.5).
 
+### 10.0b The field reports, and one stale document
+
+`docs/planning/BRIDGE_PLAN_2026-09-01.md:1928`, verified verbatim:
+
+> *"Field reports GH#257 (re-corruption 61 min after a clean integrity check at
+> 316 msg/h), **GH#278 (macOS snapshot conflicts then malformed pages)** and
+> **`br-htobc` (index corruption under SIGKILL)** say the failure modes moved from
+> git index locks into the storage engine."*
+
+**The first one names macOS**, which is our platform. Two further facts from the
+same file: the pool p99 on the reference host hit **18.2 s acquire and 20 s write**
+inside a ten-minute window, and the pragma conformance harness
+(`docs/FRANKENSQLITE_PRAGMA_GAPS.md`) records **35 divergences**.
+
+**One correction to how this was first reported to me.** That document also says the
+100-agent lifecycle test is `#[ignore]`d. It no longer is — the code comment at
+`stress_pipeline.rs:2188-2192` records it was **un-ignored on 2026-09-23** once the
+concurrent-open schema regression was gone. The document is dated **2026-09-01** and
+is stale at exactly that point.
+
+The test still ignored is `stress_150_agent_message_storm`
+(`stress_pipeline.rs:1933`), and its reason is the part worth stealing:
+
+> *"`p99 ~50s exceeds the 45s guard … load-sensitive (rerun unloaded to separate
+> engine from load)`"*
+
+**A load-sensitive failure cannot tell you whether the engine or the machine is at
+fault**, so it decides nothing. When a guard trips, the first question is whether it
+was measured under load — and if nobody can answer that, the guard is decoration.
+
 **Rule: a concurrency claim sourced from `mail-rust` must always be read with
-*which engine did it assume?* and *has its A/B actually been run?***
+*which engine did it assume?*, *has its A/B actually been run?*, and *is the
+document older than the code it describes?***
 
 ### 10.1 Licence
 

@@ -8,6 +8,7 @@ import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { resetSettingsForTest, Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { ExtensionUIContext } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
 import { resolveLocalUrlToPath } from "@oh-my-pi/pi-coding-agent/internal-urls";
+import type { McpCatalogRefreshReason } from "@oh-my-pi/pi-coding-agent/mcp/types";
 import {
 	ACP_BOOTSTRAP_RACE_GUARD_MS,
 	AcpAgent,
@@ -298,7 +299,25 @@ class FakeAgentSession {
 		this.isStreaming = false;
 	}
 
-	async refreshMCPTools(_tools: unknown[]): Promise<void> {}
+	/**
+	 * Every reason the host passed to `refreshMCPTools`, in arrival order.
+	 *
+	 * Producer-side evidence. The RECEIVER already has coverage — `mcp-tool-activation-
+	 * {gate,session}.test.ts` drive `refreshMCPTools` directly and pin what each reason
+	 * does to the active set. What had no coverage is the ACP host forwarding the reason
+	 * at all: `mcp-tool-activation-*.test.ts` call the session directly, so dropping
+	 * `reason` on the ACP path left every one of them green. The defect it caused was real
+	 * — on ACP a server's first connection never activated its tools — and invisible.
+	 *
+	 * Recorded even when `undefined`, because the absent case IS the defect: the receiver
+	 * handles a missing reason as `"push"`, so a dropped reason is indistinguishable from a
+	 * push at the far end, which is exactly why only the producer can catch it.
+	 */
+	readonly mcpRefreshReasons: (McpCatalogRefreshReason | undefined)[] = [];
+
+	async refreshMCPTools(_tools: unknown[], reason?: McpCatalogRefreshReason): Promise<void> {
+		this.mcpRefreshReasons.push(reason);
+	}
 
 	getContextUsage(): undefined {
 		return undefined;
@@ -675,6 +694,67 @@ describe("ACP agent", () => {
 		harness.abortController.abort();
 		await Bun.sleep(0);
 	});
+
+	it("forwards the MCP catalog refresh reason, so a first ACP connect and a later server push stay distinguishable", async () => {
+		// The defect this pins: the ACP host received the manager's declared reason and
+		// dropped it on the way to the session. The receiver handles an ABSENT reason as
+		// `"push"`, so the drop was invisible at the far end — every ACP server's FIRST
+		// connection registered its tools and never activated them, while `sdk.ts` (which
+		// forwards the reason) was correct. The same MCP server behaved differently on the
+		// two hosts.
+		//
+		// Both directions are asserted because a host that returned `"connect"` for
+		// everything would satisfy the first assertion alone. Only the second proves the
+		// value is the manager's DECLARATION rather than a constant that happens to be
+		// right on the first refresh.
+		//
+		// The gate is passed as the SERVER's env rather than through `process.env`, so
+		// nothing process-wide is mutated: bun runs every file of a suite in one process,
+		// and an unrestored env var would leak into unrelated files.
+		const harness = await createHarness();
+		const addGate = path.join(harness.cwdA, "rug-pull-add-gate");
+
+		let session!: FakeAgentSession;
+		const waitForReasons = async (count: number): Promise<void> => {
+			const deadline = Date.now() + 15_000;
+			while (Date.now() < deadline) {
+				if (session.mcpRefreshReasons.length >= count) return;
+				await Bun.sleep(25);
+			}
+			// Report what actually arrived: "expected 2 refreshes" alone cannot tell a
+			// host that never fired from one that fired with the wrong reason.
+			throw new Error(
+				`timed out waiting for ${count} MCP refresh(es); got ${JSON.stringify(session.mcpRefreshReasons)}`,
+			);
+		};
+
+		const created = await harness.agent.newSession({
+			cwd: harness.cwdA,
+			mcpServers: [
+				{
+					name: "rugpull",
+					command: process.execPath,
+					args: [path.join(import.meta.dir, "fixtures", "rug-pull-mcp.ts")],
+					env: [{ name: "RUG_PULL_ADD_UNTIL", value: addGate }],
+				},
+			],
+		} as unknown as Parameters<typeof harness.agent.newSession>[0]);
+
+		session = harness.findSession(created.sessionId) as unknown as FakeAgentSession;
+
+		// The server's initial catalog: the user asked for this connection, so the
+		// manager declares `"connect"` and the arriving tools must be activated.
+		await waitForReasons(1);
+		expect(session.mcpRefreshReasons[0]).toBe("connect");
+
+		// The same server now adds a tool and notifies on its own. The user approved
+		// the CONNECTION, not the new tool, so this must read as a push — and a push
+		// must never be laundered into the connect that activates a catalog.
+		await Bun.write(addGate, "");
+		await waitForReasons(2);
+		expect(session.mcpRefreshReasons.at(-1)).toBe("push");
+		expect(session.mcpRefreshReasons.slice(1)).not.toContain("connect");
+	}, 30_000);
 
 	it("advertises plan mode and emits schema-valid mode updates", async () => {
 		const harness = await createHarness();
@@ -3534,6 +3614,45 @@ describe("ACP agent MCP server configuration (late-connecting servers)", () => {
 			// server's tool. Before the fix, this late arrival was dropped.
 			await pollUntil(() => refreshSpy.mock.calls.length > 1);
 			expect(namesOf(refreshSpy.mock.calls.at(-1)?.[0] ?? [])).toEqual([`mcp__delayed_${DELAYED_MCP_TOOL_NAME}`]);
+		} finally {
+			refreshSpy.mockRestore();
+		}
+	}, 15_000);
+
+	/**
+	 * Producer-side guard for the catalog refresh REASON, on the ACP host.
+	 *
+	 * The row above proves the late tools *arrive*; it says nothing about why. That is
+	 * the whole defect: `acp-agent.ts` once took `(_tools)` and called
+	 * `refreshMCPTools(manager.getTools())` with no reason, so every ACP refresh fell to
+	 * the absent-reason branch — which the receiver handles as `"push"`. A server's FIRST
+	 * connection then registered and displayed its tools without ever becoming callable.
+	 * `sdk.ts` forwarded the reason all along, so the two hosts disagreed about the same
+	 * event, and only ACP was broken.
+	 *
+	 * The receiver is already covered by `mcp-tool-activation-*.test.ts`, which call
+	 * `refreshMCPTools` directly and so cannot see a producer that drops its argument.
+	 * This row is the other half: it goes through `setOnToolsChanged`, so removing `reason`
+	 * from the ACP handler turns it red.
+	 */
+	it("declares `connect` when a server's first connection lands its catalog", async () => {
+		const harness = await createHarness();
+		const refreshSpy = spyOn(FakeAgentSession.prototype, "refreshMCPTools");
+		const namesOf = (tools: unknown[]) => (tools as Array<{ name: string }>).map(tool => tool.name);
+
+		try {
+			await harness.agent.newSession({
+				cwd: harness.cwdA,
+				mcpServers: [{ name: "delayed", command: BUN_EXEC, args: [FIXTURE_PATH], env: [] }],
+			});
+
+			await pollUntil(() => refreshSpy.mock.calls.length > 1);
+			const arriving = refreshSpy.mock.calls.at(-1);
+			expect(namesOf(arriving?.[0] ?? [])).toEqual([`mcp__delayed_${DELAYED_MCP_TOOL_NAME}`]);
+			// The load-bearing assertion. `undefined` is the bug's own signature: the
+			// receiver reads an absent reason as "push", which is exactly backwards for a
+			// first connection.
+			expect(arriving?.[1]).toBe("connect");
 		} finally {
 			refreshSpy.mockRestore();
 		}

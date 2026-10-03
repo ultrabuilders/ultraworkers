@@ -31,6 +31,7 @@
         "@oh-my-pi/pi-wire": "catalog:",
         "@oh-my-pi/snapcompact": "catalog:",
         "@opentelemetry/api": "catalog:",
+        "@ultraworkers/pi-telemetry": "catalog:",
       },
       "devDependencies": {
         "@oh-my-pi/omptype": "catalog:",
@@ -330,7 +331,7 @@
       },
     },
     "packages/telemetry": {
-      "name": "@oh-my-pi/pi-telemetry",
+      "name": "@ultraworkers/pi-telemetry",
       "version": "18.4.3",
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -435,7 +436,6 @@
     "@oh-my-pi/pi-natives": "18.4.3",
     "@oh-my-pi/pi-protocol": "18.4.3",
     "@oh-my-pi/pi-server": "18.4.3",
-    "@oh-my-pi/pi-telemetry": "18.4.3",
     "@oh-my-pi/pi-tui": "18.4.3",
     "@oh-my-pi/pi-utils": "18.4.3",
     "@oh-my-pi/pi-wire": "18.4.3",
@@ -458,6 +458,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "@ultraworkers/pi-telemetry": "18.4.3",
     "diff": "^9.0.0",
     "fastembed": "2.1.0",
     "katex": "^0.18.4",
@@ -852,8 +853,6 @@
 
     "@oh-my-pi/pi-catalog": ["@oh-my-pi/pi-catalog@workspace:packages/catalog"],
 
-    "@ultraworkers/pi-client": ["@ultraworkers/pi-client@workspace:packages/client"],
-
     "@oh-my-pi/pi-codemode": ["@oh-my-pi/pi-codemode@workspace:packages/codemode"],
 
     "@oh-my-pi/pi-coding-agent": ["@oh-my-pi/pi-coding-agent@workspace:packages/coding-agent"],
@@ -871,8 +870,6 @@
     "@oh-my-pi/pi-protocol": ["@oh-my-pi/pi-protocol@workspace:packages/protocol"],
 
     "@oh-my-pi/pi-server": ["@oh-my-pi/pi-server@workspace:packages/server"],
-
-    "@oh-my-pi/pi-telemetry": ["@oh-my-pi/pi-telemetry@workspace:packages/telemetry"],
 
     "@oh-my-pi/pi-tui": ["@oh-my-pi/pi-tui@workspace:packages/tui"],
 
@@ -1171,6 +1168,10 @@
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
     "@typescript/vfs": ["@typescript/vfs@1.6.1", "", { "dependencies": { "debug": "^4.1.1" }, "peerDependencies": { "typescript": "*" } }, "sha512-JwoxboBh7Oz1v38tPbkrZ62ZXNHAk9bJ7c9x0eI5zBfBnBYGhURdbnh7Z4smN/MV48Y5OCcZb58n972UtbazsA=="],
+
+    "@ultraworkers/pi-client": ["@ultraworkers/pi-client@workspace:packages/client"],
+
+    "@ultraworkers/pi-telemetry": ["@ultraworkers/pi-telemetry@workspace:packages/telemetry"],
 
     "adm-zip": ["adm-zip@0.5.18", "", {}, "sha512-ufJnssQGbxzLNS1Ho9bCtX4rQKCCvoVuDLHoJyc3F9dOGDB4BkWs2Ci0kv53lqocAEQ/Cbi+I2XCsNYGqVYqng=="],
 

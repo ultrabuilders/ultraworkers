@@ -10,8 +10,8 @@ import type {
 	TelemetrySchemaSpanStartAttributes,
 	TelemetrySchemaSpanUnion,
 	TypedSpanStarter,
-} from "@oh-my-pi/pi-telemetry";
-import { createTypedSpanStarter } from "@oh-my-pi/pi-telemetry";
+} from "@ultraworkers/pi-telemetry";
+import { createTypedSpanStarter } from "@ultraworkers/pi-telemetry";
 
 // `pi` re-exports the whole `pi-telemetry` type surface from this module, because
 // its own barrel has nowhere else to get it. Here it would collide with

@@ -64,7 +64,7 @@
 		"@oh-my-pi/pi-ai": "catalog:",
 		"@oh-my-pi/pi-catalog": "catalog:",
 		"@oh-my-pi/pi-natives": "catalog:",
-		"@oh-my-pi/pi-telemetry": "catalog:",
+		"@ultraworkers/pi-telemetry": "catalog:",
 		"@oh-my-pi/pi-utils": "catalog:",
 		"@oh-my-pi/pi-wire": "catalog:",
 		"@oh-my-pi/snapcompact": "catalog:",

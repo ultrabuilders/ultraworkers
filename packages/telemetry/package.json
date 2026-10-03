@@ -1,6 +1,6 @@
 {
 	"type": "module",
-	"name": "@oh-my-pi/pi-telemetry",
+	"name": "@ultraworkers/pi-telemetry",
 	"version": "18.4.3",
 	"description": "Vendor-neutral telemetry contracts and typed schema utilities for omp",
 	"homepage": "https://omp.sh",

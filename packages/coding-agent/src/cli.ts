@@ -500,7 +500,7 @@ async function runIpcSubprocessWorker<In, Out>(
 
 /**
  * Hidden subcommand that boots the ONNX tiny-model worker for one model: a
- * detached process owning that model's socket (`OMP_TINY_WORKER_SOCKET`),
+ * detached process owning that model's socket (`ULTRAWORKERS_TINY_WORKER_SOCKET`),
  * shared by every ultraworkers process on the machine and exiting on its own when
  * idle. It exists so `onnxruntime-node` (loaded transitively by
  * `@huggingface/transformers`) never runs in an ultraworkers address space — its NAPI

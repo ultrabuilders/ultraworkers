@@ -42,7 +42,8 @@ The tiny-model CLI and source registry retain **title** and **memory** groupings
   (Windows: a named pipe). The first ultraworkers process that needs the model spawns the worker detached
   (log next to the socket, `*.sock.log`); every other ultraworkers process just connects, so the model is
   resident once rather than once per instance. Nothing supervises it: the worker exits on its own
-  after 15 minutes without a request (`OMP_TINY_WORKER_IDLE_MS` overrides the window for tests),
+  after 15 minutes without a request (`ULTRAWORKERS_TINY_WORKER_IDLE_MS` overrides the window for tests;
+  the pre-rebrand `OMP_TINY_WORKER_IDLE_MS` is still honoured when it is unset),
   unlinks its socket, and the next request from any ultraworkers process spawns a fresh one. Concurrent
   spawns race on a `.bind.lock` file lock: the loser sees a live socket and exits while its parent
   adopts the winner. `ping` returns a launch tag (`<ultraworkers version>|onnx|<device>|<dtype>` or

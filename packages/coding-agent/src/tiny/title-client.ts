@@ -36,7 +36,7 @@ import { getTinyLocalModelSpec, isTinyLocalModelKey, type TinyLocalModelKey } fr
 import { normalizeGeneratedTitle } from "./text";
 import {
 	TINY_WORKER_ARG,
-	TINY_WORKER_IDLE_MS_ENV,
+	readTinyWorkerIdleMsEnv,
 	TINY_WORKER_MODEL_ENV,
 	TINY_WORKER_SOCKET_ENV,
 	TINY_WORKER_TAG_ENV,
@@ -413,7 +413,7 @@ function mlxLaunch(modelKey: TinyLocalModelKey, emitProgress: (event: TinyTitleP
 				HF_HUB_DISABLE_PROGRESS_BARS: "1",
 				TOKENIZERS_PARALLELISM: "false",
 			});
-			const idleSeconds = Number($env[TINY_WORKER_IDLE_MS_ENV]) / 1000 || MLX_IDLE_SECONDS;
+			const idleSeconds = Number(readTinyWorkerIdleMsEnv($env)) / 1000 || MLX_IDLE_SECONDS;
 			const cmd = [
 				python,
 				"-u",

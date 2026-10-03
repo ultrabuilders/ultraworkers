@@ -40,7 +40,7 @@ import {
 } from "./models";
 import {
 	TINY_WORKER_IDLE_MS,
-	TINY_WORKER_IDLE_MS_ENV,
+	readTinyWorkerIdleMsEnv,
 	TINY_WORKER_MODEL_ENV,
 	TINY_WORKER_SOCKET_ENV,
 	TINY_WORKER_TAG_ENV,
@@ -264,7 +264,7 @@ export async function startTinyWorkerFromEnvironment(): Promise<void> {
 	const model = new OnnxModel(modelKey, spec, resolveTinyModelDevicePreference(), resolveTinyModelDtypeOverride());
 	const server = new TinyWorkerServer({
 		tag,
-		idleMs: Number(process.env[TINY_WORKER_IDLE_MS_ENV]) || TINY_WORKER_IDLE_MS,
+		idleMs: Number(readTinyWorkerIdleMsEnv(process.env)) || TINY_WORKER_IDLE_MS,
 		async handle(request, reply) {
 			if (request.type === "load") {
 				await model.pipeline(reply, request.id);

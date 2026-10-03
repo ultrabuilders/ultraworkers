@@ -120,7 +120,7 @@
         "@oh-my-pi/pi-agent-core": "catalog:",
         "@oh-my-pi/pi-ai": "catalog:",
         "@oh-my-pi/pi-catalog": "catalog:",
-        "@oh-my-pi/pi-mnemopi": "catalog:",
+        "@ultraworkers/pi-mnemopi": "catalog:",
         "@oh-my-pi/pi-natives": "catalog:",
         "@oh-my-pi/pi-tui": "catalog:",
         "@oh-my-pi/pi-utils": "catalog:",
@@ -220,7 +220,7 @@
       },
     },
     "packages/mnemopi": {
-      "name": "@oh-my-pi/pi-mnemopi",
+      "name": "@ultraworkers/pi-mnemopi",
       "version": "18.4.3",
       "bin": {
         "mnemopi": "src/cli.ts",
@@ -432,7 +432,7 @@
     "@oh-my-pi/pi-ai": "18.4.3",
     "@oh-my-pi/pi-catalog": "18.4.3",
     "@oh-my-pi/pi-coding-agent": "18.4.3",
-    "@oh-my-pi/pi-mnemopi": "18.4.3",
+    "@ultraworkers/pi-mnemopi": "18.4.3",
     "@oh-my-pi/pi-natives": "18.4.3",
     "@ultraworkers/pi-protocol": "18.4.3",
     "@oh-my-pi/pi-tui": "18.4.3",
@@ -863,7 +863,7 @@
 
     "@ultraworkers/pi-metaharness": ["@ultraworkers/pi-metaharness@workspace:packages/metaharness"],
 
-    "@oh-my-pi/pi-mnemopi": ["@oh-my-pi/pi-mnemopi@workspace:packages/mnemopi"],
+    "@ultraworkers/pi-mnemopi": ["@ultraworkers/pi-mnemopi@workspace:packages/mnemopi"],
 
     "@oh-my-pi/pi-natives": ["@oh-my-pi/pi-natives@workspace:packages/natives"],
 

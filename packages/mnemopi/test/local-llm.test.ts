@@ -5,7 +5,7 @@ import {
 	CallableLlmBackend,
 	resetHostLlmBackendForTests,
 	setHostLlmBackend,
-} from "@oh-my-pi/pi-mnemopi/core/llm-backends";
+} from "@ultraworkers/pi-mnemopi/core/llm-backends";
 import {
 	buildHostPrompt,
 	callRemoteLlm,
@@ -14,9 +14,9 @@ import {
 	complete,
 	llmAvailable,
 	summarizeMemories,
-} from "@oh-my-pi/pi-mnemopi/core/local-llm";
-import { Mnemopi } from "@oh-my-pi/pi-mnemopi/core/memory";
-import { withMnemopiRuntimeOptions } from "@oh-my-pi/pi-mnemopi/core/runtime-options";
+} from "@ultraworkers/pi-mnemopi/core/local-llm";
+import { Mnemopi } from "@ultraworkers/pi-mnemopi/core/memory";
+import { withMnemopiRuntimeOptions } from "@ultraworkers/pi-mnemopi/core/runtime-options";
 import { TempDir } from "@oh-my-pi/pi-utils";
 
 const OLD_ENV = { ...process.env };

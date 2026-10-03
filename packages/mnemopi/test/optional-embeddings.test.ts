@@ -7,9 +7,9 @@ import {
 	resetEmbeddingProviderForTests,
 	setEmbeddingProviderForTests,
 	setLocalModelInitializerForTests,
-} from "@oh-my-pi/pi-mnemopi/core/embeddings";
-import { Mnemopi } from "@oh-my-pi/pi-mnemopi/core/memory";
-import { withMnemopiRuntimeOptions } from "@oh-my-pi/pi-mnemopi/core/runtime-options";
+} from "@ultraworkers/pi-mnemopi/core/embeddings";
+import { Mnemopi } from "@ultraworkers/pi-mnemopi/core/memory";
+import { withMnemopiRuntimeOptions } from "@ultraworkers/pi-mnemopi/core/runtime-options";
 import { APP_NAME, APP_URL, getFastembedCacheDir, USER_AGENT } from "@oh-my-pi/pi-utils";
 
 const ENV_KEYS = [

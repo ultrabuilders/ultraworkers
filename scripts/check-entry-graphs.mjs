@@ -47,7 +47,7 @@ const WORKSPACE = {
 	"@oh-my-pi/pi-durable": "packages/durable/src",
 	"@oh-my-pi/pi-evals": "packages/evals/src",
 	"@oh-my-pi/pi-metaharness": "packages/metaharness/src",
-	"@oh-my-pi/pi-mnemopi": "packages/mnemopi/src",
+	"@ultraworkers/pi-mnemopi": "packages/mnemopi/src",
 	"@oh-my-pi/pi-protocol": "packages/protocol/src",
 	"@oh-my-pi/pi-server": "packages/server/src",
 	"@oh-my-pi/pi-telemetry": "packages/telemetry/src",

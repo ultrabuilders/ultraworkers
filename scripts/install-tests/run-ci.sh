@@ -166,8 +166,8 @@ natives_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-pi-natives-[0-9]*.tgz)"
 natives_leaf_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-pi-natives-"$host_tag"-*.tgz)"
 catalog_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-pi-catalog-*.tgz)"
 ai_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-pi-ai-*.tgz)"
-mnemopi_tgz="$(find_tarball "$TARBALL_DIR"/ultraworkers-pi-mnemopi-*.tgz)"
-snapcompact_tgz="$(find_tarball "$TARBALL_DIR"/ultraworkers-snapcompact-*.tgz)"
+mnemopi_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-pi-mnemopi-*.tgz)"
+snapcompact_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-snapcompact-*.tgz)"
 agent_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-pi-agent-core-*.tgz)"
 tui_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-pi-tui-*.tgz)"
 stats_tgz="$(find_tarball "$TARBALL_DIR"/oh-my-pi-omp-stats-*.tgz)"
@@ -192,8 +192,8 @@ mkdir -p "$TARBALL_APP_DIR"
 			'@oh-my-pi/pi-natives-$host_tag': '$natives_leaf_tgz',
 			'@oh-my-pi/pi-ai': '$ai_tgz',
 			'@oh-my-pi/pi-catalog': '$catalog_tgz',
-			'@ultraworkers/pi-mnemopi': '$mnemopi_tgz',
-			'@ultraworkers/snapcompact': '$snapcompact_tgz',
+			'@oh-my-pi/pi-mnemopi': '$mnemopi_tgz',
+			'@oh-my-pi/snapcompact': '$snapcompact_tgz',
 			'@oh-my-pi/pi-agent-core': '$agent_tgz',
 			'@oh-my-pi/pi-tui': '$tui_tgz',
 			'@oh-my-pi/omp-stats': '$stats_tgz',

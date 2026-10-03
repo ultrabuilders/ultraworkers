@@ -26,7 +26,7 @@ import {
 	type Shape,
 	type ShapeTarget,
 	type ShapeVariantName,
-} from "@ultraworkers/snapcompact";
+} from "@oh-my-pi/snapcompact";
 import { theme } from "../theme/theme";
 import sampleDoc from "./snapcompact-shape-preview-doc.md" with { type: "text" };
 import type { DescribeContext, NativeNode } from "../native/node";

@@ -1,6 +1,6 @@
 {
   "type": "module",
-  "name": "@ultraworkers/snapcompact",
+  "name": "@oh-my-pi/snapcompact",
   "version": "18.4.3",
   "description": "Bitmap-frame context compression for vision-capable LLMs",
   "homepage": "https://omp.sh",

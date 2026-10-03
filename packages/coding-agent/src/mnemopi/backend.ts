@@ -2,10 +2,10 @@ import { rm } from "node:fs/promises";
 import * as path from "node:path";
 import { type ApiKeyResolver, completeSimple, retryTransientCompletion } from "@oh-my-pi/pi-ai";
 import { hostMatchesUrl } from "@oh-my-pi/pi-catalog/hosts";
-import type { Mnemopi } from "@ultraworkers/pi-mnemopi";
-import type { MnemopiLlmCompleteOptions } from "@ultraworkers/pi-mnemopi/core/runtime-options";
-import type * as MnemopiDiagnoseNs from "@ultraworkers/pi-mnemopi/diagnose";
-import type { DiagnosticSummary } from "@ultraworkers/pi-mnemopi/diagnose";
+import type { Mnemopi } from "@oh-my-pi/pi-mnemopi";
+import type { MnemopiLlmCompleteOptions } from "@oh-my-pi/pi-mnemopi/core/runtime-options";
+import type * as MnemopiDiagnoseNs from "@oh-my-pi/pi-mnemopi/diagnose";
+import type { DiagnosticSummary } from "@oh-my-pi/pi-mnemopi/diagnose";
 import { logger, prompt } from "@oh-my-pi/pi-utils";
 import type { ModelRegistry } from "../config/model-registry";
 import { roleCandidatePool } from "../config/model-roles";
@@ -52,7 +52,7 @@ let mnemopiDiagnoseMod: typeof MnemopiDiagnoseNs | undefined;
 
 async function loadMnemopiDiagnose(): Promise<typeof MnemopiDiagnoseNs> {
 	if (!mnemopiDiagnoseMod) {
-		mnemopiDiagnoseMod = await import("@ultraworkers/pi-mnemopi/diagnose");
+		mnemopiDiagnoseMod = await import("@oh-my-pi/pi-mnemopi/diagnose");
 	}
 	return mnemopiDiagnoseMod;
 }

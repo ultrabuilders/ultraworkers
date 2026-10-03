@@ -1,9 +1,9 @@
 import { dirname } from "node:path";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
-import type * as MnemopiNs from "@ultraworkers/pi-mnemopi";
-import type { Mnemopi, RecallResult } from "@ultraworkers/pi-mnemopi";
-import type * as MnemopiCoreNs from "@ultraworkers/pi-mnemopi/core";
-import type { LocalModelInitializer } from "@ultraworkers/pi-mnemopi/core";
+import type * as MnemopiNs from "@oh-my-pi/pi-mnemopi";
+import type { Mnemopi, RecallResult } from "@oh-my-pi/pi-mnemopi";
+import type * as MnemopiCoreNs from "@oh-my-pi/pi-mnemopi/core";
+import type { LocalModelInitializer } from "@oh-my-pi/pi-mnemopi/core";
 import { logger, toError } from "@oh-my-pi/pi-utils";
 import {
 	composeRecallQuery,
@@ -42,7 +42,7 @@ function installLocalModelInitializer(setInitializer: (initializer: LocalModelIn
 }
 
 /**
- * Lazily load `@ultraworkers/pi-mnemopi` (memoized) and route fastembed loads
+ * Lazily load `@oh-my-pi/pi-mnemopi` (memoized) and route fastembed loads
  * through the dedicated embeddings subprocess. The override is installed once
  * — before any consumer gets the chance to call `embed()` — so
  * `onnxruntime-node`'s NAPI constructor + finalizer never run inside the
@@ -52,16 +52,16 @@ function installLocalModelInitializer(setInitializer: (initializer: LocalModelIn
  */
 export async function loadMnemopi(): Promise<typeof MnemopiNs> {
 	if (!mnemopiMod) {
-		mnemopiMod = await import("@ultraworkers/pi-mnemopi");
+		mnemopiMod = await import("@oh-my-pi/pi-mnemopi");
 		installLocalModelInitializer(mnemopiMod.setLocalModelInitializer);
 	}
 	return mnemopiMod;
 }
 
-/** Lazily load `@ultraworkers/pi-mnemopi/core` (memoized). */
+/** Lazily load `@oh-my-pi/pi-mnemopi/core` (memoized). */
 export async function loadMnemopiCore(): Promise<typeof MnemopiCoreNs> {
 	if (!mnemopiCoreMod) {
-		mnemopiCoreMod = await import("@ultraworkers/pi-mnemopi/core");
+		mnemopiCoreMod = await import("@oh-my-pi/pi-mnemopi/core");
 		installLocalModelInitializer(mnemopiCoreMod.setLocalModelInitializer);
 	}
 	return mnemopiCoreMod;

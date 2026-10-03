@@ -1,6 +1,6 @@
 {
   "type": "module",
-  "name": "@ultraworkers/pi-mnemopi",
+  "name": "@oh-my-pi/pi-mnemopi",
   "version": "18.4.3",
   "description": "Local SQLite memory engine for omp agents",
   "homepage": "https://omp.sh",

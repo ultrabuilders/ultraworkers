@@ -23,7 +23,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "../index";
-import type { ShapeTarget } from "@ultraworkers/snapcompact";
+import type { ShapeTarget } from "@oh-my-pi/snapcompact";
 import type {
 	ContextLineMode,
 	StatusLinePreset,

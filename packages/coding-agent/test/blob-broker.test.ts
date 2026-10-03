@@ -6,7 +6,7 @@ import type { AssistantMessage, AssistantMessageEvent, Context, Model } from "@o
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { getProjectDir } from "@oh-my-pi/pi-utils";
-import * as snapcompact from "@ultraworkers/snapcompact";
+import * as snapcompact from "@oh-my-pi/snapcompact";
 import { LocalBlobBackend } from "../src/blob-broker/broker";
 import { contextHasImageUrls, supportsRemoteImageUrls } from "../src/blob-broker/context-images";
 import { ImageUrlService } from "../src/blob-broker/service";

@@ -7,7 +7,7 @@ import {
 	type SnapcompactInlineOptions,
 	SnapcompactInlineTransformer,
 } from "@oh-my-pi/pi-coding-agent/session/snapcompact-inline";
-import * as snapcompact from "@ultraworkers/snapcompact";
+import * as snapcompact from "@oh-my-pi/snapcompact";
 
 /**
  * Token-dense deterministic word salad: each word is `w` + ≤5 digits, ~7

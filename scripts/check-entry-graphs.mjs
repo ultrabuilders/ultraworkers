@@ -47,7 +47,7 @@ const WORKSPACE = {
 	"@oh-my-pi/pi-durable": "packages/durable/src",
 	"@oh-my-pi/pi-evals": "packages/evals/src",
 	"@oh-my-pi/pi-metaharness": "packages/metaharness/src",
-	"@ultraworkers/pi-mnemopi": "packages/mnemopi/src",
+	"@oh-my-pi/pi-mnemopi": "packages/mnemopi/src",
 	"@oh-my-pi/pi-protocol": "packages/protocol/src",
 	"@oh-my-pi/pi-server": "packages/server/src",
 	"@oh-my-pi/pi-telemetry": "packages/telemetry/src",
@@ -55,7 +55,7 @@ const WORKSPACE = {
 	"@oh-my-pi/pi-utils": "packages/utils/src",
 	"@oh-my-pi/pi-wire": "packages/wire/src",
 	"@oh-my-pi/omp-stats": "packages/stats/src",
-	"@ultraworkers/snapcompact": "packages/snapcompact/src",
+	"@oh-my-pi/snapcompact": "packages/snapcompact/src",
 	"@oh-my-pi/typescript-edit-benchmark": "packages/typescript-edit-benchmark/src",
 };
 

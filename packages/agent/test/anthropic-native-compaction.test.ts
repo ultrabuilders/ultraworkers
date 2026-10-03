@@ -20,7 +20,7 @@ import * as AIError from "@oh-my-pi/pi-ai/error";
 import type { AssistantMessage, Context, Message, Model, SimpleStreamOptions, Usage } from "@oh-my-pi/pi-ai/types";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import type { ModelSpec } from "@oh-my-pi/pi-catalog/types";
-import * as snapcompact from "@ultraworkers/snapcompact";
+import * as snapcompact from "@oh-my-pi/snapcompact";
 
 const ZERO_USAGE: Usage = {
 	input: 0,

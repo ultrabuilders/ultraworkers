@@ -4,8 +4,8 @@ import {
 	embed,
 	resetEmbeddingProviderForTests,
 	setEmbeddingProviderForTests,
-} from "@ultraworkers/pi-mnemopi/core/embeddings";
-import { withMnemopiRuntimeOptions } from "@ultraworkers/pi-mnemopi/core/runtime-options";
+} from "@oh-my-pi/pi-mnemopi/core/embeddings";
+import { withMnemopiRuntimeOptions } from "@oh-my-pi/pi-mnemopi/core/runtime-options";
 
 /**
  * Regression coverage for issue #3126: `MnemopiSessionState.retainMessages`

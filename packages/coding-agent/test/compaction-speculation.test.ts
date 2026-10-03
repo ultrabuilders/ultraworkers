@@ -11,7 +11,7 @@ import type { CompactionMethod } from "@oh-my-pi/pi-coding-agent/session/compact
 import { convertToLlm } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { SessionMaintenance, type SessionMaintenanceHost } from "@oh-my-pi/pi-coding-agent/session/session-maintenance";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import * as snapcompactModule from "@ultraworkers/snapcompact";
+import * as snapcompactModule from "@oh-my-pi/snapcompact";
 
 import { cfgCompactionMethodOrder } from "@oh-my-pi/pi-coding-agent/session/context-settings";
 

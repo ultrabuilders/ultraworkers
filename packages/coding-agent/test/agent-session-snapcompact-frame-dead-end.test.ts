@@ -13,7 +13,7 @@ import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import type { CompactionEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { getProjectAgentDir, TempDir } from "@oh-my-pi/pi-utils";
-import * as snapcompact from "@ultraworkers/snapcompact";
+import * as snapcompact from "@oh-my-pi/snapcompact";
 
 /**
  * Regression test for the snapcompact frame dead-end.

@@ -12,7 +12,7 @@ import {
 	resolveBlobRefsInEntries,
 } from "@oh-my-pi/pi-coding-agent/session/session-loader";
 import { TempDir } from "@oh-my-pi/pi-utils";
-import * as snapcompact from "@ultraworkers/snapcompact";
+import * as snapcompact from "@oh-my-pi/snapcompact";
 
 const timestamp = new Date(0).toISOString();
 const header = { type: "session", version: 3, id: "session", timestamp, cwd: "/tmp" };

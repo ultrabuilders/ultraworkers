@@ -2,7 +2,7 @@
  * A browser tab shown as a Tern browser picture-in-picture: every helper of
  * the tab API drives the PiP's native web view through Tern's browser op
  * protocol (`wire.ts`). Pages are reached through `eval` (page world for user
- * code and page instrumentation, the isolated world for omp's kit), trusted
+ * code and page instrumentation, the isolated world for ultraworkers' kit), trusted
  * `input` events at element centres, `capture`, `pdf` and the Tern-level ops;
  * what the page reports on its own arrives through `events` polling.
  */
@@ -574,7 +574,7 @@ export class TernTab implements InProcessRunTab {
 			}
 			if (this.#events.length > EVENT_LOG_LIMIT) this.#events.splice(0, this.#events.length - EVENT_LOG_LIMIT);
 			if (typeof answer.dropped === "number" && answer.dropped > 0) {
-				logger.debug("Tern dropped browser events before omp read them", { dropped: answer.dropped });
+				logger.debug("Tern dropped browser events before ultraworkers read them", { dropped: answer.dropped });
 			}
 		})();
 		this.#pulling = pulling;

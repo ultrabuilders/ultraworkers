@@ -1240,7 +1240,13 @@ export class ExtensionRunner {
 			// `hasFileWriteFallback()`/`hasFileDeleteFallback()` false — the invariant
 			// the whole feature rests on. Each seam is checked separately, so an
 			// extension that only brokers writes never appears in the delete registry.
-			if (ext.fileWriteFallbackHandlers.length === 0 && ext.fileDeleteFallbackHandlers.length === 0) continue;
+			if (
+				ext.fileWriteFallbackHandlers.length === 0 &&
+				ext.fileDeleteFallbackHandlers.length === 0 &&
+				ext.peerTransports.length === 0 &&
+				ext.peerLockBackends.length === 0
+			)
+				continue;
 			// One trampoline per extension per seam, not per handler: the list is walked
 			// at mutation time so a handler this extension adds later still takes effect,
 			// and `createContext()` takes no extension argument, so within one invocation
@@ -1308,10 +1314,20 @@ export class ExtensionRunner {
 			// must — is covered, and one that registers later is silently skipped
 			// exactly as the file fallbacks are.
 			for (const transport of ext.peerTransports) {
-				// A version mismatch throws here rather than being logged and ignored:
-				// an extension built against another wire version cannot work, and
-				// failing at load says so at the only moment anyone can act on it.
-				this.#pushFallbackDisposer(ext.path, addPeerTransport(transport));
+				// Refusing the TRANSPORT, not the runner: one extension built against
+				// another wire version must not take every other extension's seams
+				// down with it. Logged at the only moment anyone can act on it, which
+				// is load — the same place, and the same shape, as a throwing
+				// fallback handler above.
+				try {
+					this.#pushFallbackDisposer(ext.path, addPeerTransport(transport));
+				} catch (error) {
+					logger.warn("Extension peer transport refused; continuing without it", {
+						extension: ext.path,
+						transport: transport.id,
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
 			}
 			for (const backend of ext.peerLockBackends) {
 				this.#pushFallbackDisposer(ext.path, addPeerLockBackend(backend));

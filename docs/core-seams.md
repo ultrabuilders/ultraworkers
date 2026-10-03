@@ -39,42 +39,42 @@ itself is the owner's call.
 
 Until one exists, the programme's test passes for **four of the five** surfaces.
 
-## The peer package's two seams
+## The peer package's two seams — shipped
 
-`docs/peer-messaging.md` §16 designs two registrations for `@ultraworkers/peer`. Both now
-exist, so this file's own rule applies in the other direction: name the measured path, cite
-the HEAD. Landed in `34cbe1707`, re-read at HEAD `340db8c24f`.
+Both now exist, so per this file's own rule they are rows and not a note.
 
-| Seam | Where it lives | Entry an extension reaches |
+| Surface | Where the seam lives | Entry an extension reaches |
 | --- | --- | --- |
-| **Transport** (provider-shaped) | `packages/peer/src/seam/transport.ts` | `registerPeerTransport(transport)` at `:207`, `unregisterPeerTransport(id)` at `:221` |
-| **Lock backend** (fallback-shaped) | `packages/peer/src/seam/lock.ts` | `registerPeerLockBackend(backend)` at `:108` |
+| **Peer transport** | `packages/coding-agent/src/irc/peer-transport.ts` | `registerPeerTransport(impl)` / `unregisterPeerTransport(id)` on `ExtensionAPI` (`extensions/types.ts:1707`, `:1710`); registry `addPeerTransport` (`peer-transport.ts:112`) |
+| **Peer lock backend** | same file | `registerPeerLockBackend(impl)` on `ExtensionAPI`; registry `addPeerLockBackend` (`peer-transport.ts:134`) |
 
-**Not in the table above, on purpose.** That table is the `packages/coding-agent`
-extensibility surface — tool, slash command, config key, lifecycle hook, TUI. These two are
-a different package's registration, and listing them beside the five would imply they are
-core the way `registerCopyTargetProvider` is core. They are the seams *of a package an
-extension opts into*, which is a weaker promise and should not borrow the stronger one's
-table.
+Measured 2026-10-04 at HEAD `801b020431`. Proven by
+`packages/coding-agent/test/irc/peer-transport-extension.test.ts`, which writes an
+extension into a temp directory **outside this repo**, imports nothing from it, and
+registers both — core unedited.
 
-Two properties make them contracts rather than conveniences, so they are recorded even here:
+**The two shapes differ on purpose, copied from seams that already existed:**
 
-- **`PeerTransport.capabilities` is a capability declaration** (`crossProcess`, `durable`,
-  `injects`). An extension written against it and a later core that drops or reorders a field
-  breaks **silently** — the transport keeps loading and stops delivering.
-- **`protocolVersion` is checked at registration, not at send.** Skew surfaces where the
-  reference this was copied from had no handshake, as `Unknown client message type` followed
-  by a dead socket.
+- **Transport is provider-shaped**, like `registerProvider`/`unregisterProvider`. An
+  override that is then unregistered **restores the built-in**, so "full custom" has a
+  defined exit rather than a permanent takeover.
+- **Lock backend is fallback-shaped**, like `registerFileWriteFallback`. Core keeps
+  ownership; the backend is consulted only once core has **refused**, because an
+  extension's claim is "this path is fine on my host", not "I will do the locking".
 
-`PeerLockBackendOpinion` deliberately has **no `true`**. A backend may explain a denial or
-name the real blocker; it cannot hand out a path core already refused. That is the whole
-reason the lock seam is fallback-shaped instead of provider-shaped, and an extension
-compiled against it cannot be granted the power to grant.
+**`PeerTransport.capabilities` is a contract, not documentation.** It exists because
+§15.1 found Claude Code's worst bug (`#87501`): `success: true` for a message that was
+never received. Three Windows bugs share that shape, and the reporter's conclusion was
+*"because every send reports success, no fallback can trigger."* A replaceable transport
+makes that easier to write, so `deliverPeerMessage` checks the declaration against the
+outcome **after** the transport returns: an `injected` outcome from a transport declaring
+`injects: false` still yields `refused`, and `unreadUnavailableReason()` makes
+`list --unread` say *why* it is empty rather than returning an array that reads as
+"no peer has written to you".
 
-§16.4's requirement is covered by `packages/peer/test/seam-registration.test.ts`, which
-builds the extension in `mkdtemp` outside the repo, symlinks the package into its
-`node_modules`, and imports **by specifier** — `from "@ultraworkers/peer"` — so the row
-fails on the import if either seam is ever made core-private.
+A `protocolVersion` that does not match is refused **at load**, and the refusal is scoped
+to that one transport — logged, not thrown, because one extension built against another
+wire version must not take every other extension's seams down with it.
 
 ## Also in core, and deliberately so
 

@@ -1188,10 +1188,10 @@ const kit = {
 		return { snapshot, hrefs };
 	},
 	annotate: ids => {
-		const token = "omp-screenshot-" + randomToken();
+		const token = "screenshot-" + randomToken();
 		const boxes = [];
 		const root = document.createElement("div");
-		root.setAttribute("data-omp-screenshot-annotations", token);
+		root.setAttribute("data-screenshot-annotations", token);
 		root.setAttribute(OVERLAY_ATTR, token);
 		root.style.cssText = "position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none";
 		for (const id of ids) {

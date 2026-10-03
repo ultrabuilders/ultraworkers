@@ -96,9 +96,10 @@ export async function installAgent(
 	const binary = binaries[vm.arch];
 	if (!binary) throw new Error(`No agent binary available for guest architecture ${vm.arch}`);
 
-	const entrypoint = "/opt/omp/omp";
-	const mkdir = await vm.exec("mkdir -p /opt/omp");
-	if (mkdir.exitCode !== 0) throw new Error(`Could not create /opt/omp: ${mkdir.stderr.trim()}`);
+	const installPrefix = `/opt/${APP_NAME}`;
+	const entrypoint = `${installPrefix}/${APP_NAME}`;
+	const mkdir = await vm.exec(`mkdir -p ${installPrefix}`);
+	if (mkdir.exitCode !== 0) throw new Error(`Could not create ${installPrefix}: ${mkdir.stderr.trim()}`);
 	await vm.copyTo(binary, entrypoint);
 	const chmod = await vm.exec(`chmod 755 ${shellQuote(entrypoint)}`);
 	if (chmod.exitCode !== 0) throw new Error(`Could not make the agent executable: ${chmod.stderr.trim()}`);

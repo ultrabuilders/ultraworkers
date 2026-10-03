@@ -3340,8 +3340,18 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// `bash` is no longer the built-in `bash` — the shadowed tool stays
 		// reachable only through the native-tool resolver set below.
 		const extensionOwners = new Map(allCustomTools.map(entry => [entry.definition.name, entry.extensionPath]));
+		// Snapshot the built-in names BEFORE the loop mutates them. `delete` below
+		// keeps a shadowed built-in out of the active set, which is the policy —
+		// but reading the same set to decide whether to warn made the warning a
+		// function of position: the first extension to claim `bash` warned and
+		// deleted the name, so the second one claiming `bash` matched nothing and
+		// stayed silent about a shadow just as real. Two extensions registering the
+		// same tool name is the ordinary outcome of `deduplicateMCPToolsByName`
+		// picking a winner rather than an error, so the silent half was the half
+		// most likely to occur.
+		const builtInNamesBeforeExtensions = new Set(builtInRegistryToolNames);
 		for (const tool of wrappedExtensionTools) {
-			if (builtInRegistryToolNames.has(tool.name)) {
+			if (builtInNamesBeforeExtensions.has(tool.name)) {
 				logger.warn(
 					`Extension ${extensionOwners.get(tool.name) ?? "unknown"}: tool "${tool.name}" shadows a built-in tool of the same name — the extension's tool is the one that will run; the built-in stays reachable only through ctx.invokeTool`,
 				);

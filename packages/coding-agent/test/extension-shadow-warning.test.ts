@@ -117,6 +117,32 @@ describe("an extension tool shadowing a built-in is reported", () => {
 		await session.dispose();
 	});
 
+	// The second claimant. The warning loop deletes a name from
+	// `builtInRegistryToolNames` as it processes each tool, so the check that
+	// guards the warning — `builtInRegistryToolNames.has(tool.name)` — is false
+	// for the SECOND extension to claim the same built-in. The shadow is still
+	// real (that tool is no longer the built-in), and the reader still gets no
+	// signal. Two extensions is the smallest case that reaches it.
+	it("warns for the second extension to claim a built-in, not only the first", async () => {
+		const tempDir = makeTempDir();
+		const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+		const { session } = await createAgentSession({
+			...options(tempDir),
+			extensions: [extensionRegistering(BUILT_IN), extensionRegistering(BUILT_IN)],
+		});
+
+		// One warning per claimant, because the name each extension's tool will
+		// run under is the thing the reader has to act on, and two of them are
+		// now registered against it.
+		const shadowing = warn.mock.calls
+			.map(call => String(call[0] ?? ""))
+			.filter(message => message.includes(`"${BUILT_IN}"`) && message.includes("shadows a built-in"));
+		expect(shadowing.length).toBe(2);
+
+		await session.dispose();
+	});
+
 	// The control. Without it, "logger.warn was called" would also be satisfied by a
 	// warning on every registered extension tool, which is not the contract: only a
 	// collision is worth a user's attention.

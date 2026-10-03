@@ -32,7 +32,7 @@
 		"@oh-my-pi/pi-catalog": "catalog:",
 		"@oh-my-pi/pi-coding-agent": "catalog:",
 		"@oh-my-pi/pi-utils": "catalog:",
-		"@oh-my-pi/typescript-edit-benchmark": "workspace:*",
+		"@ultraworkers/typescript-edit-benchmark": "workspace:*",
 		"@stencil-hq/vibemon": "^0.3.2",
 		"clsx": "^2.1.1",
 		"d3-scale": "^4.0.2",

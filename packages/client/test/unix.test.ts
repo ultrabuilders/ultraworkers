@@ -4,9 +4,9 @@ import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
-import { Server as RuntimeServer } from "@oh-my-pi/pi-server/server";
-import { createTestServerServices } from "@oh-my-pi/pi-server/testing/host";
-import { createUnixListener } from "@oh-my-pi/pi-server/transports/unix/listener";
+import { Server as RuntimeServer } from "@ultraworkers/pi-server/server";
+import { createTestServerServices } from "@ultraworkers/pi-server/testing/host";
+import { createUnixListener } from "@ultraworkers/pi-server/transports/unix/listener";
 import { discoverUnixServers } from "../src/unix";
 
 const tempDirectories = new Set<string>();

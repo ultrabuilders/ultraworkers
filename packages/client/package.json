@@ -61,7 +61,7 @@
 		"@oh-my-pi/pi-protocol": "catalog:"
 	},
 	"devDependencies": {
-		"@oh-my-pi/pi-server": "catalog:",
+		"@ultraworkers/pi-server": "catalog:",
 		"@types/bun": "catalog:"
 	},
 	"engines": {

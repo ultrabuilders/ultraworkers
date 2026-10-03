@@ -1,5 +1,5 @@
 {
-	"name": "@oh-my-pi/pi-server",
+	"name": "@ultraworkers/pi-server",
 	"version": "18.4.3",
 	"description": "Transport-neutral session state machine for remote sessions",
 	"type": "module",

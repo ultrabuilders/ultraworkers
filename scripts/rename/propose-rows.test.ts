@@ -10,7 +10,7 @@
  * what keeps them two.
  */
 import { describe, expect, it } from "bun:test";
-import { pageContainsToken, parseDocsCitations, parsePorcelainPaths } from "./propose-rows";
+import { pageContainsToken, parseDocsCitations, parsePorcelainPaths, splitIncoming } from "./propose-rows";
 
 /** A page that mentions one variable, and only that one. */
 const PAGE = "Set OMP_PROFILE=1 in your shell. OMP_PROFILE selects the active profile.";
@@ -105,6 +105,39 @@ describe("parseDocsCitations", () => {
 		const [{ path, token }] = parseDocsCitations("see docs:docs/mcp-config.md#OMP_MCP_TIMEOUT_MS.");
 		const page = await Bun.file(path).text();
 		expect(pageContainsToken(page, token)).toBe(true);
+	});
+});
+
+describe("splitIncoming", () => {
+	// The regression. A `rename` row's last cell is an EMPTY `keep_refs`, so the
+	// line correctly ends in a tab. Trimming the input — which this function
+	// replaced — stripped that tab off the FINAL row, and the batch was rejected
+	// for arriving with 5 cells instead of 6. `awk -F'\t' '{print NF}'` said 6 on
+	// the very same file, so the author had no way to see the problem: the bytes
+	// on disk were right and the tool disagreed with them.
+	const renameRow = "src\tpackages/tui/src/debug-server.ts\t1\trename\tcurrent behaviour\t";
+
+	it("keeps the trailing tab that carries an empty final cell", () => {
+		expect(splitIncoming(renameRow)).toEqual([renameRow]);
+	});
+
+	// The control: the last row must not be the only case that works.
+	it("keeps every row's cell count, first and last alike", () => {
+		const rows = [renameRow, "src\tpackages/a\t1\tkeep-path\treason\tW11:project-root-.omp"];
+		const split = splitIncoming(rows.join("\n"));
+		expect(split.map(line => line.split("\t").length)).toEqual([6, 6]);
+	});
+
+	// What the trim was actually for, and the reason dropping blank lines is
+	// necessary rather than merely tidy: a trailing newline is the normal shape of
+	// a batch written by hand or by a heredoc.
+	it("drops blank lines and whitespace-only lines", () => {
+		expect(splitIncoming(`${renameRow}\n\n   \n\n`)).toEqual([renameRow]);
+	});
+
+	it("returns nothing for empty or whitespace-only input", () => {
+		expect(splitIncoming("")).toEqual([]);
+		expect(splitIncoming("\n\n \n")).toEqual([]);
 	});
 });
 

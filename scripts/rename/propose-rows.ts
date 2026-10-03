@@ -41,6 +41,16 @@ const LOCK = path.join(ROOT, "scripts/rename/.disposition.lock");
 interface Outcome {
 	readonly line: number;
 	readonly raw: string;
+	/**
+	 * The exact bytes this outcome contributes to the table.
+	 *
+	 * NOT always `raw`. A 6-cell row under a 7-cell header is normalised to carry
+	 * `RULES_VERSION`, and the replace path wrote that normalised form while the
+	 * append path wrote `raw` — so every APPENDED row silently lost its stamp.
+	 * Appending is what closing a `missing-row` does, so the rows this tool exists
+	 * to add were precisely the ones that came out unstamped.
+	 */
+	readonly row: string;
 	readonly verdict: "replace" | "append" | "reject";
 	readonly reason: string;
 }
@@ -130,6 +140,18 @@ export function pageContainsToken(page: string, token: string): boolean {
 	return new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`).test(page);
 }
 
+/**
+ * Split a stdin batch into rows, dropping blank lines and nothing else.
+ *
+ * The whole point is what it does NOT do. A row's final cell may be an empty
+ * `keep_refs`, so a `rename` row legitimately ends in a tab, and trimming each
+ * line would delete that tab and turn 6 cells into 5. Only a line that is empty
+ * or all whitespace is dropped.
+ */
+export function splitIncoming(input: string): string[] {
+	return input.split("\n").filter(line => line.trim() !== "");
+}
+
 /** True when no process holds this pid. The one question a lock file can answer. */
 function pidAlive(pid: number): boolean {
 	try {
@@ -184,7 +206,13 @@ async function main(): Promise<void> {
 		process.exit(2);
 	}
 
-	const input = (await Bun.stdin.text()).trim();
+	// NOT `.trim()`. Trailing whitespace is significant here: a `rename` row's last
+	// cell is an EMPTY `keep_refs`, so its line legitimately ends in a tab. Trimming
+	// the whole input stripped that tab off the final line, and the batch was
+	// rejected for having 5 cells instead of 6 — a shape no author could see or fix,
+	// because the file on disk was correct. Blank lines are dropped by
+	// `splitIncoming`, which is what the trim was actually for.
+	const input = await Bun.stdin.text();
 	if (input === "") {
 		console.error("no rows on stdin — nothing to do");
 		process.exit(2);
@@ -276,7 +304,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 		return false;
 	};
 
-	const incoming = input.split("\n").filter(line => line.trim() !== "");
+	const incoming = splitIncoming(input);
 	const outcomes: Outcome[] = [];
 	const work = new Map<number, string>(); // index into existingLines -> replacement bytes
 
@@ -285,7 +313,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 		const cells = raw.split("\t");
 		const why = rejectReason(cells);
 		if (why !== null) {
-			outcomes.push({ line: lineNo, raw, verdict: "reject", reason: why });
+			outcomes.push({ line: lineNo, raw, row: raw, verdict: "reject", reason: why });
 			continue;
 		}
 		const filePath = cells[1]!;
@@ -298,6 +326,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 			outcomes.push({
 				line: lineNo,
 				raw,
+				row: raw,
 				verdict: "reject",
 				reason: `${filePath} has uncommitted edits; a row written now would describe a file mid-change and reopen the moment that edit lands`,
 			});
@@ -329,6 +358,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 				outcomes.push({
 					line: lineNo,
 					raw,
+					row: raw,
 					verdict: "reject",
 					reason: `declares hits = 0, but ${filePath} has ${measured} pinned occurrence(s) right now`,
 				});
@@ -360,7 +390,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 			}
 		}
 		if (docsFailure !== null) {
-			outcomes.push({ line: lineNo, raw, verdict: "reject", reason: docsFailure });
+			outcomes.push({ line: lineNo, raw, row: raw, verdict: "reject", reason: docsFailure });
 			continue;
 		}
 
@@ -391,11 +421,18 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 		if (matches.length === 1) {
 			const at = matches[0]!;
 			work.set(at, normalised.join("\t"));
-			outcomes.push({ line: lineNo, raw, verdict: "replace", reason: `replaces line ${at + 1}` });
+			outcomes.push({
+				line: lineNo,
+				raw,
+				row: normalised.join("\t"),
+				verdict: "replace",
+				reason: `replaces line ${at + 1}`,
+			});
 		} else {
 			outcomes.push({
 				line: lineNo,
 				raw,
+				row: normalised.join("\t"),
 				verdict: "append",
 				reason: "no existing row for this (path, disposition)",
 			});
@@ -407,7 +444,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 	// exists to prevent.
 	const candidateLines = [...existingLines];
 	for (const [at, replacement] of work) candidateLines[at] = replacement;
-	for (const outcome of outcomes.filter(o => o.verdict === "append")) candidateLines.push(outcome.raw);
+	for (const outcome of outcomes.filter(o => o.verdict === "append")) candidateLines.push(outcome.row);
 	const candidate = `${candidateLines.join("\n")}`;
 	const { problems } = parseTable(candidate);
 

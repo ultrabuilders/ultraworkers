@@ -1,5 +1,5 @@
 import * as stream from "node:stream";
-import { APP_NAME, postmortem } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getLogsDir, postmortem } from "@oh-my-pi/pi-utils";
 import { AgentSideConnection, ndJsonStream, type Stream } from "@oh-my-pi/pi-utils/acp";
 import type { ExtensionUIContext } from "../../extensibility/extensions/types";
 import { takeOverStdout } from "../../utils/stdout-guard";
@@ -47,7 +47,7 @@ export async function runAcpMode(createSession: AcpSessionFactory, initialSessio
 		process.stderr.write(
 			`${APP_NAME} acp: ACP server speaking JSON-RPC over stdio.\n` +
 				'This command is meant to be spawned by an ACP client (e.g. Zed\'s "agent_servers" config), not run directly.\n' +
-				"Waiting for protocol frames on stdin; logs: ~/.omp/logs/\n",
+				`Waiting for protocol frames on stdin; logs: ${getLogsDir()}/\n`,
 		);
 	}
 	let agent: AcpAgent | undefined;

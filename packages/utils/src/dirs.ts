@@ -837,7 +837,15 @@ export function getReportsDir(): string {
 	return dirs.rootSubdir("reports", "state");
 }
 
-/** Get the logs directory (~/.omp/logs). */
+/**
+ * Get the logs directory — `logs` under the resolved **state** root.
+ *
+ * Not a fixed `~/.omp/logs`: the state root is `xdgState ?? configRoot`, and
+ * `configRoot` is itself resolved through {@link XDG_CONFIG_DIR_CANDIDATES},
+ * canonical spelling first (`dirs.ts:83`). A docblock naming one spelling
+ * describes one branch of that resolution, so a reader who took it literally
+ * would look in the wrong place on an install that resolved the other branch.
+ */
 export function getLogsDir(): string {
 	return dirs.rootSubdir("logs", "state");
 }
@@ -854,7 +862,15 @@ export function localDay(date: Date): string {
 	return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-/** Get this process's dated log path (~/.omp/logs/omp.YYYY-MM-DD.PID.log, local-day named like the rotating sink). */
+/**
+ * Get this process's dated log path — `<logs dir>/<APP_NAME>.<local-day>.<pid>.log`.
+ *
+ * Both halves of the old `~/.omp/logs/omp.YYYY-MM-DD.PID.log` were wrong, and
+ * only one was visible from the signature: the directory is resolved (see
+ * {@link getLogsDir}), and the file name comes from `APP_NAME`, not the literal
+ * this comment used to print. The neighbouring {@link localDay} docblock
+ * already named the real form.
+ */
 export function getLogPath(date = new Date(), pid = process.pid): string {
 	return path.join(getLogsDir(), `${APP_NAME}.${localDay(date)}.${pid}.log`);
 }

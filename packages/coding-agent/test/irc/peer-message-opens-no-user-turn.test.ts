@@ -28,8 +28,8 @@ import { describe, expect, it } from "bun:test";
 import { type IrcMessage } from "@oh-my-pi/pi-tui/tools/irc";
 import { AgentRegistry, MAIN_AGENT_ID } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
 import { IrcBridge, type IrcBridgeHost } from "@oh-my-pi/pi-coding-agent/session/irc-bridge";
-import type { AgentMessage, CustomMessage } from "@oh-my-pi/pi-coding-agent/session/messages";
-import type { Agent } from "@oh-my-pi/pi-agent-core";
+import type { CustomMessage } from "@oh-my-pi/pi-coding-agent/session/messages";
+import type { Agent, AgentMessage } from "@oh-my-pi/pi-agent-core";
 
 interface SteerCall {
 	readonly role: string;

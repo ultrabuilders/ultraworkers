@@ -43,8 +43,18 @@ describe("crossSessionInbound", () => {
 	});
 
 	it("refuses a write naming a value the fence would reject", () => {
-		// The write path the settings UI and `/config` go through.
-		expect(() => Settings.isolated({}).set(cfgPeerCrossSessionInbound, "ask-me-later")).toThrow();
+		// The write path the settings UI and `/config` go through: `writeValue` is what
+		// both call, and its first statement is `setting.assertWritable(value)`.
+		//
+		// Matched against the legal values rather than a bare `toThrow()`, because a
+		// bare one cannot tell THIS rejection from the call simply blowing up. That is
+		// not hypothetical: this row read `.set(...)`, which does not exist on `Settings`
+		// at all, so it threw `TypeError: .set is not a function` and passed — green for
+		// the whole time the row named a validator it never reached. Asserting the
+		// message is what makes the row evidence about the fence.
+		expect(() =>
+			Settings.isolated({}).writeValue(cfgPeerCrossSessionInbound, "ask-me-later", "override"),
+		).toThrow(/accept, hold, refuse/);
 	});
 
 	it("reaches the settings panel rather than only the lookup table", () => {

@@ -49,7 +49,12 @@ DOWNLOAD_PATTERNS = (
     "*.safetensors.index.json",
     "*.tiktoken",
 )
-COMPLETE_MARKER = ".omp-complete.json"
+COMPLETE_MARKER = ".ultraworkers-complete.json"
+# The marker an older build wrote, still read so an existing install keeps its
+# model: this file is the ONLY skip path in download_repo (see _is_complete), and
+# there is no "the files are present, call it done" fallback. Dropping this name
+# would send every already-downloaded user back to the Hub for the full model.
+LEGACY_COMPLETE_MARKER = ".omp-complete.json"
 PROGRESS_INTERVAL_S = 0.1
 CHUNK_BYTES = 1 << 20
 IDLE_POLL_S = 5.0
@@ -85,11 +90,20 @@ def list_repo_files(repo):
     return files
 
 
+def _read_marker(model_dir):
+    """The completion marker, from the current name or the one older builds wrote."""
+    for name in (COMPLETE_MARKER, LEGACY_COMPLETE_MARKER):
+        try:
+            with open(os.path.join(model_dir, name), encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def _is_complete(model_dir, files):
-    try:
-        with open(os.path.join(model_dir, COMPLETE_MARKER), encoding="utf-8") as fh:
-            marker = json.load(fh)
-    except (OSError, ValueError):
+    marker = _read_marker(model_dir)
+    if marker is None:
         return False
     if marker.get("files") != [name for name, _ in files]:
         return False

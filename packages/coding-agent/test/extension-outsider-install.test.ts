@@ -144,11 +144,14 @@ describe("an extension installed from outside the repo", () => {
 		// loader that kept only the last registration would still show one.
 		const startHooks = extension.handlers.get("session_start") ?? [];
 		expect(startHooks.length).toBe(2);
-		// 4 — TUI panel. The widget is mounted by the hook, not at load time, and
-		// `setWidget` is documented to work without a frame — so the contract worth
-		// pinning is that the out-of-repo extension reached the UI context and the
-		// call was accepted, not that some record on `extension` grew. A vacuous
-		// `>= 0` here would pass against a fixture that never declared a panel.
+		// 4 — TUI panel REACHED THE CONTEXT, not mounted a widget. On the frameless
+		// context a real `setWidget` THROWS (`runner.ts:540`, and `types.ts:384`
+		// documents it), so mounting cannot be proven here at all — the stub below
+		// records the call instead. That makes this case evidence for the extension
+		// having obtained the surface, not for face 5 of the programme test: mounting
+		// a component needs a real interactive frame, which is what `epic-r0`'s
+		// five-seam criterion still waits on. A vacuous `>= 0` here would pass
+		// against a fixture that never declared a panel.
 		// An `ExtensionHandler` receives `(event, ctx)` — two arguments. Passing one
 		// object makes it the *event*, and the hook then dereferences `ctx.ui` on
 		// `undefined`, which reads as a bug in the extension rather than in the call.

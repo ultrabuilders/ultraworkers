@@ -9,7 +9,9 @@ changing it is a breaking change for anyone already published against it. A list
 names things which do not exist is worse than no list, so every row here was opened and
 read before it was written down.
 
-Measured 2026-10-03 at HEAD `2f277d83b1`.
+Measured 2026-10-03 at HEAD `2f277d83b1`. Re-verified 2026-10-04 at HEAD `340db8c24f`:
+all five rows still resolve at the paths and line numbers given, so only the stamp
+moved.
 
 ## What core guarantees
 
@@ -36,6 +38,43 @@ the owner asks. Naming the absence is what the core-list promise requires; the a
 itself is the owner's call.
 
 Until one exists, the programme's test passes for **four of the five** surfaces.
+
+## The peer package's two seams
+
+`docs/peer-messaging.md` §16 designs two registrations for `@ultraworkers/peer`. Both now
+exist, so this file's own rule applies in the other direction: name the measured path, cite
+the HEAD. Landed in `34cbe1707`, re-read at HEAD `340db8c24f`.
+
+| Seam | Where it lives | Entry an extension reaches |
+| --- | --- | --- |
+| **Transport** (provider-shaped) | `packages/peer/src/seam/transport.ts` | `registerPeerTransport(transport)` at `:207`, `unregisterPeerTransport(id)` at `:221` |
+| **Lock backend** (fallback-shaped) | `packages/peer/src/seam/lock.ts` | `registerPeerLockBackend(backend)` at `:108` |
+
+**Not in the table above, on purpose.** That table is the `packages/coding-agent`
+extensibility surface — tool, slash command, config key, lifecycle hook, TUI. These two are
+a different package's registration, and listing them beside the five would imply they are
+core the way `registerCopyTargetProvider` is core. They are the seams *of a package an
+extension opts into*, which is a weaker promise and should not borrow the stronger one's
+table.
+
+Two properties make them contracts rather than conveniences, so they are recorded even here:
+
+- **`PeerTransport.capabilities` is a capability declaration** (`crossProcess`, `durable`,
+  `injects`). An extension written against it and a later core that drops or reorders a field
+  breaks **silently** — the transport keeps loading and stops delivering.
+- **`protocolVersion` is checked at registration, not at send.** Skew surfaces where the
+  reference this was copied from had no handshake, as `Unknown client message type` followed
+  by a dead socket.
+
+`PeerLockBackendOpinion` deliberately has **no `true`**. A backend may explain a denial or
+name the real blocker; it cannot hand out a path core already refused. That is the whole
+reason the lock seam is fallback-shaped instead of provider-shaped, and an extension
+compiled against it cannot be granted the power to grant.
+
+§16.4's requirement is covered by `packages/peer/test/seam-registration.test.ts`, which
+builds the extension in `mkdtemp` outside the repo, symlinks the package into its
+`node_modules`, and imports **by specifier** — `from "@ultraworkers/peer"` — so the row
+fails on the import if either seam is ever made core-private.
 
 ## Also in core, and deliberately so
 

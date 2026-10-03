@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { discoverAndLoadExtensions } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
+import {
+	discoverAndLoadExtensions,
+	extensionSettingOwner,
+} from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
+import { unregisterOwned } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { modeRegistry } from "@oh-my-pi/pi-coding-agent/modes/mode-registry";
 import { getAgentDir, getPluginsDir, removeSyncWithRetries, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 
@@ -33,6 +37,19 @@ describe("an extension installed from outside the repo", () => {
 	const originalAgentDir = getAgentDir();
 	const xdgVars = ["XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"] as const;
 	const originalXdg = new Map<string, string | undefined>();
+	/**
+	 * Settings owners this suite registered, drained in `afterEach`.
+	 *
+	 * The settings registry is process-global exactly like `modeRegistry`, and the two
+	 * are keyed the same way — `extension:<resolvedPath>` — so a key left behind here
+	 * answers `lookup()` for every suite that runs later. Each case installs the fixture
+	 * into its OWN temp path, so each one is a distinct owner claiming
+	 * `plugins.outsider.greeting`: without this, the second install fails to load at all
+	 * and takes `outsider_echo` with it, which reads as "the extension is broken" rather
+	 * than "the suite leaked". The mode above already needed this treatment; the setting
+	 * arrived later and needed it just as much.
+	 */
+	const settingsOwners: string[] = [];
 
 	/** Copy the fixture into a config dir, so the test never loads repo source. */
 	function installInto(configDir: string): string {
@@ -42,6 +59,22 @@ describe("an extension installed from outside the repo", () => {
 			fs.copyFileSync(path.join(FIXTURE_DIR, file), path.join(target, file));
 		}
 		return target;
+	}
+
+	/**
+	 * Discover and load, recording each loaded extension's settings owner.
+	 *
+	 * The owner has to come from the load result, not from what `installInto`
+	 * returned. `extensionSettingOwner` is `extension:<resolvedPath>`, and through
+	 * discovery `resolvedPath` is the entry FILE (`…/outsider-extension/index.ts`),
+	 * not the directory that was installed — measured, because recording the install
+	 * path instead withdraws nothing and the next case then fails to load against its
+	 * own predecessor.
+	 */
+	async function loadInstalled(cwd: string): Promise<Awaited<ReturnType<typeof discoverAndLoadExtensions>>> {
+		const result = await discoverAndLoadExtensions([], cwd);
+		for (const extension of result.extensions) settingsOwners.push(extensionSettingOwner(extension));
+		return result;
 	}
 
 	beforeEach(() => {
@@ -72,6 +105,7 @@ describe("an extension installed from outside the repo", () => {
 		// that runs after this one.
 		modeRegistry.unregister("outsider");
 		modeRegistry.setActivation(undefined);
+		for (const owner of settingsOwners.splice(0)) unregisterOwned(owner);
 		projectDir.removeSync();
 		spyOn(os, "homedir").mockRestore();
 		for (const [key, value] of originalXdg) {
@@ -93,7 +127,7 @@ describe("an extension installed from outside the repo", () => {
 		// the user scope, and an empty project dir keeps the two from overlapping.
 		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
 
-		const result = await discoverAndLoadExtensions([], projectDir.path());
+		const result = await loadInstalled(projectDir.path());
 		const extension = result.extensions.find(ext => ext.path.includes("outsider-extension"));
 
 		// It RAN. A parse or type error inside the fixture surfaces here, and
@@ -152,7 +186,7 @@ describe("an extension installed from outside the repo", () => {
 		installInto(getAgentDir());
 		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
 
-		const result = await discoverAndLoadExtensions([], projectDir.path());
+		const result = await loadInstalled(projectDir.path());
 		expect(result.errors).toHaveLength(0);
 		expect(modeRegistry.has("outsider")).toBe(true);
 		const extension = result.extensions.find(ext => ext.path.includes("outsider-extension"));
@@ -172,7 +206,7 @@ describe("an extension installed from outside the repo", () => {
 		// committing it to the repo would never load for anyone else.
 		installInto(path.join(projectDir.path(), ".omp"));
 
-		const result = await discoverAndLoadExtensions([], projectDir.path());
+		const result = await loadInstalled(projectDir.path());
 		const extension = result.extensions.find(ext => ext.path.includes("outsider-extension"));
 
 		expect(result.errors).toHaveLength(0);
@@ -187,7 +221,7 @@ describe("an extension installed from outside the repo", () => {
 		installInto(getAgentDir());
 		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
 
-		const result = await discoverAndLoadExtensions([], projectDir.path());
+		const result = await loadInstalled(projectDir.path());
 		const extension = result.extensions.find(ext => ext.path.includes("outsider-extension"));
 		// `RegisteredTool` wraps the author's definition rather than being it, so
 		// the executable is one level down — reading `tool.execute` gets undefined.
@@ -220,7 +254,7 @@ describe("an extension installed from outside the repo", () => {
 		fs.mkdirSync(broken, { recursive: true });
 		fs.writeFileSync(path.join(broken, "index.ts"), 'export default function() { throw new Error("boom"); }');
 
-		const result = await discoverAndLoadExtensions([], projectDir.path());
+		const result = await loadInstalled(projectDir.path());
 		const failure = result.errors.find(entry => entry.path.includes("broken-extension"));
 
 		expect(failure).toBeDefined();

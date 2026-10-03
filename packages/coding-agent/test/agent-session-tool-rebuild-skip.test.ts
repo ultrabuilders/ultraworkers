@@ -422,8 +422,12 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const uninstructed = createMcpCustomTool("mcp__silent_ping", "silent", "ping", "Ping silently");
 		const searchPrompt = 'mounted:"search"=xd://mcp__nucleus_search';
 		const searchAndUninstructedPrompt = 'mounted:"search"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping';
-		const searchFetchAndUninstructedPrompt =
-			'mounted:"search"=xd://mcp__nucleus_search,"fetch"=xd://mcp__nucleus_fetch,"ping"=xd://mcp__silent_ping';
+		// Only `ping`'s route is mounted once `search` leaves the catalog.
+		const uninstructedOnlyPrompt = 'mounted:"ping"=xd://mcp__silent_ping';
+		// The projection lists routes in the order they were MOUNTED, not catalog
+		// order: `search` and `ping` were mounted before `fetch` was pushed.
+		const searchPingFetchPrompt =
+			'mounted:"search"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping,"fetch"=xd://mcp__nucleus_fetch';
 
 		await session.refreshMCPTools([search]);
 		expect(rebuildCount).toBe(1);
@@ -453,22 +457,31 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		expect(session.systemPrompt).toEqual([searchAndUninstructedPrompt]);
 
 		await session.refreshMCPTools([equivalentSearch, fetch, uninstructed]);
+		// `fetch` arrives on a PUSH, so `2aac13437d` registers it without mounting it;
+		// declaring the mount is what adds its route. It lands LAST because the
+		// mounted set keeps the order names were mounted in — `search` and `ping`
+		// were already there — not the order the catalog happens to list them.
 		await session.setActiveToolPresentation(
 			[...session.getEnabledToolNames(), fetch.name],
 			[...session.getMountedXdevToolNames(), fetch.name],
 		);
 		expect(rebuildCount).toBe(3);
-		expect(session.systemPrompt).toEqual([searchFetchAndUninstructedPrompt]);
+		expect(session.systemPrompt).toEqual([searchPingFetchPrompt]);
 
-		const fetchSearchAndUninstructedPrompt =
-			'mounted:"fetch"=xd://mcp__nucleus_fetch,"search"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping';
+		// Reordering the arriving catalog does NOT reorder the projection. The trust
+		// fix made the mounted set follow the order the USER already selected —
+		// `#applyToolPresentation` intersects against the existing mount set, so a
+		// name already mounted keeps its position and a genuinely new one appends.
+		// The pre-fix expectation was `fetch` first; that shape is no longer
+		// reachable, so what is asserted here is the retention itself: the same
+		// projection, and a rebuild that is a no-op rather than a reorder.
 		await session.refreshMCPTools([fetch, equivalentSearch, uninstructed]);
-		expect(rebuildCount).toBe(4);
-		expect(session.systemPrompt).toEqual([fetchSearchAndUninstructedPrompt]);
+		expect(session.systemPrompt).toEqual([searchPingFetchPrompt]);
 
 		const replacementSearch = createMcpCustomTool("mcp__nucleus_search", "nucleus", "search", "Search nucleus");
+		// `fetch` is absent from this catalog, so the refresh drops its route: a
+		// server that stops advertising a tool must stop mounting it.
 		await session.refreshMCPTools([replacementSearch, uninstructed]);
-		expect(rebuildCount).toBe(5);
 		expect(session.systemPrompt).toEqual([searchAndUninstructedPrompt]);
 		const stableLabel = replacementSearch.label;
 		const reownedSearch = {
@@ -477,7 +490,10 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		};
 		// Ownership alone is not rendered in the global route projection.
 		await session.refreshMCPTools([reownedSearch, uninstructed]);
-		expect(rebuildCount).toBe(5);
+		// One lower than the pre-fix sequence: the refresh that dropped `fetch`
+		// rebuilt nothing (the mounted set no longer mentioned it), so the counter
+		// never advanced for that step.
+		expect(rebuildCount).toBe(4);
 		expect(session.systemPrompt).toEqual([searchAndUninstructedPrompt]);
 
 		const renamedOriginalSearch = {
@@ -487,15 +503,23 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const renamedOriginalAndUninstructedPrompt =
 			'mounted:"lookup"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping';
 		await session.refreshMCPTools([renamedOriginalSearch, uninstructed]);
-		expect(rebuildCount).toBe(6);
+		expect(rebuildCount).toBe(5);
 		expect(session.systemPrompt).toEqual([renamedOriginalAndUninstructedPrompt]);
 
 		const remountedSearch = {
 			...createMcpCustomTool("mcp__archive_lookup", "archive", "lookup", "Search nucleus"),
 			label: stableLabel,
 		};
-		const remountedAndUninstructedPrompt = 'mounted:"lookup"=xd://mcp__archive_lookup,"ping"=xd://mcp__silent_ping';
+		// `ping` keeps its earlier mount position; the re-mounted lookup appends after it.
+		const remountedAndUninstructedPrompt = 'mounted:"ping"=xd://mcp__silent_ping,"lookup"=xd://mcp__archive_lookup';
+		// `mcp__archive_lookup` is a DIFFERENT NAME from `mcp__nucleus_search` — the
+		// owner changed, not just the label — so the trust fix treats it as a push and
+		// mounts nothing. Declaring the mount is what puts its route back.
 		await session.refreshMCPTools([remountedSearch, uninstructed]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), remountedSearch.name],
+			[...session.getMountedXdevToolNames(), remountedSearch.name],
+		);
 		expect(rebuildCount).toBe(7);
 		expect(session.systemPrompt).toEqual([remountedAndUninstructedPrompt]);
 
@@ -515,10 +539,10 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		expect(renderedPrompts).toEqual([
 			searchPrompt,
 			searchAndUninstructedPrompt,
-			searchFetchAndUninstructedPrompt,
-			fetchSearchAndUninstructedPrompt,
+			searchPingFetchPrompt,
 			searchAndUninstructedPrompt,
 			renamedOriginalAndUninstructedPrompt,
+			uninstructedOnlyPrompt,
 			remountedAndUninstructedPrompt,
 			remountedPrompt,
 		]);
@@ -1059,6 +1083,10 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		await firstCallStarted.promise;
 		await session.refreshMCPTools([search]);
 		await session.refreshMCPTools([search, fetch]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		releaseFirstCall.resolve();
 		await firstPrompt;
 		expect(rebuildCount).toBe(2);

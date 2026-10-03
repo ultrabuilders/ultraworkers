@@ -87,7 +87,9 @@ describe("Tern page capture", () => {
 						delivered = true;
 						return {
 							ok: {
-								events: [{ seq: 1, type: "message", world: "page", main: true, url: "https://example.test/", body }],
+								events: [
+									{ seq: 1, type: "message", world: "page", main: true, url: "https://example.test/", body },
+								],
 								next: 1,
 								dropped: 0,
 							},
@@ -124,7 +126,12 @@ describe("Tern page capture", () => {
 		// reads it: a mismatch anywhere upstream leaves this buffer empty.
 		const captured = await tab.console();
 		expect(captured.entries).toEqual([
-			expect.objectContaining({ type: "console", level: "log", text: "hello from the page", args: ["hello from the page"] }),
+			expect.objectContaining({
+				type: "console",
+				level: "log",
+				text: "hello from the page",
+				args: ["hello from the page"],
+			}),
 		]);
 	});
 });

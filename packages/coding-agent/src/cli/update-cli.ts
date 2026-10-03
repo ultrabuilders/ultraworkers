@@ -157,7 +157,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *
  * Forward-compatibility contract with future releases: a release that is not
  * installable as an npm package (e.g. a native rewrite) publishes
- * `"ultraworkers": { "dist": "binary" }` in its package.json. Any value other than
+ * `"omp": { "dist": "binary" }` in its package.json. Any value other than
  * "npm" — including values this updater does not know yet — maps to "binary"
  * so already-deployed updaters never run a package-manager install against a
  * release that no longer supports it.
@@ -174,7 +174,7 @@ export function resolveReleaseDist(manifest: unknown): ReleaseDist | undefined {
  *
  * Forward-compatibility contract for renaming the npm package: the final
  * version published under an old name is a stub whose manifest carries
- * `"ultraworkers": { "rename": { "package": "<new-agent-pkg>", "natives": "<new-natives-pkg>" }, "dist": "binary" }`.
+ * `"omp": { "rename": { "package": "<new-agent-pkg>", "natives": "<new-natives-pkg>" }, "dist": "binary" }`.
  * Updaters that understand `rename` follow the pointer and resolve the
  * release from the renamed package instead ({@link getLatestRelease});
  * older deployed updaters ignore it and take the `dist: "binary"` escape

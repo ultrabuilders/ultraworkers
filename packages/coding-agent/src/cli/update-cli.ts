@@ -78,7 +78,7 @@ export interface ReleasePackages {
 	natives: string;
 }
 
-/** Parsed `ultraworkers.rename` pointer: the new agent package name and optional new natives name. */
+/** Parsed `omp.rename` pointer: the new agent package name and optional new natives name. */
 export interface ReleaseRename {
 	pkg: string;
 	natives?: string;
@@ -89,9 +89,9 @@ const CURRENT_PACKAGES: ReleasePackages = { pkg: PACKAGE, natives: NATIVES_PACKA
 export interface ReleaseInfo {
 	tag: string;
 	version: string;
-	/** Parsed `ultraworkers.dist` from the registry manifest; undefined when absent. */
+	/** Parsed `omp.dist` from the registry manifest; undefined when absent. */
 	dist?: ReleaseDist;
-	/** npm names to install, resolved after following any `ultraworkers.rename` pointers. */
+	/** npm names to install, resolved after following any `omp.rename` pointers. */
 	packages: ReleasePackages;
 	/**
 	 * Registry URL the version was resolved from; bun/npm installs pin to it
@@ -153,7 +153,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Parse the `ultraworkers.dist` field from a published package manifest.
+ * Parse the `omp.dist` field from a published package manifest.
  *
  * Forward-compatibility contract with future releases: a release that is not
  * installable as an npm package (e.g. a native rewrite) publishes
@@ -170,7 +170,7 @@ export function resolveReleaseDist(manifest: unknown): ReleaseDist | undefined {
 }
 
 /**
- * Parse the `ultraworkers.rename` pointer from a published package manifest.
+ * Parse the `omp.rename` pointer from a published package manifest.
  *
  * Forward-compatibility contract for renaming the npm package: the final
  * version published under an old name is a stub whose manifest carries
@@ -205,7 +205,7 @@ function majorVersion(version: string): number {
 /**
  * Whether the update must bypass bun/npm and install the release binary.
  *
- * An explicit `ultraworkers.dist` wins in both directions. Without one, a release with
+ * An explicit `omp.dist` wins in both directions. Without one, a release with
  * a higher major than the running build is assumed not npm-installable: the
  * runtime may have changed out from under the package layout, and the pinned
  * `@oh-my-pi/pi-natives*` companions ({@link buildBunInstallArgs}) may not
@@ -829,7 +829,7 @@ async function resolveUpdateTarget(options: { allowPackageManagers: boolean }): 
 	throw new Error(`Could not resolve ${APP_NAME} binary path in PATH`);
 }
 
-/** Bound on `ultraworkers.rename` hops so a broken pointer chain cannot loop forever. */
+/** Bound on `omp.rename` hops so a broken pointer chain cannot loop forever. */
 const MAX_RENAME_HOPS = 3;
 
 async function fetchLatestManifest(
@@ -897,7 +897,7 @@ async function fetchLatestManifest(
 }
 
 /**
- * Get the latest release info from the npm registry, following `ultraworkers.rename`
+ * Get the latest release info from the npm registry, following `omp.rename`
  * pointers ({@link resolveReleaseRename}) when the package has moved to a new
  * npm name. Version, dist, and install names all come from the final manifest
  * in the chain. Uses npm instead of GitHub API to avoid unauthenticated rate
@@ -1699,7 +1699,7 @@ function packageManagerMigrationSteps(manager: "bun" | "npm", release: ReleaseIn
 }
 
 /**
- * Migrate a package-manager install across an `ultraworkers.rename` hop without a
+ * Migrate a package-manager install across an `omp.rename` hop without a
  * window where no working `ultraworkers` exists:
  *
  * 1. Install the new package FIRST. Nothing has been removed yet, so a

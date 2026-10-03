@@ -147,7 +147,21 @@ describe("the real patches/ tree reconciles", () => {
 			expect(result.exitCode).toBe(0);
 			expect(await Bun.file(ledger).text()).toBe(before);
 		} finally {
+			// The restore above is what keeps the tree clean, and on a shared
+			// checkout that is also what makes the run invisible: afterwards
+			// `git status` cannot tell "never ran" from "ran and rewrote a
+			// tracked file". Restoring the bytes and announcing the touch are
+			// both required — the first protects the tree, the second leaves
+			// the evidence a peer needs to see that something wrote here.
+			//
+			// Measured 2026-10-03: this row was red because `patches/LEDGER.md`
+			// had been reformatted in the working tree by someone else. The
+			// `finally` put the bytes back, so the run left no trace of who had
+			// touched it — and the red was the only evidence it had.
 			await Bun.write(ledger, before);
+			console.error(
+				`[ledger] wrote ${ledger} and restored it; if this file was dirty before this run, the diff predates the test`,
+			);
 		}
 	});
 });

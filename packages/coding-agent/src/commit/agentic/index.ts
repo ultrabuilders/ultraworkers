@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { createInterface } from "node:readline/promises";
+import type { VcsGitRepo } from "@oh-my-pi/pi-natives";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { $env, getProjectDir, isEnoent, prompt } from "@oh-my-pi/pi-utils";
 import { applyChangelogProposals } from "../../commit/changelog";
@@ -26,6 +27,49 @@ interface CommitExecutionContext {
 	push: boolean;
 }
 
+/**
+ * The paths a commit would cover.
+ *
+ * With nothing staged, a real run stages the whole tree first. A `--dry-run` must
+ * not: `stageFiles([])` is `git add -A`, so running it under a dry run would leave
+ * the index populated for the next bare `git commit` — on a shared tree, that is
+ * someone else's work. Every other write in this module already gates on the flag;
+ * this one did not.
+ *
+ * A dry run still has to REPORT what it would commit, or it reports "no changes"
+ * on a dirty tree — trading one wrong answer for the opposite wrong answer. So it
+ * reads the same set `stageFiles([])` would create, without writing it.
+ *
+ * `statusPorcelain` is the instrument that matches: `changedFiles({cached:false})`
+ * cannot be used, because gix's diff options have no untracked mode (see
+ * `impl From<VcsDiffOptions> for core::DiffOptions`), so it would omit every new
+ * file — a dry run that hides untracked work.
+ */
+export async function resolveStagedFiles(repo: VcsGitRepo, dryRun: boolean): Promise<string[]> {
+	const stagedFiles = await repo.changedFiles({ cached: true });
+	if (stagedFiles.length > 0) return stagedFiles;
+	if (dryRun) return reportablePaths(repo);
+	process.stdout.write("No staged changes detected, staging all changes...\n");
+	await repo.stageFiles([]);
+	return repo.changedFiles({ cached: true });
+}
+
+/** The working-tree paths `stageFiles([])` would stage, read without staging. */
+async function reportablePaths(repo: VcsGitRepo): Promise<string[]> {
+	const porcelain = await repo.statusPorcelain({ untracked: "all", nulTerminated: false });
+	const paths: string[] = [];
+	for (const line of porcelain.split("\n")) {
+		if (line.length < 4) continue;
+		// Porcelain v1: a two-character status then a space then the path. The
+		// status is what says whether the entry is real work — a rename or copy
+		// carries its source in the path field, so take everything after the space.
+		const status = line.slice(0, 2);
+		if (status.trim() === "") continue;
+		paths.push(line.slice(3));
+	}
+	return paths;
+}
+
 export async function runAgenticCommit(args: CommitCommandArgs): Promise<{ usedFallback: boolean }> {
 	const cwd = getProjectDir();
 	const repo = vcs.requireGit(cwd);
@@ -36,15 +80,7 @@ export async function runAgenticCommit(args: CommitCommandArgs): Promise<{ usedF
 	const modelRegistry = new ModelRegistry(authStorage);
 	await modelRegistry.refresh();
 	await loadCliExtensionProviders(modelRegistry, settings, cwd);
-	const stagedFilesPromise = (async () => {
-		let stagedFiles = await repo.changedFiles({ cached: true });
-		if (stagedFiles.length === 0) {
-			process.stdout.write("No staged changes detected, staging all changes...\n");
-			await repo.stageFiles([]);
-			stagedFiles = await repo.changedFiles({ cached: true });
-		}
-		return stagedFiles;
-	})();
+	const stagedFilesPromise = resolveStagedFiles(repo, args.dryRun);
 
 	const primaryModelPromise = resolvePrimaryModel(args.model, settings, modelRegistry);
 	const [primaryModelResult, stagedFiles] = await Promise.all([primaryModelPromise, stagedFilesPromise]);

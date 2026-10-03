@@ -38,11 +38,36 @@ can silently skip a decision, so every explanation belongs in `reason` or here.
 | `keep-wire`            | a third-party contract; renaming breaks a live client | required    |
 | `keep-worker-selector` | the hidden argv selector (`__omp_worker_`)            | required    |
 | `keep-path`            | an on-disk path (`.omp`)                              | required    |
+| `keep-filename`        | an installed artifact whose filename is the contract  | required    |
 | `keep-prose`           | prose we are not touching: history, fixture labels    | required    |
+| `keep-fixture`         | a test literal the test needs in order to fail        | required    |
 
 A `disposition` outside this set is a **gate failure**, not a new class. Adding one
 is a reviewed act — see "`keep-prose`, resolved" below for the one that was pending
-when this table was written.
+when this table was written. Two more have been added since, each reviewed the same
+way: `keep-filename` for a quoted `omp-…` artifact name that `keep-path` structurally
+cannot count, and `keep-fixture` for a literal that is the _input_ to the thing
+checking it.
+
+### `keep-fixture` is pinned, and that is the part that bites
+
+`keep-fixture` shares `classMatcher`'s `{ pinned: true }` arm with `rename`,
+`keep-wire` and `keep-prose`, so it counts the **whole file's** pinned total — not
+just its own occurrences. Two consequences, both load-bearing:
+
+- A file's `keep-fixture` and `rename` rows **cannot be checked against each other**.
+  Only their **sum** is checkable, by `hits-imbalance` in the `pre` stage.
+- Swapping a fixture row's label for another pinned label changes **nothing the gate
+  can see**: all four return the same number. A wrong label here is invisible, which
+  is why the `reason` column carries the whole judgement.
+
+`keep-fixture` exists because the honest answer for a test literal is neither
+`keep-wire` (no consumer outside the repo constrains it) nor `keep-prose` (the
+occurrence is on a code line, not in prose). Writing `keep-wire` would assert an
+external consumer that does not exist; writing `keep-prose` would assert the text is
+prose when it is a fixture. The `reason` should say which — "renaming inverts a
+negative assertion", "the literal is the ratchet's own input", "the detector matches
+the old spelling on purpose".
 
 ## The invariant
 

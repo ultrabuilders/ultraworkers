@@ -3330,7 +3330,22 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				nativeToolsByName.set(goalTool.name, wrapped);
 			}
 		}
+		// An extension registering a built-in's name wins: this writes the
+		// extension's tool over the built-in and drops the built-in's name. That
+		// asymmetry is an open owner decision, and the sibling registry takes the
+		// opposite policy — `registerSubcommand` in `extensions/loader.ts` refuses
+		// the collision and warns, naming both claimants. Nothing here changes who
+		// wins; it only makes the collision observable instead of silent. Without
+		// it, an extension written outside this repo has no signal at all that its
+		// `bash` is no longer the built-in `bash` — the shadowed tool stays
+		// reachable only through the native-tool resolver set below.
+		const extensionOwners = new Map(allCustomTools.map(entry => [entry.definition.name, entry.extensionPath]));
 		for (const tool of wrappedExtensionTools) {
+			if (builtInRegistryToolNames.has(tool.name)) {
+				logger.warn(
+					`Extension ${extensionOwners.get(tool.name) ?? "unknown"}: tool "${tool.name}" shadows a built-in tool of the same name — the extension's tool is the one that will run; the built-in stays reachable only through ctx.invokeTool`,
+				);
+			}
 			toolRegistry.set(tool.name, tool);
 			builtInRegistryToolNames.delete(tool.name);
 		}

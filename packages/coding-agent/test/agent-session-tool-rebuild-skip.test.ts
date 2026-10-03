@@ -1320,6 +1320,13 @@ These tools became available:
 
 		// A later device the next rebuild also exposes stays notice-free too.
 		await session.refreshMCPTools([search, fetch]);
+		// Same push branch: `fetch` is registered but unmounted until the presentation says
+		// so. The assertion below is about the mounted catalog the rebuild renders into the
+		// base prompt, so the mount is a precondition here rather than the subject.
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		await session.prompt("again");
 		expect(session.systemPrompt.join("\n")).toContain("mcp__nucleus_fetch");
 		expect(

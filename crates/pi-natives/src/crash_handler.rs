@@ -20,10 +20,10 @@
 //! - Backtraces are captured via [`Backtrace::force_capture`], so they work
 //!   regardless of `RUST_BACKTRACE`.
 //! - The crash log path mirrors the JS side (`packages/utils/src/dirs.ts`):
-//!   `$XDG_STATE_HOME/omp/logs/` on Linux / macOS when the user has migrated to
-//!   XDG (i.e. that directory already exists and `PI_CODING_AGENT_DIR` isn't
-//!   pointed somewhere custom), otherwise `<home>/<PI_CONFIG_DIR>/logs/`
-//!   (defaulting to `~/.omp/logs/`).
+//!   `$XDG_STATE_HOME/ultraworkers/logs/` on Linux / macOS when the user has
+//!   migrated to XDG (i.e. that directory already exists and
+//!   `PI_CODING_AGENT_DIR` isn't pointed somewhere custom), otherwise
+//!   `<home>/<PI_CONFIG_DIR>/logs/` (defaulting to `~/.omp/logs/`).
 //! - Hook installation is idempotent across repeated module loads.
 
 use std::{
@@ -49,8 +49,14 @@ use std::{
 /// `packages/utils/src/dirs.ts`).
 const DEFAULT_CONFIG_DIR: &str = ".omp";
 
-/// App name used as the XDG-root subdirectory (`$XDG_STATE_HOME/omp/`),
-/// matching `APP_NAME` in `packages/utils/src/dirs.ts`.
+/// XDG-root subdirectory, i.e. `$XDG_STATE_HOME/ultraworkers/`: the FIRST entry
+/// of `XDG_CONFIG_DIR_CANDIDATES` in `packages/utils/src/dirs.ts`, which lists
+/// the new spelling before the old. Deliberately NOT `APP_NAME` from
+/// `packages/utils/src/brand.ts` — dirs.ts says in so many words that
+/// `APP_NAME` is display identity only and these are the paths where user state
+/// actually lives. The two strings coincide today, which is what makes citing
+/// `APP_NAME` tempting and wrong: it points a reader at a constant that does
+/// not govern this value. Track the candidate list, not the brand.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const APP_NAME: &str = "ultraworkers";
 
@@ -282,8 +288,9 @@ fn resolve_logs_dir(
 	config_dir_override: Option<&OsStr>,
 	xdg_state_logs: Option<PathBuf>,
 ) -> PathBuf {
-	// XDG takes precedence so users who migrated to `$XDG_STATE_HOME/omp/logs/`
-	// see native crash reports in the same directory the JS logger rotates.
+	// XDG takes precedence so users who migrated to
+	// `$XDG_STATE_HOME/ultraworkers/logs/` see native crash reports in the same
+	// directory the JS logger rotates.
 	if let Some(p) = xdg_state_logs {
 		return p;
 	}
@@ -296,7 +303,7 @@ fn resolve_logs_dir(
 
 /// Compute the XDG-state logs dir if the runtime environment matches the
 /// JS-side eligibility rules in `packages/utils/src/dirs.ts`: linux/macos,
-/// `$XDG_STATE_HOME` set, `$XDG_STATE_HOME/omp` exists on disk, and
+/// `$XDG_STATE_HOME` set, `$XDG_STATE_HOME/ultraworkers` exists on disk, and
 /// `PI_CODING_AGENT_DIR` is unset or pointing at the default agent dir.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn xdg_state_logs_from_env(home: &Path, config_dir_override: Option<&OsStr>) -> Option<PathBuf> {
@@ -318,14 +325,14 @@ fn xdg_state_logs_from_env(_home: &Path, _config_dir_override: Option<&OsStr>) -
 }
 
 /// Pure XDG-eligibility computation extracted for unit testing — no env
-/// reads, no fs reads. `omp_dir_exists` decides whether the candidate
-/// `<xdg_state_home>/omp` actually lives on disk.
+/// reads, no fs reads. `app_dir_exists` decides whether the candidate
+/// `<xdg_state_home>/ultraworkers` actually lives on disk.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn xdg_state_logs(
 	xdg_state_home: Option<&OsStr>,
 	agent_dir_override: Option<&OsStr>,
 	default_agent_dir: &Path,
-	omp_dir_exists: impl FnOnce(&Path) -> bool,
+	app_dir_exists: impl FnOnce(&Path) -> bool,
 ) -> Option<PathBuf> {
 	if let Some(ov) = agent_dir_override.filter(|s| !s.is_empty()) {
 		// `path.resolve(value)` on the JS side: make absolute against cwd
@@ -337,11 +344,11 @@ fn xdg_state_logs(
 		}
 	}
 	let xdg = xdg_state_home.filter(|s| !s.is_empty())?;
-	let omp_dir = Path::new(xdg).join(APP_NAME);
-	if !omp_dir_exists(&omp_dir) {
+	let app_dir = Path::new(xdg).join(APP_NAME);
+	if !app_dir_exists(&app_dir) {
 		return None;
 	}
-	Some(omp_dir.join("logs"))
+	Some(app_dir.join("logs"))
 }
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn default_agent_dir(home: &Path, config_dir_override: Option<&OsStr>) -> PathBuf {
@@ -503,7 +510,7 @@ mod tests {
 			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
 			|_p| true,
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/ultraworkers/logs")));
 	}
 
 	#[test]
@@ -518,33 +525,48 @@ mod tests {
 		let dir = resolve_logs_dir(
 			Path::new("/tmp/pi-natives-test-home"),
 			None,
-			Some(PathBuf::from("/xdg/state/omp/logs")),
+			Some(PathBuf::from("/xdg/state/ultraworkers/logs")),
 		);
-		assert_eq!(dir, PathBuf::from("/xdg/state/omp/logs"));
+		assert_eq!(dir, PathBuf::from("/xdg/state/ultraworkers/logs"));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn xdg_state_logs_resolves_when_dir_exists_and_no_agent_override() {
+		// Positive control, and the one that straddles the change: the existence
+		// check succeeds ONLY for the canonical spelling. `|_p| true` accepted any
+		// path, so a regression that probed the legacy `omp` root would still have
+		// passed while producing a different directory. This closure fails closed
+		// for anything else, so the spelling is what the assertion is about.
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			None,
 			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
-			|_p| true,
+			|p| p == Path::new("/xdg/state/ultraworkers"),
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/ultraworkers/logs")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
-	fn xdg_state_logs_skipped_when_omp_dir_missing() {
+	fn xdg_state_logs_skipped_when_ultraworkers_dir_missing() {
+		// The closure records what it was asked about instead of answering blind.
+		// `|_p| false` returns false for ANY path, so it proves "something was not
+		// on disk" and nothing about WHICH directory is gated — the test name would
+		// have asserted a fact the body never checked. Pinned here so the name is a
+		// claim the test actually defends.
+		let mut probed: Option<PathBuf> = None;
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			None,
 			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
-			|_p| false,
+			|p| {
+				probed = Some(p.to_path_buf());
+				false
+			},
 		);
 		assert_eq!(dir, None);
+		assert_eq!(probed, Some(PathBuf::from("/xdg/state/ultraworkers")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -579,7 +601,7 @@ mod tests {
 			&default_agent,
 			|_p| true,
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/ultraworkers/logs")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]

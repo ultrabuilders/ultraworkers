@@ -2,7 +2,7 @@
  * The patch ledger has to reach the user who runs the doctor.
  *
  * `doctor-checks.ts` held the ledger check in a registry that no production path
- * imported, so `omp plugin doctor` never ran it: the check existed, was correct,
+ * imported, so `ultraworkers plugin doctor` never ran it: the check existed, was correct,
  * was tested, and reported nothing. This file defends the two contracts that
  * closure broke, at the surface that actually prints.
  *
@@ -22,7 +22,7 @@ import { PluginManager } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/m
 import { isUnavailable, type CheckOutcome } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/types";
 import { initTheme } from "@oh-my-pi/pi-tui/theme";
 
-const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "omp-doctor-ledger-"));
+const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-doctor-ledger-"));
 
 // The renderer reads `theme.status.*` for its icons; the CLI initialises this at
 // startup and nothing else does.

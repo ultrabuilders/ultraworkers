@@ -29,7 +29,7 @@ import { initTheme } from "@oh-my-pi/pi-tui/theme";
 // startup and nothing else does.
 initTheme();
 
-const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "omp-doctor-seam-"));
+const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-doctor-seam-"));
 
 afterEach(async () => {
 	vi.restoreAllMocks();
@@ -64,7 +64,7 @@ async function printedChecks(): Promise<PrintedCheck[]> {
 	return JSON.parse(out.join("\n")) as PrintedCheck[];
 }
 
-describe("omp plugin doctor runs both collectors", () => {
+describe("ultraworkers plugin doctor runs both collectors", () => {
 	test("reports the environment checks, not only the plugin checks", async () => {
 		const checks = await printedChecks();
 		const names = checks.map(c => c.name);

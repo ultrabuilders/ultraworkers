@@ -45,7 +45,7 @@ describe("extractProfileFlags", () => {
 		// Same argv as above, but the plan-mode extension is NOT loaded, so `--plan`
 		// is the built-in string flag (planning model). It must not consume the
 		// bootstrap's internal boundary sentinel as its value — otherwise plan would
-		// become "--omp-profile-boundary" and the user's message would be dropped.
+		// become "--ultraworkers-profile-boundary" and the user's message would be dropped.
 		const extracted = extractProfileFlags(["--plan", "--profile", "work", "follow up"]);
 		expect(extracted.argv).toEqual(["--plan", PROFILE_BOOTSTRAP_BOUNDARY_ARG, "follow up"]);
 
@@ -150,10 +150,10 @@ describe("extractProfileFlags", () => {
 	});
 
 	it("treats explicit launch as the default command and keeps extracting globals", () => {
-		expect(extractProfileFlags(["launch", "--profile", "work", "--alias", "omp-work"])).toEqual({
+		expect(extractProfileFlags(["launch", "--profile", "work", "--alias", "ultraworkers-work"])).toEqual({
 			argv: ["launch"],
 			profile: "work",
-			aliasName: "omp-work",
+			aliasName: "ultraworkers-work",
 		});
 	});
 
@@ -250,10 +250,10 @@ describe("extractProfileFlags", () => {
 			profile: "work",
 			aliasName: undefined,
 		});
-		expect(extractProfileFlags(["--some-ext-flag", "--alias", "omp-work"])).toEqual({
+		expect(extractProfileFlags(["--some-ext-flag", "--alias", "ultraworkers-work"])).toEqual({
 			argv: ["--some-ext-flag"],
 			profile: undefined,
-			aliasName: "omp-work",
+			aliasName: "ultraworkers-work",
 		});
 	});
 

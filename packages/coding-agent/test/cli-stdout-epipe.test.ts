@@ -21,8 +21,8 @@ const cliEntry = path.join(repoRoot, "packages/coding-agent/src/cli.ts");
 it.skipIf(process.platform === "win32")(
 	"exits 0 without a fatal dump when the stdout consumer closes early",
 	async () => {
-		const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-cli-epipe-"));
-		const errPath = path.join(tmpDir, "omp.err");
+		const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-cli-epipe-"));
+		const errPath = path.join(tmpDir, "ultraworkers.err");
 		try {
 			// `| true` closes the read end of the pipe immediately, so `ultraworkers`'s help
 			// write hits a broken pipe regardless of output size. PIPESTATUS[0] is

@@ -7,7 +7,7 @@ import { getSessionsDir } from "@oh-my-pi/pi-utils";
 import { serializeTitleSlot } from "@oh-my-pi/pi-coding-agent/session/session-title-slot";
 
 /**
- * `omp session` is a CLI surface, so the contract under test is argv in, observable
+ * `ultraworkers session` is a CLI surface, so the contract under test is argv in, observable
  * behaviour out — which is why each case spawns the real binary rather than calling
  * the exported functions. In-process would let these pass while the command is
  * unreachable from a shell, which is the failure this surface exists to prevent.
@@ -21,7 +21,7 @@ import { serializeTitleSlot } from "@oh-my-pi/pi-coding-agent/session/session-ti
  *    not error; it falls through to `launch` and the argv becomes a prompt for the
  *    model. Two separate lists drift, and the day they do, both tests still agree
  *    with each other while the command is unrouted.
- * 2. `list` reads through the same enumeration `omp gc` uses, so the two commands
+ * 2. `list` reads through the same enumeration `ultraworkers gc` uses, so the two commands
  *    cannot disagree about which sessions exist.
  * 3. A title survives a destroyed transcript body, because it lives in a fixed-width
  *    slot at the head of the file rather than in the body.
@@ -82,7 +82,7 @@ function writeSession(id: string, title: string, body: string): string {
 const userMessage = `${JSON.stringify({ type: "message", role: "user", content: "hi" })}\n`;
 
 beforeEach(() => {
-	agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-session-cli-"));
+	agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-session-cli-"));
 	sessionsRoot = getSessionsDir(agentDir);
 	archiveRoot = getArchivedSessionsDir(agentDir);
 });
@@ -91,7 +91,7 @@ afterEach(() => {
 	fs.rmSync(agentDir, { recursive: true, force: true });
 });
 
-describe("omp session list", () => {
+describe("ultraworkers session list", () => {
 	it("lists a session by the title in its head slot even when the body is destroyed", async () => {
 		// The reason the title is readable at all. `session-listing.ts:368` passes the
 		// slot's title into the header parse as an override, so the title never depends
@@ -106,7 +106,7 @@ describe("omp session list", () => {
 		expect(JSON.parse(stdout)[0].title).toBe("ship the pin gate");
 	});
 
-	it("sees exactly the sessions omp gc sees, because it reads through gc's enumeration", async () => {
+	it("sees exactly the sessions ultraworkers gc sees, because it reads through gc's enumeration", async () => {
 		// The single-source contract, asserted against gc's own reader rather than a
 		// stored fixture. If `list` grew a private reader this is where the two would
 		// part company — and the failure is silent, because each is self-consistent.
@@ -137,7 +137,7 @@ describe("omp session list", () => {
 	});
 
 	it("exits non-zero when --last finds nothing, rather than printing an empty path", async () => {
-		// An empty line would be consumed by `omp --resume "$(…)"` as an empty session
+		// An empty line would be consumed by `ultraworkers --resume "$(…)"` as an empty session
 		// id, which fails somewhere else with nothing pointing back here.
 		const { stdout, exitCode } = await runSession("list", "--last");
 
@@ -146,7 +146,7 @@ describe("omp session list", () => {
 	});
 });
 
-describe("omp session archive / unarchive", () => {
+describe("ultraworkers session archive / unarchive", () => {
 	it("files an archived session where gc looks for it, and takes it out of the live set", async () => {
 		// Asserted on the directory, not by asking `list` whether it worked. Re-reading
 		// your own output is a closed loop: it passes even when the file went somewhere

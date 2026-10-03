@@ -23,7 +23,7 @@ import { Snowflake } from "@oh-my-pi/pi-utils/snowflake";
  * about which root the settings layer resolves to, not about the helper's shape.
  */
 
-const HOME_TMP = ".omp-config-read-root-marker";
+const HOME_TMP = ".ultraworkers-config-read-root-marker";
 
 let home = "";
 let originalXdg: Record<string, string | undefined> = {};

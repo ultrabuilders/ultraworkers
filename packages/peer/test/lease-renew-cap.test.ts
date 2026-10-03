@@ -44,6 +44,21 @@ function openOrThrow(result: ReturnType<typeof acquireLease>) {
 	return result.lease;
 }
 
+/**
+ * A table's column names.
+ *
+ * Preferred over a `user_version` literal because the column is the thing these rows
+ * are about: the version is a number that moves every time anyone adds a migration,
+ * and asserting it here made a row about the `acquired_ts` upgrade go red for a
+ * reason that has nothing to do with it.
+ */
+function columnsOf(db: Database, table: string): string[] {
+	return db
+		.query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+		.all()
+		.map(row => row.name);
+}
+
 describe("acquire records when the claim was taken", () => {
 	it("writes acquired_ts, because a column nobody populates silently disables the cap", async () => {
 		// This row exists because the INSERT omitted `acquired_ts` and the whole
@@ -144,15 +159,22 @@ describe("renewal past the lifetime cap", () => {
 	});
 });
 
-describe("v1 → v2 migration", () => {
+describe("the acquired_ts migration", () => {
 	it("creates a brand-new store, which the unguarded ALTER made impossible", async () => {
 		// On an empty file `user_version` is 0, the CREATE has already made
 		// `acquired_ts`, and an ALTER keyed on the version alone adds it a second
 		// time — "duplicate column name", so the store could not be created at all.
 		// This is the commonest path there is, and every other test in the package
 		// was green while it was broken.
+		//
+		// Asserted as "past v1" rather than as an exact number. A literal here went
+		// red the moment a later migration added a column, which says nothing about
+		// this row's subject — the contract is that the upgrade ran, not which version
+		// it landed on. `lease-store.test.ts` owns the exact-version assertion, where
+		// a bump is the thing being reported.
 		const db = openLeaseStore(await tempDbPath());
-		expect(pragmaValue(db, "user_version")).toBe(2);
+		expect(Number(pragmaValue(db, "user_version"))).toBeGreaterThan(1);
+		expect(columnsOf(db, "peer_leases")).toContain("acquired_ts");
 		db.close();
 	});
 
@@ -175,7 +197,8 @@ describe("v1 → v2 migration", () => {
 		legacy.close();
 
 		const db = openLeaseStore(dbPath);
-		expect(pragmaValue(db, "user_version")).toBe(2);
+		expect(Number(pragmaValue(db, "user_version"))).toBeGreaterThan(1);
+		expect(columnsOf(db, "peer_leases")).toContain("acquired_ts");
 		const inherited = db
 			.query<{ acquired_ts: number | null }, []>("SELECT acquired_ts FROM peer_leases WHERE owner = 'alpha'")
 			.get();
@@ -202,7 +225,7 @@ describe("v1 → v2 migration", () => {
 		half.close();
 
 		const db = openLeaseStore(dbPath);
-		expect(pragmaValue(db, "user_version")).toBe(2);
+		expect(Number(pragmaValue(db, "user_version"))).toBeGreaterThan(1);
 		db.close();
 	});
 });

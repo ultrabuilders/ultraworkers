@@ -736,12 +736,38 @@ tool call **opens the SQLite file directly and spawns nothing**
 there is a re-probe at `:9579-9587` for the TOCTOU where the daemon dies between
 probe and call.
 
-**Storage.** SQLite, authoritative, with **WAL enabled** — applied **once per file
-at pool warmup, not per connection**, because repeating it amplifies contention
-(`schema.rs:374-376`). Per connection: `busy_timeout=20000`,
-`synchronous=NORMAL`, `wal_autocheckpoint=1000`, and **`foreign_keys = OFF`** —
-meaning the `REFERENCES` clauses in the DDL **are not enforced**. The schema looks
-relational and the behaviour is not.
+**Storage — and this changes how every concurrency claim below must be read.**
+The engine is **not SQLite**. `Cargo.toml:212-225` pins `fsqlite` /
+**FrankenSQLite** (`Dicklesworthstone/frankensqlite` rev `2633b38a…`) across ~14
+crates including `fsqlite-mvcc`. The concurrency model is built on a pragma that
+**does not exist in upstream SQLite**:
+
+```rust
+// crates/mcp-agent-mail-db/src/pool.rs:7098
+pub const AUTOCOMMIT_CONCURRENT_MODE_PRAGMA: &str = "PRAGMA fsqlite.concurrent_mode = ON;";
+```
+
+and `pool.rs:7126-7135` **fails startup** unless it reads back `1`. The values are
+documented at `:7099-7101`: `-1` = not observed, `0` = serialized, `1` = **MVCC
+concurrent**. So autocommit writes go through an MVCC engine, and
+`BEGIN IMMEDIATE` is only used when the concurrent mode is off (`pool.rs:7095-7097`).
+
+**Consequence for §6.5 and for anyone porting.** "Opens SQLite directly, spawns
+nothing" is still exactly right and is the most transferable sentence in this
+section — but the *durability without a daemon* comes from an embedded MVCC engine,
+which is a far rarer thing than SQLite. The `busy_timeout=20000` / `SQLITE_BUSY`
+per-connection settings below are inherited upstream-SQLite knobs and describe a
+path the common case does not take. **`run_with_mvcc_retry` is named `mvcc` because
+it retries MVCC conflicts, not `SQLITE_BUSY`.**
+
+A concurrency claim sourced from this project must always be read with: *which
+engine did it assume?* Most of them assume one a TypeScript port cannot have.
+
+Per connection: `busy_timeout=20000`, `synchronous=NORMAL`,
+`wal_autocheckpoint=1000`, WAL applied **once per file at pool warmup, not per
+connection** (`schema.rs:374-376`), and **`foreign_keys = OFF`** — meaning the
+`REFERENCES` clauses in the DDL **are not enforced**. The schema looks relational
+and the behaviour is not.
 
 Retention **defaults to off** (`messages_retention_days: 0`); when enabled it
 hard-deletes *settled* messages (every recipient read, and acked where required)

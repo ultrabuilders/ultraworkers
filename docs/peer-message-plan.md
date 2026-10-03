@@ -500,6 +500,30 @@ authorisation check; it just removes one whole class of attack before it starts.
 - `register_agent` **updates** an existing identity; `create_agent_identity` **always
   creates a new one**. Two verbs, so "reuse" and "spawn fresh" cannot be confused.
 
+### 6.4 The package name is `peer` — and `peer` already means four things here
+
+Measured, not assumed. `peer` appears in `coding-agent` (259), `ai` (171, of which
+**135 are in code, not comments**), `catalog` (26), `tui` (19), `collab-web` (13),
+`agent` (12), `utils` (5), `wire` (3). Four distinct senses:
+
+| Package | What `peer` means there | Conflict |
+| --- | --- | --- |
+| `ai/auth` | `"peer-rotated"` — the other process that won the CAS on an auth row (`auth/refresh.ts:360,378`, `auth/select.ts:1053`) | **Real.** Same problem domain: two processes racing on shared state. But a *contender*, not a *counterpart*. |
+| `ai/auth-broker`, `ai/utils/proxy` | `peer: "host:port"` — a gRPC/proxy network endpoint (`auth-broker/server.ts:428`) | None. Industry-standard sense. |
+| `catalog` | `pricing-peer` / `peerId` — one model id's aliases across providers | None. Standard sense there. |
+| `wire`, `collab-web` | relay `peer: number`, guest peers | Mild. Ours — the new package should **redefine** it for agents and let `collab-web` keep `guest`. |
+
+**Adopted: `packages/peer/` → `@ultraworkers/peer`.** The one collision that
+actually bites is `ai/auth`'s `"peer-rotated"`, and the fix is a sentence in each
+place rather than a rename: *auth CAS rotation is between processes sharing a
+credential row; peer messaging is between agents delivering a message.* They never
+meet, and a reader who meets both is reading two subsystems — each of which will say
+so.
+
+`packages/agent` already says **"peer IRC"** in code (`agent-loop.ts`, and
+`types.ts:351,669`), so this package is completing a term the repo is already
+reaching for rather than introducing a new one.
+
 ---
 
 ## 7. Injection
@@ -707,6 +731,41 @@ A durability guarantee is a function, and its domain has an edge — state the e
 ---
 
 ## 11. What is deliberately **not** copied
+
+### 11.0 Read every `mail-rust` concurrency claim as engine-conditional
+
+Verified by hand: the engine is **not SQLite**. `Cargo.toml:212-225` pins `fsqlite` /
+**FrankenSQLite** (`Dicklesworthstone/frankensqlite` rev `2633b38a…`) across ~14
+crates including `fsqlite-mvcc`. The concurrency model rests on a pragma that **does
+not exist upstream**:
+
+```rust
+// crates/mcp-agent-mail-db/src/pool.rs:7098
+pub const AUTOCOMMIT_CONCURRENT_MODE_PRAGMA: &str = "PRAGMA fsqlite.concurrent_mode = ON;";
+```
+
+`pool.rs:7126-7135` **fails startup** unless it reads back `1`, and `:7099-7101`
+documents the values: `-1` not observed, `0` serialized, `1` **MVCC concurrent**.
+
+Two consequences for this plan:
+
+1. **Its lock primitives are not portable.** Every lock is `flock(2)` via `fs2`.
+   Node has no `flock`. Worse, `flock` semantics differ by platform — **per
+   open-file-description on Linux, per *process* on BSD/macOS** — so on our target
+   platform a second `open`+`flock` in the same process **succeeds** and silently
+   converts a shared lock to exclusive. `mail-rust` pays for this with a two-tier
+   scheme (in-process refcounts shadowing the flock, `server/lib.rs:1341-1353`). We
+   must not copy the flock half without the shadow half, or we get a lock that lies
+   on macOS.
+2. **`run_with_mvcc_retry` retries MVCC conflicts, not `SQLITE_BUSY`.** A TypeScript
+   port has no MVCC, so §9's retry reasoning has to be re-derived, not inherited.
+
+What *does* survive is the part that never needed an engine: **no daemon, open the
+durable layer directly, spawn nothing** (§6.5). That is still the most transferable
+sentence in the project, and it is the one the plan actually builds on.
+
+**Rule carried into §9: a concurrency claim sourced from `mail-rust` must always be
+read with *which engine did it assume?***
 
 ### 11.1 Licence
 

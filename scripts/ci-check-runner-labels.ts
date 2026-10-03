@@ -303,9 +303,9 @@ async function main(): Promise<void> {
 	const arcDocPath = path.join(root, ARC_DOC_PATH);
 	const arcDoc = (await Bun.file(arcDocPath).exists()) ? await Bun.file(arcDocPath).text() : undefined;
 
-	const { offenders, checked, drift } = checkRunnerLabels(sources, actionlint, arcDoc);
+	const { offenders, checked, drift, undocumented } = checkRunnerLabels(sources, actionlint, arcDoc);
 
-	if (offenders.length === 0 && drift.length === 0) {
+	if (offenders.length === 0 && drift.length === 0 && undocumented.length === 0) {
 		console.log(`runner-labels: ${checked} runs-on label(s) across ${sources.length} workflow(s) — all resolvable`);
 		return;
 	}
@@ -313,6 +313,20 @@ async function main(): Promise<void> {
 	// Each failure mode reports on its own and exits there. Falling through would print the
 	// "unknown label" heading with an empty list under a drift-only failure, which reads as a
 	// second, unstated problem.
+	if (undocumented.length > 0) {
+		console.error(`runner-labels: a runs-on label is declared but the ARC doc documents no such runner.\n`);
+		for (const use of undocumented) {
+			console.error(`  ${use.file}:${use.line}  ${use.label}`);
+		}
+		console.error(
+			`\n${ACTIONLINT_PATH} lists these under \`self-hosted-runner.labels\`, but ${ARC_DOC_PATH} names\n` +
+				`no deployed scale set by that label. The linting declaration says which labels this repo may\n` +
+				`write down; it is not evidence that a runner answers to them. Declare the scale set in the\n` +
+				`ARC doc, or drop the label and use a GitHub-hosted one.`,
+		);
+		if (offenders.length === 0 && drift.length === 0) process.exit(1);
+	}
+
 	if (drift.length > 0) {
 		console.error(
 			`runner-labels: the runner group the ARC doc declares is not the one this repo declares.\n\n` +

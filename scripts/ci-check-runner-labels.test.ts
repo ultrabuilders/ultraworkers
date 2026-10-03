@@ -201,4 +201,85 @@ describe("the ARC doc and the repo's declaration name the same runner", () => {
 		// as clean rather than as a missing file.
 		expect(checkRunnerLabels([], ACTIONLINT_DECLARING_OMP_KATA).drift).toEqual([]);
 	});
+
+	it("reports a declared label the ARC doc never documents as a deployed scale set", () => {
+		// The drift check only ran ARC-doc → declaration. Declaring a fabricated label and then
+		// using it satisfied both existing checks — it is declared (so not an offender), and the
+		// doc's real name is still declared (so no drift) — while no runner answers to it. This is
+		// the one failure the gate exists to prevent, arriving through the front door.
+		const actionlint = `${ACTIONLINT_DECLARING_OMP_KATA}      - ghost-label\n`;
+
+		const result = checkRunnerLabels(
+			[{ file: "w.yml", text: workflow("ghost-label") }],
+			actionlint,
+			ARC_DOC_DECLARING_OMP_KATA,
+		);
+
+		expect(result.undocumented.map(entry => entry.label)).toEqual(["ghost-label"]);
+		expect(result.undocumented[0]?.file).toBe("w.yml");
+		// The label is declared, so it must NOT also be reported as an unknown label — that would
+		// be the same finding counted twice, once under each heading.
+		expect(result.offenders).toEqual([]);
+		expect(result.drift).toEqual([]);
+	});
+
+	it("stays quiet when the label in use is the one the ARC doc documents", () => {
+		// The ordinary case, and the one that must not regress into a false positive: `omp-kata`
+		// is declared *and* documented, so nothing is reported.
+		const result = checkRunnerLabels(
+			[{ file: "w.yml", text: workflow("omp-kata") }],
+			ACTIONLINT_DECLARING_OMP_KATA,
+			ARC_DOC_DECLARING_OMP_KATA,
+		);
+
+		expect(result.undocumented).toEqual([]);
+		expect(result.offenders).toEqual([]);
+		expect(result.drift).toEqual([]);
+	});
+
+	it("reports each undocumented label once, however many jobs use it", () => {
+		// Ten of this repo's jobs select the runner through one ternary, so a per-use report would
+		// name the same dead label ten times and bury anything else.
+		const jobs = [1, 2, 3]
+			.map(n => `   job${n}:\n      runs-on: ghost-label\n      steps:\n         - run: echo hi`)
+			.join("\n");
+		const actionlint = `${ACTIONLINT_DECLARING_OMP_KATA}      - ghost-label\n`;
+
+		const result = checkRunnerLabels(
+			[{ file: "w.yml", text: `name: ci\njobs:\n${jobs}\n` }],
+			actionlint,
+			ARC_DOC_DECLARING_OMP_KATA,
+		);
+
+		expect(result.undocumented.map(entry => entry.label)).toEqual(["ghost-label"]);
+	});
+
+	it("does not report a label the ARC doc documents even if the linting file lists others", () => {
+		// Declaring a label that is never used is not a defect — `actionlint.yaml` may legitimately
+		// name more than the ARC doc enumerates. Only a label a workflow actually asks for can
+		// strand a job, so only those are reported.
+		const actionlint = `${ACTIONLINT_DECLARING_OMP_KATA}      - unused-label\n`;
+
+		const result = checkRunnerLabels(
+			[{ file: "w.yml", text: workflow("omp-kata") }],
+			actionlint,
+			ARC_DOC_DECLARING_OMP_KATA,
+		);
+
+		expect(result.undocumented).toEqual([]);
+	});
+
+	it("stays quiet when the ARC doc names no scale set at all", () => {
+		// A doc with no `runnerScaleSetName:` assignment carries no truth to compare against. A
+		// check that fails when its input is absent would report every declared label as phantom.
+		const actionlint = `${ACTIONLINT_DECLARING_OMP_KATA}      - ghost-label\n`;
+
+		const result = checkRunnerLabels(
+			[{ file: "w.yml", text: workflow("ghost-label") }],
+			actionlint,
+			"# nothing declares a scale set here\n",
+		);
+
+		expect(result.undocumented).toEqual([]);
+	});
 });

@@ -89,14 +89,26 @@ export function mappedAgents(consumerSource: string): Map<string, string> | null
 	return map;
 }
 
-/** Why the producers/consumers cannot be trusted, or `null` when they are consistent. */
-export interface PairProblem {
-	kind: "producer-not-found" | "consumer-not-found" | "mismatch" | "unmapped-agent";
-	produced: string | null;
-	consumed: string[];
-	/** Which `--agent` failed, when the problem is attributable to one. */
-	agent?: string;
-}
+/**
+ * Why the producers/consumers cannot be trusted, or `null` when they are consistent.
+ *
+ * A discriminated union rather than one interface with `agent?: string`, because only
+ * two of the four kinds are attributable to a single `--agent`, and the other two have
+ * no agent to name at all. With one flat interface every read of `problem.agent` is
+ * `string | undefined` — including the two places below that branch on it — and the
+ * only ways to compile are to assert `!` or to substitute a fallback. Both were wrong
+ * here, and the fallback had already shipped once: `producer-not-found` defaulted to
+ * `PRODUCER_PATHS["omp"]`, so a `pi` producer that stopped binding `_OUTPUT_FILENAME`
+ * was reported against `omp_local.py` — naming the wrong file in the one message a
+ * reader has to act on. Declaring `agent` non-optional on the kinds that always set it
+ * makes that unrepresentable instead of merely discouraged, which is the same reason
+ * `transcriptFilename` throws on an unknown agent rather than guessing a filename.
+ */
+export type PairProblem =
+	| { kind: "producer-not-found"; produced: null; consumed: []; agent: string }
+	| { kind: "consumer-not-found"; produced: null; consumed: [] }
+	| { kind: "unmapped-agent"; produced: string | null; consumed: string[]; agent: string }
+	| { kind: "mismatch"; produced: string; consumed: string[]; agent?: string };
 
 /**
  * Compare every producer against the consumer's agent table.
@@ -160,11 +172,13 @@ export function findPairProblem(producers: Record<string, string>, consumers: re
 }
 
 function describe(problem: PairProblem): string {
-	const where = problem.agent ? ` (agent "${problem.agent}")` : "";
 	switch (problem.kind) {
 		case "producer-not-found":
+			// No fallback: `agent` is non-optional on this kind, so the path named below is
+			// always the producer that actually failed. See PairProblem for the wrong-file
+			// report this replaces.
 			return [
-				`${PRODUCER_PATHS[problem.agent ?? "omp"]} no longer binds _OUTPUT_FILENAME to a double-quoted string${where}.`,
+				`${PRODUCER_PATHS[problem.agent]} no longer binds _OUTPUT_FILENAME to a double-quoted string (agent "${problem.agent}").`,
 				`  This gate can no longer see the producer, so it cannot claim the pair holds.`,
 				`  Reporting this as clean would be the failure this gate exists to prevent.`,
 			].join("\n");
@@ -183,8 +197,10 @@ function describe(problem: PairProblem): string {
 				`  and token counts report zero with no error and no log.`,
 			].join("\n");
 		case "mismatch":
+			// The only kind that can be unattributable: a bare `path.join(dir, "agent", …)`
+			// literal is compared as a set and belongs to no single agent.
 			return [
-				`agent transcript filename drifted${where} between producer and consumer.`,
+				`agent transcript filename drifted${problem.agent ? ` (agent "${problem.agent}")` : ""} between producer and consumer.`,
 				`  producer writes ${JSON.stringify(problem.produced)}`,
 				`  consumer probes ${JSON.stringify(problem.consumed)}`,
 				`  The producer and the consumer entry for the same agent must be renamed in one change.`,

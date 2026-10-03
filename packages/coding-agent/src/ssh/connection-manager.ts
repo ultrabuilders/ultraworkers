@@ -82,13 +82,41 @@ export function controlPathWorstCase(controlDir: string): number {
 }
 
 /**
+ * Signed bytes of `sun_path` left for `controlDir`; negative once it overflows.
+ *
+ * {@link controlPathFitsBudget} is the decision, this is the receipt. The boolean
+ * is blind to erosion by construction: a prefix that grows two bytes shortens
+ * the margin on every path built from it, and the predicate stays true through
+ * the whole slide. The first symptom is therefore OpenSSH refusing the bind with
+ * "... too long for Unix domain socket" — a message that names the socket and
+ * never the budget. Every reference implementation that checks this reports the
+ * byte count in its failure for exactly that reason: `claude-code-ref`'s
+ * `assertValidUnixSocketPath` throws `path is N bytes (max 104)`, and `codex-ref`
+ * compares `path_bytes.len()` straight against `sun_path.len()`.
+ *
+ * None of them pins a minimum headroom, and neither should this one. The margin
+ * is the difference between the ceiling and the cost — and each of those is set
+ * independently: the ceiling is per-platform, the socket overhead tracks
+ * OpenSSH's digest width, the prefix tracks the product name. A pinned floor
+ * therefore goes red on a rename for a reason that has nothing to do with the
+ * budget, and a derived floor (`limit - worstCase`) only restates the predicate.
+ * Reporting the number where it is consumed buys observability without either
+ * trap. (The arithmetic itself is left out of this paragraph on purpose: spelled
+ * out, the operands go stale silently the moment any one of them moves, which is
+ * the same drift this export exists to make visible.)
+ */
+export function controlPathHeadroom(controlDir: string, platform: SshPlatform): number {
+	return controlPathSunPathLimit(platform) - controlPathWorstCase(controlDir);
+}
+
+/**
  * Whether `controlDir` leaves room for the whole `%C.sock` plus OpenSSH's mux
  * temp bind within `sun_path`. Kept as a predicate because that is the only
- * question the call sites ask; the margin behind the answer is
- * {@link controlPathSunPathLimit} minus {@link controlPathWorstCase}.
+ * question most call sites ask; the margin behind the answer is
+ * {@link controlPathHeadroom}, which is where the number is read.
  */
 export function controlPathFitsBudget(controlDir: string, platform: SshPlatform): boolean {
-	return controlPathWorstCase(controlDir) < controlPathSunPathLimit(platform);
+	return controlPathHeadroom(controlDir, platform) > 0;
 }
 
 /**
@@ -102,7 +130,7 @@ export function controlPathFitsBudget(controlDir: string, platform: SshPlatform)
  * The prefix and digest length are one budget decision, not two. This path is
  * itself a `sun_path` consumer: `controlPathFitsBudget` admits a dir up to 40
  * bytes on macOS, and `/tmp/ultraworkers-` plus a 20-char digest is 38 — it
- * fits, with 2 bytes spare instead of the 11 the shorter prefix bought. Since
+ * fits, with 3 bytes spare instead of the 12 the shorter prefix bought. Since
  * the length here is constant (production never passes `tmpBase`), that margin
  * is spent on the product name and cannot be recovered. Trimming the digest to
  * 11 hex chars holds the whole path at 29 bytes, so the rename costs no budget.
@@ -140,7 +168,25 @@ export function resolveSshControlDir(opts: {
 	const { canonicalDir, platform, uid, tmpBase } = opts;
 	if (!supportsSshControlMaster(platform) || uid === undefined) return { dir: canonicalDir, shared: false };
 	if (controlPathFitsBudget(canonicalDir, platform)) return { dir: canonicalDir, shared: false };
-	return { dir: sshControlFallbackDir(canonicalDir, uid, tmpBase), shared: true };
+	const fallback = sshControlFallbackDir(canonicalDir, uid, tmpBase);
+	// This function's contract is "a directory that fits", and the fallback is the
+	// last chance to honour it. It cannot be *refused* here — `CONTROL_DIR` is
+	// derived from this call at module load, so throwing would take every importer
+	// of the module down with it. It can be reported, which is the difference
+	// between a budget failure that names its numbers and OpenSSH's "too long for
+	// Unix domain socket", which names neither. Production never passes `tmpBase`,
+	// so this stays quiet on the default and speaks only when a caller supplies a
+	// root that cannot hold the socket.
+	const headroom = controlPathHeadroom(fallback, platform);
+	if (headroom <= 0) {
+		logger.warn("SSH control fallback exceeds sun_path", {
+			dir: fallback,
+			cost: controlPathWorstCase(fallback),
+			limit: controlPathSunPathLimit(platform),
+			platform,
+		});
+	}
+	return { dir: fallback, shared: true };
 }
 
 interface ControlDirGuardStat {

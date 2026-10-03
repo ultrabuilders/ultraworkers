@@ -196,6 +196,7 @@
 
 ### Fixed
 
+- Fixed an over-long SSH control path reporting no numbers — the fallback now logs its byte cost and the platform's socket limit instead of leaving OpenSSH to fail the mux bind with a message that names neither.
 - Fixed extension UI calls failing in RPC mode — an extension hook calling `ctx.ui.notify(...)` there threw `TypeError: ... is not a function`.
 - The shared-browser failure now names the logs directory the product actually writes to. The message hardcoded `~/.omp/logs`, which is wrong twice over: the resolver picks `.ultraworkers` or `.omp` per machine, and honours `XDG_STATE_HOME` on top of that, so the path it printed was not always the path being written to. It now reads the resolver rather than restating a guess. The `omp.browser.*` names beside it are unchanged — those are the real daemon names, and a user searching `ultraworkers ps` output will find exactly those.
 

@@ -31,6 +31,11 @@ import { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensi
 import { getProjectAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 import { parseExportArgs } from "@oh-my-pi/pi-coding-agent/export/html/args";
 import { exportSessionToHtml } from "@oh-my-pi/pi-coding-agent/export/html";
+import { Agent } from "@oh-my-pi/pi-agent-core";
+import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
+import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
+import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 
 /** The bytes the fixture format produces, distinct from anything HTML emits. */
 const FORMAT_MARKER = "session-exported-as-markdown-by-an-extension";
@@ -272,5 +277,134 @@ process.stdin.on("data", chunk => {
 		// server would have to distinguish from "no format requested".
 		expect(frame.type).toBe("export_html");
 		expect(frame.formatId).toBeUndefined();
+	});
+});
+
+/**
+ * What the server does with the id, once it arrives.
+ *
+ * The frame tests above read the pipe, so they prove the client *sends* `formatId` and
+ * stop there. Measured: dropping `formatId` from `rpc-mode.ts`'s `export_html` case left
+ * all of them green — a client can deliver a field the server ignores and the suite calls
+ * that working. Reading the handler's source would not close it either (that is a source
+ * grep), so what this asserts is the observable consequence: the session writes the
+ * registered format's bytes rather than HTML, using a registry it resolved itself.
+ *
+ * **What this does not prove, stated so nobody assumes it does:** that the handler
+ * forwards the field. The `export_html` case lives inside `runRpcMode`, which owns stdin
+ * and returns `Promise<never>` — there is no entry point to call with a session and a
+ * command, so the forwarding itself is only reachable by running the whole mode over a
+ * pipe. That is a smoke test, not a unit test, and this file does not claim it.
+ */
+describe("the export_html server half", () => {
+	let tempDir: TempDir;
+	let extensionsDir: string;
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@output-format-server-");
+		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
+		fs.mkdirSync(extensionsDir, { recursive: true });
+	});
+	afterEach(() => {
+		tempDir.removeSync();
+	});
+
+	/** The minimum session shape the runner and the exporter both read. */
+	function makeSessionFixture(sessionFile: string) {
+		return {
+			getSessionFile: () => sessionFile,
+			getHeader: () => ({ type: "session", version: 1, id: "s1", cwd: tempDir.path() }),
+			getEntries: () => [
+				{
+					type: "message",
+					id: "m1",
+					parentId: null,
+					timestamp: "2026-01-01T00:00:00.000Z",
+					message: { role: "user", content: [{ type: "text", text: "hi" }] },
+				},
+			],
+			getLeafId: () => "m1",
+		} as never;
+	}
+
+	it("writes the registered format's bytes when the request names it", async () => {
+		fs.writeFileSync(path.join(extensionsDir, "formatter.ts"), FORMATTER);
+		const loaded = await loadExtensions([path.join(extensionsDir, "formatter.ts")], tempDir.path());
+		expect(loaded.errors, "the fixture extension failed to load").toEqual([]);
+
+		const runner = new ExtensionRunner(
+			loaded.extensions,
+			loaded.runtime,
+			tempDir.path(),
+			makeSessionFixture(path.join(tempDir.path(), "server.jsonl")),
+			{ get: () => undefined, list: () => [] } as never,
+		);
+
+		const agent = new Agent({
+			initialState: {
+				model: getBundledModel("anthropic", "claude-sonnet-4-5"),
+				systemPrompt: ["Test"],
+				tools: [],
+				messages: [],
+			},
+		});
+		// A file-backed manager: the exporter reads the session file to collect
+		// sub-sessions, and an in-memory one refuses to export at all.
+		const sessionManager = SessionManager.create(tempDir.path(), path.join(tempDir.path(), "sessions"));
+		const session = new AgentSession({
+			agent,
+			sessionManager,
+			settings: Settings.isolated(),
+			modelRegistry: { get: () => undefined, list: () => [] } as never,
+			extensionRunner: runner,
+		});
+		session.subscribe(() => {});
+
+		// Exactly the options an `export_html` request that names a format produces, with
+		// `formats` omitted — so the session resolves the registry from its own runner,
+		// the way it does in production, instead of being handed one by the test.
+		const written = await session.exportToHtml({
+			outputPath: path.join(tempDir.path(), "server-out.md"),
+			formatId: "notes",
+		});
+
+		// The extension's bytes, not HTML.
+		expect(fs.readFileSync(written, "utf8")).toBe(FORMAT_MARKER);
+	});
+
+	it("NEGATIVE: an id the session's registry does not hold still writes HTML", async () => {
+		fs.writeFileSync(path.join(extensionsDir, "formatter.ts"), FORMATTER);
+		const loaded = await loadExtensions([path.join(extensionsDir, "formatter.ts")], tempDir.path());
+		const runner = new ExtensionRunner(
+			loaded.extensions,
+			loaded.runtime,
+			tempDir.path(),
+			makeSessionFixture(path.join(tempDir.path(), "server.jsonl")),
+			{ get: () => undefined, list: () => [] } as never,
+		);
+		const session = new AgentSession({
+			agent: new Agent({
+				initialState: {
+					model: getBundledModel("anthropic", "claude-sonnet-4-5"),
+					systemPrompt: ["Test"],
+					tools: [],
+					messages: [],
+				},
+			}),
+			sessionManager: SessionManager.create(tempDir.path(), path.join(tempDir.path(), "sessions-neg")),
+			settings: Settings.isolated(),
+			modelRegistry: { get: () => undefined, list: () => [] } as never,
+			extensionRunner: runner,
+		});
+		session.subscribe(() => {});
+
+		// The branch that must not silently select the extension: a name nobody registered.
+		const written = await session.exportToHtml({
+			outputPath: path.join(tempDir.path(), "server-neg.html"),
+			formatId: "not-registered",
+		});
+		const bytes = fs.readFileSync(written, "utf8");
+		expect(bytes).not.toContain(FORMAT_MARKER);
+		expect(bytes.toLowerCase()).toContain("<!doctype html>");
 	});
 });

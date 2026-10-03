@@ -4,7 +4,7 @@
  * Discovers agent definitions from OMP-native task-agent roots:
  *   - ~/.omp/agent/agents/*.md (user-level)
  *   - .omp/agents/*.md (project-level)
- *   - <ext>/agents/*.md for every OMP extension package wired through
+ *   - <ext>/agents/*.md for every ultraworkers extension package wired through
  *     `listOmpExtensionRoots` (CLI `--extension` roots, `extensions:` in
  *     settings, and enabled npm/link plugins under `<plugins>/node_modules/`).
  *     Mirrors the same sub-discovery convention applied to `skills/`,
@@ -12,7 +12,7 @@
  *
  * Claude Code marketplace plugin agents are discovered separately via the
  * claude-plugins provider. Direct cross-harness roots such as .claude/agents
- * are intentionally skipped because their frontmatter schema is not the OMP
+ * are intentionally skipped because their frontmatter schema is not the
  * task-agent contract.
  *
  * Agent files use markdown with YAML frontmatter.
@@ -76,7 +76,7 @@ async function loadAgentsFromDir({ dir, source, ignoreModel }: AgentDirectory): 
 /**
  * Discover agents from filesystem and merge with bundled agents.
  * Precedence (highest wins): project `.omp/agents`, user `.omp/agents`,
- * OMP extension-package agents from the effective `extensions` setting,
+ * ultraworkers extension-package agents from the effective `extensions` setting,
  * installed npm/link plugins, Claude marketplace plugin agents (project scope
  * before user), then bundled.
  * @param cwd - Current working directory for project agent discovery
@@ -140,7 +140,7 @@ export async function discoverAgents(
 		// registry that supplied it: foreign Claude roots (origin "claude") always
 		// use Claude aliases, and an ultraworkers-installed or --plugin-dir root can still
 		// ship a `.claude-plugin` package. Claude-dialect frontmatter is dropped so
-		// its aliases are not misread as OMP selectors (#7966); OMP-native and
+		// its aliases are not misread as our selectors (#7966); native and
 		// Agent-Plugins-standard plugin agents keep their selectors (#12028).
 		sortedPluginRoots.map(
 			async plugin => plugin.origin === "claude" || (await pluginUsesClaudeModelDialect(plugin.path)),

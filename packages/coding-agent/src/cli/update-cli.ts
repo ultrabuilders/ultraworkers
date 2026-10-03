@@ -1272,7 +1272,7 @@ export function parseReportedVersion(output: string): string | undefined {
 	// `~/.bun/bin/omp --version` prints `ultraworkers/18.2.4` (a pre-rebrand build), while
 	// the current source prints `ultraworkers/18.4.3`. Gating on one alone makes
 	// the updater blind to the other, and `validateExistingUpdateTarget` reads
-	// that blindness as "this is not an OMP binary" and REFUSES to replace it —
+	// that blindness as "this is not an ultraworkers binary" and REFUSES to replace it —
 	// so a user on any pre-rebrand build could not self-update at all.
 	//
 	// `LEGACY_WIRE_NAME` is the historical value and cannot be derived from
@@ -1949,7 +1949,7 @@ export async function updateViaBinaryAt(
 		fetchImpl?: Fetch;
 		githubToken?: string;
 		allowPrerelease?: boolean;
-		/** Refuse replacement unless the existing path is a non-script OMP executable. */
+		/** Refuse replacement unless the existing path is a non-script ultraworkers executable. */
 		validateExistingTarget?: boolean;
 		verifyInstalledVersion?: typeof verifyInstalledVersion;
 	} = {},

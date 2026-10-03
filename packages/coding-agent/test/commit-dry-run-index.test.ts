@@ -6,6 +6,10 @@ import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 import { resolveStagedFiles } from "../src/commit/agentic/index";
 import { createCommitTools } from "../src/commit/agentic/tools";
+import type { CommitToolOptions } from "../src/commit/agentic/tools";
+import { Settings } from "../src/config/settings";
+import type { AuthStorage } from "../src/session/auth-storage";
+import type { ModelRegistry } from "../src/config/model-registry";
 
 const tempDirs: string[] = [];
 
@@ -30,6 +34,27 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
 async function stagedPaths(cwd: string): Promise<string[]> {
 	const out = await runGit(cwd, ["diff", "--cached", "--name-only"]);
 	return out.split("\n").filter(line => line.trim() !== "");
+}
+
+/**
+ * Options for `createCommitTools`.
+ *
+ * The tools CAPTURE these collaborators at construction and read them inside
+ * `execute`, so the factory needs only a real repository, which `cwd` supplies. That
+ * is why the two heavyweight dependencies are stubbed rather than built — and why
+ * `state` needs no cast at all: every field of `CommitAgentState` is optional, so `{}`
+ * is a valid one rather than a lie about its shape.
+ */
+function commitToolOptions(cwd: string): CommitToolOptions {
+	return {
+		cwd,
+		authStorage: {} as AuthStorage,
+		modelRegistry: {} as ModelRegistry,
+		settings: Settings.isolated(),
+		spawns: "",
+		state: {},
+		changelogTargets: [],
+	};
 }
 
 /**
@@ -121,26 +146,20 @@ describe("resolveStagedFiles honours --dry-run", () => {
 	});
 
 	// The agent runs on tools of its own, and `restrictToolNames` locks the session to
-	// exactly those, so the built-in toolset is unreachable. That makes the dry-run
-	// contract hold through the agent too — but only while every tool here is
-	// read-only. `dryRun` is not plumbed into the session, so a tool that staged,
-	// committed or unstaged would mutate the index during a preview and NOTHING in
-	// this command would report it: the next bare `git commit` would sweep the result
-	// under someone else's message.
+	// exactly those, so the built-in toolset is unreachable. `dryRun` is NOT plumbed
+	// into the session, so that lock is the only thing keeping a preview from mutating
+	// the shared index — the next bare `git commit` would sweep the result under
+	// someone else's message.
 	//
-	// If this row goes red, a tool was ADDED or REMOVED. Do not widen the list to make
-	// it pass — decide first whether the new tool can write.
-	it("gives the commit agent only read-and-propose tools, none able to touch the index", async () => {
+	// Read-only-ness is carried by THIS LIST, by review. It is not checked here: a tool
+	// that kept its name and started writing would pass this row. So what this pins is
+	// the toolset's IDENTITY — adding, removing or renaming a commit tool becomes a
+	// deliberate act at this row rather than a silent change to what the agent can
+	// reach. If it goes red, do not widen the list without deciding what the new tool
+	// can do.
+	it("pins the commit agent's toolset identity, the list being what carries read-only", async () => {
 		const dir = await repoWithUnstagedFile("commit-tool-surface-");
-		const options = {
-			cwd: dir,
-			authStorage: {} as never,
-			modelRegistry: {} as never,
-			settings: {} as never,
-			spawns: "",
-			state: {} as never,
-			changelogTargets: [] as string[],
-		};
+		const options = commitToolOptions(dir);
 
 		expect(
 			createCommitTools(options)
@@ -156,8 +175,14 @@ describe("resolveStagedFiles honours --dry-run", () => {
 			"recent_commits",
 			"split_commit",
 		]);
-		// The one tool that is conditionally absent; a count that silently drops it
-		// would still satisfy the list above if it were ever renamed into another entry.
-		expect(createCommitTools({ ...options, enableAnalyzeFiles: false }).map(tool => tool.name)).toHaveLength(7);
+
+		// The one tool that can legitimately be absent. Asserting its ABSENCE rather
+		// than a count: a count stays green if it is swapped for any other tool, which
+		// is exactly the substitution this row exists to make noticeable.
+		expect(
+			createCommitTools({ ...options, enableAnalyzeFiles: false })
+				.map(tool => tool.name)
+				.filter(name => name === "analyze_files"),
+		).toEqual([]);
 	});
 });

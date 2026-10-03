@@ -679,6 +679,15 @@ export function classMatcher(disposition: Disposition): ClassMatcher {
 		case "keep-worker-selector":
 			return { literal: "__omp_worker_" };
 		case "keep-path":
+			// A SELF-REFERENTIAL ROW. This file has a `keep-path` row in
+			// `disposition.tsv` counting its own occurrences of the quoted on-disk
+			// literal, so editing this file by adding a docblock line that QUOTES that
+			// literal turns the row red.
+			//
+			// It has now happened twice, and the second time inside the note warning
+			// about the first. The rule this note is living proof of: write the
+			// directory name unquoted in prose — `the quoted .omp` costs nothing —
+			// because the quoted form costs a table edit every single time.
 			return { literal: '".omp"' };
 		case "keep-filename":
 			return { filename: true };
@@ -692,6 +701,14 @@ export function classMatcher(disposition: Disposition): ClassMatcher {
 		// See `countClass` for what pinning costs: every pinned class counts the file
 		// total, so a file's `keep-fixture` and `rename` rows cannot be checked
 		// against each other — only their sum can.
+		//
+		// AND THE PINNED BRANCHES DO NOT SUM NAIVELY when the file also carries a
+		// literal class. Measured: a file where `keep-fixture` counts 5 while
+		// `countRename` is 4, because one occurrence of the quoted on-disk literal is
+		// held by the `keep-path` row and `rename` SUBTRACTS it. So `5 + rename` is
+		// not the file's pinned count — adding the literal back is what makes the two
+		// agree. That is the direct cost of the fourth pinned branch, and it is why
+		// this is documented rather than left to be rediscovered next time.
 		case "rename":
 		case "keep-wire":
 		case "keep-prose":

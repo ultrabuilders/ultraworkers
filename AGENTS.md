@@ -328,8 +328,21 @@ touched. This has already produced cross-contaminated commits twice in one day (
   - `git commit --only -- <path>` **rebuilds the path from the working tree** and does not merely
     add to what you staged — it **replaces** it. Measured: index holding 7 rows, working tree
     holding those 7 plus a peer's 2, `git commit --only -- rows.tsv` ⇒ the commit contains **9**
-    rows, not 7. So `--only` discards the staged blob wholesale, and with it every peer row you
-    deliberately excluded. **Never combine `--only` with line-scoped staging.**
+    rows, not 7. **Never combine `--only` with line-scoped staging.** Three consequences, all
+    measured, each of which changes what you do next:
+    - **Your staged row leaves the index.** Measured blob ids around one `--only`: index
+      `1ef8db2a…` before, `4c81742f…` after — the working-tree blob. So `--only` **overwrites the
+      index entry** and commits; it does not leave your row staged for a later commit. A row you
+      built to exclude a peer has to be rebuilt from scratch, not merely recommitted.
+    - **Untracked files hard-fail.** `git commit --only -m msg -- new.txt` ⇒ `error: pathspec
+      'new.txt' did not match any file(s) known to git`. This is the *common* case on this tree —
+      a new test, a new source file — and it is the first file you touch. `git add -N` first
+      makes it work.
+    - **The two tools need opposite preparation, and the safe one refuses the unsafe one's fix.**
+      `git add -N` stages the empty placeholder blob, which `--only` commits as real content and
+      `commit-scoped.ts` **rejects** (`is staged intent-to-add (empty placeholder blob), not real
+      content`). Prepare a new file with `add -N` for `--only`; with `commit-scoped.ts`, use a real
+      `git add`. Switching to the safe tool after `add -N` fails at exactly that moment.
   - A bare `git commit` reads the index as staged — which is right when the index is yours alone,
     and wrong the moment a peer has staged something. Verified in the same experiment: the bare
     commit took `INDEX_VERSION` and left the working tree untouched.

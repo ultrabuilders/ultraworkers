@@ -194,7 +194,7 @@ describe("schema migration", () => {
 		legacy.close();
 
 		const db = openLeaseStore(file);
-		expect(pragmaValue(db, "user_version")).toBe(2);
+		expect(pragmaValue(db, "user_version")).toBe(3);
 
 		const inherited = listLeaseHistory(db, "a.txt");
 		expect(inherited).toHaveLength(1);

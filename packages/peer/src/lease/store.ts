@@ -18,7 +18,7 @@ import { getDbBusyTimeoutMs } from "@oh-my-pi/pi-utils";
  */
 
 /** Schema version. Bumping this is the migration entry point — see {@link migrate}. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * Ceiling on how long ONE lease may live, however often it is renewed.
@@ -215,6 +215,10 @@ function migrate(db: Database): void {
 			)`);
 		db.run("CREATE INDEX IF NOT EXISTS idx_peer_leases_expires ON peer_leases(expires_ts)");
 
+		// The idempotency index is created in the migration tail below, not here,
+		// because v2 stores already have one WITH a different definition and
+		// `CREATE INDEX IF NOT EXISTS` would silently keep the wrong one.
+
 		// The fence counter outlives every lease row. Deriving the next token as
 		// MAX(fence_token)+1 goes BACKWARDS when the highest-token row is reaped,
 		// which would re-issue a token an old holder still carries — and a raw write
@@ -252,6 +256,19 @@ function migrate(db: Database): void {
 		if (!tableHasColumn(db, "peer_leases", "acquired_ts")) {
 			db.run("ALTER TABLE peer_leases ADD COLUMN acquired_ts INTEGER");
 		}
+
+		// v2 → v3: the idempotency index gains `released_ts IS NULL`. SQLite has no
+		// ALTER INDEX, so the old one is dropped and rebuilt. `IF EXISTS` on the
+		// drop because a v1 file arrives here having never had it. This runs
+		// unconditionally rather than under `value < 3` for the same reason the
+		// ALTER above does: a file interrupted between the DDL and the version
+		// bump must still converge, and rebuilding an index is idempotent.
+		db.run("DROP INDEX IF EXISTS idx_peer_leases_idempotency");
+		db.run(
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_peer_leases_idempotency
+			   ON peer_leases(owner, idempotency)
+			 WHERE idempotency IS NOT NULL AND released_ts IS NULL`,
+		);
 
 		db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 	})();
@@ -360,16 +377,44 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 		// A replayed acquire with the same key must return the original lease
 		// rather than mint a second token, or a retried call would silently
 		// invalidate the caller's first one.
+		//
+		// The match is on key AND owner AND `path_pattern`. Dropping the third
+		// predicate makes the same key with a DIFFERENT pattern return the old
+		// lease: the caller asked to hold `b.txt`, was handed the lease for
+		// `a.txt`, and had no way to tell — the reply says success and carries a
+		// valid-looking token. A key identifies an INTENT, and reusing it for a
+		// different intent is a conflict, not a replay. The reference
+		// implementation reaches the same rule by fingerprinting the whole
+		// payload; comparing the one field we let a caller vary keeps the same
+		// guarantee without a second table.
+		//
+		// `released_ts IS NULL` is included so a key whose lease has ended is not
+		// resurrected: a replay after release is a new claim, and the caller gets
+		// a fresh token rather than a handle on a tombstone.
 		if (options.idempotency !== undefined) {
 			const prior = db
-				.query<Record<string, unknown>, [string, string]>(
+				.query<Record<string, unknown>, [string, string, string]>(
 					`SELECT ${SELECT_COLUMNS} FROM peer_leases
-					 WHERE idempotency = ? AND owner = ? AND released_ts IS NULL`,
+					 WHERE idempotency = ? AND owner = ? AND path_pattern = ? AND released_ts IS NULL`,
 				)
-				.get(options.idempotency, options.owner);
+				.get(options.idempotency, options.owner, options.pathPattern);
 			if (prior) {
 				db.run("COMMIT");
 				return { ok: true, lease: toLease(prior) };
+			}
+			// Same key, same owner, different ground: refuse rather than mints a
+			// second row. The partial UNIQUE index below would reject the INSERT
+			// anyway, but as an opaque constraint failure — and a caller who reads
+			// that as "the path was busy" is wrong about why.
+			const mismatched = db
+				.query<Record<string, unknown>, [string, string, string]>(
+					`SELECT ${SELECT_COLUMNS} FROM peer_leases
+					 WHERE idempotency = ? AND owner = ? AND released_ts IS NULL AND path_pattern <> ?`,
+				)
+				.get(options.idempotency, options.owner, options.pathPattern);
+			if (mismatched) {
+				db.run("ROLLBACK");
+				return { ok: false, conflicts: [toLease(mismatched)] };
 			}
 		}
 

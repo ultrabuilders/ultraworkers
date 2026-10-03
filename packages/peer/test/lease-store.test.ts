@@ -46,10 +46,10 @@ describe("lease store", () => {
 		expect(pragmaValue(db, "busy_timeout")).toBe(getDbBusyTimeoutMs());
 		expect(String(pragmaValue(db, "journal_mode")).toLowerCase()).toBe("wal");
 		expect(pragmaValue(db, "synchronous")).toBe(1); // NORMAL
-		// 2 since `epic-jwsy.4` added `acquired_ts` for the lifetime cap. Asserting
-		// the number keeps a migration that fails to bump the version visible: the
-		// older-build guard reads this same pragma.
-		expect(pragmaValue(db, "user_version")).toBe(2);
+		// 3 since `epic-jwsy.5` narrowed the idempotency index to live rows.
+		// Asserting the number keeps a migration that fails to bump the version
+		// visible: the older-build guard reads this same pragma.
+		expect(pragmaValue(db, "user_version")).toBe(3);
 		db.close();
 	});
 

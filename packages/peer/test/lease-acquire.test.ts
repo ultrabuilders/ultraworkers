@@ -160,7 +160,10 @@ describe("ttl", () => {
 		const stale = openOrThrow(acquireLease(db, { owner: "alpha", pathPattern: "a.txt", ttlMs: 1_000, now: 1_000 }));
 		openOrThrow(acquireLease(db, { owner: "beta", pathPattern: "a.txt", now: 50_000 }));
 
-		expect(renewLease(db, { owner: "alpha", fenceToken: stale.fenceToken, now: 60_000 })).toBe(false);
+		expect(renewLease(db, { owner: "alpha", fenceToken: stale.fenceToken, now: 60_000 })).toEqual({
+			ok: false,
+			reason: "reaped",
+		});
 		expect(releaseLease(db, { owner: "alpha", fenceToken: stale.fenceToken, now: 60_000 })).toBe(false);
 
 		// …and the current holder is untouched by that attempt.
@@ -177,7 +180,10 @@ describe("ttl", () => {
 		const db = openLeaseStore(await tempDbPath());
 		const lease = openOrThrow(acquireLease(db, { owner: "alpha", pathPattern: "a.txt", now: 1_000 }));
 		expect(releaseLease(db, { owner: "alpha", fenceToken: lease.fenceToken, now: 2_000 })).toBe(true);
-		expect(renewLease(db, { owner: "alpha", fenceToken: lease.fenceToken, now: 3_000 })).toBe(false);
+		expect(renewLease(db, { owner: "alpha", fenceToken: lease.fenceToken, now: 3_000 })).toEqual({
+			ok: false,
+			reason: "reaped",
+		});
 		db.close();
 	});
 });

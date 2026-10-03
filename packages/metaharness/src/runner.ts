@@ -682,7 +682,9 @@ function parseTrial(dir: string, name: string): Trial | null {
 			/* ignore */
 		}
 
-		// Realtime cost from the live agent ultraworkers.txt log, parsed incrementally.
+		// Realtime cost from the live agent omp.txt log, parsed incrementally. The name is
+		// the producer's, not ours: `agent/omp_local.py` sets `_OUTPUT_FILENAME` and this
+		// runner reads what that writes. Renaming one side alone breaks the pair.
 		const probe = probeTrialCost(path.join(dir, "agent", "omp.txt"));
 		const costUsd = probe?.costUsd ?? 0;
 		const tokIn = probe?.tokIn ?? 0;

@@ -1631,6 +1631,14 @@ These tools became available:
 		const oldTool = createMcpCustomTool("mcp__nucleus_old", "nucleus", "old", "Old tool");
 		const newTool = createMcpCustomTool("mcp__nucleus_new", "nucleus", "new", "New tool");
 		await session.refreshMCPTools([oldTool]);
+		// `2aac13437d` gates activation, and this registry already held MCP tools, so the
+		// refresh above was a push: `oldTool` arrived registered but neither active nor
+		// mounted. Declare the presentation the way a first connection would, so the swap
+		// below genuinely changes both the active set and the mounted-route projection.
+		// Without this the active set never moves, no rebuild runs, and a rebuild that never
+		// runs cannot fail — the rollback this test exists for would be asserted against a
+		// promise that quietly resolves.
+		await session.setActiveToolPresentation([...session.getEnabledToolNames(), oldTool.name], [oldTool.name]);
 		failRebuild = true;
 
 		await expect(session.refreshMCPTools([newTool])).rejects.toThrow("rebuild failed");
@@ -1640,6 +1648,10 @@ These tools became available:
 
 		failRebuild = false;
 		await session.refreshMCPTools([newTool]);
+		// Same push branch on the way out: `newTool` is registered but not mounted until the
+		// presentation says so, so the mounted assertion below is about an explicit step
+		// rather than about the refresh having done it implicitly.
+		await session.setActiveToolPresentation([...session.getEnabledToolNames(), newTool.name], [newTool.name]);
 		expect(session.getToolByName(oldTool.name)).toBeUndefined();
 		expect(session.getToolByName(newTool.name)).toBeDefined();
 		expect(session.getMountedXdevToolNames()).toContain(newTool.name);

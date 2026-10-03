@@ -104,7 +104,13 @@ describe("judgePresence", () => {
 	});
 
 	it("leaves a fresh, live peer completely alone", () => {
-		const verdict = judgePresence(signals({ pid: SELF, lastSeenMs: 9_000 }), { nowMs: 10_000 });
+		// `repeated: false` is the honest value, not a way to satisfy the signature:
+		// this row is a SINGLE observation, and `repeated` exists precisely to mark
+		// that. The outcome is the same either way — the peer is fresh — which is
+		// what makes it the right row to pin the "one complaint is not a verdict"
+		// boundary on. Flipping it to `true` would still pass, and would stop
+		// testing what the row name says.
+		const verdict = judgePresence(signals({ pid: SELF, lastSeenMs: 9_000 }), { nowMs: 10_000, repeated: false });
 		expect(verdict.stale).toBe(false);
 		expect(verdict.reasons).toEqual([]);
 	});

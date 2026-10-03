@@ -18,11 +18,15 @@ export default function outsider(api: ExtensionAPI): void {
 		label: "Outsider Echo",
 		description: "Echoes its input. Registered by an extension installed from outside the repo.",
 		// `api.zod`, the builder the host injects — not `import { z } from
-		// "@oh-my-pi/omptype/zod"`. Measured: a package import of any `@oh-my-pi/*`
-		// module fails to resolve from an extension installed outside the repo,
-		// because a user's config directory has no `node_modules` to walk up to.
-		// The injected builder is how a real extension is written, and it is also
-		// the only form that survives being installed.
+		// "@oh-my-pi/omptype/zod"`. The injected builder is how a real extension is
+		// written: it needs no import, so it cannot break when the host's own
+		// resolution of `@oh-my-pi/*` is not the one you want.
+		//
+		// An earlier version of this comment claimed a package import of any
+		// `@oh-my-pi/*` module FAILS from an out-of-repo extension. That is measured
+		// FALSE in all three install modes — see the full correction and the host-side
+		// mechanism on `api.registerSetting` below, and `epic-ibg4` for the runs.
+		// `api.zod` stays the right thing to write — just not for that reason.
 		parameters: api.zod.object({
 			text: api.zod.string().describe("What to echo back."),
 		}),
@@ -43,15 +47,22 @@ export default function outsider(api: ExtensionAPI): void {
 
 	api.registerSetting({
 		// `api.pluginSettingId`, the builder the host injects — not an import of
-		// `extensibility/settings`. An extension installed outside this repo lives in a
-		// config directory that has no `node_modules`, so that subpath resolves in a
-		// normal consumer but throws ERR_MODULE_NOT_FOUND from where extensions
-		// actually live. Same reason `api.zod` is injected below.
+		// `extensibility/settings`. It resolves to the same function either way; the
+		// injected form is written here because it reads the same as `api.zod` and
+		// needs no import at all.
+		//
+		// An earlier version of this comment said the import was IMPOSSIBLE from an
+		// out-of-repo extension — "a config directory has no `node_modules` to walk up
+		// to", so the subpath threw ERR_MODULE_NOT_FOUND. That is measured FALSE in all
+		// three install modes (see `epic-ibg4`): the host resolves its own specifiers
+		// via a `Bun.plugin` filter on `@oh-my-pi/pi-coding-agent/*` that answers from
+		// the HOST's own directory, so the anchor travels with the install and not with
+		// the extension.
 		//
 		// The `plugins.` prefix is not cosmetic. `config/registry.ts:899` refuses any id
 		// outside `plugins.<id>.<key>`, and it throws during registration — so a flat id
 		// does not merely lose this one key, it fails the whole load and takes the other
-		// surfaces down with it.
+		// surfaces down with it. That much is what this line is really for.
 		id: api.pluginSettingId("outsider", "greeting"),
 		type: "string",
 		default: "outsider default",

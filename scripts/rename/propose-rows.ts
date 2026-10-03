@@ -407,6 +407,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 			outcomes.push({
 				line: lineNo,
 				raw,
+				row: raw,
 				verdict: "reject",
 				reason:
 					`${filePath} already has ${matches.length} ${disposition} rows ` +

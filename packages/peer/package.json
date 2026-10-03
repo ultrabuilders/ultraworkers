@@ -57,6 +57,7 @@
   "test": "bun test --parallel"
  },
  "dependencies": {
+  "@oh-my-pi/pi-coding-agent": "catalog:",
   "@oh-my-pi/pi-utils": "catalog:"
  }
 }

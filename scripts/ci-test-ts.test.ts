@@ -575,7 +575,7 @@ describe("discarded probe reporting", () => {
 	});
 
 	test("reports a probe that ran in a passing chunk, over the real runner", async () => {
-		using dir = TempDir.createSync("omp-probe-warn-");
+		using dir = TempDir.createSync("ultraworkers-probe-warn-");
 		await Bun.write(dir.join("probed.test.ts"), probeSource('probe("fired-once");'));
 		const result = await runRealRunner(dir, ["probed.test.ts"]);
 		// The chunk passed — that is the precondition for the silence this reports.
@@ -588,7 +588,7 @@ describe("discarded probe reporting", () => {
 		// The false-positive guard, and the reason the count is keyed on a tag rather than
 		// on "this chunk produced output": a passing chunk always produces output, so that
 		// key would warn on every run and be read as noise within a week.
-		using dir = TempDir.createSync("omp-probe-quiet-");
+		using dir = TempDir.createSync("ultraworkers-probe-quiet-");
 		await Bun.write(
 			dir.join("plain.test.ts"),
 			'import { expect, test } from "bun:test";\ntest("no probe", () => {\n\texpect(1).toBe(1);\n});\n',

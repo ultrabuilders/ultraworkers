@@ -141,7 +141,22 @@ export interface NumberDefinition extends DefinitionBase {
 export interface EnumDefinition<T extends readonly string[] = readonly string[]> extends DefinitionBase {
 	type: "enum";
 	values: T;
-	default: T[number];
+	/**
+	 * May be absent, like every other variant's default.
+	 *
+	 * An enum with no default is a FOUR-state setting, not a three-state one, and
+	 * the fourth state is load-bearing rather than a convenience: `crossSessionInbound`
+	 * (`packages/coding-agent/src/peer/settings.ts`) must distinguish "the user chose
+	 * accept" from "the user chose nothing", because the latter falls back to comparing
+	 * the two sessions' permission classes while the former does not. Giving it a
+	 * default of `"accept"` would make admitting peer messages the accidental
+	 * behaviour of a fresh install, which is the opposite of what the value means.
+	 *
+	 * `boolean`, `string` and `number` all permitted `undefined` before this; enum
+	 * was the odd one out, and the asymmetry was the only thing forcing a
+	 * three-state fiction on a setting that has four states.
+	 */
+	default: T[number] | undefined;
 	env?: SettingEnv<T[number]>;
 	ui?: UiEnum<T>;
 }
@@ -188,9 +203,11 @@ export type DefinitionValue<D> = D extends { type: "boolean"; default: undefined
 				? number | undefined
 				: D extends { type: "number" }
 					? number
-					: D extends { type: "enum"; values: infer V }
+					: D extends { type: "enum"; values: infer V; default: infer DV }
 						? V extends readonly string[]
-							? V[number]
+							? undefined extends DV
+								? V[number] | undefined
+								: V[number]
 							: never
 						: D extends { type: "array" | "record"; default: infer V }
 							? V

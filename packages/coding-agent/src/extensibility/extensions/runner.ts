@@ -2218,10 +2218,18 @@ export class ExtensionRunner {
 		// `ctx.ui.notify(...)` and got a `TypeError`, while `hasUI` — a field, hence an
 		// own property — survived and still advertised a live UI.
 		//
-		// Members are *bound* to the target rather than only read off it. Passing
-		// `target` as `Reflect.get`'s receiver pins `this` for a getter, but calling
-		// `proxy.notify(...)` still invokes the function with `this` bound to the proxy,
-		// and reading a `#private` field through that throws.
+		// Members are *bound* to the target rather than only read off it: passing
+		// `receiver` to `Reflect.get` pins `this` for a getter, but calling
+		// `proxy.notify(...)` still invokes the function with `this` bound to the proxy.
+		// That is safe only because this class reads its state through own properties.
+		// AGENTS.md requires `#private` fields, so the first one added here makes every
+		// method reached through this wrapper throw — the bind below is what keeps that
+		// from being silent.
+		//
+		// No `set` trap: assigning through the wrapper writes to the shared host
+		// context, where the spread it replaced would have dropped the write. That is
+		// the honest direction for a surface the host also owns, and no caller in the
+		// tree assigns to it — but it is a change, not a preservation.
 		const forwarded = new Map<PropertyKey, unknown>();
 		const wrapped: ExtensionUIContext = new Proxy(target, {
 			get: (receiver, prop) => {

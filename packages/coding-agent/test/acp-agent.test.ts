@@ -714,20 +714,6 @@ describe("ACP agent", () => {
 		const harness = await createHarness();
 		const addGate = path.join(harness.cwdA, "rug-pull-add-gate");
 
-		let session!: FakeAgentSession;
-		const waitForReasons = async (count: number): Promise<void> => {
-			const deadline = Date.now() + 15_000;
-			while (Date.now() < deadline) {
-				if (session.mcpRefreshReasons.length >= count) return;
-				await Bun.sleep(25);
-			}
-			// Report what actually arrived: "expected 2 refreshes" alone cannot tell a
-			// host that never fired from one that fired with the wrong reason.
-			throw new Error(
-				`timed out waiting for ${count} MCP refresh(es); got ${JSON.stringify(session.mcpRefreshReasons)}`,
-			);
-		};
-
 		const created = await harness.agent.newSession({
 			cwd: harness.cwdA,
 			mcpServers: [
@@ -740,7 +726,20 @@ describe("ACP agent", () => {
 			],
 		} as unknown as Parameters<typeof harness.agent.newSession>[0]);
 
-		session = harness.findSession(created.sessionId) as unknown as FakeAgentSession;
+		const session = harness.findSession(created.sessionId) as unknown as FakeAgentSession;
+
+		const waitForReasons = async (count: number): Promise<void> => {
+			const deadline = Date.now() + 15_000;
+			while (Date.now() < deadline) {
+				if (session.mcpRefreshReasons.length >= count) return;
+				await Bun.sleep(25);
+			}
+			// Report what actually arrived: "expected 2 refreshes" alone cannot tell a
+			// host that never fired from one that fired with the wrong reason.
+			throw new Error(
+				`timed out waiting for ${count} MCP refresh(es); got ${JSON.stringify(session.mcpRefreshReasons)}`,
+			);
+		};
 
 		// The server's initial catalog: the user asked for this connection, so the
 		// manager declares `"connect"` and the arriving tools must be activated.

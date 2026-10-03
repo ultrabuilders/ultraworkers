@@ -1,6 +1,7 @@
 import * as path from "node:path";
-import { APP_NAME, isCompiledBinary, logger, withTimeout, workerHostEntry } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getLogsDir, isCompiledBinary, logger, withTimeout, workerHostEntry } from "@oh-my-pi/pi-utils";
 import type { Subprocess } from "bun";
+import { shortenPath } from "@oh-my-pi/pi-tui/render/render-utils";
 import type { Browser, CDPSession } from "puppeteer-core";
 import { ToolAbortError } from "../tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -444,7 +445,7 @@ async function openSharedHeadlessHandle(
 		});
 		if (!shared) {
 			throw new ToolError(
-				`Shared browser daemon unavailable (broker start or Chromium launch failed); check \`${APP_NAME} ps\` for omp.browser.* daemons and ~/.omp/logs for details`,
+				`Shared browser daemon unavailable (broker start or Chromium launch failed); check \`${APP_NAME} ps\` for omp.browser.* daemons and ${shortenPath(getLogsDir())} for details`,
 			);
 		}
 		const puppeteer = await loadPuppeteer();

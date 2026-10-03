@@ -199,6 +199,15 @@ describe("pre-commit guard", () => {
 		// what keeps that step from being a promise: it asserts the UNPROTECTED
 		// state is observable, so "the guard is active here" stops being an
 		// assumption and becomes something a reader can go verify.
+		//
+		// WHAT THIS ROW IS EVIDENCE ABOUT — worth stating, because "10 pass" is easy
+		// to misread as "the guard is tested". This row is evidence about GIT: that
+		// an uninstalled hook is silent and a bare commit then succeeds. It is not
+		// evidence about the guard's logic, and it would pass identically if that
+		// logic were deleted outright — an absent hook never runs. The rows above,
+		// which install the hook and assert each refusal, are what test the guard.
+		// Read the two together: this one says the protection is OPT-IN per clone,
+		// those say what you get once it is on.
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "precommit-uninstalled-"));
 		const run = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
 		run(["init", "-q", "."]);

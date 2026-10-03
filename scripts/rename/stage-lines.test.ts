@@ -107,6 +107,53 @@ describe("stageReplacedLines", () => {
 	});
 });
 
+/**
+ * What a COMMIT does with the index this script writes.
+ *
+ * The tests above all stop at the index, which is the right boundary for staging —
+ * but it left the last step unmeasured, and that step is where a correct index gets
+ * thrown away. Measured on this tree 2026-10-03: seven rows staged here landed in
+ * the index exactly as intended, `git commit --only -- rows.tsv` was run next, and
+ * the commit carried eleven rows — the two a peer had added to the same file and
+ * left uncommitted. `--only` rebuilds the named path from the WORKING TREE, so
+ * choosing the index at stage time does not carry the index into the commit.
+ *
+ * These assert which source the commit reads, by driving a real `git commit` and
+ * reading back what it wrote. Nothing here inspects a source file's text.
+ */
+describe("committing what stage-lines staged", () => {
+	it("carries the staged lines when the commit reads the index", async () => {
+		await makeRepo("rows.tsv", "a\nb\nc\n");
+		await fs.writeFile(path.join(repo!, "rows.tsv"), "a\nMINE\nPEERS\n");
+
+		await stageReplacedLines("rows.tsv", "a\nMINE\nPEERS\n", [2], repo);
+		await $`git commit -qm mine`.cwd(repo!).quiet();
+
+		// The peer's line stayed out, which is the whole point of staging a line.
+		expect(await $`git show HEAD:rows.tsv`.cwd(repo!).quiet().text()).toBe("a\nMINE\nc\n");
+	});
+
+	it("takes the WORKING TREE's rows, not the staged ones, under --only", async () => {
+		// The counterfactual for the test above: identical staging, one different
+		// commit verb. `--only` is documented as narrower than a bare commit, and it
+		// is — narrower in PATH. What it does not narrow is the SOURCE: it rebuilds
+		// the path from disk, so the peer's uncommitted line rides along.
+		//
+		// Both halves matter. If `--only` started reading the index, the first test
+		// would still pass and this one would go red, which is what makes the pair a
+		// claim about the flag rather than about this repository.
+		await makeRepo("rows.tsv", "a\nb\nc\n");
+		await fs.writeFile(path.join(repo!, "rows.tsv"), "a\nMINE\nPEERS\n");
+
+		await stageReplacedLines("rows.tsv", "a\nMINE\nPEERS\n", [2], repo);
+		await $`git commit -qm mine --only -- rows.tsv`.cwd(repo!).quiet();
+
+		const committed = await $`git show HEAD:rows.tsv`.cwd(repo!).quiet().text();
+		expect(committed).toContain("PEERS");
+		expect(committed).not.toBe("a\nMINE\nc\n");
+	});
+});
+
 describe("headBlob", () => {
 	it("returns HEAD's content, not the working tree's", async () => {
 		await makeRepo("rows.tsv", "committed\n");

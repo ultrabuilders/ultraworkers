@@ -14,7 +14,7 @@
  * absence assertion is the one carrying the contract, and it is the one that
  * looks like a mistake to a future reader who does not know why it is there.
  *
- * Run through a real `omp doctor` child process rather than by calling
+ * Run through a real `ultraworkers doctor` child process rather than by calling
  * `runDoctorChecks`, so what is checked is what a user actually sees — stdout,
  * after formatting, not the collector's return value.
  */

@@ -61,7 +61,7 @@ async function readCursor(stateDir: string): Promise<number | undefined> {
 class SmolLmWeightsMissingError extends Error {
 	constructor() {
 		super(
-			"SmolLM weights are not downloaded yet (the editor fetches them on first use, or run `omp tiny-models download smollm`)",
+			"SmolLM weights are not downloaded yet (the editor fetches them on first use, or run `ultraworkers tiny-models download smollm`)",
 		);
 	}
 }

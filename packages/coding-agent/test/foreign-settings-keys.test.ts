@@ -22,7 +22,7 @@ import { droppedForeignKeys, foreignSettingsWarning } from "@oh-my-pi/pi-coding-
 const KNOWN = new Set(["model", "theme", "tools"]);
 
 describe("a settings file belonging to another tool", () => {
-	it("reports the keys omp does not implement, and only those", () => {
+	it("reports the keys ultraworkers does not implement, and only those", () => {
 		const dropped = droppedForeignKeys({ model: "x", theme: "dark", permissions: {}, statusLine: {} }, KNOWN);
 
 		// The negative half matters as much: a key ultraworkers DOES implement must never be
@@ -31,12 +31,12 @@ describe("a settings file belonging to another tool", () => {
 		expect(dropped).toEqual(["permissions", "statusLine"]);
 	});
 
-	it("returns nothing for a file omp fully understands", () => {
+	it("returns nothing for a file ultraworkers fully understands", () => {
 		// Without this row, "always reports something" would satisfy the test above.
 		expect(droppedForeignKeys({ model: "x", theme: "dark" }, KNOWN)).toEqual([]);
 	});
 
-	it("names the directories omp actually reads when `hooks` is the dropped key", () => {
+	it("names the directories ultraworkers actually reads when `hooks` is the dropped key", () => {
 		// The row that gives the warning its point. A user who wrote a `hooks` block
 		// needs to learn WHERE ultraworkers looks, or they will keep editing a file that is
 		// never consulted for hooks.

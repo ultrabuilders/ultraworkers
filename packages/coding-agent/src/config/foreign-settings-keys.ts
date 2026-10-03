@@ -38,9 +38,9 @@ export function foreignSettingsWarning(filePath: string, dropped: readonly strin
 	const listed = dropped.join(", ");
 	const hooksIgnored = dropped.includes(HOOKS_KEY);
 	const hookAdvice = hooksIgnored
-		? ` In particular, omp reads hooks from the ${HOOKS_KEY}/pre/ and ${HOOKS_KEY}/post/ directories, ` +
+		? ` In particular, ultraworkers reads hooks from the ${HOOKS_KEY}/pre/ and ${HOOKS_KEY}/post/ directories, ` +
 			`not from this file's \`${HOOKS_KEY}\` key.`
 		: "";
 
-	return `${filePath} sets keys omp does not implement and ignored: ${listed}.${hookAdvice}`;
+	return `${filePath} sets keys ultraworkers does not implement and ignored: ${listed}.${hookAdvice}`;
 }

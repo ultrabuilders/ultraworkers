@@ -12,7 +12,7 @@
  * So this spawns the actual entry module. The bead's gate is explicit that an
  * e2e line running `resolveCliArgv` inside the test process **fails** it, and
  * that the discriminating question is whether the child process's stdout
- * contains prompt content: `omp <verb>` opening a chat with `<verb>` sitting in
+ * contains prompt content: `ultraworkers <verb>` opening a chat with `<verb>` sitting in
  * the prompt is the bug, and only a child process can show it.
  *
  * ## What makes the pair mean something
@@ -73,7 +73,7 @@ async function runCli(agentDir: string, args: string[]): Promise<CliRun> {
 	return { exitCode, stdout, stderr };
 }
 
-describe("omp <verb> in a real CLI process", () => {
+describe("ultraworkers <verb> in a real CLI process", () => {
 	it("CONTROL: with nothing installed to answer, the verb never reaches a handler", async () => {
 		using tempDir = TempDir.createSync("@ultraworkers-subcmd-e2e-control-");
 		// The agent dir exists but holds no extension, so the verb is unclaimed.

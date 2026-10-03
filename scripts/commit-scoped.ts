@@ -244,12 +244,23 @@ export async function commitStagedPaths(
 }
 
 if (import.meta.main) {
-	const { files, message, dryRun } = parseArgs(process.argv.slice(2));
-	const result = await commitStagedPaths(files, message, { dryRun });
-	const verb = dryRun ? "would commit" : "committed";
-	process.stdout.write(
-		`${verb} ${result.committed.join(", ")}` +
-			(result.wroteCommit ? ` as ${result.commit.slice(0, 9)} (from ${result.base.slice(0, 9)})` : "") +
-			"\nevery other staged entry is untouched and still staged\n",
-	);
+	try {
+		const { files, message, dryRun } = parseArgs(process.argv.slice(2));
+		const result = await commitStagedPaths(files, message, { dryRun });
+		const verb = dryRun ? "would commit" : "committed";
+		process.stdout.write(
+			`${verb} ${result.committed.join(", ")}` +
+				(result.wroteCommit ? ` as ${result.commit.slice(0, 9)} (from ${result.base.slice(0, 9)})` : "") +
+				"\nevery other staged entry is untouched and still staged\n",
+		);
+	} catch (error) {
+		// These throws are refusals, not crashes: "nothing is staged for <path>",
+		// "HEAD moved while the commit was being built", "name at least one path".
+		// Each message is already written to be read by whoever ran the command, so
+		// let it reach them — an uncaught rejection buries one actionable sentence
+		// under a stack trace of internal frames, which is how a caller ends up
+		// reading the wrong line and concluding the tree is broken.
+		process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+		process.exitCode = 1;
+	}
 }

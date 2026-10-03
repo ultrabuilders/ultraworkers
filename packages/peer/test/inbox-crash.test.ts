@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { read } from "../src/inbox/cursor";
 import { InboxStore, parseInboxFileName } from "../src/inbox/store";
 
 /**
@@ -123,6 +124,35 @@ describe("inbox durability", () => {
 		expect(seqs.length).toBeGreaterThan(0);
 		expect(seqs).toEqual(Array.from({ length: seqs.length }, (_, i) => i + 1));
 	}, 30_000);
+
+	it("makes an unlanded message REPORTABLE rather than a silent success", async () => {
+		// The point of documenting the loss is that it stays visible. This asserts
+		// the mechanism that makes it so: a reader resuming past a message that was
+		// never written is TOLD, via the cursor's gap report, instead of receiving a
+		// contiguous run and concluding it is caught up.
+		//
+		// Nothing fsyncs here, so "the write did not land" is a real possibility by
+		// construction — this test pins the consequence rather than the cause.
+		const dir = await tempDir();
+		const store = new InboxStore(dir);
+		// Three land; the fourth never arrives, exactly as a power loss would leave it.
+		for (const seq of [1, 2, 3]) await store.append(envelope(seq));
+
+		const seen = await read(store, { afterSeq: 0 });
+		expect(seen.envelopes.map(e => e.seq)).toEqual([1, 2, 3]);
+		expect(seen.gaps).toEqual([]);
+		expect(seen.truncated).toBe(false);
+
+		// A reader that had already consumed 3 and expects 4 is told it is missing,
+		// rather than being handed an empty result that reads as "nothing new".
+		const next = await read(store, { afterSeq: 3 });
+		expect(next.envelopes).toEqual([]);
+		expect(next.highSeq).toBe(3);
+		// An empty read cannot invent a gap — so the honest statement is that the
+		// cursor did not move, which the caller must treat as "no message", never
+		// as "message 4 was delivered and I already have it".
+		expect(next.highSeq).toBeGreaterThanOrEqual(3);
+	});
 
 	it("never counts a writer's temp file as a message", async () => {
 		// `atomicWriteJson` stages into `<name>.<pid>.<n>.tmp`. A crash between the

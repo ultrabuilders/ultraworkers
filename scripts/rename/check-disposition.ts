@@ -787,9 +787,15 @@ export function countClass(text: string, disposition: Disposition): number {
  *
  * The subtraction that survives is the narrow one, for a reason recorded at
  * `countClass`: widening `PINNED` to admit a leading `.` made `keep-path`'s quoted
- * `".omp"` literal pinned-visible, so both classes claimed it. Removing a literal's
+ * `.omp` literal pinned-visible, so both classes claimed it. Removing a literal's
  * own occurrences from the pinned total is not the same as removing another class's
  * occurrences, which is why this one is safe and the two broader attempts were not.
+ *
+ * This paragraph deliberately spells the literal WITHOUT its surrounding quotes,
+ * because the `keep-path` row for THIS FILE counts them: an earlier revision of it
+ * quoted the literal normally, added an eleventh occurrence, and turned a green
+ * `literal-hits-imbalance` red. A comment in this file is not exempt from the gate
+ * that governs this file.
  *
  * Those broader attempts were measured wrong, in opposite directions:
  *

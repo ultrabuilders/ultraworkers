@@ -138,6 +138,18 @@ packages/wire/package.json
 #       bare filename on purpose — a `packages/**.ts` path after this header is
 #       read as a live freeze citation by the gate, and this one is not live.
 #
+#   packages/agent/src/telemetry/schema.ts:47
+#       Docblock literal, not a wire literal — the distinction is the whole
+#       reason it is safe. The file's own header (lines 36-92) states that every
+#       span name and attribute key it declares IS a wire value and therefore
+#       renamed to `omp.*`, and the `"oh-my-pi"` on line 47 sits inside that
+#       argument: it is the counter-example, quoting `SERVICE_NAME` to name the
+#       decision recorded at keep-list.txt:93 (telemetry-export-otlp.ts:51).
+#       Renaming it would leave the docblock asserting a freeze against a
+#       string it no longer shows, and the reader could not tell the kept wire
+#       value from the prose describing it. Recorded so the exemption is
+#       visible, not so the literal is protected from review.
+#
 # RULE OF THUMB, agreed for the rename pass: it does not change wire-visible
 # strings. Changing one by mistake is silent and unrecoverable; leaving a
 # constant that merely LOOKS stale costs nothing.

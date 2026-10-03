@@ -85,7 +85,7 @@
       },
     },
     "packages/client": {
-      "name": "@oh-my-pi/pi-client",
+      "name": "@ultraworkers/pi-client",
       "version": "18.4.3",
       "dependencies": {
         "@oh-my-pi/chord": "catalog:",
@@ -852,7 +852,7 @@
 
     "@oh-my-pi/pi-catalog": ["@oh-my-pi/pi-catalog@workspace:packages/catalog"],
 
-    "@oh-my-pi/pi-client": ["@oh-my-pi/pi-client@workspace:packages/client"],
+    "@ultraworkers/pi-client": ["@ultraworkers/pi-client@workspace:packages/client"],
 
     "@oh-my-pi/pi-codemode": ["@oh-my-pi/pi-codemode@workspace:packages/codemode"],
 

@@ -1,5 +1,5 @@
 {
-	"name": "@oh-my-pi/pi-client",
+	"name": "@ultraworkers/pi-client",
 	"version": "18.4.3",
 	"description": "Transport-neutral client for remote omp sessions over framed CBOR bytes",
 	"keywords": [

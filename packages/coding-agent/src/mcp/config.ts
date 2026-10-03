@@ -158,6 +158,26 @@ export async function loadAllMCPConfigs(cwd: string, options?: LoadMCPConfigsOpt
 	let configs: Record<string, MCPServerConfig> = {};
 	let sources: Record<string, SourceMeta> = {};
 	for (const server of result.items) {
+		// GAP-D9 (`a4`, 2026-10-03): opting in to a project-scope `.mcp.json` means
+		// "these servers may be loaded", NOT "any shell these servers name may run".
+		// Permission and target must stay separate — a user who turns on project
+		// config to use the MCP servers of the repo they are working in has not
+		// agreed to let that repo drive their `/bin/sh` through a `!command` value.
+		//
+		// Forced HERE, at load, rather than at resolve time in `manager.ts`, because
+		// this is the last point where `_source` is attached. Downstream, both carriers
+		// already honour these flags independently:
+		//
+		//   manager.ts:2074  resolved.env && resolved.envPolicy !== "literal"
+		//   manager.ts:2095  resolved.headers && resolved.headerPolicy !== "origin-locked"
+		//
+		// so both are covered by construction and neither can be fixed while the other
+		// is missed. `convertToLegacyConfig` forwards `envPolicy` / `headerPolicy`
+		// only when set, so setting them here is what puts them on the config.
+		if (server._source.level === "project") {
+			server.envPolicy = "literal";
+			server.headerPolicy = "origin-locked";
+		}
 		configs[server.name] = convertToLegacyConfig(server);
 		sources[server.name] = server._source;
 	}

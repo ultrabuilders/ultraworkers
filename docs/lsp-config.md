@@ -73,20 +73,20 @@ Do not mix wrapped and flat server entries: when `servers` is present, sibling k
 
 ## ServerConfig fields
 
-| Field                   | Type       | Required for a new server | Description                                                                                              |
-| ----------------------- | ---------- | ------------------------: | -------------------------------------------------------------------------------------------------------- |
-| `command`               | `string`   |                       yes | Binary name (resolved through local bins / PATH) or absolute path                                        |
-| `args`                  | `string[]` |                        no | Arguments passed to the binary                                                                           |
-| `fileTypes`             | `string[]` |                       yes | File extensions this server handles, for example `[".ts", ".tsx"]`                                       |
-| `languageId`            | `string`   |                        no | LSP language id sent in `textDocument/didOpen`; inferred from the file path when omitted                 |
-| `rootMarkers`           | `string[]` |                       yes | Files/directories indicating a project root; one-level wildcard patterns such as `*.cabal` are supported |
-| `initOptions`           | `object`   |                        no | Sent as `initializationOptions` during the LSP handshake                                                 |
-| `settings`              | `object`   |                        no | Pushed via `workspace/didChangeConfiguration`                                                            |
-| `disabled`              | `boolean`  |                        no | Set `true` to disable this server                                                                        |
-| `warmupTimeoutMs`       | `number`   |                        no | Startup timeout for this server in milliseconds                                                          |
+| Field                   | Type       | Required for a new server | Description                                                                                                                                              |
+| ----------------------- | ---------- | ------------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`               | `string`   |                       yes | Binary name (resolved through local bins / PATH) or absolute path                                                                                        |
+| `args`                  | `string[]` |                        no | Arguments passed to the binary                                                                                                                           |
+| `fileTypes`             | `string[]` |                       yes | File extensions this server handles, for example `[".ts", ".tsx"]`                                                                                       |
+| `languageId`            | `string`   |                        no | LSP language id sent in `textDocument/didOpen`; inferred from the file path when omitted                                                                 |
+| `rootMarkers`           | `string[]` |                       yes | Files/directories indicating a project root; one-level wildcard patterns such as `*.cabal` are supported                                                 |
+| `initOptions`           | `object`   |                        no | Sent as `initializationOptions` during the LSP handshake                                                                                                 |
+| `settings`              | `object`   |                        no | Pushed via `workspace/didChangeConfiguration`                                                                                                            |
+| `disabled`              | `boolean`  |                        no | Set `true` to disable this server                                                                                                                        |
+| `warmupTimeoutMs`       | `number`   |                        no | Startup timeout for this server in milliseconds                                                                                                          |
 | `isLinter`              | `boolean`  |                        no | Marks a dedicated linter/formatter server: excluded from type-intelligence, but preferred over type-checkers when choosing the `formatOnWrite` formatter |
-| `capabilities`          | `object`   |                        no | Opt-in server-specific features; see [Capabilities](#capabilities)                                       |
-| `workspaceReadyTimings` | `object`   |                        no | Advanced rust-analyzer workspace-readiness timing overrides; see below                                   |
+| `capabilities`          | `object`   |                        no | Opt-in server-specific features; see [Capabilities](#capabilities)                                                                                       |
+| `workspaceReadyTimings` | `object`   |                        no | Advanced rust-analyzer workspace-readiness timing overrides; see below                                                                                   |
 
 The required fields may be omitted from an override of a built-in server because they are inherited before validation. A genuinely new server needs all three. `resolvedCommand` and `createClient` are runtime-owned fields and must not be configured.
 
@@ -96,13 +96,13 @@ The `capabilities` object enables optional server-specific features that ultrawo
 
 ```json
 {
-  "capabilities": {
-    "flycheck": true,
-    "ssr": true,
-    "expandMacro": true,
-    "runnables": true,
-    "relatedTests": true
-  }
+	"capabilities": {
+		"flycheck": true,
+		"ssr": true,
+		"expandMacro": true,
+		"runnables": true,
+		"relatedTests": true
+	}
 }
 ```
 
@@ -114,16 +114,16 @@ All fields are boolean and optional. They are currently used by `rust-analyzer`.
 
 ```json
 {
-  "servers": {
-    "rust-analyzer": {
-      "workspaceReadyTimings": {
-        "timeoutMs": 30000,
-        "pollMs": 250,
-        "settleMs": 2000,
-        "statusRequestTimeoutMs": 2000
-      }
-    }
-  }
+	"servers": {
+		"rust-analyzer": {
+			"workspaceReadyTimings": {
+				"timeoutMs": 30000,
+				"pollMs": 250,
+				"settleMs": 2000,
+				"statusRequestTimeoutMs": 2000
+			}
+		}
+	}
 }
 ```
 
@@ -137,32 +137,32 @@ Partial overrides are merged onto the built-in defaults. You only need to specif
 
 ```json
 {
-  "servers": {
-    "typescript-language-server": {
-      "args": ["--stdio", "--log-level", "4"]
-    }
-  }
+	"servers": {
+		"typescript-language-server": {
+			"args": ["--stdio", "--log-level", "4"]
+		}
+	}
 }
 ```
 
 ```yaml
 servers:
-  gopls:
-    settings:
-      gopls:
-        gofumpt: false
-        staticcheck: false
+   gopls:
+      settings:
+         gopls:
+            gofumpt: false
+            staticcheck: false
 ```
 
 ### Disable a built-in server
 
 ```json
 {
-  "servers": {
-    "eslint": {
-      "disabled": true
-    }
-  }
+	"servers": {
+		"eslint": {
+			"disabled": true
+		}
+	}
 }
 ```
 
@@ -172,14 +172,14 @@ New servers require non-empty `command`, `fileTypes`, and `rootMarkers`. Invalid
 
 ```json
 {
-  "servers": {
-    "my-lsp": {
-      "command": "my-lsp-server",
-      "args": ["--stdio"],
-      "fileTypes": [".xyz"],
-      "rootMarkers": [".xyz-project", ".git"]
-    }
-  }
+	"servers": {
+		"my-lsp": {
+			"command": "my-lsp-server",
+			"args": ["--stdio"],
+			"fileTypes": [".xyz"],
+			"rootMarkers": [".xyz-project", ".git"]
+		}
+	}
 }
 ```
 
@@ -189,7 +189,7 @@ Shut down language servers that have been inactive for more than five minutes:
 
 ```json
 {
-  "idleTimeoutMs": 300000
+	"idleTimeoutMs": 300000
 }
 ```
 
@@ -199,11 +199,11 @@ Place the override in `<project>/.omp/lsp.json`:
 
 ```json
 {
-  "servers": {
-    "pylsp": {
-      "disabled": true
-    }
-  }
+	"servers": {
+		"pylsp": {
+			"disabled": true
+		}
+	}
 }
 ```
 

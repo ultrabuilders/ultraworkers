@@ -97,26 +97,26 @@ A marketplace catalog lives at `.omp-plugin/marketplace.json` in the repository 
 
 ```json
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "my-marketplace",
-  "owner": {
-    "name": "Your Name",
-    "email": "you@example.com"
-  },
-  "metadata": {
-    "description": "A collection of plugins",
-    "version": "1.0.0",
-    "pluginRoot": "plugins"
-  },
-  "plugins": [
-    {
-      "name": "my-plugin",
-      "description": "What this plugin does",
-      "source": "./my-plugin",
-      "category": "development",
-      "homepage": "https://github.com/you/my-plugin"
-    }
-  ]
+	"$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+	"name": "my-marketplace",
+	"owner": {
+		"name": "Your Name",
+		"email": "you@example.com"
+	},
+	"metadata": {
+		"description": "A collection of plugins",
+		"version": "1.0.0",
+		"pluginRoot": "plugins"
+	},
+	"plugins": [
+		{
+			"name": "my-plugin",
+			"description": "What this plugin does",
+			"source": "./my-plugin",
+			"category": "development",
+			"homepage": "https://github.com/you/my-plugin"
+		}
+	]
 }
 ```
 
@@ -137,7 +137,7 @@ such an entry installs and is then discarded by the loader with only a log line,
 language server silently never starts.
 
 Two things it deliberately does not do. It rejects only what would **vanish**, not what merely
-differs from expectation: a misspelled *optional* field costs an override, not a server. And it is
+differs from expectation: a misspelled _optional_ field costs an override, not a server. And it is
 catalog-level because parsing is all-or-nothing — a per-entry flag would let one entry from a
 remote marketplace fail every other plugin in it.
 

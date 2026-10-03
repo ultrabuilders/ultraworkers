@@ -25,7 +25,7 @@ block exists in the tree today.
 - **No shipped example persists anything.** Searching
   `packages/coding-agent/examples/extensions/` for `Bun.write`, `Bun.file`,
   `readFileSync`, `writeFileSync` returns **zero hits**. The common claim that
-  extensions "roll their own files" is therefore *not observable in this repo*;
+  extensions "roll their own files" is therefore _not observable in this repo_;
   what is observable is the absence of a primitive.
 - **The shipped baseline is session-entry replay** (`docs/extensions.md`,
   `## Session and state patterns`): persist with
@@ -65,7 +65,7 @@ not user configuration, so it does not belong in a file the user edits, and
 that already mean something else.
 
 **(C) Session-entry replay.** Free, documented, and already the shipped guidance.
-**Rejected as the answer to *this* question, not as bad advice.** A custom entry
+**Rejected as the answer to _this_ question, not as bad advice.** A custom entry
 lives on a session branch, so it does not survive the session, and the pattern is
 append-and-replay — nearest matching entry wins — not get/set by key.
 
@@ -122,7 +122,7 @@ notes about code that does.
    **migrated** to the new identity, with the previous path recorded in the
    store's own metadata so a move back is not a second loss.
 
-   > *Flagged for the owner:* the one place this document decides rather than
+   > _Flagged for the owner:_ the one place this document decides rather than
    > reads, because the plan leaves it open. Migrate was chosen over "reject the
    > rename" (which punishes a user for moving a directory) and over "record as
    > abandoned" (silent loss wearing a comment). Re-check it first.
@@ -158,8 +158,8 @@ owner decision with work behind it.
 
 - **The build is a work item nobody has claimed** — no bead, no milestone, no owner.
 - **Its technical condition is WI-9** (wave 7). The plan records verbatim:
-  *"cleanup khi uninstall không thi triển khả thi tới khi WI-9 có một unload
-  thật."* The measurement above confirms that condition is still unmet.
+  _"cleanup khi uninstall không thi triển khả thi tới khi WI-9 có một unload
+  thật."_ The measurement above confirms that condition is still unmet.
 - **If the build is pulled into M2 after wave 7, a green WI-9 is necessary but not
   sufficient.** It supplies the unload; it does not supply the decision about
   which unload event deletes state, which is unresolved above.
@@ -171,10 +171,10 @@ No phase labels are used here. The plan has no phase concept.
 
 A maintainer should answer all five from the text alone.
 
-| # | Question | Answer | Where |
-|---|---|---|---|
-| a | Which foundation won, and why were the others rejected? | (B), on a statable lifecycle property. (A) rejected: plugin state is not user config, and the provenance layers name human intent. (C) rejected: session-scoped append-and-replay | "The design question" |
-| b | Where does the data live on disk? | `<state-root>/extensions-state/<extension-id>.json`, via a new `getExtensionsStateDir()` beside `getPluginsDir()` | "Recommended shape" |
-| c | What happens to an extension's state on unload, and does that affect others? | Dropped for that extension only; per-path ownership keeps others readable even across a shared key name | "Contracts", 1 |
-| d | What happens when an extension's identity changes? | Values are migrated to the new identity, previous path recorded — stated, not merely prohibited | "Contracts", 2 |
-| e | Who owns the build and what blocks it? | Nobody owns it; WI-9 (wave 7) is the technical condition, and the unload-event question is open | "Status: designed, build unowned" |
+| #   | Question                                                                     | Answer                                                                                                                                                                            | Where                             |
+| --- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| a   | Which foundation won, and why were the others rejected?                      | (B), on a statable lifecycle property. (A) rejected: plugin state is not user config, and the provenance layers name human intent. (C) rejected: session-scoped append-and-replay | "The design question"             |
+| b   | Where does the data live on disk?                                            | `<state-root>/extensions-state/<extension-id>.json`, via a new `getExtensionsStateDir()` beside `getPluginsDir()`                                                                 | "Recommended shape"               |
+| c   | What happens to an extension's state on unload, and does that affect others? | Dropped for that extension only; per-path ownership keeps others readable even across a shared key name                                                                           | "Contracts", 1                    |
+| d   | What happens when an extension's identity changes?                           | Values are migrated to the new identity, previous path recorded — stated, not merely prohibited                                                                                   | "Contracts", 2                    |
+| e   | Who owns the build and what blocks it?                                       | Nobody owns it; WI-9 (wave 7) is the technical condition, and the unload-event question is open                                                                                   | "Status: designed, build unowned" |

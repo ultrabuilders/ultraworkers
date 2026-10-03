@@ -23,12 +23,12 @@ array of physical rows, and layout is arithmetic on those widths.
 
 All in `packages/tui/src/components/layout/`:
 
-| Module | What it gives you |
-| --- | --- |
-| `geometry.ts` | The shared vocabulary. `LayoutRect`, `LayoutInsets`, `LayoutAlignment`, and `layoutSize()` — the size normalizer every primitive funnels external numbers through. |
-| `row.ts` | `Row` — horizontal composition with per-child width rules. Implements `MouseRoutable`. |
-| `stack.ts` | `Stack` — vertical composition. Implements `MouseRoutable`. |
-| `split-pane.ts` | `SplitPane` — the two-column primitive, and the only one that changes *shape* when width runs out. See §2. |
+| Module          | What it gives you                                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `geometry.ts`   | The shared vocabulary. `LayoutRect`, `LayoutInsets`, `LayoutAlignment`, and `layoutSize()` — the size normalizer every primitive funnels external numbers through. |
+| `row.ts`        | `Row` — horizontal composition with per-child width rules. Implements `MouseRoutable`.                                                                             |
+| `stack.ts`      | `Stack` — vertical composition. Implements `MouseRoutable`.                                                                                                        |
+| `split-pane.ts` | `SplitPane` — the two-column primitive, and the only one that changes _shape_ when width runs out. See §2.                                                         |
 
 `LayoutContent` is `Component | LayoutRenderer`, where a `LayoutRenderer` is
 just `(width, height) => readonly string[]`. You can drop a bare function
@@ -48,12 +48,12 @@ holds the reusable widgets. The ones an extension is most likely to want:
 
 - **`DynamicBorder`** (`chrome/dynamic-border.ts`) — a border whose color is a
   function, `(str: string) => string`, defaulting to the theme's `border` role.
-  Because it takes a styling *function* rather than a color, you can vary the
+  Because it takes a styling _function_ rather than a color, you can vary the
   border by state without swapping components.
 - **`TabBar`** (`components/tab-bar.ts`) — takes a `label`, a `Tab[]`, and a
   `TabBarTheme`. A `Tab` is `{ id, label, short?, muted? }`. Two of those fields
   earn their keep in narrow terminals: `short` is the compact label used when the
-  bar must fit one line, and `muted` renders a tab in the muted style *and* skips
+  bar must fit one line, and `muted` renders a tab in the muted style _and_ skips
   it during keyboard navigation — so muting is an accessibility affordance, not
   just a visual one. `TabBarTheme` styles `label`, `activeTab`, `inactiveTab`,
   and `hint`, with `mutedTab` and `hoverTab` optional and both falling back to
@@ -81,7 +81,7 @@ line up with the built-in ones.
 
 ### 2.1 What collapses, and when
 
-`SplitPane` is the only primitive that changes *shape* rather than merely
+`SplitPane` is the only primitive that changes _shape_ rather than merely
 re-flowing. It resolves to one of two modes (`SplitPaneGeometry.mode`):
 
 - `"split"` — both panes, separated by a divider.
@@ -91,12 +91,11 @@ The decision is a single predicate (`split-pane.ts:254-255`):
 
 ```ts
 const canSplit =
-  this.#narrowPane === undefined ||
-  (width >= this.#splitAt && splitAvailable >= leftMinimum + this.#rightMinWidth);
+	this.#narrowPane === undefined || (width >= this.#splitAt && splitAvailable >= leftMinimum + this.#rightMinWidth);
 ```
 
 Read it as: **collapse is opt-in twice over.** If you never set `narrowPane`,
-`SplitPane` always splits. If you do set it, you must *also* set a threshold —
+`SplitPane` always splits. If you do set it, you must _also_ set a threshold —
 `splitAt` (an absolute width), `rightMinWidth` (the floor the right pane needs),
 or `leftSize.min` — for the predicate to ever evaluate false.
 
@@ -125,16 +124,16 @@ M6 row 1 settled on option **(iii)**: keep composing string rows, and borrow onl
 two cheap things from opencode — its six-constant clamp table and its
 "shrink below the content threshold" rule. The table is the entirety of
 opencode's `packages/tui/src/ui/layout.ts` (23 lines), reproduced here because
-the *shape* is the point — a clamp is `max(min, min(desired, max))`:
+the _shape_ is the point — a clamp is `max(min, min(desired, max))`:
 
-| Constant | Value | Role |
-| --- | --- | --- |
-| `SESSION_SIDEBAR_WIDTH` | `42` | Default sidebar width. |
-| `SESSION_TABS_COMPACT_WIDTH` | `5` | Floor for the compact tab strip. |
-| `SESSION_TABS_COMPACT_BREAKPOINT` | `12` | Below this width, tabs go compact. |
-| `SESSION_SIDEBAR_MAX_WIDTH` | `72` | Ceiling for the sidebar. |
-| `SESSION_CONTENT_MIN_WIDTH` | `44` | **The content floor.** |
-| `SESSION_CONTENT_PREFERRED_WIDTH` | `64` | Width at which tabs stop fitting. |
+| Constant                          | Value | Role                               |
+| --------------------------------- | ----- | ---------------------------------- |
+| `SESSION_SIDEBAR_WIDTH`           | `42`  | Default sidebar width.             |
+| `SESSION_TABS_COMPACT_WIDTH`      | `5`   | Floor for the compact tab strip.   |
+| `SESSION_TABS_COMPACT_BREAKPOINT` | `12`  | Below this width, tabs go compact. |
+| `SESSION_SIDEBAR_MAX_WIDTH`       | `72`  | Ceiling for the sidebar.           |
+| `SESSION_CONTENT_MIN_WIDTH`       | `44`  | **The content floor.**             |
+| `SESSION_CONTENT_PREFERRED_WIDTH` | `64`  | Width at which tabs stop fitting.  |
 
 The rule those constants encode: the **content pane has a floor of 44 cells and
 the chrome yields first**. Both clamps bottom out by subtracting
@@ -173,7 +172,7 @@ The order the code implies, narrowest-last:
 2. **The divider, with them.** In narrow mode the divider is not rendered, and
    the surviving pane is one cell wider for it.
 3. **The secondary pane, not the primary.** `narrowPane` names the side that
-   *survives*; the other side is the one dropped. Choosing which is secondary is
+   _survives_; the other side is the one dropped. Choosing which is secondary is
    the extension author's call, and it is the decision that carries the most
    weight — pick the pane whose absence costs the user least.
 4. **Label width, then content.** `SettingsList` truncates labels at 30 cells

@@ -237,5 +237,5 @@ The CLI flags and files do **not** set `systemPrompt`: they select the plain/tem
 | Use `{{cwd}}` or other internal variables in a plain user file             | Not supported; plain user content is inserted verbatim                                                           |
 | Include live settings, tool inventory, or xdev docs in a template          | Reference the corresponding Handlebars fields, such as `{{eagerTasks}}`, `{{toolInventory}}`, and `{{xdevDocs}}` |
 | Inherit selected default-template sections automatically                   | Not supported; a template must reference the data it needs                                                       |
-| Per-directory override                                                     | A supported config base directly under the cwd used to launch ultraworkers                                                |
+| Per-directory override                                                     | A supported config base directly under the cwd used to launch ultraworkers                                       |
 | Global override                                                            | The active native agent directory, or another supported user config base                                         |

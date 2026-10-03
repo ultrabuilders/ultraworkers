@@ -145,7 +145,7 @@ packages/coding-agent/src/session/agent-session.ts:7812
 **Two answering sites, not one** — and this is the fact that makes the remaining
 gap smaller than it reads. `isProjectTrusted` is **wired at both**, both delegate
 to the same function, and both are live. It is not one callback with a second
-copy in reserve: an extension reaches it through the extension context *and*
+copy in reserve: an extension reaches it through the extension context _and_
 through the session context, and either path answers today.
 
 Both delegate to one function, `isProjectTrustedForScope` in
@@ -155,7 +155,7 @@ answers `true` only for `yes`. An undecided project answers `false`
 (`project-trust.ts:184`, `:186`). The value is therefore **real and
 falsifiable**, where the previous literal could not be false at all.
 
-Both call sites are assignments, and neither is a call *on core's behalf*. Core
+Both call sites are assignments, and neither is a call _on core's behalf_. Core
 asks nowhere; it only makes the answer available. That asymmetry is the whole
 of the remaining gap, and section 5 states it as one thing rather than two.
 
@@ -166,14 +166,14 @@ tests.**
 Measured by grepping every use of each exported primitive across `src/` and
 `test/`, excluding its own module:
 
-| primitive | uses in `src/` | uses in `test/` |
-| --- | --- | --- |
-| `assertTrusted` | **0** | 11 (`test/project-trust-gate.test.ts`) |
-| `isResourceTrusted` | **0** | 2 |
-| `resolveProjectTrust` | **0** | 6 |
-| `setProjectTrust` | **0** | 11 |
-| `isProjectTrustedForScope` | 2 (the call sites in `(d)`) | 4 |
-| `ProjectTrustError` | **0** | 6 |
+| primitive                  | uses in `src/`              | uses in `test/`                        |
+| -------------------------- | --------------------------- | -------------------------------------- |
+| `assertTrusted`            | **0**                       | 11 (`test/project-trust-gate.test.ts`) |
+| `isResourceTrusted`        | **0**                       | 2                                      |
+| `resolveProjectTrust`      | **0**                       | 6                                      |
+| `setProjectTrust`          | **0**                       | 11                                     |
+| `isProjectTrustedForScope` | 2 (the call sites in `(d)`) | 4                                      |
+| `ProjectTrustError`        | **0**                       | 6                                      |
 
 So the load path is still ungated, exactly as before: `.omp/extensions` and
 project-scoped plugin entries load unconditionally. What WI-20 built is the
@@ -183,7 +183,7 @@ refusal.
 > **`setProjectTrust` having no caller does not mean the decision is unwritable.**
 > `cfgProjectTrust` is registered with `ui.tab: "tools"`, and the settings host is
 > generic: it walks `orderedSettings()`, keeps anything whose `ui.tab` matches
-> (`config/settings-ui.ts:68`), and writes through `writeGlobalSetting` for *any*
+> (`config/settings-ui.ts:68`), and writes through `writeGlobalSetting` for _any_
 > setting carrying `ui` (`:96`). The config CLI reaches the same key through the
 > same generic call (`cli/config-cli.ts:324`). So there are two writers, neither
 > of which mentions `setProjectTrust` by name, and the decision persists — it
@@ -191,7 +191,7 @@ refusal.
 > accurate; read as "the value can never change" it is badly wrong, and that is
 > the reading this section exists to prevent.
 
-> **The asymmetry, which is the security-relevant part.** Because a value *can* be
+> **The asymmetry, which is the security-relevant part.** Because a value _can_ be
 > written, the two answers are not equivalent:
 >
 > - `yes` **has an effect** — `isProjectTrusted()` returns `true`, so an extension
@@ -231,7 +231,7 @@ refusal.
 > citing this document, cite the symbol.
 >
 > A line number rotting is a citation that got stale. Section 1(d) rotting is not
-> that: the *claim* became false, and every number in it stayed well-formed. A
+> that: the _claim_ became false, and every number in it stayed well-formed. A
 > mechanical anchor check would have passed that section indefinitely.
 
 ---
@@ -285,7 +285,7 @@ next release's entry is section 7's business — not this document's.
 
 **Answer: `ctx.exec` is outside the trust decision entirely, deliberately, on the
 reasoning that an extension which has loaded at all has already been trusted —
-and the decision has to say that `ctx.exec` is outside the *decision*, not merely
+and the decision has to say that `ctx.exec` is outside the _decision_, not merely
 outside an enforcement that happens not to exist yet.**
 
 It is declared on the extension context at
@@ -296,7 +296,7 @@ exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult
 ```
 
 Two things must be said together, or this section is the failure the work item
-names — a document that *looks* safe and is not:
+names — a document that _looks_ safe and is not:
 
 1. **By choice.** A gate whose boundary is module load, with `ctx.exec` left
    reachable from anything that passed it, is a boundary drawn in the wrong
@@ -304,7 +304,7 @@ names — a document that *looks* safe and is not:
    decision has to be made about the load path rather than about individual
    capabilities afterwards.
 2. **And currently moot.** Per `(e)`, no gate is wired, so `ctx.exec` is not
-   outside a working gate — it is outside a *proposed* one. Recording this answer
+   outside a working gate — it is outside a _proposed_ one. Recording this answer
    now is what keeps the future gate honest: whoever wires `assertTrusted` into
    the load path inherits this sentence as a commitment, and a gate that admits
    modules while leaving process-spawning reachable is not the gate this document
@@ -332,7 +332,7 @@ revision of this section got wrong. The declaration surface exists and works: th
 settings panel and the config CLI's `config set` writes the decision generically, it
 persists, and it survives a restart (see the writer note in section 1(e)). B is
 not waiting on a mechanism. It is waiting on a call to `assertTrusted` at the
-load path — *the same missing caller A is waiting on*. So the difference between
+load path — _the same missing caller A is waiting on_. So the difference between
 A and B is not the cost of recording a decision; that is done. It is whether the
 user is asked once, or is expected to have found a settings panel.
 
@@ -352,7 +352,7 @@ install's projects, on first run, with no default that is not itself a decision.
 The cost of A is not code, it is the `CONFIG_DIR_NAME`-class upgrade hazard that
 `extensibility/hooks/trust.ts` already reasoned its way around by making approval
 implicit and one-time — and that reasoning is not available here, because trust
-is per-*directory* and a repository can be untrusted without any single file
+is per-_directory_ and a repository can be untrusted without any single file
 having changed.
 
 Note what the previous revision claimed about A's cost and what is now true of it:
@@ -391,7 +391,7 @@ a future gate would be cheap. Silence on any of these would make this decision
 indistinguishable from never having decided.
 
 **Cost of choosing B, stated plainly:** the exposure in section 2 ships
-unmitigated past M2, and B is *specifically* the option that does not mitigate
+unmitigated past M2, and B is _specifically_ the option that does not mitigate
 it. A configuration boundary is a boundary only where something reads the
 configuration; per `(e)`, nothing does. Choosing B therefore buys a decision
 without a gate, and the entire remaining risk of this document is concentrated in
@@ -438,7 +438,7 @@ facts above:
 - **The mechanism is not missing; core's use of it is.** Per `(d)` the decision
   is already answerable at two live sites — `runner.ts:2020` and
   `agent-session.ts:7812`, both `isProjectTrusted: () =>
-  isProjectTrustedForScope(this.settings)`. So this item does not build a way to
+isProjectTrustedForScope(this.settings)`. So this item does not build a way to
   ask the question; it asks it earlier. That distinction is why the scope is
   "M–L" and not "M–XL": the decision, its storage, its UI, and its refusals are
   built and tested (`test/project-trust-gate.test.ts`, 11 rows). What is absent
@@ -490,7 +490,7 @@ programme. It is `packages/coding-agent/src/capability/index.ts` — **718 lines
 measured 2026-10-02, not the 614 quoted on 2026-10-01 and the 588 before that; the
 figure moves with the file, so treat it as a snapshot, not a specification.
 
-This is a *ruling on ownership*, not a completed implementation. It settles the
+This is a _ruling on ownership_, not a completed implementation. It settles the
 question "does an extension have a seam to reach this?" — the registry is in
 scope for decomposition, and a milestone proposing a capability that already
 exists there will be declined. It does **not** by itself create the seam, and it
@@ -526,8 +526,8 @@ implementation detail:
   runs. Refusing them is the decision every other section assumes.
 - `settings` is not the same kind of thing. The project-scoped settings file
   configures the agent; refusing it means a project cannot set a preference
-  without also being trusted to ship code. Whether a directory earns trust *to
-  configure* before it earns it *to execute* is exactly the question.
+  without also being trusted to ship code. Whether a directory earns trust _to
+  configure_ before it earns it _to execute_ is exactly the question.
 - `skills` sits between the two — a skill is content the agent reads, which is
   closer to configuration than to execution.
 

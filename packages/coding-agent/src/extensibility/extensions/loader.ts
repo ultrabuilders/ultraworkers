@@ -1,6 +1,7 @@
 /**
  * Extension loader - loads TypeScript extension modules using native Bun import.
  */
+import type { PeerLockBackend, PeerTransport } from "../../irc/peer-transport";
 import type * as fs1 from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -329,6 +330,18 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	registerFileWriteFallback(handler: FileWriteFallbackHandler): void {
 		this.extension.fileWriteFallbackHandlers.push(handler);
+	}
+
+	registerPeerTransport(impl: PeerTransport): void {
+		this.extension.peerTransports.push(impl);
+	}
+
+	unregisterPeerTransport(id: string): void {
+		this.extension.peerTransports = this.extension.peerTransports.filter(t => t.id !== id);
+	}
+
+	registerPeerLockBackend(impl: PeerLockBackend): void {
+		this.extension.peerLockBackends.push(impl);
 	}
 
 	registerFileDeleteFallback(handler: FileDeleteFallbackHandler): void {
@@ -791,6 +804,8 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		toolRegistrationListeners: new Set(),
 		assistantThinkingRenderers: [],
 		fileWriteFallbackHandlers: [],
+		peerTransports: [],
+		peerLockBackends: [],
 		compactionProtections: [],
 		contextTransforms: [],
 		configReloadDisposers: [],

@@ -4703,6 +4703,8 @@ describe("ExtensionRunner", () => {
 				tools: new Map(),
 				assistantThinkingRenderers: [],
 				fileWriteFallbackHandlers: [],
+				peerTransports: [],
+				peerLockBackends: [],
 				fileDeleteFallbackHandlers: [],
 				compactionProtections: [],
 				contextTransforms: [],

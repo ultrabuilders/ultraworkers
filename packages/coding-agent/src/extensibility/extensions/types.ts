@@ -1,5 +1,6 @@
 import type { CompactionTransactionObserver } from "../../session/compaction-transaction";
 export type { CompactionTransactionObserver };
+import type { PeerLockBackend, PeerTransport } from "../../irc/peer-transport";
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
 import type { pluginSettingId } from "../settings";
 // Extension surface -> config layer, never the reverse: `Settings` must not have to
@@ -1688,6 +1689,35 @@ export interface ExtensionAPI {
 	registerFileWriteFallback(handler: FileWriteFallbackHandler): void;
 
 	/**
+	 * Replace the channel peer messages travel over.
+	 *
+	 * **Provider-shaped**, like {@link registerProvider}: registering an override
+	 * and then {@link unregisterPeerTransport} restores the built-in, so "full
+	 * custom" has a defined exit rather than a permanent takeover.
+	 *
+	 * Call during extension load, like the other `register*` methods — transports
+	 * are installed when the runner initialises, so one registered later never
+	 * takes effect.
+	 *
+	 * @throws {PeerTransportProtocolMismatch} when `impl.protocolVersion` is not
+	 * the version this build speaks. Refused HERE rather than at send: skew
+	 * otherwise surfaces as an unknown message type and a dead socket, long after
+	 * the cause.
+	 */
+	registerPeerTransport(impl: PeerTransport): void;
+
+	/** Remove one transport override. The built-in transport returns. */
+	unregisterPeerTransport(id: string): void;
+
+	/**
+	 * Register a lock backend consulted **only after core has refused a claim** —
+	 * fallback-shaped, like {@link registerFileWriteFallback}. Core keeps
+	 * ownership: the backend says "this path is fine on my host", it does not take
+	 * over locking.
+	 */
+	registerPeerLockBackend(impl: PeerLockBackend): void;
+
+	/**
 	 * Contribute protection to the context prune pass, so results an extension owns
 	 * are not dropped out from under it as the context fills.
 	 *
@@ -2744,6 +2774,8 @@ export interface Extension {
 	assistantThinkingRenderers: AssistantThinkingRenderer[];
 	fileWriteFallbackHandlers: FileWriteFallbackHandler[];
 	fileDeleteFallbackHandlers: FileDeleteFallbackHandler[];
+	peerTransports: PeerTransport[];
+	peerLockBackends: PeerLockBackend[];
 	compactionProtections: CompactionProtection[];
 	contextTransforms: ContextTransform[];
 	messageRenderers: Map<string, MessageRenderer>;

@@ -1,6 +1,7 @@
 /**
  * Extension runner - executes extensions and manages their lifecycle.
  */
+import { addPeerLockBackend, addPeerTransport } from "../../irc/peer-transport";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	type AgentMessage,
@@ -624,6 +625,8 @@ export function clearExtensionBuckets(extension: Extension): void {
 	extension.assistantThinkingRenderers.length = 0;
 	extension.fileWriteFallbackHandlers.length = 0;
 	extension.fileDeleteFallbackHandlers.length = 0;
+	extension.peerTransports.length = 0;
+	extension.peerLockBackends.length = 0;
 	extension.compactionProtections.length = 0;
 	extension.contextTransforms.length = 0;
 	extension.messageRenderers.clear();
@@ -1297,6 +1300,21 @@ export class ExtensionRunner {
 						return false;
 					}),
 				);
+			}
+
+			// Peer seams are installed from the same load pass, and for the same
+			// reason: a registration made after the runner initialises never takes
+			// effect, so an extension that registers during its factory — as it
+			// must — is covered, and one that registers later is silently skipped
+			// exactly as the file fallbacks are.
+			for (const transport of ext.peerTransports) {
+				// A version mismatch throws here rather than being logged and ignored:
+				// an extension built against another wire version cannot work, and
+				// failing at load says so at the only moment anyone can act on it.
+				this.#pushFallbackDisposer(ext.path, addPeerTransport(transport));
+			}
+			for (const backend of ext.peerLockBackends) {
+				this.#pushFallbackDisposer(ext.path, addPeerLockBackend(backend));
 			}
 		}
 

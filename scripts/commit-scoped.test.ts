@@ -21,6 +21,22 @@ async function run(args: string[], cwd: string): Promise<string> {
 	return (await runRaw(args, cwd)).trim();
 }
 
+/**
+ * Run git that is EXPECTED to fail, returning its stderr.
+ *
+ * A conflicting `git merge` exits 1 and `git show HEAD:<absent>` exits 128, and both are
+ * the precondition of the contract under test rather than a broken fixture. `run` throws
+ * on those, which fails the test before it reaches the assertion it exists to make.
+ */
+async function runFails(args: string[], cwd: string): Promise<string> {
+	try {
+		await runRaw(args, cwd);
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+	throw new Error(`expected \`git ${args.join(" ")}\` to fail, but it succeeded`);
+}
+
 /** A repo with one commit, so HEAD exists and a tree can be built on top of it. */
 async function makeRepo(): Promise<string> {
 	const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "commit-scoped-test-"));
@@ -218,6 +234,94 @@ describe("commitStagedPaths", () => {
 			expect(result.committed).toEqual(["back.txt"]);
 			expect(await run(["ls-tree", "--name-only", "HEAD"], dir)).toContain("back.txt");
 			expect(await run(["show", "HEAD:back.txt"], dir)).toBe("re-added v2");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a mode-only change, which leaves the blob byte-identical", async () => {
+		// A mode is half of what an index entry is. `chmod +x` on a script stages an
+		// entry whose blob is HEAD's blob unchanged, so a filter that compares blobs
+		// classified it as clean and refused the commit with "nothing is staged" — for a
+		// change git itself records as staged.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "run.sh", "#!/bin/sh\n");
+			await run(["add", "run.sh"], dir);
+			await run(["commit", "-q", "-m", "add run.sh"], dir);
+			await run(["update-index", "--chmod=+x", "run.sh"], dir);
+
+			const result = await commitStagedPaths(["run.sh"], "chmod +x", { cwd: dir });
+
+			expect(result.committed).toEqual(["run.sh"]);
+			expect(await run(["ls-tree", "HEAD", "run.sh"], dir)).toStartWith("100755");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a rename when both paths are named, since `git mv` stages only the destination", async () => {
+		// The index holds no entry for a rename's source, so it is a deletion wearing the
+		// destination's name. Naming both paths is what makes the rename whole.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "old.txt", "body\n");
+			await run(["add", "old.txt"], dir);
+			await run(["commit", "-q", "-m", "add old"], dir);
+			await run(["mv", "old.txt", "new.txt"], dir);
+
+			const result = await commitStagedPaths(["old.txt", "new.txt"], "rename", { cwd: dir });
+
+			expect([...result.committed].sort()).toEqual(["new.txt", "old.txt"]);
+			expect((await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).split("\n").sort()).toEqual([
+				"new.txt",
+				"seed.txt",
+			]);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("refuses an unmerged path instead of committing one side of the conflict", async () => {
+		// A conflicted path has THREE index rows for one file — stages 1/2/3 — and they are
+		// three candidate resolutions of an unresolved merge. Read as three independent
+		// entries, the last one won, and stage 3 is "theirs": the tool committed a side
+		// git refuses to commit at all, and exited 0. Found by BlackSpire (Agent Mail #636).
+		const dir = await makeRepo();
+		try {
+			await write(dir, "conflict.txt", "base\n");
+			await run(["add", "conflict.txt"], dir);
+			await run(["commit", "-q", "-m", "base"], dir);
+			await run(["checkout", "-q", "-b", "other"], dir);
+			await write(dir, "conflict.txt", "SIDE VERSION\n");
+			await run(["commit", "-qam", "other"], dir);
+			await run(["checkout", "-q", "main"], dir);
+			await write(dir, "conflict.txt", "MAIN VERSION\n");
+			await run(["commit", "-qam", "main"], dir);
+			await runFails(["merge", "other"], dir); // expected to conflict
+
+			expect((await run(["ls-files", "-s", "--", "conflict.txt"], dir)).split("\n")).toHaveLength(3);
+			await expect(commitStagedPaths(["conflict.txt"], "conflicted", { cwd: dir })).rejects.toThrow(
+				/unmerged index entry/,
+			);
+			// Nothing was written, so HEAD still holds the pre-merge content.
+			expect(await run(["show", "HEAD:conflict.txt"], dir)).toBe("MAIN VERSION");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("refuses an intent-to-add entry instead of committing its empty placeholder", async () => {
+		// `git add -N` records the path with git's EMPTY blob — a placeholder, not content.
+		// The path is absent from HEAD, so it reads as new, and committing it wrote a 0-byte
+		// file over real content on disk. git refuses for the same reason. Also #636.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "ita.txt", "PRECIOUS CONTENT\n");
+			await run(["add", "-N", "ita.txt"], dir);
+
+			await expect(commitStagedPaths(["ita.txt"], "intent to add", { cwd: dir })).rejects.toThrow(/intent-to-add/);
+			expect(await runFails(["show", "HEAD:ita.txt"], dir)).toContain("not in 'HEAD'");
 		} finally {
 			await fs.promises.rm(dir, { force: true, recursive: true });
 		}

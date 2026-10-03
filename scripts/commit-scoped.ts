@@ -28,6 +28,17 @@
  *   bun scripts/commit-scoped.ts <file>... -m "<message>"      # commit
  *   bun scripts/commit-scoped.ts <file>... --dry-run          # report, write nothing
  *
+ * ## A rename is two paths, so name both
+ *
+ * `git mv` leaves the index holding only the DESTINATION; the source has no entry at all,
+ * exactly like a deletion. So a rename committed here is only complete when the caller
+ * names both paths. Naming the destination alone commits the addition and leaves the
+ * source in the commit — a file duplicated under two names, reported as a success.
+ *
+ * This is the tool's contract rather than a defect to paper over: it commits the paths it
+ * is given and reports them, so the caller can see what it left out. The half-rename is
+ * visible in that report and in `git show --name-only`, which is where a reviewer looks.
+ *
  * ## Why not `git commit` with a temporary index
  *
  * Running `GIT_INDEX_FILE=tmp git commit` (no pathspec) would run the pre-commit hooks
@@ -58,6 +69,15 @@ interface IndexEntry {
 	readonly blob: string;
 	readonly file: string;
 }
+
+/**
+ * The hash of git's empty tree — what an intent-to-add entry carries in place of content.
+ *
+ * A constant of git's, not of ours: `git hash-object -t tree /dev/null` is this value on
+ * every repository, and hardcoding it means the check cannot drift from the git it runs
+ * against the way a per-call computation could not be checked at all.
+ */
+const EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391";
 
 /** What a scoped commit did, or would do. */
 export interface ScopedCommitResult {
@@ -118,12 +138,27 @@ async function stagedEntries(files: string[], cwd: string): Promise<IndexEntry[]
 		if (line.trim() === "") continue;
 		// `100644 <blob> 0\t<path>` — the tab separates stage from path, and a path may
 		// itself contain spaces, so the split is on the first tab and never on spaces.
+		//
+		// The `0` is the STAGE, and it is the field this must read rather than skip. A
+		// conflicted path carries three rows for the same file — stages 1/2/3 — and they
+		// are three DIFFERENT candidate resolutions of one unresolved merge. Treating
+		// them as three independent entries made the last one win, and stage 3 is
+		// "theirs": the tool committed a side of a conflict that git refuses to commit
+		// at all, and reported success. Stage 0 is the only row that means "this is the
+		// content".
 		const tab = line.indexOf("\t");
 		if (tab < 0) throw new Error(`unparsable ls-files -s line: ${line}`);
 		const meta = line.slice(0, tab).split(/\s+/);
 		const mode = meta[0];
 		const blob = meta[1];
-		if (!mode || !blob) throw new Error(`unparsable ls-files -s line: ${line}`);
+		const stage = meta[2];
+		if (!mode || !blob || stage === undefined) throw new Error(`unparsable ls-files -s line: ${line}`);
+		if (stage !== "0") {
+			throw new Error(
+				`${line.slice(tab + 1)} has an unmerged index entry (stage ${stage}) — ` +
+					"a merge conflict is not committable until it is resolved. git refuses this commit; so does this tool.",
+			);
+		}
 		entries.push({ mode, blob, file: line.slice(tab + 1) });
 	}
 	return entries;
@@ -205,12 +240,41 @@ export async function commitStagedPaths(
 	// `ls-files -s` lists every TRACKED path, not only the staged ones, so a clean file
 	// shows up here carrying HEAD's own blob. Keeping it would make "nothing is staged"
 	// unreachable for any tracked path — the caller would fall through to the
-	// empty-commit check and be told the wrong thing. Compare each blob against the one
+	// empty-commit check and be told the wrong thing. Compare each entry against the one
 	// HEAD records and keep only what actually differs.
+	//
+	// BOTH fields are compared, not just the blob. A mode-only change — `chmod +x` on a
+	// script — leaves the blob byte-identical, so comparing blobs alone classifies it as
+	// clean and the commit is refused with "nothing is staged" for a change git itself
+	// records as staged. The mode is half of what an index entry is.
 	const entries: IndexEntry[] = [];
 	for (const entry of allEntries) {
-		const headBlob = (await gitOrNull(["rev-parse", `${head}:${entry.file}`], cwd)) ?? "";
-		if (headBlob === entry.blob) continue;
+		const inHead = await gitOrNull(["ls-tree", head, "--", entry.file], cwd);
+		// A path absent from HEAD's tree is new; nothing to compare against.
+		//
+		// `gitOrNull` returns null only when git EXITS non-zero. `ls-tree` on a path it
+		// does not have exits 0 and prints nothing, so that case arrives as an EMPTY
+		// STRING — testing `!== null` here treated every new file as one HEAD already
+		// had, and the intent-to-add guard below could never run. Both empty results mean
+		// the same thing: HEAD has no entry for this path.
+		if (inHead) {
+			// `<mode> SP <type> SP <sha> TAB <path>` — the type sits BETWEEN the mode and
+			// the sha, so the blob is field 2, not field 1. Reading field 1 compares every
+			// entry against the literal string "blob" and nothing is ever clean, which
+			// turns the refusal below into a false alarm on an unchanged file.
+			const [headMode, , headBlob] = inHead.split(/\s+/);
+			if (headMode === entry.mode && headBlob === entry.blob) continue;
+		} else if (entry.blob === EMPTY_BLOB) {
+			// Intent-to-add (`git add -N`) records the path with git's EMPTY blob — the
+			// empty tree's hash — which is a placeholder, not the file's content. The path
+			// is absent from HEAD so it reads as new, and committing it wrote a 0-byte file
+			// over real content on disk. git refuses this outright for the same reason: the
+			// index entry does not mean what it looks like.
+			throw new Error(
+				`${entry.file} is staged intent-to-add (empty placeholder blob), not real content — ` +
+					"run `git add` on it to stage its contents, or leave it out.",
+			);
+		}
 		entries.push(entry);
 	}
 	// Resolved BEFORE the emptiness check, because a deletion produces no entry and

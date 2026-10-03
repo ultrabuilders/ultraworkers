@@ -13,7 +13,7 @@
  *    prompt re-processing on llama.cpp.
  *
  * The prior assistant turn had streamed `reasoning_content` deltas (Qwen3
- * thinking output). The OMP-side `Context` preserved those as a
+ * thinking output). The ultraworkers-side `Context` preserved those as a
  * `{ type: "thinking", thinkingSignature: "reasoning_content" }` block on the
  * assistant message, but `convertMessages` dropped the field when re-serializing
  * for the next request because the llama.cpp compat profile carried none of the

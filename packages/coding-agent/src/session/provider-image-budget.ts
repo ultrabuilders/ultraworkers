@@ -13,7 +13,7 @@ import type {
 import { decodeDataUri } from "@oh-my-pi/pi-ai/providers/openai-data-uri";
 import { isRecord } from "@oh-my-pi/pi-utils";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
-import { providerImageBudget } from "@oh-my-pi/snapcompact";
+import { providerImageBudget } from "@ultraworkers/snapcompact";
 import { supportsRemoteImageUrls } from "../blob-broker/context-images";
 import { imageDecodeFailureReason } from "@oh-my-pi/pi-tui/chat/image-loading";
 

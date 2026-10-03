@@ -29,7 +29,7 @@
         "@oh-my-pi/pi-natives": "catalog:",
         "@oh-my-pi/pi-utils": "catalog:",
         "@oh-my-pi/pi-wire": "catalog:",
-        "@oh-my-pi/snapcompact": "catalog:",
+        "@ultraworkers/snapcompact": "catalog:",
         "@opentelemetry/api": "catalog:",
         "@ultraworkers/pi-telemetry": "catalog:",
       },
@@ -125,7 +125,7 @@
         "@oh-my-pi/pi-tui": "catalog:",
         "@oh-my-pi/pi-utils": "catalog:",
         "@oh-my-pi/pi-wire": "catalog:",
-        "@oh-my-pi/snapcompact": "catalog:",
+        "@ultraworkers/snapcompact": "catalog:",
         "@opentelemetry/api": "catalog:",
         "@opentelemetry/api-logs": "catalog:",
         "@opentelemetry/context-async-hooks": "catalog:",
@@ -297,7 +297,7 @@
       },
     },
     "packages/snapcompact": {
-      "name": "@oh-my-pi/snapcompact",
+      "name": "@ultraworkers/snapcompact",
       "version": "18.4.3",
       "dependencies": {
         "@oh-my-pi/pi-ai": "catalog:",
@@ -348,7 +348,7 @@
         "@oh-my-pi/pi-natives": "catalog:",
         "@oh-my-pi/pi-utils": "catalog:",
         "@oh-my-pi/pi-wire": "catalog:",
-        "@oh-my-pi/snapcompact": "catalog:",
+        "@ultraworkers/snapcompact": "catalog:",
       },
       "devDependencies": {
         "kitty-vt-wasm": "catalog:",
@@ -438,7 +438,7 @@
     "@oh-my-pi/pi-tui": "18.4.3",
     "@oh-my-pi/pi-utils": "18.4.3",
     "@oh-my-pi/pi-wire": "18.4.3",
-    "@oh-my-pi/snapcompact": "18.4.3",
+    "@ultraworkers/snapcompact": "18.4.3",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "^0.220.0",
     "@opentelemetry/context-async-hooks": "^2.9.0",
@@ -875,7 +875,7 @@
 
     "@oh-my-pi/pi-wire": ["@oh-my-pi/pi-wire@workspace:packages/wire"],
 
-    "@oh-my-pi/snapcompact": ["@oh-my-pi/snapcompact@workspace:packages/snapcompact"],
+    "@ultraworkers/snapcompact": ["@ultraworkers/snapcompact@workspace:packages/snapcompact"],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 

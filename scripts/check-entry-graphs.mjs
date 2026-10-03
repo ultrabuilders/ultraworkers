@@ -55,7 +55,7 @@ const WORKSPACE = {
 	"@oh-my-pi/pi-utils": "packages/utils/src",
 	"@oh-my-pi/pi-wire": "packages/wire/src",
 	"@oh-my-pi/omp-stats": "packages/stats/src",
-	"@oh-my-pi/snapcompact": "packages/snapcompact/src",
+	"@ultraworkers/snapcompact": "packages/snapcompact/src",
 	"@oh-my-pi/typescript-edit-benchmark": "packages/typescript-edit-benchmark/src",
 };
 

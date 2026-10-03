@@ -98,7 +98,7 @@ Sources: [`packages/collab-web/README.md`](../packages/collab-web/README.md), [`
 
 Sources: [`packages/snapcompact/README.md`](../packages/snapcompact/README.md), [`packages/snapcompact/package.json`](../packages/snapcompact/package.json), [`packages/snapcompact/src/index.ts`](../packages/snapcompact/src/index.ts).
 
-- Package: public `@oh-my-pi/snapcompact`; install with `bun add @oh-my-pi/snapcompact`; requires
+- Package: public `@ultraworkers/snapcompact`; install with `bun add @ultraworkers/snapcompact`; requires
   Bun 1.3.14 or newer.
 - Feature: deterministic local serialization and PNG rendering of discarded conversation history
   for vision-model context compaction; no model call or API key is required.

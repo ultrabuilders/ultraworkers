@@ -67,7 +67,7 @@
 		"@ultraworkers/pi-telemetry": "catalog:",
 		"@oh-my-pi/pi-utils": "catalog:",
 		"@oh-my-pi/pi-wire": "catalog:",
-		"@oh-my-pi/snapcompact": "catalog:",
+		"@ultraworkers/snapcompact": "catalog:",
 		"@opentelemetry/api": "catalog:"
 	},
 	"devDependencies": {

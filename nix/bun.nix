@@ -671,7 +671,7 @@
   "@oh-my-pi/pi-tui" = copyPathToStore ../packages/tui;
   "@oh-my-pi/pi-utils" = copyPathToStore ../packages/utils;
   "@oh-my-pi/pi-wire" = copyPathToStore ../packages/wire;
-  "@oh-my-pi/snapcompact" = copyPathToStore ../packages/snapcompact;
+  "@ultraworkers/snapcompact" = copyPathToStore ../packages/snapcompact;
   "@oh-my-pi/typescript-edit-benchmark" = copyPathToStore ../packages/typescript-edit-benchmark;
   "@opentelemetry/api-logs@0.220.0" = fetchurl {
     url = "https://registry.npmjs.org/@opentelemetry/api-logs/-/api-logs-0.220.0.tgz";

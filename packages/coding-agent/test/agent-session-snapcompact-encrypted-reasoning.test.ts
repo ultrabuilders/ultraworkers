@@ -24,7 +24,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import * as snapcompact from "@oh-my-pi/snapcompact";
+import * as snapcompact from "@ultraworkers/snapcompact";
 
 describe("AgentSession snapcompact no-reduction guard: opaque reasoning", () => {
 	let session: AgentSession;

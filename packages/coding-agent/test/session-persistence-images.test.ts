@@ -10,8 +10,8 @@ import type {
 import { resolveBlobRefsInEntries } from "@oh-my-pi/pi-coding-agent/session/session-loader";
 import { prepareEntryForPersistence } from "@oh-my-pi/pi-coding-agent/session/session-persistence";
 import { TempDir } from "@oh-my-pi/pi-utils";
-import type { Archive } from "@oh-my-pi/snapcompact";
-import * as snapcompact from "@oh-my-pi/snapcompact";
+import type { Archive } from "@ultraworkers/snapcompact";
+import * as snapcompact from "@ultraworkers/snapcompact";
 
 type ImagePayload = { data: string; mimeType: string; type?: "image" };
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;

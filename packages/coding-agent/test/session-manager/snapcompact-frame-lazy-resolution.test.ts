@@ -6,7 +6,7 @@ import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import * as blobStore from "@oh-my-pi/pi-coding-agent/session/blob-store";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { getAgentDir, getBlobsDir, setAgentDir } from "@oh-my-pi/pi-utils";
-import * as snapcompact from "@oh-my-pi/snapcompact";
+import * as snapcompact from "@ultraworkers/snapcompact";
 
 const FRAME_COUNT = 10;
 const FRAME_RAW_BYTES = 300_000;

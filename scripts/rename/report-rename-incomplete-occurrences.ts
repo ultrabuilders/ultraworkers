@@ -88,29 +88,32 @@ const declaresZero: string[] = [];
  *
  * LOCATING the token below is deliberately a plain scan and not the gate's pinned
  * expression: `PINNED` is not exported, and retyping it here would be the second
- * copy that drifts. The authoritative count is always `countRename` above; this only
- * decides which bucket a line is filed under, and the buckets are reported as
- * line counts, never added to the occurrence total.
+ * copy that drifts. The scan therefore only decides WHICH bucket a line belongs
+ * to. The bucket's SIZE is always `countRename(line)` — see the note at the
+ * bottom of the function for why that distinction is load-bearing rather than
+ * cosmetic.
  */
-const SHAPES = ["command", "dir", "hyphen", "dotted", "underscore", "eq-compare", "bare", "unknown"] as const;
+const SHAPES = ["command", "dir", "hyphen", "dotted", "underscore", "eq-compare", "bare", "mixed", "unknown"] as const;
 type Shape = (typeof SHAPES)[number];
 const shapeCounts = new Map<Shape, number>();
 const shapeSamples = new Map<Shape, string[]>();
 /** Characters that close a token rather than continue it: `"omp"`, `` `omp` ``, `(omp)`, `x, omp;`. */
 const BARE_TERMINATORS = new Set(['"', "'", "`", ")", "}", "]", ",", ";", ":"]);
+let shapeTotal = 0;
 
-function classifyLine(line: string, relPath: string): void {
-	const body = line.includes("|") ? (line.split("|").slice(1).join("|") ?? "") : line;
-	for (const match of body.matchAll(/(?<![A-Za-z0-9_])omp(?![A-Za-z0-9_])/g)) {
+function classifyLine(rawLine: string, relPath: string): void {
+	const line = rawLine.includes("|") ? (rawLine.split("|").slice(1).join("|") ?? "") : rawLine;
+	const found = new Set<Shape>();
+	for (const match of line.matchAll(/(?<![A-Za-z0-9_])omp(?![A-Za-z0-9_])/g)) {
 		const at = match.index ?? 0;
-		const before = body[at - 1] ?? "";
-		const after = body[at + 3] ?? "";
-		const nextNonSpace = body.slice(at + 3).match(/^\s+(\S)/)?.[1] ?? "";
+		const before = line[at - 1] ?? "";
+		const after = line[at + 3] ?? "";
+		const nextNonSpace = line.slice(at + 3).match(/^\s+(\S)/)?.[1] ?? "";
 		let shape: Shape;
 		// Equality first: in `agent === "omp"` the token's immediate neighbours are
 		// both quotes, so a check on them alone can never fire — the comparison is
 		// what makes this shape dangerous, and it lives a few characters away.
-		const window = body.slice(Math.max(0, at - 24), at + 24);
+		const window = line.slice(Math.max(0, at - 24), at + 24);
 		if (window.includes("==") || window.includes(".includes(") || window.includes(".startsWith("))
 			shape = "eq-compare";
 		else if (after === "/" || before === "/") shape = "dir";
@@ -120,11 +123,36 @@ function classifyLine(line: string, relPath: string): void {
 		else if (/\s/.test(after) && /[A-Za-z]/.test(nextNonSpace)) shape = "command";
 		else if (after === "" || BARE_TERMINATORS.has(after)) shape = "bare";
 		else shape = "unknown";
-		shapeCounts.set(shape, (shapeCounts.get(shape) ?? 0) + 1);
-		const samples = shapeSamples.get(shape) ?? [];
-		if (samples.length < 4) samples.push(`${relPath}: ${body.trim().slice(0, 96)}`);
-		shapeSamples.set(shape, samples);
+		found.add(shape);
 	}
+	// The bucket's MAGNITUDE is `countRename(line)`, never the number of tokens this
+	// scan found. The two disagree at the edges, and the disagreement is the whole
+	// point of computing it this way.
+	//
+	// Measured on the open rows, the locate-scan runs 738 against the gate's 733.
+	// All of the gap is lines where the scan finds a second token the gate declines:
+	// `PINNED`'s LEADING class is `[^a-zA-Z0-9_-]`, so `-` and `_` before the token
+	// make it invisible, while this scan's lookbehind allows them — `--omp-bin` in a
+	// "Could not find `omp` on PATH" message is the clearest case. (`[^…]` is a
+	// NEGATED class: `-` and `.` are fine AFTER the token, so `omp-wt-` and
+	// `omp.blob.broker` are genuine occurrences. Only `.sh`/`-sh` are excluded, by a
+	// separate lookahead.) An earlier version of this comment claimed the trailing
+	// edge excluded `-` and `.`, and inferred from it that the hyphen and dotted
+	// buckets were phantom. That was wrong — `countRename('const t = "omp-wt-";')`
+	// is 1 — and it was sent to a peer as a finding before being checked.
+	//
+	// So: the scan only decides WHICH bucket a line belongs to; `countRename` says
+	// how much is in it, and the reconciliation line prints the two side by side so
+	// a future edge difference cannot quietly become a different population again.
+	// A line carrying two shapes is filed as `mixed` rather than silently charged to
+	// whichever happened to match first.
+	const magnitude = countRename(line);
+	const shape: Shape = found.size === 1 ? [...found][0]! : found.size === 0 ? "unknown" : "mixed";
+	shapeTotal += magnitude;
+	shapeCounts.set(shape, (shapeCounts.get(shape) ?? 0) + magnitude);
+	const samples = shapeSamples.get(shape) ?? [];
+	if (samples.length < 4) samples.push(`${relPath}: ${line.trim().slice(0, 96)}`);
+	shapeSamples.set(shape, samples);
 }
 let declaredSum = 0;
 let actualSum = 0;
@@ -208,7 +236,14 @@ if (shapes) {
 		console.log(`  ${shape.padEnd(12)} ${count}`);
 		for (const sample of shapeSamples.get(shape) ?? []) console.log(`      ${sample}`);
 	}
-	console.log(`\nshape total ${shapeTotal} — locate-scan only; the authority is countRename = ${actualSum}`);
+	// The buckets are magnitudes from `countRename(line)`, so this must equal the
+	// occurrence total above. If it ever does not, the breakdown is describing a
+	// different population than the one being gated, and every ratio quoted from it
+	// is wrong — which is exactly how a 761-over-756 headline looked airtight.
+	console.log(
+		`\nshape total ${shapeTotal} vs countRename ${actualSum} — ` +
+			`${shapeTotal === actualSum ? "buckets ARE the authority" : `MISMATCH ${actualSum - shapeTotal} unaccounted`}`,
+	);
 }
 
 // Report-only: landing or amending any of these rows is a separate, deliberate step,

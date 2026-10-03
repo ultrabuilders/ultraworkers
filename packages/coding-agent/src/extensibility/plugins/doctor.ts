@@ -4,6 +4,7 @@ import { getAvailableThemes, getBuiltinThemes, resolveThemeJson } from "@oh-my-p
 import type { CheckOutcome, DoctorCheck } from "./types";
 import { isUnavailable } from "./types";
 import { allBuiltinToolFactories, BUILTIN_TOOLS, HIDDEN_TOOLS } from "../../tools";
+import { getEnabledPlugins, resolvePluginManifestEntries } from "./loader";
 /**
  * The mode the logger enforces on the log directory.
  *
@@ -48,6 +49,24 @@ export interface DoctorSnapshot {
 	 * `undefined`.
 	 */
 	readonly expectedLogDirMode?: number;
+	/**
+	 * Extension modules a loaded plugin declared but that did not load, with the
+	 * reason each one failed.
+	 *
+	 * Populated by resolving manifest entries rather than by importing them: a
+	 * diagnostic that ran every installed extension's module would execute
+	 * arbitrary third-party code to answer "is anything broken", which is a worse
+	 * failure than the one it reports. Install refuses an entry that resolves to
+	 * nothing (`MarketplaceManager#validateInstalledExtensions`); this is the same
+	 * question asked again afterwards, because a plugin that passed install can
+	 * still lose its entry file to a partial upgrade or a pruned tree.
+	 *
+	 * Optional for the same reason {@link logDirMode} is: a caller that predates
+	 * this check passes a partial snapshot, and `undefined` means "not observed"
+	 * rather than "nothing is broken". The check reports nothing in that case
+	 * instead of manufacturing an all-clear.
+	 */
+	readonly extensionLoadErrors?: ReadonlyArray<{ path: string; error: string }>;
 }
 
 async function liveSnapshot(): Promise<DoctorSnapshot> {
@@ -64,6 +83,7 @@ async function liveSnapshot(): Promise<DoctorSnapshot> {
 		themes: (await getAvailableThemes()).filter(name => !builtinThemes.has(name)),
 		resolveTheme: name => resolveThemeJson(name),
 		builtinTools: Object.keys(allBuiltinToolFactories()).filter(name => !builtinTools.has(name)),
+		extensionLoadErrors: await findPluginExtensionFailures(),
 		// Path-only: `getLogsDir()` computes the location and creates nothing, so
 		// asking what its mode is cannot bring the directory into existence. Reading
 		// it after an `ensureDir` would report the mode the logger just enforced and
@@ -94,6 +114,42 @@ async function readLogDirMode(): Promise<{ logDirMode?: number }> {
 		// there is no observed mode to report, and the caller says so out loud.
 		return {};
 	}
+}
+
+/**
+ * Declared extension entries of every enabled plugin that resolve to nothing.
+ *
+ * Resolution is filesystem-only — `resolvePluginManifestEntries` stats each entry
+ * and returns `resolvedPath: null` for one that is not there. Nothing is
+ * imported, so this answers "is the tree intact?" without running a line of
+ * third-party code.
+ *
+ * The `catch` is not defensive padding: reading the lockfile or walking
+ * `node_modules` can fail on a half-written install, and a diagnostic that
+ * throws while looking for a problem reports no diagnosis at all. Returning `[]`
+ * there would be a false all-clear, so it is recorded as an entry that failed to
+ * resolve rather than swallowed.
+ */
+async function findPluginExtensionFailures(): Promise<Array<{ path: string; error: string }>> {
+	let plugins;
+	try {
+		plugins = await getEnabledPlugins(process.cwd());
+	} catch (err) {
+		return [{ path: "<plugin registry>", error: `could not be read: ${String(err)}` }];
+	}
+
+	const failures: Array<{ path: string; error: string }> = [];
+	for (const plugin of plugins) {
+		for (const { entry, resolvedPath } of resolvePluginManifestEntries(plugin, "extensions")) {
+			if (resolvedPath === null) {
+				failures.push({
+					path: `${plugin.name}: ${entry}`,
+					error: "declared extension entry not found on disk",
+				});
+			}
+		}
+	}
+	return failures;
 }
 
 export async function runDoctorChecks(snapshot?: DoctorSnapshot): Promise<DoctorCheck[]> {
@@ -232,6 +288,24 @@ function checkExtensionSeams(snap: DoctorSnapshot): DoctorCheck[] {
 			name: "seam:themes-resolve",
 			status: "error",
 			message: `Registered but not resolvable: ${broken.join(", ")} — these themes will never load`,
+		});
+	}
+
+	// A plugin that passed install can still lose its entry file afterwards, and
+	// nothing else reports it: `plugin list` reads the lockfile, which still names
+	// the plugin, and the symptom is a tool, command and hook that are simply
+	// absent. `undefined` means the caller never looked, which is a different
+	// claim from "nothing is broken", so that case contributes no row rather than
+	// an all-clear manufactured from a missing field.
+	const loadErrors = snap.extensionLoadErrors;
+	if (loadErrors !== undefined) {
+		checks.push({
+			name: "seam:extensions-load",
+			status: loadErrors.length === 0 ? "ok" : "error",
+			message:
+				loadErrors.length === 0
+					? "Every plugin extension entry resolves on disk"
+					: loadErrors.map(f => `${f.path} — ${f.error}`).join("; "),
 		});
 	}
 

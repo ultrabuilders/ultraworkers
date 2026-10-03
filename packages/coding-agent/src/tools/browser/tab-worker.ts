@@ -2649,7 +2649,7 @@ export class WorkerCore {
 	async #pdf(session: SessionSnapshot, signal: AbortSignal | undefined, opts: PdfOptions = {}): Promise<string> {
 		const dest = opts.path
 			? resolveToCwd(opts.path, session.cwd)
-			: path.join(os.tmpdir(), `omp-browser-${Snowflake.next()}.pdf`);
+			: path.join(os.tmpdir(), `uw-browser-${Snowflake.next()}.pdf`);
 		await fs.promises.mkdir(path.dirname(dest), { recursive: true });
 		await untilAborted(signal, () =>
 			this.#requirePage().pdf({

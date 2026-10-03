@@ -11,7 +11,7 @@ import { startServer } from "../src/server";
 import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { installStatsTestIsolation } from "./helpers/temp-agent";
 
-installStatsTestIsolation("@pi-stats-port-conflict-");
+installStatsTestIsolation("@ultraworkers-stats-port-conflict-");
 
 /**
  * Directly probe a TCP endpoint, bypassing any configured HTTP proxy so the

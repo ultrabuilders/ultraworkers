@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "bun:test";
 import { smokeTestSyncWorker } from "@oh-my-pi/omp-stats/aggregator";
 import { installStatsTestIsolation } from "./helpers/temp-agent";
 
-installStatsTestIsolation("@pi-stats-smoke-darwin-");
+installStatsTestIsolation("@ultraworkers-stats-smoke-darwin-");
 
 afterEach(() => {
 	vi.restoreAllMocks();

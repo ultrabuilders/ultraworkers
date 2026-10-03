@@ -1916,7 +1916,7 @@ export class TernTab implements InProcessRunTab {
 		if (!isRecord(answer) || typeof answer.data !== "string") throw new ToolError("Tern pdf answered without data");
 		const dest = opts.path
 			? resolveToCwd(opts.path, context.session.cwd)
-			: path.join(os.tmpdir(), `omp-browser-${Snowflake.next()}.pdf`);
+			: path.join(os.tmpdir(), `uw-browser-${Snowflake.next()}.pdf`);
 		await Bun.write(dest, Buffer.from(answer.data, "base64"));
 		return dest;
 	}
@@ -2457,7 +2457,7 @@ export class TernTab implements InProcessRunTab {
 		const har = await this.#network.harStop(this.loadBody);
 		const destination = options.path
 			? resolveToCwd(options.path, context.session.cwd)
-			: path.join(os.tmpdir(), `omp-browser-${Snowflake.next()}.har`);
+			: path.join(os.tmpdir(), `uw-browser-${Snowflake.next()}.har`);
 		await Bun.write(destination, `${JSON.stringify(har, null, 2)}\n`);
 		return destination;
 	}

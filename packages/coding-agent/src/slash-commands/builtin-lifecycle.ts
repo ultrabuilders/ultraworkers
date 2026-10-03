@@ -915,8 +915,8 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 			// reports what it discarded, and `handleTui` below is where the question
 			// gets asked. Saying so beats silently guessing what the operator wanted.
 			const live = liveExtensionCount(runtime.session);
-			await reloadExtensionState(runtime);
-			await runtime.output(reloadReport(live, "not confirmed — no dialog is reachable from this mode"));
+			const contributed = await reloadExtensionState(runtime);
+			await runtime.output(reloadReport(live, "not confirmed — no dialog is reachable from this mode", contributed));
 			return commandConsumed();
 		},
 		handleTui: async (_command, runtime) => {
@@ -953,8 +953,8 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 
 			// Same body as the headless tier, on the same shared adapter the TUI
 			// dispatcher uses for `handle`-only specs. One reload path, not two.
-			await reloadExtensionState(tuiRuntimeAsSlashCommand(runtime.ctx));
-			runtime.ctx.showHookNotify(reloadReport(live, "confirmed"), "info");
+			const contributed = await reloadExtensionState(tuiRuntimeAsSlashCommand(runtime.ctx));
+			runtime.ctx.showHookNotify(reloadReport(live, "confirmed", contributed), "info");
 		},
 	},
 ];
@@ -975,14 +975,36 @@ function liveExtensionCount(session: AgentSession): number {
 }
 
 /**
+ * What `resources_discover` handlers contributed during a reload, counted per channel.
+ *
+ * The payload is collected by the runner and then dropped: `emitResourcesDiscover`
+ * returns file paths, while the only consumers of resources — `loadSkills` and
+ * `loadSlashCommands` — take extension *roots*, so there is no channel for a
+ * contributed path to enter. That gap is why this is a count and not a merge, and
+ * it is why every channel is counted: a tally naming only the channels a future fix
+ * consumes would read as coverage that does not exist.
+ */
+interface ContributedResourcePaths {
+	readonly skill: number;
+	readonly prompt: number;
+	readonly theme: number;
+}
+
+const NO_CONTRIBUTED_PATHS: ContributedResourcePaths = { skill: 0, prompt: 0, theme: 0 };
+
+/**
  * The reload body, shared by both dispatchers.
  *
  * `rescopeHeadlessToCwd` IS the existing reload tier — settings for the cwd, the
  * memory backend rebind, prompt roots, skills/commands, plugin reload — and it
  * already has four call sites. Calling it with the cwd the session is already at
  * is "re-rescope to where I am", so this adds no tier beside it.
+ *
+ * Returns what extensions contributed, so the caller can disclose it. Disclosing is
+ * the whole of this change: the contribution still reaches nothing, and a report
+ * that implied otherwise would be worse than the silence it replaced.
  */
-async function reloadExtensionState(runtime: SlashCommandRuntime): Promise<void> {
+async function reloadExtensionState(runtime: SlashCommandRuntime): Promise<ContributedResourcePaths> {
 	await rescopeHeadlessToCwd(runtime, runtime.cwd);
 
 	// What that tier does NOT do: tell extensions to re-contribute their resources.
@@ -991,18 +1013,36 @@ async function reloadExtensionState(runtime: SlashCommandRuntime): Promise<void>
 	// `"reload"` arm was unreachable code that read as a finished feature. This is
 	// the call site that makes it live.
 	const runner = runtime.session.extensionRunner;
-	if (runner) {
-		await runner.emitResourcesDiscover(runtime.cwd, "reload");
-	}
+	if (!runner) return NO_CONTRIBUTED_PATHS;
+	const contributed = await runner.emitResourcesDiscover(runtime.cwd, "reload");
+	return {
+		skill: contributed.skillPaths.length,
+		prompt: contributed.promptPaths.length,
+		theme: contributed.themePaths.length,
+	};
 }
 
-/** One line naming what the reload discarded, so the operator is not guessing. */
-function reloadReport(live: number, consent: string): string {
+/**
+ * One line naming what the reload discarded, so the operator is not guessing.
+ *
+ * All three `resources_discover` channels are named even when two of them are zero.
+ * A line that counted only the channels this reload consumes would report "nothing
+ * contributed" for a session where extensions did contribute — which is the same
+ * silence this line exists to end, wearing a count as a disguise.
+ */
+function reloadReport(live: number, consent: string, contributed: ContributedResourcePaths): string {
 	const lost =
 		live > 0
 			? `${live} active extension${live === 1 ? "" : "s"} unloaded and loaded again (${consent}).`
 			: "No active extensions to reload.";
-	return `Reloaded extensions, skills and plugin state. ${lost}`;
+	const total = contributed.skill + contributed.prompt + contributed.theme;
+	const dropped =
+		total === 0
+			? "No extension contributed extra resource paths."
+			: `Extensions contributed ${total} resource path${total === 1 ? "" : "s"} via resources_discover ` +
+				`(${contributed.skill} skill, ${contributed.prompt} prompt, ${contributed.theme} theme); ` +
+				`this reload does not add ${total === 1 ? "it" : "them"} to the session.`;
+	return `Reloaded extensions, skills and plugin state. ${lost} ${dropped}`;
 }
 async function rescopeHeadlessToCwd(runtime: SlashCommandRuntime, cwd: string): Promise<void> {
 	setProjectDir(cwd);

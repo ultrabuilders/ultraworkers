@@ -85,7 +85,13 @@ describe("/reload-extensions", () => {
 	 * load it through the real loader, and hand the resulting runner to a real
 	 * session. Nothing here stands in for the pipeline — that is the point.
 	 */
-	async function sessionWithRecordingExtension(): Promise<{
+	async function sessionWithRecordingExtension(
+		contributed: {
+			readonly skillPaths?: string[];
+			readonly promptPaths?: string[];
+			readonly themePaths?: string[];
+		} = {},
+	): Promise<{
 		runtime: SlashCommandRuntime;
 		outputs: string[];
 		recorded: () => DiscoverRecord[];
@@ -103,7 +109,11 @@ describe("/reload-extensions", () => {
 						${JSON.stringify(logPath)},
 						JSON.stringify({ reason: event.reason, cwd: event.cwd, type: event.type }) + "\\n",
 					);
-					return { skillPaths: [], promptPaths: [], themePaths: [] };
+					return {
+                        skillPaths: ${JSON.stringify(contributed.skillPaths ?? [])},
+                        promptPaths: ${JSON.stringify(contributed.promptPaths ?? [])},
+                        themePaths: ${JSON.stringify(contributed.themePaths ?? [])},
+                    };
 				});
 			}
 			`,
@@ -204,6 +214,34 @@ describe("/reload-extensions", () => {
 		expect(outputs).toHaveLength(1);
 		expect(outputs[0]).toContain("1 active extension unloaded and loaded again");
 		expect(outputs[0]).toContain("no dialog is reachable");
+	});
+
+	it("discloses contributed resource paths, naming the channels the reload does not consume", async () => {
+		// Two skills, one prompt, no theme. The theme channel is the point: the reload
+		// consumes none of them, so a report that tallied only what it used would print
+		// "3 contributed" and read as three paths now in the session.
+		const { runtime, outputs } = await sessionWithRecordingExtension({
+			skillPaths: [tempDir.join("skills", "one.md"), tempDir.join("skills", "two.md")],
+			promptPaths: [tempDir.join("prompts", "greet.md")],
+		});
+		await reloadExtensions?.handle?.({ name: "reload-extensions", text: "/reload-extensions", args: "" }, runtime);
+
+		expect(outputs).toHaveLength(1);
+		expect(outputs[0]).toContain("3 resource paths via resources_discover");
+		expect(outputs[0]).toContain("2 skill, 1 prompt, 0 theme");
+		// The disclosure has to say the paths are NOT in the session, or it is a lie
+		// with a number attached.
+		expect(outputs[0]).toContain("does not add them to the session");
+	});
+
+	it("says nothing was contributed when no handler returned a path", async () => {
+		const { runtime, outputs } = await sessionWithRecordingExtension();
+		await reloadExtensions?.handle?.({ name: "reload-extensions", text: "/reload-extensions", args: "" }, runtime);
+
+		// The zero branch must not read like the disclosure above with the numbers
+		// removed: "no extension contributed" is a different claim from "3 were
+		// contributed and dropped", and only one of them is true here.
+		expect(outputs[0]).toContain("No extension contributed extra resource paths.");
 	});
 
 	it("counts only extensions that are actually running", async () => {

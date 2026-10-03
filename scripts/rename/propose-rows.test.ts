@@ -10,7 +10,7 @@
  * what keeps them two.
  */
 import { describe, expect, it } from "bun:test";
-import { pageContainsToken, parseDocsCitations, parsePorcelainPaths, splitIncoming } from "./propose-rows";
+import { pageContainsToken, parseDocsCitations, parsePorcelainPaths, renderTable, splitIncoming } from "./propose-rows";
 
 /** A page that mentions one variable, and only that one. */
 const PAGE = "Set OMP_PROFILE=1 in your shell. OMP_PROFILE selects the active profile.";
@@ -108,6 +108,11 @@ describe("parseDocsCitations", () => {
 	});
 });
 
+// A `rename` row with an EMPTY final cell, so the line ends in a tab. Shared by
+// the two describes below because it is the shape both must agree on: reading it
+// and writing it back has to be lossless in cell count, not merely in text.
+const renameRow = "src\tpackages/tui/src/debug-server.ts\t1\trename\tcurrent behaviour\t";
+
 describe("splitIncoming", () => {
 	// The regression. A `rename` row's last cell is an EMPTY `keep_refs`, so the
 	// line correctly ends in a tab. Trimming the input — which this function
@@ -115,7 +120,6 @@ describe("splitIncoming", () => {
 	// for arriving with 5 cells instead of 6. `awk -F'\t' '{print NF}'` said 6 on
 	// the very same file, so the author had no way to see the problem: the bytes
 	// on disk were right and the tool disagreed with them.
-	const renameRow = "src\tpackages/tui/src/debug-server.ts\t1\trename\tcurrent behaviour\t";
 
 	it("keeps the trailing tab that carries an empty final cell", () => {
 		expect(splitIncoming(renameRow)).toEqual([renameRow]);
@@ -138,6 +142,33 @@ describe("splitIncoming", () => {
 	it("returns nothing for empty or whitespace-only input", () => {
 		expect(splitIncoming("")).toEqual([]);
 		expect(splitIncoming("\n\n \n")).toEqual([]);
+	});
+});
+
+describe("renderTable", () => {
+	// The failure this guards: a writer that drops the final newline makes the NEXT
+	// run's diff show the previous writer's last row as changed by this one. The
+	// content is identical, so it reads as an edit nobody made — which is how a
+	// shared table acquires a permanent phantom diff.
+	it("ends the table with a newline", () => {
+		expect(renderTable([renameRow]).endsWith("\n")).toBe(true);
+	});
+
+	// The control: a table that ends correctly is not the same as a table whose
+	// ROWS survived. Round-tripping proves the fix did not cost a row or a cell,
+	// which an assertion about the last byte alone cannot see.
+	it("round-trips a table through splitIncoming unchanged", () => {
+		const rows = [renameRow, "src\tpackages/a\t1\tkeep-path\treason\tW11:project-root-.omp"];
+		expect(renderTable(rows).endsWith("\n")).toBe(true);
+		expect(splitIncoming(renderTable(rows))).toEqual(rows);
+	});
+
+	// An empty batch is the case that regresses quietly: `[].join("\n")` is "",
+	// so appending a newline alone would write a lone `0a` and create a blank
+	// row in a table whose every other line is a row.
+	it("writes nothing at all for no rows", () => {
+		expect(renderTable([])).toBe("\n");
+		expect(splitIncoming(renderTable([]))).toEqual([]);
 	});
 });
 

@@ -152,6 +152,20 @@ export function splitIncoming(input: string): string[] {
 	return input.split("\n").filter(line => line.trim() !== "");
 }
 
+/**
+ * Render rows back into table text, ending in a newline.
+ *
+ * The trailing newline is part of the table, not decoration. `join("\n")` stops
+ * at the last character of the last row, so every run stripped the file's final
+ * newline — and the NEXT run's diff then showed that peer's last row as changed
+ * by this one, which has bitten two writers in a day: harmless in content,
+ * permanent in noise. A commit (`eb`, bcfb5a08ea) added the newline to the file;
+ * this is what stops the writer taking it away again.
+ */
+export function renderTable(rows: readonly string[]): string {
+	return `${rows.join("\n")}\n`;
+}
+
 /** True when no process holds this pid. The one question a lock file can answer. */
 function pidAlive(pid: number): boolean {
 	try {
@@ -446,7 +460,7 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 	const candidateLines = [...existingLines];
 	for (const [at, replacement] of work) candidateLines[at] = replacement;
 	for (const outcome of outcomes.filter(o => o.verdict === "append")) candidateLines.push(outcome.row);
-	const candidate = `${candidateLines.join("\n")}`;
+	const candidate = renderTable(candidateLines);
 	const { problems } = parseTable(candidate);
 
 	const rejected = outcomes.filter(o => o.verdict === "reject");

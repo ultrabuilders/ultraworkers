@@ -291,14 +291,41 @@ fn build_crash_log_path(dir: &Path, kind: CrashKind, pid: u32, now_ms: u128) -> 
 	dir.join(format!("native-{}-{pid}-{now_ms}.log", kind.as_str()))
 }
 
+/// The two config-dir env overrides in precedence order, newest spelling first.
+///
+/// This mirrors the `process.env.ULTRAWORKERS_CONFIG_DIR ||
+/// process.env.PI_CONFIG_DIR` chain at `dirs.ts:379`, and the JS `||` is doing
+/// real work that a plain `Option::or_else` does not: `||` treats `""` as
+/// falsy, so an empty `ULTRAWORKERS_CONFIG_DIR` falls through to
+/// `PI_CONFIG_DIR` instead of winning.
+///
+/// `Option::or_else` cannot express that -- it stops at the first `Some`, and
+/// `var_os("")` is `Some("")`. Chaining the two reads directly therefore let an
+/// empty primary var shadow the legacy one entirely, sending a caller who set
+/// `ULTRAWORKERS_CONFIG_DIR=""` and `PI_CONFIG_DIR=".foo"` down the candidate
+/// scan instead of to `.foo`.
+///
+/// Extracted from `logs_dir` so the precedence is testable without mutating
+/// process env; the env reads stay at the call site.
+fn config_dir_override_from(
+	primary: Option<OsString>,
+	legacy: Option<OsString>,
+) -> Option<OsString> {
+	primary
+		.filter(|value| !value.is_empty())
+		.or_else(|| legacy.filter(|value| !value.is_empty()))
+}
+
 fn logs_dir() -> Option<PathBuf> {
 	let home = home_dir()?;
 	// Newest spelling first, legacy second, matching the precedence chain in
 	// `packages/utils/src/dirs.ts`. Order is the whole contract here, and it is
 	// not something the compiler checks: `var_os` returns an `Option`, so
 	// swapping these two still compiles and silently reverses the precedence.
-	let config_override =
-		std::env::var_os("ULTRAWORKERS_CONFIG_DIR").or_else(|| std::env::var_os("PI_CONFIG_DIR"));
+	let config_override = config_dir_override_from(
+		std::env::var_os("ULTRAWORKERS_CONFIG_DIR"),
+		std::env::var_os("PI_CONFIG_DIR"),
+	);
 	let xdg_logs = xdg_state_logs_from_env(&home, config_override.as_deref());
 	Some(resolve_logs_dir(
 		&home,
@@ -354,6 +381,13 @@ fn resolve_config_dir_name(
 	profile_dirs: &dyn Fn(&Path) -> Vec<PathBuf>,
 ) -> OsString {
 	if let Some(s) = config_dir_override.filter(|s| !s.is_empty()) {
+		// Returned before any `join`, and that is load-bearing rather than
+		// incidental. Rust's `Path::join` REPLACES the receiver when the argument
+		// is absolute, whereas Node's `path.join("/home/u", "/abs")` yields
+		// `/home/u/abs`. The two candidates below are relative so they cannot
+		// diverge — but an override is an arbitrary user string, so joining it
+		// would silently disagree with `dirs.ts` on absolute values. Keep the
+		// early return; do not "normalise" it into a join.
 		return s.to_os_string();
 	}
 	for candidate in CONFIG_DIR_CANDIDATES {
@@ -373,10 +407,17 @@ fn resolve_config_dir_name(
 /// `hasMainConfigFile` at `dirs.ts:482`: the candidate holds a main config
 /// under `agent/`, or under any profile's `agent/`.
 ///
-/// The profile scan deliberately does not filter to directories the way the TS
-/// loop's `entry.isDirectory()` does. A non-directory entry yields
-/// `<entry>/agent/<name>`, which cannot exist, so the filter would only save a
-/// stat and could not change the answer.
+/// The TS loop's `entry.isDirectory()` filter is applied by the injected
+/// implementation rather than here — [`list_profile_dirs`] does the `is_dir`
+/// check on the real path. Splitting it that way keeps the predicate injectable
+/// and the decision pure, and both sides agree on the result: a non-directory
+/// entry yields `<entry>/agent/<name>`, which cannot exist anyway.
+///
+/// The trade-off is that tests supply their own profile listing, so they pin
+/// the *selection* rule but cannot catch a filtering mistake in
+/// `list_profile_dirs` itself. That filter is a single `is_dir` whose failure
+/// mode is admitting a bogus profile path no config can hang off, which is why
+/// the blind spot is recorded here rather than papered over.
 fn has_main_config_file(
 	config_root: &Path,
 	exists: &dyn Fn(&Path) -> bool,
@@ -593,6 +634,54 @@ mod tests {
 	/// Every install that has never set a profile has no `profiles/` directory.
 	fn no_profiles(_root: &Path) -> Vec<PathBuf> {
 		Vec::new()
+	}
+
+	#[test]
+	fn config_dir_override_falls_through_an_empty_primary() {
+		// The regression. `Option::or_else` stops at the first `Some`, and
+		// `var_os("")` is `Some("")`, so chaining the two env reads directly let
+		// an empty primary shadow the legacy var entirely. JS `||` does the
+		// opposite, so `dirs.ts` reaches `.foo` and the native side diverged
+		// into the candidate scan. Same boundary that had just been corrected on
+		// the TS side for an empty `ULTRAWORKERS_CONFIG_DIR`.
+		let dir = config_dir_override_from(Some(OsString::from("")), Some(OsString::from(".foo")));
+		assert_eq!(dir, Some(OsString::from(".foo")));
+	}
+
+	#[test]
+	fn config_dir_override_prefers_the_primary_spelling() {
+		let dir =
+			config_dir_override_from(Some(OsString::from(".new")), Some(OsString::from(".foo")));
+		assert_eq!(dir, Some(OsString::from(".new")));
+	}
+
+	#[test]
+	fn config_dir_override_is_absent_when_neither_var_is_usable() {
+		// Both empty is not an override: it must fall through to the candidate
+		// scan rather than resolve to a directory named "".
+		assert_eq!(
+			config_dir_override_from(Some(OsString::from("")), Some(OsString::from(""))),
+			None
+		);
+		assert_eq!(config_dir_override_from(None, Some(OsString::from(""))), None);
+		assert_eq!(config_dir_override_from(None, None), None);
+	}
+
+	#[test]
+	fn an_unusable_override_falls_through_to_the_candidate_scan() {
+		// The two halves together: no usable env override and nothing on disk,
+		// so the write target. Before the precedence fix this path was never
+		// reachable with an empty primary — the empty string resolved instead.
+		let override_value =
+			config_dir_override_from(Some(OsString::from("")), Some(OsString::from("")));
+		let dir = resolve_logs_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			override_value.as_deref(),
+			None,
+			&exists_in(&[]),
+			&no_profiles,
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.ultraworkers/logs"));
 	}
 
 	#[test]

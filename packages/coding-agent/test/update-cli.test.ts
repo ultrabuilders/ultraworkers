@@ -497,7 +497,7 @@ describe("update-cli install target detection", () => {
 	);
 
 	it.skipIf(process.platform === "win32")(
-		"refuses a foreign native target that does not report an OMP version",
+		"refuses a foreign native target that does not report an ultraworkers version",
 		async () => {
 			const dir = await makeTempDir();
 			const aliasPath = path.join(dir, "omp");
@@ -514,7 +514,7 @@ describe("update-cli install target detection", () => {
 					fetchImpl,
 					validateExistingTarget: target.validateExistingTarget,
 				}),
-			).rejects.toThrow("does not report an OMP version when run directly");
+			).rejects.toThrow("does not report an ultraworkers version when run directly");
 			expect(fetchImpl).not.toHaveBeenCalled();
 		},
 	);

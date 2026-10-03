@@ -68,12 +68,28 @@ const SOURCE_BIN_MOUNT = "/opt/omp/bin";
 const VMNET_HOST_IP = "192.168.64.1";
 const DOCKER_GATEWAY_URL = "http://host.docker.internal:4000";
 const VMNET_GATEWAY_URL = `http://${VMNET_HOST_IP}:4000`;
+const DEFAULT_CONTAINER_DNS = "1.1.1.1";
+
 /**
  * Resolver injected into Apple Container runs (ULTRAWORKERS_BENCH_CONTAINER_DNS overrides).
  * The vmnet gateway resolver (192.168.64.1:53) is unreachable when VPN/DNS
  * agents on the host intercept port 53, so containers get an explicit one.
+ *
+ * `OMP_BENCH_CONTAINER_DNS` is the pre-rebrand spelling, still read when the canonical
+ * variable is undefined so an existing export keeps working. Same precedence as
+ * `resolveProfileEnv`'s OMP_PROFILE/PI_PROFILE pair: an explicitly-empty canonical
+ * value selects the default rather than silently inheriting the legacy one.
+ *
+ * Pure and exported so the precedence is testable without mutating the process env,
+ * which this module reads once at load.
  */
-const CONTAINER_DNS = process.env.ULTRAWORKERS_BENCH_CONTAINER_DNS || "1.1.1.1";
+export function resolveContainerDns(env: Record<string, string | undefined>): string {
+	const canonical = env.ULTRAWORKERS_BENCH_CONTAINER_DNS;
+	if (canonical !== undefined) return canonical || DEFAULT_CONTAINER_DNS;
+	return env.OMP_BENCH_CONTAINER_DNS || DEFAULT_CONTAINER_DNS;
+}
+
+const CONTAINER_DNS = resolveContainerDns(process.env);
 
 export interface Config {
 	models: string[];

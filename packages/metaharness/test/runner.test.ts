@@ -10,6 +10,7 @@ import {
 	readTrials,
 	transcriptFilename,
 	resolveResumeConfig,
+	resolveContainerDns,
 } from "../src/runner";
 
 describe("generic agent-arg / env passthrough", () => {
@@ -276,5 +277,36 @@ describe("resume", () => {
 		// No explicit filters → no -f flags: harbor's own default applies.
 		const bare = parseArgs(["--resume", "j"]);
 		expect(buildResumeArgs(bare, "/jobs/j")).toEqual(["job", "resume", "-p", "/jobs/j"]);
+	});
+});
+
+describe("resolveContainerDns", () => {
+	it("keeps an existing pre-rebrand export working, and lets the canonical variable win", () => {
+		// 75b20d7a13 renamed OMP_BENCH_CONTAINER_DNS -> ULTRAWORKERS_BENCH_CONTAINER_DNS with no
+		// fallback. The docblock advertises this as a user override ("overrides"), so a user who
+		// exported the old spelling silently fell back to 1.1.1.1 — a real resolver change, not a
+		// cosmetic rename.
+		expect(resolveContainerDns({})).toBe("1.1.1.1");
+		expect(resolveContainerDns({ OMP_BENCH_CONTAINER_DNS: "8.8.8.8" })).toBe("8.8.8.8");
+		// Canonical wins in both directions; the legacy value must not survive alongside it.
+		expect(
+			resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "9.9.9.9", OMP_BENCH_CONTAINER_DNS: "8.8.8.8" }),
+		).toBe("9.9.9.9");
+		expect(
+			resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "1.0.0.1", OMP_BENCH_CONTAINER_DNS: "8.8.8.8" }),
+		).toBe("1.0.0.1");
+	});
+
+	it("treats an explicitly-empty canonical value as the default, not as a request for the legacy one", () => {
+		// The distinction resolveProfileEnv draws for OMP_PROFILE/PI_PROFILE, and the reason this is
+		// not `canonical || legacy || default`: an operator who explicitly clears the new variable is
+		// asking for the default, and inheriting the old value back would silently re-enable a
+		// resolver they just retired.
+		expect(resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "", OMP_BENCH_CONTAINER_DNS: "8.8.8.8" })).toBe(
+			"1.1.1.1",
+		);
+		expect(resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "" })).toBe("1.1.1.1");
+		// …while an empty legacy value still resolves to the default rather than to "".
+		expect(resolveContainerDns({ OMP_BENCH_CONTAINER_DNS: "" })).toBe("1.1.1.1");
 	});
 });

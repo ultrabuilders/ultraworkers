@@ -8,6 +8,7 @@
  * response; responses may arrive out of order.
  */
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import type { PredictedWord } from "@oh-my-pi/pi-natives";
 export { TEXT_PREDICT_WORKER_ARG } from "../cli/worker-selectors";
 
@@ -20,15 +21,21 @@ export const TEXT_PREDICT_SOCKET_ENV = "OMP_TEXT_PREDICT_SOCKET";
 /** Environment key carrying the agent directory whose history and state the daemon serves. */
 export const TEXT_PREDICT_AGENT_DIR_ENV = "OMP_TEXT_PREDICT_AGENT_DIR";
 
-/** Broker readiness regex matched against {@link textPredictReadyBanner}. */
-export const TEXT_PREDICT_READY_PATTERN = String.raw`omp text-predict listening on \S+`;
+/**
+ * Broker readiness regex matched against {@link textPredictReadyBanner}.
+ *
+ * Deliberately carries NO product name — the banner below leads with
+ * {@link APP_NAME}, so the two ends stay matched across a rename. Same rule as
+ * `ida/protocol.ts` and `relay/daemon.ts:26`.
+ */
+export const TEXT_PREDICT_READY_PATTERN = String.raw`text-predict listening on \S+`;
 
 /** Engines the daemon can open (`TextPredictor` methods); clients resolve `auto` before asking. */
 export type TextPredictMethod = "ngram" | "smollm" | "apple";
 
 /** Banner printed on stdout once the daemon accepts connections. */
 export function textPredictReadyBanner(endpoint: string): string {
-	return `omp text-predict listening on ${endpoint}`;
+	return `${APP_NAME} text-predict listening on ${endpoint}`;
 }
 
 /**

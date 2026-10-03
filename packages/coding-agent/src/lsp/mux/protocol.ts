@@ -10,6 +10,7 @@
  * entry (`server.ts`), the client connector (`daemon.ts`), and tests.
  */
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 export { LSP_MUX_WORKER_ARG } from "../../cli/worker-selectors";
 
 /** Environment key carrying the socket endpoint the mux must listen on. */
@@ -21,12 +22,20 @@ export const LSP_MUX_PROJECT_DIR_ENV = "OMP_LSP_MUX_PROJECT_DIR";
 /** Stable broker daemon name for the shared LSP mux. */
 export const LSP_MUX_DAEMON_NAME = "omp.lsp.mux";
 
-/** Broker readiness regex matched against the banner printed by the worker. */
-export const LSP_MUX_READY_PATTERN = String.raw`omp lsp mux listening on \S+`;
+/**
+ * Broker readiness regex matched against the banner printed by the worker.
+ *
+ * Deliberately carries NO product name. The banner below leads with
+ * {@link APP_NAME}, so a brand-free pattern is what keeps the two ends matched
+ * across a rename: pinning a name here would silently desync the broker from the
+ * worker the moment either side moved. `lsp/mux` and `ida` are the same shape,
+ * and `relay/daemon.ts:26` is the same rule already applied.
+ */
+export const LSP_MUX_READY_PATTERN = String.raw`lsp mux listening on \S+`;
 
 /** Banner printed on stdout once the mux socket accepts connections. */
 export function lspMuxReadyBanner(endpoint: string): string {
-	return `omp lsp mux listening on ${endpoint}`;
+	return `${APP_NAME} lsp mux listening on ${endpoint}`;
 }
 
 /** Resolve the Unix socket or Windows named pipe for one project scope. */

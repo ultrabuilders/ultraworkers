@@ -8,6 +8,7 @@
  * public traffic reaches the same store through the exposure.
  */
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 export { BLOB_BROKER_WORKER_ARG } from "../cli/worker-selectors";
 import type { BlobDestinationId } from "./destinations";
 import type { BlobPublication, RemoteDeleteAction } from "./publication";
@@ -23,12 +24,18 @@ export const BLOB_BROKER_CONFIG_ENV = "OMP_BLOB_BROKER_CONFIG";
 /** Stable broker daemon name for the shared blob broker. */
 export const BLOB_BROKER_DAEMON_NAME = "omp.blob.broker";
 
-/** Broker readiness regex matched against the banner printed by the worker. */
-export const BLOB_BROKER_READY_PATTERN = String.raw`omp blob broker serving \S+`;
+/**
+ * Broker readiness regex matched against the banner printed by the worker.
+ *
+ * Deliberately carries NO product name — the banner below leads with
+ * {@link APP_NAME}, so the two ends stay matched across a rename. Same rule as
+ * `ida/protocol.ts` and `relay/daemon.ts:26`.
+ */
+export const BLOB_BROKER_READY_PATTERN = String.raw`blob broker serving \S+`;
 
 /** Banner printed on stdout once the exposure is up and control is listening. */
 export function blobBrokerReadyBanner(baseUrl: string): string {
-	return `omp blob broker serving ${baseUrl}`;
+	return `${APP_NAME} blob broker serving ${baseUrl}`;
 }
 
 /** Resolve the control socket path for one project scope. */

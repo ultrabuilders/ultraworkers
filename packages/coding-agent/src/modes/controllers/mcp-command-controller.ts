@@ -45,6 +45,7 @@ import {
 	saveSmitheryApiKey,
 } from "../../mcp/smithery-auth";
 import { SmitheryConnectError } from "../../mcp/smithery-connect";
+import { applyScopePolicy } from "../../mcp/scope-policy";
 import {
 	SmitheryRegistryError,
 	type SmitherySearchResult,
@@ -1356,7 +1357,9 @@ export class MCPCommandController {
 				try {
 					await this.#handleTestConnection(config);
 					isConnected = true;
-					await this.#syncManagerConnection(name, config);
+					// GAP-D9: the wizard knows the scope it is adding to, and this
+					// connect passes no source map, so nothing downstream can recover it.
+					await this.#syncManagerConnection(name, applyScopePolicy(config, scope));
 				} catch {
 					// Keep disconnected status
 				}
@@ -1674,7 +1677,12 @@ export class MCPCommandController {
 				return;
 			}
 
-			const { config } = found;
+			// GAP-D9: `found` carries the scope this config was read at, and the
+			// literal policy is applied here rather than inside
+			// `#findConfiguredServer` — three handlers below write that config back
+			// to disk, and a policy forced onto the reader would persist
+			// `envPolicy`/`headerPolicy` into the user's own `.mcp.json`.
+			const config = applyScopePolicy(found.config, found.scope);
 			if (config.enabled === false) {
 				this.ctx.mcpTestEscapeHandlers.delete(handleEscape);
 				this.ctx.showError(`Server "${name}" is disabled. Run /mcp enable ${name} first.`);
@@ -1861,7 +1869,7 @@ export class MCPCommandController {
 			const updated: MCPServerConfig = { ...found.config, enabled };
 			await updateMCPServer(found.filePath, name, updated);
 			if (enabled) {
-				await this.#connectEnabledMCPServer(name, updated);
+				await this.#connectEnabledMCPServer(name, applyScopePolicy(updated, found.scope));
 			} else {
 				await this.ctx.mcpManager?.disconnectServer(name);
 				await this.ctx.session.refreshMCPTools(this.ctx.mcpManager?.getTools() ?? []);

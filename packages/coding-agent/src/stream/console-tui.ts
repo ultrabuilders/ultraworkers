@@ -157,17 +157,17 @@ class StreamConsoleComponent implements Component, Focusable {
 				kbd("ctrl+c", "quit"),
 				text([span("quit", "dim")]),
 			],
-			{ gap: "xs", align: "center", role: "omp.hint" },
+			{ gap: "xs", align: "center", role: "ultraworkers.hint" },
 		);
 		const consoleNode = col(
 			[
 				text(header, { wrap: "none" }),
 				text(details, { wrap: "none" }),
-				col(this.#logNodes.slice(), { grow: 1, role: "omp.stream.log" }),
+				col(this.#logNodes.slice(), { grow: 1, role: "ultraworkers.stream.log" }),
 				this.#input,
 				hint,
 			],
-			{ role: "omp.stream.console" },
+			{ role: "ultraworkers.stream.console" },
 		);
 		this.#native = { revision: this.#revision, node: consoleNode };
 		return consoleNode;

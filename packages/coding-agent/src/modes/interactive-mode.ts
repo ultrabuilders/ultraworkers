@@ -687,7 +687,7 @@ function describeJobsHud(running: number): NativeNode {
 	return node(
 		"row",
 		{
-			role: "omp.hud.pill",
+			role: "ultraworkers.hud.pill",
 			gap: "xs",
 			align: "center",
 			title: "Background jobs  /jobs",
@@ -761,7 +761,7 @@ class DeferredCommandPreview implements Component {
 				col(this.items, { max: { h: `${this.maxRows}lines` } }),
 				text([span(`${queued} — shown in full in the transcript when the agent pauses`, "dim")]),
 			],
-			{ role: "omp.hud.deferred" },
+			{ role: "ultraworkers.hud.deferred" },
 		);
 		return this.#native;
 	}
@@ -911,7 +911,7 @@ export function describeSubagentHud(sessions: ObservableSession[]): NativeNode {
 			),
 		],
 		{
-			role: "omp.hud.pill",
+			role: "ultraworkers.hud.pill",
 			gap: "xs",
 			align: "center",
 			title: `Agents  ${formatDoubleTap("left")}`,
@@ -1271,7 +1271,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				rate,
 				node: row([node("rate", { value: rate, unit: "tok/s" }, undefined, "rate")], {
 					justify: "end",
-					role: "omp.working.idle",
+					role: "ultraworkers.working.idle",
 				}),
 			};
 		}
@@ -1289,7 +1289,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		const memo = this.#hudPillsNative;
 		const empty = this.todoHudNative === undefined && this.subagentContainer.children.length === 0 && running === 0;
 		if (memo && memo.empty === empty && sameItems(memo.children, children)) return memo.node;
-		const described = row(children, { role: "omp.hud", justify: "end", gap: "sm", hidden: empty || undefined });
+		const described = row(children, {
+			role: "ultraworkers.hud",
+			justify: "end",
+			gap: "sm",
+			hidden: empty || undefined,
+		});
 		this.#hudPillsNative = { children, empty, node: described };
 		return described;
 	}
@@ -1310,7 +1315,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			return memo.node;
 		}
 		const parts: NativeChild[] = children.length === 0 ? (slot ? [slot] : []) : children.slice();
-		const hud = parts.length === 0 ? EMPTY_HUD : col(parts, { role: "omp.hud.status" });
+		const hud = parts.length === 0 ? EMPTY_HUD : col(parts, { role: "ultraworkers.hud.status" });
 		this.#statusHudNative = { children: children.slice(), slot, node: hud };
 		return hud;
 	}
@@ -4192,7 +4197,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				),
 				node("tree", { nodes: phaseNodes }),
 			],
-			{ role: "omp.hud.todo" },
+			{ role: "ultraworkers.hud.todo" },
 		);
 		// A `checklist` HUD is a pill with the whole plan as its popover.
 		const checklistPhases: TspChecklistPhase[] = phases.map((phase, phaseIndex) => ({
@@ -4219,7 +4224,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			}),
 		}));
 		this.todoHudNative = {
-			checklist: node("checklist", { phases: checklistPhases, mode: "hud", role: "omp.hud.todo" }),
+			checklist: node("checklist", { phases: checklistPhases, mode: "hud", role: "ultraworkers.hud.todo" }),
 			fallback,
 		};
 	}
@@ -7397,7 +7402,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			row([node("icon", { name: "loop", tone: "muted" }), kbd(retryKey, "key"), text([span("to Retry", "dim")])], {
 				gap: "xs",
 				align: "center",
-				role: "omp.hint.retry",
+				role: "ultraworkers.hint.retry",
 			}),
 		);
 		this.statusContainer.addChild(this.#retryHintRow);

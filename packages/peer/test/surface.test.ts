@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Database } from "bun:sqlite";
+import { normalizeToolName } from "@oh-my-pi/pi-coding-agent/tools/builtin-names";
 import { type } from "@oh-my-pi/omptype";
 import type { InboxStore } from "../src/inbox/store";
 import { registerPeerCommands } from "../src/tools/commands";
@@ -10,17 +11,26 @@ import { registerPeerTools } from "../src/tools/register";
  *
  * The verbs themselves are tested in `tools-verbs.test.ts`, where they are plain
  * functions over data. What that file cannot see is the shape of the SURFACE —
- * how many tools got registered, and whether the operator commands leaked into
- * it. Those are claims about what a host receives, so they are asserted by
- * driving the real registration with a recording `ExtensionAPI`.
+ * how many tools got registered, whether the operator commands leaked into it,
+ * and what the host does to the names. Those are claims about what a host
+ * receives, so they are asserted by driving the real registration with a
+ * recording `ExtensionAPI`.
  *
  * A count is the only assertion that survives someone adding a verb: each verb's
  * own tests would keep passing, and a docblock would keep saying "four".
  */
 
+/** Enough of a tool definition to execute one the way a host would. */
+interface RecordedTool {
+	readonly name: string;
+	execute(id: string, params: Record<string, unknown>): Promise<unknown>;
+}
+
 interface Recorded {
 	readonly tools: string[];
 	readonly commands: string[];
+	readonly defs: Map<string, RecordedTool>;
+	readonly delivered: Array<{ to: string }>;
 }
 
 /**
@@ -34,18 +44,26 @@ interface Recorded {
 function recordSurface(): Recorded {
 	const tools: string[] = [];
 	const commands: string[] = [];
+	const defs = new Map<string, RecordedTool>();
+	const delivered: Array<{ to: string }> = [];
 	const api = {
 		arktype: type,
-		registerTool: (def: { name: string }) => void tools.push(def.name),
+		registerTool: (def: RecordedTool) => {
+			tools.push(def.name);
+			defs.set(def.name, def);
+		},
 		registerCommand: (name: string) => void commands.push(name),
 	};
 
 	registerPeerTools(api as never, {
-		selfId: "self",
+		selfId: "BlueLake",
 		leaseDb: (() => undefined) as unknown as () => Database,
 		inbox: (() => undefined) as unknown as () => InboxStore,
 		roster: async () => [],
-		deliver: async () => ({ delivered: 0, receipts: [] }),
+		deliver: async ({ to }: { to: string }) => {
+			delivered.push({ to });
+			return { delivered: 1, receipts: [] };
+		},
 	});
 
 	registerPeerCommands(api as never, {
@@ -56,7 +74,7 @@ function recordSurface(): Recorded {
 		notify: () => {},
 	});
 
-	return { tools, commands };
+	return { tools, commands, defs, delivered };
 }
 
 describe("the peer tool surface", () => {
@@ -66,6 +84,31 @@ describe("the peer tool surface", () => {
 		// rather than about any single name.
 		const { tools } = recordSurface();
 		expect(tools.slice().sort()).toEqual(["peer.list", "peer.lock", "peer.release", "peer.send"]);
+	});
+
+	it("hands the host four names that normalisation leaves alone", () => {
+		// The failure this defends: `normalizeToolName` lowercases any name it
+		// recognises and rewrites legacy aliases, so a verb registered as
+		// `peer.Send` would reach a model as `peer.send` — while the tool's own
+		// `name` field still said otherwise, and any allowlist built from one of
+		// them would miss. Asserted through the real normaliser rather than by
+		// reading the names, because the point is what the host does to them.
+		const { tools } = recordSurface();
+		expect(tools.map(name => normalizeToolName(name))).toEqual(tools);
+	});
+
+	it("refuses a send to yourself with that reason, not 'unknown name'", async () => {
+		// The failure this defends: self-send falls through to a name lookup and
+		// comes back as an unknown recipient. The agent then reports a routing
+		// failure and goes looking for a peer who does not exist, when the actual
+		// problem is a loop it wrote itself.
+		const { defs, delivered } = recordSurface();
+		const result = await defs.get("peer.send")?.execute("id", { to: "BlueLake", message: "hi" });
+
+		expect(JSON.stringify(result)).toContain("yourself");
+		expect(JSON.stringify(result)).not.toContain("unknown");
+		// And nothing was handed to the wire.
+		expect(delivered).toEqual([]);
 	});
 
 	it("offers no way to force-release another agent's claim", () => {

@@ -338,11 +338,18 @@ touched. This has already produced cross-contaminated commits twice in one day (
       'new.txt' did not match any file(s) known to git`. This is the *common* case on this tree —
       a new test, a new source file — and it is the first file you touch. `git add -N` first
       makes it work.
-    - **The two tools need opposite preparation, and the safe one refuses the unsafe one's fix.**
-      `git add -N` stages the empty placeholder blob, which `--only` commits as real content and
-      `commit-scoped.ts` **rejects** (`is staged intent-to-add (empty placeholder blob), not real
-      content`). Prepare a new file with `add -N` for `--only`; with `commit-scoped.ts`, use a real
-      `git add`. Switching to the safe tool after `add -N` fails at exactly that moment.
+    - **A new file needs `git add -N` first, for either commit verb, and nothing more.**
+      `add -N` makes the path *known to git* so a pathspec matches it, and records git's empty
+      blob as a **placeholder** — it does not stage the content. Both verbs then read the real
+      bytes from the working tree. Measured: `git add -N new.txt`, then `HEAD:new.txt` is the
+      file's actual content (5 bytes for a 5-byte file), via `git commit --only` and via
+      `commit-scoped.ts` alike. Without `add -N` there is no index row for the path at all, and
+      `commit-scoped.ts` correctly refuses with `nothing is staged for new.txt` — it commits from
+      the index, so a path the index has never heard of is one it cannot see. Do not "upgrade" to
+      a real `git add` for the safe tool; that is what an earlier version of this file wrongly
+      told you to do, on the theory that `commit-scoped.ts` rejected the placeholder. It resolves
+      it now, and the refusal it used to raise was the wrong polarity: a tool that rejects a
+      state the tool it replaces accepts stops you at exactly the moment you switch to it.
   - A bare `git commit` reads the index as staged — which is right when the index is yours alone,
     and wrong the moment a peer has staged something. Verified in the same experiment: the bare
     commit took `INDEX_VERSION` and left the working tree untouched.

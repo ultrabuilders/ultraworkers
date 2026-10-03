@@ -179,6 +179,8 @@
 
 ### Changed
 
+- Debug report bundles are now written as `ultraworkers-report-<timestamp>.tar.gz` instead of `omp-report-…`. The three names retired alongside it are invisible — a per-request multipart boundary, a module-cache key suffix, and an RPC spool directory prefix — and each was checked for a reader outside the function that mints it before changing.
+
 - The build-time shim that resolves legacy `pi` module specifiers now registers under `uw:` rather than `omp:`, so the three errors it raises when a bundled module is unavailable read `uw:legacy-pi-shim: …` instead of `omp:legacy-pi-shim: …`. The prefix is internal — it identifies the plugin to Bun and appears in these messages only — so nothing that imports those specifiers changes behaviour; only the text of a failure does.
 
 - The IDA tool's documentation and its prompt described each database as an `omp.ida.<id>` daemon and told the reader to check `omp ps`, neither of which the shipped CLI offers any more — the daemon prefix is derived from `APP_NAME`, so it follows the rename on its own, and the package publishes a single `ultraworkers` binary. `docs/tools/ida.md` and the IDA prompt now name the daemon `ultraworkers.ida.<id>` and the command `ultraworkers ps`, so what they describe matches what the tool actually accepts and lists. No compatibility branch was added for the old spelling: a daemon registered by a previous version is short-lived and per-project, and matching it by name across versions is a contract nobody asked for.

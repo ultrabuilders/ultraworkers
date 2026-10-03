@@ -70,6 +70,10 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// with these four unclassified, `bun run test:scripts` exited 1 having run
 	// **0** files (no `N pass` line at all).
 	{ file: "check-metaharness-output-filename.test.ts", reason: "" },
+	// epic-7585's discriminator: a byte-identical `-`/`+` pair is a MOVED line, not an
+	// edited one. Wired in the same commit that added it, so the gate that exists to
+	// catch unwired tests does not have to be the thing that reports it.
+	{ file: "revision-content-diff.test.ts", reason: "" },
 	// The `runs-on` label gate's own test. It landed with the gate and was left
 	// unclassified, which is not a warning about this one file: the refusal at the
 	// top of the runner stops `test:scripts` before it executes ANY file, so the

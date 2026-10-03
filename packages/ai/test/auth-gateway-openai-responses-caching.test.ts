@@ -7,8 +7,8 @@
  * input_tokens_details.cached_tokens in the response usage block".
  *
  * Skips unless a local gateway is reachable at the default `127.0.0.1:4000`
- * (override via `OMP_E2E_GATEWAY_URL`) AND the bearer token file exists at
- * `~/.omp/auth-gateway.token`.
+ * (override via `OMP_E2E_GATEWAY_URL`) AND the bearer token file exists
+ * under the resolved config root (same helper production writes it to).
  *
  * To run: `bun --cwd packages/ai test test/auth-gateway-openai-responses-caching.test.ts`
  * with the gateway live (`ultraworkers auth-gateway serve` or pm2).

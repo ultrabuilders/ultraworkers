@@ -10,7 +10,7 @@
  * what keeps them two.
  */
 import { describe, expect, it } from "bun:test";
-import { pageContainsToken, parseDocsCitations } from "./propose-rows.ts";
+import { pageContainsToken, parseDocsCitations } from "./propose-rows";
 
 /** A page that mentions one variable, and only that one. */
 const PAGE = "Set OMP_PROFILE=1 in your shell. OMP_PROFILE selects the active profile.";

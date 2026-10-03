@@ -11,6 +11,12 @@ import * as path from "node:path";
  * first row the refusals below would pass just as well if the hook were never
  * invoked at all — a guard that cannot fire reads exactly like a guard that is
  * working, so firing is proved separately rather than assumed.
+ *
+ * `makeRepo` copies the hook and chmods the COPY to 0755, so every row below
+ * proves the hook's LOGIC and none of them proves the shipped FILE is usable.
+ * Those are separate contracts, and the shipped one was broken: the hook was
+ * tracked 100644, so on every fresh clone git ignored it with a hint and a bare
+ * commit succeeded. All seven rows stayed green. Hence the mode row.
  */
 
 const HOOK = path.join(import.meta.dir, "pre-commit");
@@ -51,6 +57,23 @@ async function seed(dir: string, name: string, content: string) {
 }
 
 describe("pre-commit guard", () => {
+	it("is tracked executable, or git ignores it and every other row proves nothing", () => {
+		// `makeRepo` chmods its own copy, so this is the only row that sees the mode
+		// git actually checks out. Git skips a non-executable hook and says so in a
+		// hint that scrolls past: the guard is then absent, not failing, which is
+		// why the suite read 7 pass while the hazard it exists for was still open.
+		//
+		// Asserted on the INDEX entry, not the filesystem, because the index is what
+		// a clone gets — a local `chmod +x` that was never staged fixes one machine
+		// and ships 100644 to everyone else.
+		const mode = Bun.spawnSync(["git", "ls-files", "-s", "scripts/hooks/pre-commit"], {
+			cwd: path.join(import.meta.dir, "..", ".."),
+			stdout: "pipe",
+			stderr: "pipe",
+		}).stdout.toString();
+		expect(mode).toStartWith("100755");
+	});
+
 	it("runs at all, and reports which index it was handed", async () => {
 		// The control. If this row fails, every refusal below is passing for the
 		// wrong reason and the suite proves nothing.
@@ -78,6 +101,35 @@ describe("pre-commit guard", () => {
 		expect(r.code).not.toBe(0);
 		expect(r.err).toContain("belongs to every agent");
 		// The refusal must not have quietly gone through anyway.
+		expect(git(dir, ["rev-parse", "HEAD"]).out.trim()).toBe(before);
+	});
+
+	it("refuses `git commit -a`, which stages every tracked file the same way", async () => {
+		// `-a` is the bare commit wearing a flag: it stages every tracked file in the
+		// tree, so it commits exactly what a bare commit would. The guard compared
+		// GIT_INDEX_FILE against `$git_dir/index` by PATH, and `-a` runs against
+		// `$git_dir/index.lock` — a different path — so it read as path-scoped and
+		// exited 0. Measured: a peer's untracked-in-index row landed in the commit
+		// while the guard reported success.
+		//
+		// Asserted on the OBSERVABLE outcome (the peer's row must not be in the
+		// commit), not on which index git handed the hook: the index path is git's
+		// business and could change, while "the peer's row is in the commit" is the
+		// harm this guard exists to prevent.
+		const dir = await makeRepo();
+		await seed(dir, "a.txt", "a\n");
+		git(dir, ["commit", "-qm", "seed"]);
+		// Tracked but unmodified in the index, and modified in the worktree: `-a`
+		// stages the modification, which is what puts it in the commit.
+		await Bun.write(path.join(dir, "peer.txt"), "theirs\n");
+		git(dir, ["add", "peer.txt"]);
+		git(dir, ["commit", "-qm", "theirs"]);
+		await Bun.write(path.join(dir, "peer.txt"), "theirs-again\n");
+
+		const before = git(dir, ["rev-parse", "HEAD"]).out.trim();
+		const r = git(dir, ["commit", "-qam", "mine"]);
+
+		expect(r.code).not.toBe(0);
 		expect(git(dir, ["rev-parse", "HEAD"]).out.trim()).toBe(before);
 	});
 

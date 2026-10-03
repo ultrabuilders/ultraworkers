@@ -38,11 +38,34 @@ shared_index=$(abs "$git_dir/index")
 
 if [ -n "${GIT_INDEX_FILE:-}" ]; then
 	case_index=$(abs "$GIT_INDEX_FILE")
-	if [ "$case_index" != "$shared_index" ]; then
+	case_name=${case_index##*/}
+	# A path-scoped commit runs against a throwaway index holding exactly the rows
+	# the caller named, and git names that file `next-index-<pid>.lock`. It is the
+	# NAME that identifies it, not the directory: `git commit -a` and
+	# `git commit --include` also run against something other than `$git_dir/index`
+	# -- they get `$git_dir/index.lock` -- so comparing paths alone let them
+	# through, and each of them stages every tracked file in the tree, which is
+	# this hazard wearing a flag. Measured, all three forms:
+	#
+	#   git commit -qm msg                    GIT_INDEX_FILE=.git/index
+	#   git commit -qam msg                   GIT_INDEX_FILE=.git/index.lock
+	#   git commit -qm msg --only -- path     GIT_INDEX_FILE=.git/next-index-<pid>.lock
+	case "$case_name" in
+	next-index-*.lock)
 		# Path-scoped: git built a throwaway index for this invocation, so the
 		# rows in it are the ones the caller named and nobody else's.
 		exit 0
-	fi
+		;;
+	index | index.lock)
+		# The shared index, or the bulk-stage forms that lock and rewrite it in
+		# place. Both hold every row on this tree, so both fall through to the
+		# refusal below.
+		;;
+	*)
+		# Any other index is one git built for this invocation.
+		exit 0
+		;;
+	esac
 fi
 
 # A commit with nothing staged is git's own error to report. Refusing here would

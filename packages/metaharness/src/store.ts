@@ -363,7 +363,7 @@ export class RunStore {
 		if (!fs.existsSync(jobDir)) return this.getRun(jobName);
 		const row = this.getRun(jobName);
 		if (!row) return null;
-		const snapshot = readBenchmarkSnapshot(row.benchmark, jobDir);
+		const snapshot = readBenchmarkSnapshot(row.benchmark, jobDir, row.agent);
 		const now = Date.now();
 		const upsert = this.#db.query(
 			`INSERT INTO trials

@@ -36,6 +36,30 @@ const PI_UPSTREAM_VERSION = "0.86.1";
 /** Agents this runner installs itself (config + secrets travel via `ULTRAWORKERS_BENCH_*`). */
 const MANAGED_AGENTS: Record<string, true> = { omp: true, pi: true };
 
+/**
+ * Transcript filename each agent-side script writes, keyed by `--agent` value.
+ *
+ * There are two producers and they do NOT agree: `agent/omp_local.py` sets
+ * `_OUTPUT_FILENAME = "omp.txt"` and `agent/pi_upstream.py` sets `"pi.txt"`.
+ * Every read below used one hardcoded name, so a `--agent pi` trial read a file
+ * that is never written — `probeTrialCost` returned null and `?? 0` folded
+ * cost and token counts to zero for every live trial, with no error and no log.
+ * The check that was supposed to catch the drift only compared omp_local.py
+ * against this file, so it agreed with the hardcoded name by construction.
+ *
+ * Reading a constant here cannot be right: the name is the producer's, and the
+ * producers are per-agent. Both sides are asserted together by
+ * `scripts/check-metaharness-output-filename.ts`.
+ */
+const AGENT_TRANSCRIPT_FILENAME: Record<string, string> = { omp: "omp.txt", pi: "pi.txt" };
+
+/** The transcript a given agent writes. Throws rather than defaulting to a wrong name. */
+export function transcriptFilename(agent: string): string {
+	const filename = AGENT_TRANSCRIPT_FILENAME[agent];
+	if (!filename) throw new Error(`no transcript filename known for agent "${agent}"`);
+	return filename;
+}
+
 /** Container-side mount points for `--install source` (must match omp_local.py defaults). */
 const SOURCE_SRC_MOUNT = "/opt/omp/src";
 const SOURCE_BIN_MOUNT = "/opt/omp/bin";
@@ -608,19 +632,19 @@ function probeLine(line: string, probe: CostProbe): void {
 
 /**
  * Realtime usage for a still-running trial, read incrementally from its
- * `agent/omp.txt` JSONL. Only bytes appended since the previous call are read
+ * transcript JSONL. Only bytes appended since the previous call is read
  * and parsed — both this runner's render loop and the manager's 2s sync tick
  * call this for every live trial, and a full-file reread used to block the
  * event loop for seconds (and OOM outright on runaway multi-GB transcripts).
  */
-function probeTrialCost(ompLogPath: string): CostProbe | null {
+function probeTrialCost(transcriptPath: string): CostProbe | null {
 	let size: number;
 	try {
-		size = fs.statSync(ompLogPath).size;
+		size = fs.statSync(transcriptPath).size;
 	} catch {
-		return costProbes.get(ompLogPath) ?? null;
+		return costProbes.get(transcriptPath) ?? null;
 	}
-	let probe = costProbes.get(ompLogPath);
+	let probe = costProbes.get(transcriptPath);
 	if (!probe || size < probe.offset) {
 		// New (or truncated/rotated) transcript. Skip a pre-existing giant head.
 		probe = {
@@ -632,12 +656,12 @@ function probeTrialCost(ompLogPath: string): CostProbe | null {
 			tokOut: 0,
 			tokCache: 0,
 		};
-		costProbes.set(ompLogPath, probe);
+		costProbes.set(transcriptPath, probe);
 	}
 	if (size === probe.offset) return probe;
 	let fd: number;
 	try {
-		fd = fs.openSync(ompLogPath, "r");
+		fd = fs.openSync(transcriptPath, "r");
 	} catch {
 		return probe;
 	}
@@ -671,7 +695,7 @@ function probeTrialCost(ompLogPath: string): CostProbe | null {
 }
 
 /** Parse one trial directory into a Trial, or null if it isn't a trial dir yet. */
-function parseTrial(dir: string, name: string): Trial | null {
+function parseTrial(dir: string, name: string, agent: string): Trial | null {
 	const resultPath = path.join(dir, "result.json");
 	if (!fs.existsSync(resultPath)) {
 		// running: dir exists, no result yet. Use dir mtime as start proxy.
@@ -685,7 +709,7 @@ function parseTrial(dir: string, name: string): Trial | null {
 		// Realtime cost from the live agent log, parsed incrementally. The name is the
 		// producer's, not ours: the agent-side script sets `_OUTPUT_FILENAME` and this
 		// runner reads whatever that writes. Renaming one side alone breaks the pair.
-		const probe = probeTrialCost(path.join(dir, "agent", "omp.txt"));
+		const probe = probeTrialCost(path.join(dir, "agent", transcriptFilename(agent)));
 		const costUsd = probe?.costUsd ?? 0;
 		const tokIn = probe?.tokIn ?? 0;
 		const tokOut = probe?.tokOut ?? 0;
@@ -704,7 +728,7 @@ function parseTrial(dir: string, name: string): Trial | null {
 		};
 	}
 	// Trial finished: usage now comes from result.json; drop the live-parse state.
-	costProbes.delete(path.join(dir, "agent", "omp.txt"));
+	costProbes.delete(path.join(dir, "agent", transcriptFilename(agent)));
 	const raw = readJson(resultPath);
 	if (!raw || typeof raw !== "object") return null;
 	const r = raw as Record<string, unknown>;
@@ -770,7 +794,7 @@ function parseTrial(dir: string, name: string): Trial | null {
 	return { name, status, reward, costUsd, tokIn, tokOut, tokCache, durationMs, detail };
 }
 
-export function readTrials(jobDir: string): Trial[] {
+export function readTrials(jobDir: string, agent: string): Trial[] {
 	let entries: fs.Dirent[] = [];
 	try {
 		entries = fs.readdirSync(jobDir, { withFileTypes: true });
@@ -780,7 +804,7 @@ export function readTrials(jobDir: string): Trial[] {
 	const trials: Trial[] = [];
 	for (const e of entries) {
 		if (!e.isDirectory()) continue;
-		const t = parseTrial(path.join(jobDir, e.name), e.name);
+		const t = parseTrial(path.join(jobDir, e.name), e.name, agent);
 		if (t) trials.push(t);
 	}
 	return trials;
@@ -904,7 +928,7 @@ interface RenderState {
 }
 
 function render(st: RenderState): void {
-	const trials = readTrials(st.jobDir);
+	const trials = readTrials(st.jobDir, st.cfg.agent);
 	const tot = aggregate(trials, readJobResult(st.jobDir), st.expected);
 	const elapsed = Date.now() - st.startMs;
 	const rate = tot.done > 0 ? elapsed / tot.done : 0;
@@ -958,7 +982,7 @@ function render(st: RenderState): void {
 // ────────────────────────────────────────────────────────────────────── report
 
 function writeReport(st: RenderState, benchDir: string, exitCode: number): string {
-	const trials = readTrials(st.jobDir).sort((a, b) => a.name.localeCompare(b.name));
+	const trials = readTrials(st.jobDir, st.cfg.agent).sort((a, b) => a.name.localeCompare(b.name));
 	const tot = aggregate(trials, readJobResult(st.jobDir), st.expected);
 	const successPct = tot.done > 0 ? (tot.pass / tot.done) * 100 : 0;
 	const lines: string[] = [];
@@ -1760,7 +1784,7 @@ async function runBenchmark(cfg: Config): Promise<BenchmarkRun> {
 	}
 
 	// final summary (printed to the normal screen)
-	const trials = readTrials(jobDir);
+	const trials = readTrials(jobDir, cfg.agent);
 	const totals = aggregate(trials, readJobResult(jobDir), expected);
 	const successPct = totals.done > 0 ? (totals.pass / totals.done) * 100 : 0;
 	const elapsedMs = Date.now() - st.startMs;

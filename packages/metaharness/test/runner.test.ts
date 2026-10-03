@@ -8,6 +8,7 @@ import {
 	collectForwardEnv,
 	parseArgs,
 	readTrials,
+	transcriptFilename,
 	resolveResumeConfig,
 } from "../src/runner";
 
@@ -146,11 +147,11 @@ describe("live-trial cost probe", () => {
 		try {
 			const agentDir = path.join(jobDir, "task__abc", "agent");
 			fs.mkdirSync(agentDir, { recursive: true });
-			const log = path.join(agentDir, "omp.txt");
+			const log = path.join(agentDir, transcriptFilename("omp"));
 
 			// First flush: one complete event plus a partial line mid-write.
 			fs.writeFileSync(log, `${usageEvent(0.5, 100, 10)}{"type":"mess`);
-			let [trial] = readTrials(jobDir);
+			let [trial] = readTrials(jobDir, "omp");
 			expect(trial.status).toBe("running");
 			expect(trial.costUsd).toBeCloseTo(0.5);
 			expect(trial.tokIn).toBe(100);
@@ -158,7 +159,7 @@ describe("live-trial cost probe", () => {
 			// Second flush completes the partial line and appends another event.
 			// Only appended bytes are parsed: the first event must count once.
 			fs.appendFileSync(log, `age_end"}\n${usageEvent(0.25, 40, 4)}`);
-			[trial] = readTrials(jobDir);
+			[trial] = readTrials(jobDir, "omp");
 			expect(trial.costUsd).toBeCloseTo(0.75);
 			expect(trial.tokIn).toBe(140);
 			expect(trial.tokOut).toBe(14);

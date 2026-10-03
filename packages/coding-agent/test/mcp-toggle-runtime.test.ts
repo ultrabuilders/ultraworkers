@@ -89,7 +89,15 @@ describe("applyMcpToggleRuntime", () => {
 			discovery: { enableProjectConfig: false, filterExa: true, filterBrowser: true },
 			loadConfigs: async (cwd, options) => {
 				loads.push({ cwd, options });
-				return { configs: {}, sources: {}, exaApiKeys: [] };
+				// A config, not an empty map. The test is about the DISCOVERY FILTERS
+				// reaching the loader, so it wants the loader to return something it
+				// can go on to use — an empty map used to leave `applyMcpToggleRuntime`
+				// on its no-config branch, which now reports instead of returning.
+				return {
+					configs: { "project-only": { command: "true" } },
+					sources: {},
+					exaApiKeys: [],
+				};
 			},
 			manager: {
 				getConnectionStatus: () => "disconnected",
@@ -109,7 +117,53 @@ describe("applyMcpToggleRuntime", () => {
 				options: { enableProjectConfig: false, filterExa: true, filterBrowser: true },
 			},
 		]);
-		expect(connected).toEqual([]);
+		expect(connected).toEqual(["project-only"]);
+	});
+
+	// The regression. Discovery lists project-scope `.mcp.json` servers without
+	// consulting `mcp.enableProjectConfig`, while `applyMcpToggleRuntime` re-derives
+	// through it — so the panel offers a server the gated loader will not return.
+	// That branch used to refresh and return, which reported success for a connect
+	// that never happened; `MCPCommandController.#connectEnabledMCPServer` had
+	// already fixed the same defect on the `/mcp` side by naming the knob.
+	test("a server the gated loader will not return reports instead of reporting success", async () => {
+		const refreshed: (McpCatalogRefreshReason | undefined)[] = [];
+		const promise = applyMcpToggleRuntime({
+			name: "projonly",
+			enabled: true,
+			cwd: "/tmp/project",
+			discovery: { enableProjectConfig: false },
+			// Exactly what the gated loader returns for a project-scope server when
+			// the gate is off: absent from `configs`.
+			loadConfigs: async () => ({ configs: {}, sources: {}, exaApiKeys: [] }),
+			manager: {
+				getConnectionStatus: () => "disconnected",
+				getTools: () => [],
+				disconnectServer: async () => {
+					throw new Error("enable must not disconnect");
+				},
+				connectServers: async () => {
+					throw new Error("nothing was configured, so nothing may connect");
+				},
+			},
+			session: {
+				refreshMCPTools: (_next, reason) => {
+					refreshed.push(reason);
+				},
+			},
+		});
+		// The catalog genuinely did not change, so the refresh still happens — the
+		// report is added, not substituted for it.
+		await promise.then(
+			() => {
+				throw new Error("a connect that never happened must not resolve successfully");
+			},
+			(error: Error) => {
+				expect(error.message).toContain("projonly");
+				expect(error.message).toContain("mcp.enableProjectConfig");
+			},
+		);
+		expect(refreshed).toEqual(["push"]);
 	});
 });
 

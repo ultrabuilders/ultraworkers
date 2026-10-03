@@ -59,7 +59,7 @@ export interface PuppeteerBrowserHandle extends BrowserHandleCommon {
 	browser: Browser;
 	cdpUrl?: string;
 	pid?: number;
-	/** OMP-owned temp Chromium profile directory removed on dispose (process-local headless launches). */
+	/** Product-owned temp Chromium profile directory removed on dispose (process-local headless launches). */
 	userDataDir?: string;
 	/** Broker daemon backing this handle; dispose disconnects instead of closing, kill routes to the broker. */
 	sharedDaemon?: { name: string; projectDir: string };

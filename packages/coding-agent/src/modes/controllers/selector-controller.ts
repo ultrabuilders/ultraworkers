@@ -522,7 +522,11 @@ export class SelectorController {
 				settings: this.ctx.settings,
 				mcpManager: this.ctx.mcpManager,
 				eventBus: this.ctx.eventBus,
-				onMcpToolsChanged: tools => this.ctx.session.refreshMCPTools(tools),
+				// `reason` is forwarded, not dropped. A one-argument lambda still
+				// satisfies `onMcpToolsChanged`, so writing `tools => …(tools)` here
+				// would compile and silently downgrade every panel-driven refresh to
+				// the "cannot state intent" default.
+				onMcpToolsChanged: (tools, reason) => this.ctx.session.refreshMCPTools(tools, reason),
 				browserMcpFilterEnabled: () =>
 					this.ctx.session.getEvalPreludes().some(definition => definition.name === "browser"),
 			}),

@@ -7,6 +7,7 @@ import type { CustomTool } from "../../../extensibility/custom-tools/types";
 import { setMcpServerEnabled } from "../../../mcp/config-writer";
 import type { MCPManager } from "../../../mcp/manager";
 import { MCP_CONNECTION_STATUS_EVENT_CHANNEL } from "../../../mcp/startup-events";
+import type { McpCatalogRefreshReason } from "../../../mcp/types";
 import type { EventBus } from "../../../utils/event-bus";
 import { toolFileHeaderDescription } from "./inspector-runtime";
 import { applyMcpToggleRuntime } from "./mcp-runtime";
@@ -21,7 +22,12 @@ export function createExtensionDashboardRuntime(options: {
 	settings: Settings;
 	mcpManager?: MCPManager;
 	eventBus?: EventBus;
-	onMcpToolsChanged?: (tools: CustomTool[]) => Promise<void> | void;
+	/**
+	 * The session refresh `applyMcpToggleRuntime` drives. `reason` is required so
+	 * the callback cannot quietly forget it: a one-argument lambda still satisfies
+	 * this type and would drop the reason at runtime while compiling clean.
+	 */
+	onMcpToolsChanged?: (tools: CustomTool[], reason: McpCatalogRefreshReason) => Promise<void> | void;
 	browserMcpFilterEnabled?: () => boolean;
 }): ExtensionDashboardRuntime {
 	const { cwd, settings, mcpManager, eventBus, onMcpToolsChanged, browserMcpFilterEnabled } = options;

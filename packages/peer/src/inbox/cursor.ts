@@ -94,12 +94,26 @@ export interface ReadResult {
  * restart, so "full" means BACKLOG. They are different limits at different layers,
  * and conflating them is how an agent ends up debugging the wrong one.
  *
- * Both are 256, which is `pi-parley`'s measured `MAX_MAILBOX_MESSAGES`
- * (`broker/broker.ts:109`) — the reference `epic-jwsy.8` points at for the
- * mechanism. `epic-jwsy.8` also stated 8192 for these; measured, parley's mailbox
- * cap is 256, and the 8192 in that repo is a barrier-directory capacity. The
- * owner's backlog measurement is still the open step, and both constants move
- * together when it lands.
+ * Both are 256, and the number is measured rather than borrowed.
+ *
+ * TWO NUMBERS FROM THE SAME REFERENCE, ONE OF THEM MISATTRIBUTED. `pi-parley`'s
+ * mailbox cap is `MAX_MAILBOX_MESSAGES = 256` (`broker/broker.ts:109`). The 8192
+ * that `epic-jwsy.8` also cites is a **barrier-directory capacity**
+ * (`federation-conversation.ts:64`) and an id-length bound — it is not a mailbox
+ * cap at all. Same shape as borrowing a number and reading the wrong column.
+ *
+ * AND BACKLOG MEASURED HERE, which is what actually settles it. Across the 56
+ * inboxes `mcp_agent_mail_rust` keeps on this machine:
+ *
+ *     median 34   p95 133   max 236   none at or above 256
+ *
+ * 256 sits just under 2× p95 and about 7.5× the median, which is where a
+ * backlog bound belongs: a busy peer approaches it, a peer that is not reading
+ * its mail crosses it. But the headroom at the observed maximum is **20
+ * messages, 7.8%** — one peer out of 56 was already at 92% of it. So
+ * "unread alone above the cap" is not an edge case to guard against; it is the
+ * expected next step, and the reason that path has to report rather than prune
+ * quietly.
  */
 export const INBOX_LIMITS = {
 	/** Unread messages may exceed this before retention starts evicting. */

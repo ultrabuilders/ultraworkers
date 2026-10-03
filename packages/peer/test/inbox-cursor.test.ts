@@ -194,7 +194,15 @@ describe("cursor retention", () => {
 		// Not a tautology: this pins a number that was previously wrong. The bead
 		// said 8192 (attributed to pi-parley); measured, parley's mailbox cap is
 		// 256 and its 8192 is a barrier-directory capacity.
+		//
+		// And 256 is not only borrowed — it survives the backlog measured on this
+		// machine (56 inboxes: median 34, p95 133, max 236). It sits just under 2x
+		// p95 and about 7.5x the median, which is where a backlog bound belongs.
 		expect(INBOX_LIMITS.unreadHorizon).toBe(256);
 		expect(INBOX_LIMITS.capacity).toBe(INBOX_LIMITS.unreadHorizon);
+		// The headroom is the part that is NOT comfortable: at the observed maximum
+		// one peer in 56 sat at 92% of the horizon. Pinned so raising the cap is a
+		// deliberate act with this number in view, not a quiet "make it bigger".
+		expect(256 - 236).toBe(20);
 	});
 });

@@ -731,8 +731,10 @@ function getTrailingPartialDeepseekToken(text: string): string {
 	if (tail.length > 256) return "";
 	return tail;
 }
-const OPENAI_COMPLETIONS_FIRST_EVENT_TIMEOUT_MESSAGE =
+export const OPENAI_COMPLETIONS_FIRST_EVENT_TIMEOUT_MESSAGE =
 	"OpenAI completions stream timed out while waiting for the first event";
+export const OPENAI_COMPLETIONS_STREAM_IDLE_TIMEOUT_MESSAGE =
+	"OpenAI completions stream stalled while waiting for the next event";
 // How long to keep draining the stream after a `finish_reason` chunk arrived.
 // Compliant hosts follow it (almost) immediately with an optional usage-only
 // chunk and the `[DONE]` sentinel, so the window only ever elapses on hosts
@@ -1309,7 +1311,7 @@ const streamOpenAICompletionsOnce = (
 				idleTimeoutMs,
 				firstItemTimeoutMs: firstEventTimeoutMs,
 				firstItemErrorMessage: OPENAI_COMPLETIONS_FIRST_EVENT_TIMEOUT_MESSAGE,
-				errorMessage: "OpenAI completions stream stalled while waiting for the next event",
+				errorMessage: OPENAI_COMPLETIONS_STREAM_IDLE_TIMEOUT_MESSAGE,
 				onIdle: () => requestAbortController.abort(),
 				onFirstItemTimeout: () => abortTracker.abortLocally(firstEventTimeoutAbortError),
 				abortSignal: options?.signal,

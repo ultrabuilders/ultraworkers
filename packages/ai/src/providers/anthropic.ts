@@ -164,6 +164,9 @@ import {
 	resolveDirectAnthropicBaseUrl,
 } from "./anthropic-state";
 
+export const ANTHROPIC_FIRST_EVENT_TIMEOUT_MESSAGE = "Anthropic stream timed out while waiting for the first event";
+export const ANTHROPIC_STREAM_IDLE_TIMEOUT_MESSAGE = "Anthropic stream stalled while waiting for the next event";
+
 export {
 	applyClaudeToolPrefix,
 	clearAnthropicFastModeFallback,
@@ -2409,12 +2412,8 @@ const streamAnthropicOnce = (
 			// Provider-level transport/rate-limit failures: only before any streamed content starts.
 			// Malformed envelopes/JSON: only before replay-unsafe text/tool events are visible on this stream.
 			let providerRetryAttempt = 0;
-			const firstEventTimeoutAbortError = new AIError.StreamTimeoutError(
-				"Anthropic stream timed out while waiting for the first event",
-			);
-			const idleTimeoutAbortError = new AIError.StreamTimeoutError(
-				"Anthropic stream stalled while waiting for the next event",
-			);
+			const firstEventTimeoutAbortError = new AIError.StreamTimeoutError(ANTHROPIC_FIRST_EVENT_TIMEOUT_MESSAGE);
+			const idleTimeoutAbortError = new AIError.StreamTimeoutError(ANTHROPIC_STREAM_IDLE_TIMEOUT_MESSAGE);
 			const resetStreamOutputState = (): void => {
 				providerRetryAttempt = 0;
 				output.content.length = 0;

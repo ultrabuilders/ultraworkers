@@ -29,7 +29,6 @@ import { ModelRegistry } from "../../src/config/model-registry";
 import { AuthStorage } from "../../src/session/auth-storage";
 import { loadExtensions } from "../../src/extensibility/extensions/loader";
 import { ExtensionRunner } from "../../src/extensibility/extensions/runner";
-import { pluginSettingId } from "../../src/extensibility/settings";
 import { SessionManager } from "../../src/session/session-manager";
 
 /**
@@ -60,17 +59,20 @@ export default function (pi) {
 	});
 
 	pi.registerSetting({
-		// The registry refuses ids outside "plugins.<id>.<key>" (config/registry.ts:899),
-		// so the id is written out in full.
+		// The registry refuses an id outside "plugins.<id>.<key>" (config/registry.ts:894),
+		// and the error names the fix: "build the id with the injected
+		// api.pluginSettingId(<id>, <key>)". So this calls the injected seam rather than
+		// hand-writing the folded string.
 		//
-		// It was previously \`pluginSettingId("acceptance", "probeEnabled")\`, imported from
-		// "@oh-my-pi/pi-coding-agent/extensibility/settings". That import cannot work for
-		// the audience this file models: a "~/.omp/extensions" install has no node_modules
-		// to resolve a package specifier from — the same reason \`api.zod\` is injected rather
-		// than imported. Every in-repo registerSetting call site writes the literal too. The
-		// test asserts below that the literal an author MUST write is exactly what the
-		// helper produces, which pins the fold an author cannot otherwise see.
-		id: "plugins.acceptance.probe_enabled",
+		// It used to write the literal instead, on the reasoning that an out-of-repo
+		// extension cannot import the helper. The import indeed does not resolve, but the
+		// premise was wrong about what follows: the host injects the helper onto the api
+		// object (extensibility/extensions/loader.ts:261), exactly as it injects
+		// \`api.zod\`, and config/registry.ts:899 already tells authors to use it. The
+		// in-repo out-of-repo fixture does — test/fixtures/outsider-extension/index.ts:55.
+		// Writing the literal made this file the one caller that proved nothing: it would
+		// keep passing if the injection were deleted outright.
+		id: pi.pluginSettingId("acceptance", "probeEnabled"),
 		type: "boolean",
 		default: false,
 	});
@@ -157,11 +159,12 @@ describe("programme acceptance: five surfaces from one out-of-repo extension", (
 		// into the process-global registry, which is why unload has to withdraw them by
 		// id. So the assertion is against that registry, not against the extension.
 		//
-		// The extension cannot import `pluginSettingId`, so it writes the literal. That
-		// makes the fold the one thing in this file no in-repo caller exercises — an
-		// author who copied a literal and then watched the sanitizer change would get an
-		// extension that no longer loads, with nothing on their side having moved.
-		expect(pluginSettingId("acceptance", "probeEnabled")).toBe("plugins.acceptance.probe_enabled");
+		// One assertion, because it now carries both facts at once. The extension builds
+		// the id by calling the INJECTED seam, so this lookup can only be defined if the
+		// host reached it — delete the injection from loader.ts:261 and `pi.pluginSettingId`
+		// is undefined, the factory throws, the extension never registers, and this goes
+		// red. That is what the previous version could not do: it compared the helper to a
+		// literal on the host side, which holds no matter what the extension did.
 		expect(lookup("plugins.acceptance.probe_enabled")).toBeDefined();
 	});
 

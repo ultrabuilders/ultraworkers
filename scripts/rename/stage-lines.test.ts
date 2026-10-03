@@ -10,6 +10,7 @@ import * as path from "node:path";
 import { $ } from "bun";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { headBlob, stageReplacedLines } from "./stage-lines";
+import { commitStagedPaths } from "../commit-scoped";
 
 let repo: string | undefined;
 
@@ -151,6 +152,61 @@ describe("committing what stage-lines staged", () => {
 		const committed = await $`git show HEAD:rows.tsv`.cwd(repo!).quiet().text();
 		expect(committed).toContain("PEERS");
 		expect(committed).not.toBe("a\nMINE\nc\n");
+	});
+});
+
+/**
+ * The safe path, end to end.
+ *
+ * The two tests above are about a verb that LOSES your staging. This one covers the
+ * verb a session is supposed to use instead, and the reason it is not the default:
+ * on a tree where twelve sessions share one index, a bare `git commit` takes every
+ * row any of them has staged. That is `f9b23a9cba` and `d985fe7dc9`.
+ *
+ * The escape is a THROWAWAY INDEX — `GIT_INDEX_FILE` pointed at a fresh file, seeded
+ * with `read-tree HEAD`, holding only the lines you name. The real index is never
+ * opened for writing, so a peer's staged rows are not merely left out of the commit;
+ * they are still staged afterwards.
+ *
+ * Both halves are asserted. "My commit is clean" alone would pass for a script that
+ * ran `git reset` on the way past and quietly unstaged everyone, which is a worse
+ * outcome than the one it prevents.
+ */
+describe("committing through a throwaway index", () => {
+	it("takes only the named rows and leaves the real index holding the peer's", async () => {
+		await makeRepo("rows.tsv", "a\nb\nc\n");
+		// A peer's uncommitted work, in the real index, on a path of its own.
+		await fs.writeFile(path.join(repo!, "peer.tsv"), "peer's row\n");
+		await $`git add peer.tsv`.cwd(repo!).quiet();
+		await fs.writeFile(path.join(repo!, "rows.tsv"), "a\nMINE\nPEERS\n");
+		await stageReplacedLines("rows.tsv", "a\nMINE\nPEERS\n", [2], repo);
+
+		await commitStagedPaths(["rows.tsv"], "mine", { cwd: repo! });
+
+		// My commit carries my row and not the peer's line in the same file.
+		expect(await $`git show HEAD:rows.tsv`.cwd(repo!).quiet().text()).toBe("a\nMINE\nc\n");
+		// And it does not carry the peer's path, which the real index had staged.
+		expect(await $`git show --name-only --format= HEAD`.cwd(repo!).quiet().text()).not.toContain(
+			"peer.tsv",
+		);
+		// The peer's row is STILL STAGED. Losing it would trade one accident for another.
+		expect(await $`git show :peer.tsv`.cwd(repo!).quiet().text()).toBe("peer's row\n");
+		expect(await $`git status --porcelain peer.tsv`.cwd(repo!).quiet().text()).toContain("A ");
+	});
+
+	it("would take the peer's staged rows under a bare commit", async () => {
+		// The control. Identical starting state, and the verb the shared-tree rules
+		// warn about — so this file states what the throwaway index is buying rather
+		// than asserting the throwaway index is merely correct.
+		await makeRepo("rows.tsv", "a\nb\nc\n");
+		await fs.writeFile(path.join(repo!, "peer.tsv"), "peer's row\n");
+		await $`git add peer.tsv`.cwd(repo!).quiet();
+
+		await $`git commit -qm bare`.cwd(repo!).quiet();
+
+		expect(await $`git show --name-only --format= HEAD`.cwd(repo!).quiet().text()).toContain(
+			"peer.tsv",
+		);
 	});
 });
 

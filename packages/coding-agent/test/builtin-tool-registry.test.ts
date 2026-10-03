@@ -15,9 +15,13 @@ import {
 // `resolveBuiltinToolPlan`, which is where the literals used to be named
 // directly.
 //
-// And the boundary must not move: this is additive. An extension registering the
-// same name is still refused by the extension registry, and a runtime
-// registration cannot shadow a shipped built-in.
+// And the boundary is *first-party only*. A runtime registration cannot shadow a
+// shipped built-in — `registerBuiltinTool` returns false. But an **extension**
+// registering the same name is **not** refused: it overwrites in the tool
+// registry and drops the name from the built-in set. That asymmetry is
+// documented at `tools/index.ts` (`registeredBuiltinTools`) and is an open owner
+// decision, not an endorsed design. This file pins the true direction of each
+// side so neither docblock can rot again on its own.
 
 const NAME = "reg-tool-probe";
 const HIDDEN = "reg-tool-hidden";
@@ -52,6 +56,23 @@ describe("registerBuiltinTool", () => {
 		registerBuiltinTool(HIDDEN, () => null);
 		expect(Object.keys(allBuiltinToolFactories()).length).toBe(before + 1);
 		expect(NAME in allBuiltinToolFactories()).toBe(true);
+	});
+});
+
+describe("the built-in/extension boundary is first-party only", () => {
+	it("refuses a first-party registration that collides, and accepts an extension one", () => {
+		// The two directions, asserted in one place because they are opposites and
+		// only the first one was ever pinned. A docblock claimed the second; the
+		// code does the opposite, and nothing failed. Pinning both directions is
+		// what stops either docblock from rotting again on its own.
+		//
+		// `bash` is a shipped built-in. A first-party registration of it is
+		// refused (above). An extension registering the same name overwrites it in
+		// the tool registry and drops it from the built-in name set — see the
+		// `wrappedExtensionTools` loop in `sdk.ts`. This asserts the *shape* of
+		// that asymmetry, not a particular extension's behaviour.
+		expect(registerBuiltinTool("bash", () => null)).toBe(false);
+		expect(typeof allBuiltinToolFactories().bash).toBe("function");
 	});
 });
 

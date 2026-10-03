@@ -614,11 +614,23 @@ export const HIDDEN_TOOLS: Record<HiddenToolName, ToolFactory> = {
  * registry in the extension API: declare it once, and the rest of the pipeline —
  * `createTools`, the active-name set, the settings gate — picks it up unchanged.
  *
- * It is deliberately additive. A name here is built-in and is gated exactly like
- * one in the literals, and an extension registering the same name is still
- * refused by the extension registry. Narrowing the built-in/extension privilege
- * boundary is a separate piece of work: it changes the core list, which
- * AGENTS.md calls a breaking change.
+ * It is deliberately additive *among first-party tools*: a name here is gated
+ * exactly like one in the literals, and {@link registerBuiltinTool} refuses a
+ * name either of them already holds.
+ *
+ * That protection is **first-party only**. An extension registering the same
+ * name is **not** refused: the extension path writes straight into the tool
+ * registry and drops the name from the built-in set (`sdk.ts`, the
+ * `wrappedExtensionTools` loop), so the extension's tool wins. The built-in it
+ * shadowed stays reachable only through the native-tool resolver. See
+ * `cli-commands.ts` for the opposite policy — `registerSubcommand` *refuses* a
+ * verb that collides with a built-in and records both claimants — which is why
+ * the two registries do not share a rule.
+ *
+ * Whether that asymmetry is intended is an open owner decision, not a settled
+ * design: narrowing it changes the core list, which AGENTS.md calls a breaking
+ * change. This paragraph documents the behaviour as implemented; it does not
+ * endorse it.
  */
 const registeredBuiltinTools = new Map<string, ToolFactory>();
 

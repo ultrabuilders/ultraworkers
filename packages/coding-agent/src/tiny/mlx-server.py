@@ -64,7 +64,7 @@ def log(message):
 
 
 def _request(url):
-    headers = {"User-Agent": "omp-tiny-mlx"}
+    headers = {"User-Agent": "uw-tiny-mlx"}
     if HF_TOKEN:
         headers["Authorization"] = f"Bearer {HF_TOKEN}"
     return urllib.request.Request(url, headers=headers)

@@ -480,10 +480,6 @@
 			"types": "./src/tools/jfind/index.ts",
 			"import": "./src/tools/jfind/index.ts"
 		},
-		"./tools/peer": {
-			"types": "./src/tools/peer/index.ts",
-			"import": "./src/tools/peer/index.ts"
-		},
 		"./tools/jfind/*": {
 			"types": "./src/tools/jfind/*.ts",
 			"import": "./src/tools/jfind/*.ts"

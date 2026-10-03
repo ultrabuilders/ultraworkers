@@ -93,7 +93,7 @@ afterEach(async () => {
 
 describe("collab host registry (two-process smoke)", () => {
 	it("discovers a separately-spawned host without a URL and prunes it after a crash", async () => {
-		const dir = await tempDir("omp-collab-smoke-seam-");
+		const dir = await tempDir("uw-collab-smoke-seam-");
 		const marker = `seam-${Date.now().toString(36)}`;
 		const instanceId = "seam-host";
 		const { child, stderr } = spawnHelper([dir, marker, instanceId]);
@@ -122,7 +122,7 @@ describe("collab host registry (two-process smoke)", () => {
 	}, 40_000);
 
 	it("lists metadata and explicitly retrieves control or view links through the real CLI under a fake HOME", async () => {
-		const home = await tempDir("omp-collab-smoke-home-");
+		const home = await tempDir("uw-collab-smoke-home-");
 		const marker = `cli-${Date.now().toString(36)}`;
 		const instanceId = "cli-host";
 		const controlUrl = `https://collab.example/control/${marker}`;

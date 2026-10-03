@@ -224,7 +224,7 @@ export class TimelineItems {
 	}
 }
 
-/** Lines of a copy block shown in the native preview; longer blocks copy through omp. */
+/** Lines of a copy block shown in the native preview; longer blocks copy through ultraworkers. */
 const PREVIEW_BLOCK_LINES = 400;
 
 /** A block's preview caption: `rust · 12 lines`, `quote`, `link · docs`. */

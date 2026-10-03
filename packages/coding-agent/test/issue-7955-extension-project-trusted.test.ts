@@ -34,7 +34,6 @@ import type { ExtensionRuntime } from "@oh-my-pi/pi-coding-agent/extensibility/e
 
 function createRunner(): ExtensionRunner {
 	const runtime = {
-		flagValues: new Map(),
 		pendingProviderRegistrations: [],
 	} as unknown as ExtensionRuntime;
 	return new ExtensionRunner([], runtime, "/tmp", { getCwd: () => "/tmp" } as never, {} as never);

@@ -71,7 +71,11 @@ const BUCKETS: ReadonlyArray<{ name: string; read: (ext: Extension) => number; m
 	{
 		name: "flags",
 		read: e => e.flags.size,
-		mutation: "clearing `flags` but forgetting the parallel `flagValues` map — the shape the bead calls out",
+		// Was: "clearing `flags` but forgetting the parallel `flagValues` map".
+		// 68cb6c3ade moved a flag's value onto the declaration itself
+		// (`extension.flags.get(name).value`), so there is no parallel map left to
+		// forget and clearing `flags` is now the whole withdrawal.
+		mutation: "deleting `flags.clear()`",
 	},
 	{ name: "shortcuts", read: e => e.shortcuts.size, mutation: "deleting `shortcuts.clear()`" },
 	{ name: "outputFormats", read: e => e.outputFormats.size, mutation: "deleting `outputFormats.clear()`" },

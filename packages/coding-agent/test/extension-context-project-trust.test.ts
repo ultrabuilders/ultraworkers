@@ -47,7 +47,7 @@ async function createRunner(cwd: string): Promise<ExtensionRunner> {
 	});
 	return new ExtensionRunner(
 		[],
-		{ flagValues: new Map(), pendingProviderRegistrations: [] } as never,
+		{ pendingProviderRegistrations: [] } as never,
 		cwd,
 		{ getCwd: () => cwd } as never,
 		{} as never,
@@ -75,7 +75,7 @@ describe("ExtensionContext project trust reports the recorded decision", () => {
 
 		const runner = new ExtensionRunner(
 			[],
-			{ flagValues: new Map(), pendingProviderRegistrations: [] } as never,
+			{ pendingProviderRegistrations: [] } as never,
 			projectDir.path(),
 			{ getCwd: () => projectDir.path() } as never,
 			{} as never,
@@ -96,7 +96,7 @@ describe("ExtensionContext project trust reports the recorded decision", () => {
 
 		const runner = new ExtensionRunner(
 			[],
-			{ flagValues: new Map(), pendingProviderRegistrations: [] } as never,
+			{ pendingProviderRegistrations: [] } as never,
 			projectDir.path(),
 			{ getCwd: () => projectDir.path() } as never,
 			{} as never,
@@ -119,7 +119,7 @@ describe("ExtensionContext project trust reports the recorded decision", () => {
 		setProjectTrust("yes", settings);
 		const runner = new ExtensionRunner(
 			[],
-			{ flagValues: new Map(), pendingProviderRegistrations: [] } as never,
+			{ pendingProviderRegistrations: [] } as never,
 			projectDir.path(),
 			{ getCwd: () => projectDir.path() } as never,
 			{} as never,

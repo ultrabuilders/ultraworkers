@@ -55,15 +55,40 @@ const CONTROL_SOCKET_NAME_BYTES = 40 + ".sock".length;
 const MUX_TEMP_SUFFIX_BYTES = 1 + 16;
 
 /**
- * Whether `controlDir` leaves room for the whole `%C.sock` plus OpenSSH's mux
- * temp bind within `sun_path` (104 bytes on macOS, 108 elsewhere; OpenSSH
- * rejects lengths >= that). The worst case is dir + "/" + expanded `%C.sock`
+ * `sun_path` ceiling for the platform: 104 bytes on macOS, 108 elsewhere.
+ * OpenSSH rejects a length that reaches the limit.
+ */
+export function controlPathSunPathLimit(platform: SshPlatform): number {
+	return platform === "darwin" ? 104 : 108;
+}
+
+/**
+ * Bytes `controlDir` costs at its worst: dir + "/" + expanded `%C.sock`
  * (40-hex digest + ".sock") + the mux temp suffix.
+ *
+ * Exported separately from {@link controlPathFitsBudget} because a boolean
+ * cannot report erosion. Both the canonical path and the shared fallback are
+ * sized by this one budget decision, so a prefix that grows two bytes shortens
+ * the margin on both — and a boolean stays true through the whole slide until
+ * the last byte is gone. Callers that need the margin ask for it here rather
+ * than re-deriving the arithmetic.
+ *
+ * No `platform` argument: what a directory costs is its own byte length. The
+ * platform decides the ceiling it is measured against, which is the other
+ * function.
+ */
+export function controlPathWorstCase(controlDir: string): number {
+	return Buffer.byteLength(controlDir) + 1 + CONTROL_SOCKET_NAME_BYTES + MUX_TEMP_SUFFIX_BYTES;
+}
+
+/**
+ * Whether `controlDir` leaves room for the whole `%C.sock` plus OpenSSH's mux
+ * temp bind within `sun_path`. Kept as a predicate because that is the only
+ * question the call sites ask; the margin behind the answer is
+ * {@link controlPathSunPathLimit} minus {@link controlPathWorstCase}.
  */
 export function controlPathFitsBudget(controlDir: string, platform: SshPlatform): boolean {
-	const sunPathLimit = platform === "darwin" ? 104 : 108;
-	const worstCase = Buffer.byteLength(controlDir) + 1 + CONTROL_SOCKET_NAME_BYTES + MUX_TEMP_SUFFIX_BYTES;
-	return worstCase < sunPathLimit;
+	return controlPathWorstCase(controlDir) < controlPathSunPathLimit(platform);
 }
 
 /**

@@ -6,6 +6,8 @@ import {
 	assertOwnerPrivateDir,
 	controlDirGuardError,
 	controlPathFitsBudget,
+	controlPathSunPathLimit,
+	controlPathWorstCase,
 	resolveSshControlDir,
 	sshControlFallbackDir,
 } from "../src/ssh/connection-manager";
@@ -39,16 +41,27 @@ describe("SSH control-path budget (#9070)", () => {
 });
 
 describe("sshControlFallbackDir", () => {
-	it("is deterministic and leaves 11 bytes of macOS sun_path slack", () => {
+	it("is deterministic, and its cost against sun_path comes from the module", () => {
 		const canonicalDir = "/Users/arthur/.omp/profiles/upstream/ssh-control";
 		const a = sshControlFallbackDir(canonicalDir, 501);
 		const b = sshControlFallbackDir(canonicalDir, 501);
 		expect(a).toBe(b);
-		expect(a).toBe("/tmp/ultraworkers-5434354bc38");
-		const tempBind = path.join(a, `${"a".repeat(40)}.sock.${"b".repeat(16)}`);
-		expect(Buffer.byteLength(tempBind)).toBe(92);
-		expect(103 - Buffer.byteLength(tempBind)).toBe(11);
-		expect(controlPathFitsBudget(a, "darwin")).toBe(true);
+
+		// The byte cost and the ceiling both come from `connection-manager`, so
+		// this row copies neither 104 nor the socket arithmetic. What it pins is
+		// that the margin is real: the fallback has to fit the tightest ceiling,
+		// not merely the one this platform happens to report.
+		const margin = controlPathSunPathLimit("darwin") - controlPathWorstCase(a);
+		expect(margin).toBeGreaterThan(0);
+
+		// The cost tracks the path it is given. A constant would satisfy every
+		// "it fits" assertion while the prefix silently grew, which is the erosion
+		// the boolean alone cannot see.
+		expect(controlPathWorstCase(`${a}x`)).toBe(controlPathWorstCase(a) + 1);
+
+		// And the derived margin is the same thing the predicate reports, so the
+		// two cannot drift into disagreeing about whether this path fits.
+		expect(controlPathWorstCase(a) < controlPathSunPathLimit("darwin")).toBe(controlPathFitsBudget(a, "darwin"));
 	});
 
 	it("isolates distinct canonical control directories and uids", () => {

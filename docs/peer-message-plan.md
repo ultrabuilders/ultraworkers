@@ -216,7 +216,7 @@ better contract than one that silently degrades.**
 
 ### 4.1 Registration
 
-Per session, at `~/.omp/run/peer/`. Reuse the shape already proven in
+Per session, at `~/.ultraworkers/run/peer/`. Reuse the shape already proven in
 `collab/registry.ts:172-176`: `{ instanceId, pid, endpoint, createdAt, token }`.
 
 Four anti-collision layers, from `pi-cross-session` (§5.1): `instanceId =
@@ -551,7 +551,7 @@ exact."* Two processes binding at once can produce the same display name.
 
 ### 7.1 Transport
 
-Per-session Unix socket at `~/.omp/run/peer/<instanceId>.sock`, directory `0700`,
+Per-session Unix socket at `~/.ultraworkers/run/peer/<instanceId>.sock`, directory `0700`,
 socket `0600`.
 
 - **No broker.** A broker must stay alive to deliver, and every project with one

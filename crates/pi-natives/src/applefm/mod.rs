@@ -65,29 +65,29 @@ mod platform {
 	type Emit = extern "C" fn(context: *mut c_void, event: *const c_char, is_final: bool);
 
 	unsafe extern "C" {
-		fn omp_applefm_availability() -> *mut c_char;
-		fn omp_applefm_generate(
+		fn ultraworkers_applefm_availability() -> *mut c_char;
+		fn ultraworkers_applefm_generate(
 			handle: u64,
 			request: *const c_char,
 			context: *mut c_void,
 			emit: Emit,
 		);
-		fn omp_applefm_cancel(handle: u64);
-		fn omp_applefm_free(pointer: *mut c_char);
+		fn ultraworkers_applefm_cancel(handle: u64);
+		fn ultraworkers_applefm_free(pointer: *mut c_char);
 	}
 
 	static NEXT_HANDLE: AtomicU32 = AtomicU32::new(1);
 
 	pub(super) fn availability() -> String {
 		// SAFETY: the bridge returns a NUL-terminated heap string (or null) that
-		// we own until handing it back to `omp_applefm_free`.
+		// we own until handing it back to `ultraworkers_applefm_free`.
 		unsafe {
-			let pointer = omp_applefm_availability();
+			let pointer = ultraworkers_applefm_availability();
 			if pointer.is_null() {
 				return r#"{"type":"availability","available":false,"reason":"runtime"}"#.to_owned();
 			}
 			let json = CStr::from_ptr(pointer).to_string_lossy().into_owned();
-			omp_applefm_free(pointer);
+			ultraworkers_applefm_free(pointer);
 			json
 		}
 	}
@@ -100,13 +100,13 @@ mod platform {
 		// SAFETY: `request` outlives the call (the bridge copies it before
 		// returning); `context` stays valid until `emit` reclaims it on the
 		// terminal event, which the bridge delivers exactly once.
-		unsafe { omp_applefm_generate(u64::from(handle), request.as_ptr(), context, emit) };
+		unsafe { ultraworkers_applefm_generate(u64::from(handle), request.as_ptr(), context, emit) };
 		Ok(handle)
 	}
 
 	pub(super) fn cancel(handle: u32) {
 		// SAFETY: cancellation of unknown handles is a no-op in the bridge.
-		unsafe { omp_applefm_cancel(u64::from(handle)) };
+		unsafe { ultraworkers_applefm_cancel(u64::from(handle)) };
 	}
 
 	extern "C" fn emit(context: *mut c_void, event: *const c_char, is_final: bool) {

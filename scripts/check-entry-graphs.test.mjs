@@ -63,9 +63,26 @@ function budgetLine(entry) {
 	return match[0];
 }
 
-/** The `maxFiles` number the gate currently pins for `entry`. */
-function budgetFor(entry) {
-	return Number(budgetLine(entry).match(/maxFiles: (\d+)/)?.[1]);
+/** Every entry the gate carries a `maxFiles` budget for. */
+const BUDGETED_ENTRIES = ["src/cli.ts", "src/cli/worker-selectors.ts", "src/stream.ts"];
+
+/**
+ * How many files the gate MEASURED for `entry` right now.
+ *
+ * Read from the gate's own report line, not from its budget. Those are different
+ * numbers that happen to be equal on a clean tree — `budgetFor` read the pinned
+ * budget and so was really asking "is the budget still what I wrote?", which a
+ * legitimate re-pin answers by breaking the row that used it: raise `cli.ts` to
+ * 200 and this asked the gate to report `reaches 200 files` for a 25-file graph.
+ * A test that takes its expectation from the value under test cannot notice that
+ * value move; measuring first is what lets the budget move without a red.
+ */
+function measuredFor(entry) {
+	const result = spawnSync(nodePath, [script], { encoding: "utf8" });
+	assert.equal(result.status, 0, result.stderr);
+	const line = result.stdout.split("\n").find(l => l.includes(` ${entry}: `));
+	assert.ok(line, `the gate reported no measurement for ${entry} — its report shape changed`);
+	return Number(line.match(/: (\d+) files/)?.[1]);
 }
 
 // A gate that is always green is not a gate: nothing fails, so nobody asks why
@@ -75,7 +92,7 @@ test("fails when an entry's graph exceeds its budget, and names the numbers", t 
 	// The measured count is read from the gate's own report rather than pinned here: the
 	// graph is a real property of this tree, and the budget tracks it. Asserting a literal
 	// count would make an unrelated import removal look like a broken gate.
-	const measured = budgetFor("src/cli.ts");
+	const measured = measuredFor("src/cli.ts");
 	const result = runMutated(t, [[budgetLine("src/cli.ts"), '"src/cli.ts": { maxFiles: 3 }']]);
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, new RegExp(`reaches ${measured} files, budget 3`));
@@ -87,6 +104,33 @@ test("fails when an entry's graph exceeds its budget, and names the numbers", t 
 test("passes when the budget is above the measured graph", t => {
 	const result = runMutated(t, [[budgetLine("src/cli.ts"), '"src/cli.ts": { maxFiles: 9999 }']]);
 	assert.equal(result.status, 0, result.stderr);
+});
+
+// Every ceiling is compared; none of them is pinned to a number. The rows above
+// only ever drove `cli.ts` below its budget, so a gate that silently stopped
+// comparing the other two — a budget read but never used, an entry skipped by a
+// stray `continue` — left this file fully green while two thirds of the ceilings
+// policed nothing.
+//
+// So the constraint here is behavioural, not numeric: whatever the budget says,
+// one file fewer than the graph measures must turn this specific entry red. The
+// budget value itself stays free to move, which is the whole point of dropping
+// the copied numbers; what must not be free is the comparison that makes a
+// ceiling mean anything.
+test("every budget is load-bearing: one file under its measured graph turns that entry red", t => {
+	for (const entry of BUDGETED_ENTRIES) {
+		const measured = measuredFor(entry);
+		const result = runMutated(t, [
+			[budgetLine(entry), `"${entry}": { maxFiles: ${measured - 1} }`],
+		]);
+		assert.equal(
+			result.status,
+			1,
+			`${entry}: a budget of ${measured - 1} against a ${measured}-file graph did not turn the gate red, ` +
+				`so this ceiling is not being compared`,
+		);
+		assert.match(result.stderr, new RegExp(`reaches ${measured} files, budget ${measured - 1}`));
+	}
 });
 
 // The failure this exists to prevent: the workspace map keyed on the wrong scope

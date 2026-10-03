@@ -211,7 +211,7 @@ and not a command, and permission prompts still fire. Inbound delivery is a
 three-way gate (`accept` / `hold` / `refuse`), and the default decision compares
 the two sessions' permission classes.
 
-**This is enforced at the system layer.** `pi-team-mode` (§3.8) enforces the same
+**This is enforced at the system layer.** `pi-team-mode` (§5.7) enforces the same
 property at the prompt layer. The two compose, and only the second survives a host
 upgrade.
 
@@ -231,10 +231,12 @@ than an omission.
 | `armory-mesh` | `d923434` | UDS + hub SSE | NDJSON logs | ❌ **poll-only** | ✅ HMAC + nonce window |
 | `pi-team-mode` | `e0f9ba5` | **SQLite is the wire** | SQLite | ✅ four triggers | ✅ bracketed provenance |
 | `pi-agent-teams` | `74c7e12` | stdin/stdout JSON-lines + files | task board on disk | ✅ 500 ms poll | — (derived ownership) |
+| `pi-ipc` | `2097d3e` | **filesystem**, one envelope per file | `$XDG_RUNTIME_DIR/pi-ipc/` | ✅ three injection points | handle correlation |
+| `pi-chat` | `fa8548d` | Hyperswarm DHT + Noise | **RAM only, cap 256** | ❌ **no path into any model** | — |
 | `pi-mesh` | `1dde83d` | UDS | — **no messages exist** | — | — |
 | `pi-peer-messaging` | `d0f344b` | — | — | — | ⛔ rider |
 | `agent-fleet` | `9bb0234` | UDS via herdr, relay ≤5 hops | evidence store | ✅ as a user turn | verification contract |
-| `mcp_agent_mail_rust` | `21a25c2` | stdio MCP + hand-written HTTP | **SQLite WAL** | ❌ **recipient must poll** | ❌ **see §3.11** |
+| `mcp_agent_mail_rust` | `21a25c2` | stdio MCP + hand-written HTTP | **SQLite WAL** | ❌ **recipient must poll** | ❌ **see §5.11** |
 
 ### 4.1 Size, measured two ways
 
@@ -248,7 +250,7 @@ Two numbers matter and they disagree, which is why both are here.
 
 The first row is a `.mjs` extension I initially failed to count. The second is
 `.versions/` — **32 historical packaging snapshots holding 5,381 of the 6,080
-source files**. The third is the point of §3.11: the most feature-complete-looking
+source files**. The third is the point of §5.11: the most feature-complete-looking
 project in the set is roughly **2 % messaging** by lines of production code.
 
 ## 5. Per-project notes
@@ -846,6 +848,27 @@ measured.**
 `@ 2097d3e` (2026-10-03, v0.0.12). **MIT**, `Copyright (c) 2026 Tinoy Thomas`.
 **710 lines** in `index.ts`, plus a 194-line poller and two probe files.
 
+**Transport is the filesystem, and the framing is the filename.** No socket, no
+HTTP, no database. The root is `$XDG_RUNTIME_DIR/pi-ipc/{presence,inbox}`
+(`ext-lib/src/ipc.ts:48-51`), and it **refuses by name** if the env var is missing
+or the directory belongs to another user (`:164-182`). One envelope is one file,
+named `${seq}-${envelopeId}.json` with `seq = Date.now().padStart(SEQ_WIDTH,"0")`
+— so **`sort()` *is* the delivery order** (`:522-526`). Writes are atomic
+tmp-plus-rename at `0600` files inside `0700` directories (`:378-392`). This is
+`pi-peer-sting8k`'s design (§5.2) applied more cheaply, and it inherits the same
+property: **there is no queue that can tear.**
+
+**Discovery is a presence file plus a liveness read from `/proc/${pid}/stat`
+field 22** (start time), split after the last `)` because `comm` may contain a
+space (`:224-232`). Comparing start time as well as PID is what makes PID reuse
+read as dead.
+
+> **A portability bug worth recording.** `/proc` exists only on Linux. On macOS
+> the read returns `null`, so **a session can never write a presence entry and is
+> unroutable for its entire lifetime**, with no retry (`index.ts:148-151`). This
+> was read on a macOS machine and is not theoretical. It is §6.8 in reverse:
+> liveness that was never exercised on the platform it ships to.
+
 **One tool, four actions:** `list`, `send`, `ask`, `broadcast`. The tool
 description is unusually precise about who is blocked and who is not: *"An inbound
 message or ask arrives as its own turn."* Addressing accepts a full session id, a
@@ -866,16 +889,38 @@ instead of failing.
 "the ceiling the escalation path was measured at."** Ten minutes is not a guess; it
 is where someone measured when escalation stops being useful.
 
-**Injection is explicitly two-mode** (`index.ts:322`):
-`options.passive ? { deliverAs: "nextTurn" } : { triggerTurn: true }`. Passive
-traffic queues; only traffic that should interrupt gets to start a turn. That
-distinction is what keeps a busy peer from being woken by chatter
-(`pi-mail`'s quiet-nudge branch, §5.4, arrives at the same place from a different
-direction).
+**Ask-and-wait is genuinely blocking** — verified directly at `index.ts:506`,
+`const answer = await waiting;`. Timeout is **ten minutes**
+(`DEFAULT_ASK_TIMEOUT_MS = 600_000`); a non-positive value is rejected by name,
+and expiry only runs on a drain tick, so the error lands within ~500 ms. The timer
+is `unref()`ed so it cannot hold the process open.
 
-**Broadcast carries a namespace marker** (`BROADCAST_NAMESPACE`) so a recipient
-can attribute it as a broadcast rather than a direct message — a small thing that
-prevents "someone told me directly" from being concluded from an announcement.
+**It does not deadlock, and the reason is worth stating** because "blocking
+inside an agent turn" invites the opposite assumption: the drain is a
+`setInterval` **in the same process** (`poller.ts:186`), and a pending promise
+does not block an event loop. The worst case is that **the turn freezes for ten
+minutes producing no output.** That is a real hazard, and its cause is adjacent:
+the model is **not warned** — the tool description covers only one clause
+(`:589`) — the sole escape is Esc (`poller.ts:94-99`), and while A is blocked,
+traffic from B takes the **steer** path, so chatter lands mid-hang.
+
+**The non-blocking mechanism was already in the package.** `send` is a
+fire-and-forget twin (`:437-441`) with the same `answerTo` handling, and
+**blocking `ask` is the worse version of something already present** — which is
+the cheapest possible framing for anyone considering adding one.
+
+**Three injection points, and each earns its place.** An arriving message gets
+`triggerTurn`; an **answer that matches no waiting ask** gets `nextTurn` instead,
+with the reason written down — *"its text belongs to the peer … so it has no claim
+on this session's attention"* (`:301-306`); and `turn_end` re-surfaces an ask that
+was never answered (`:689-709`).
+
+**Broadcast is sequential, one envelope per peer, waiting for nobody**
+(`:548-558`), and **partial success still counts as success**, with the failed
+part appended (`:562-570`). Correlation is an `answerTo` field whose handle is
+printed verbatim for the recipient to quote back, and `answerTo` is **required**
+for `kind:"answer"` on the envelope side, so a malformed answer cannot go missing
+silently (`ext-lib/src/ipc.ts:335-336`).
 
 *Verdict:* too small to be a reference architecture and far too well made to
 ignore. It is the counter-example to `agent-fleet`: 710 lines, one tool, four
@@ -885,27 +930,41 @@ actions, no aliases — and it answers ambiguity by refusing.
 
 `@ fa8548d` (2026-10-02, v0.1.7). **MIT.** 16 source files, **4,300 lines**.
 
-**A correction to a correction.** A subagent reported this as a human-facing TUI
-with no transport, and the catalog blurb ("peer-to-peer chat") does not contradict
-that reading. Re-reading the source: `src/network.ts` imports **`Hyperswarm`** and
-opens `swarm.join(room.topic, …)` with `secretKey: identity.secretKey` and an
-optional `bootstrap`. It is **encrypted topic-based P2P over a public DHT swarm**,
-capped at `MAX_DIRECT_NEIGHBORS = 8`, with a length-prefixed frame codec split into
-`protocol.ts`.
+**This is not agent-to-agent messaging, and the source says so conclusively.**
+`grep -rn "registerTool\|sendMessage\|triggerTurn\|sendUserMessage"` over the
+whole package returns nothing; the decisive line is `pi-chat.ts:626`,
+`if (ctx.mode !== "tui") throw new Error("Pi Chat requires Pi TUI mode.")`, and
+the entire surface is one slash command (`:623`). **The peers are other humans on
+the internet, not agents** — there is no path from a chat message into any model's
+context. The transcript flows only to a status widget (`widget.ts:7-48`) and a
+`ChatView` modal, and lives **in RAM alone** with `MAX_TRANSCRIPT = 256`.
 
-**That makes it the only implementation in this study that does cross-machine
-discovery.** Every other project explicitly stops at the same machine: Claude Code
-registers files on disk, so a container and its host cannot see each other;
-`pi-parley`'s federation requires the caller to supply an already-open stream;
-`pi-ipc` is named for IPC and is same-machine. If the goal were ever remote peers,
-this is where to look — with the caveat that a public DHT is a different security
-posture from everything else in §5, and none of the others had to solve identity
-across a trust boundary.
+**What it actually is** — and why it is still worth reading here — is the only
+implementation in this study that does **cross-machine discovery**. Transport is
+**Hyperswarm/DHT over Noise-encrypted TCP** (`network.ts:2, 48-56, 61-65`), the
+topic is a hash rather than a socket path, fanout is hard-capped at
+`MAX_DIRECT_NEIGHBORS = 8`, and framing is a binary length prefix
+(`protocol.ts:226-228`). Every other project here explicitly stops at the same
+machine: Claude Code registers files on disk, so a container and its host cannot
+see each other; `pi-parley`'s federation requires the caller to hand it an
+already-open stream; `pi-ipc` is named for IPC and is same-machine.
 
-It still registers a single `/chat` command and **no tools**, so a human drives
-it. The agent never sends autonomously. Framing and the transport contract are
-separated into `network-contract.ts` and `chat-session.ts`, which is a cleaner
-seam than most of §5 achieves.
+**Two ideas worth keeping before discarding the project.**
+`deriveScopedIdentity` (`identity.ts:43-53`) runs HKDF over one seed to produce a
+**different keypair per audience**, so one identity can hold many pairwise
+relationships without any of them sharing a secret. And the room invite is a bare
+**capability URL** (`room.ts:25`) — the 32-byte secret *is* the credential, with
+no server, no account and no ACL to revoke, which is a genuinely different
+revocation model from everything else in §5.
+
+**One thing not to copy:** the public-room directory is **unauthenticated global
+registry gossip** (`public-room-directory.ts:15-17`), and a public room derives its
+key from a **public slug**, so anyone who guesses the slug is in the room
+(`room.ts:42-49`).
+
+*Verdict:* **exclude from any agent-to-agent survey**, and keep the two ideas
+above. Framing and transport contract are cleanly separated into
+`network-contract.ts` and `chat-session.ts` — a better seam than most of §5.
 
 ## 6. Findings
 
@@ -1011,7 +1070,7 @@ evidence shows this actually happened, rather than being claimed?
 source is **~58,551 lines plus 48,062 lines of tests**, a test:source ratio of
 0.81.
 
-**§6.9 — the verification contract is a real gate, not a rubric.** The rubric is
+**§7.1 — the verification contract is a real gate, not a rubric.** The rubric is
 prose in a skill file; the enforcement is in `acceptance.ts:131-199`, and it
 **negates the model itself**:
 
@@ -1034,7 +1093,7 @@ looking for the words *"human confirmed"*, and every other tag is
 `unsupported` (`:142`) and therefore cannot be accepted. **It fails closed over
 what it cannot verify rather than pretending to cover it.**
 
-**§6.10 — the concurrency story is a cautionary tale.** `dispatch_agent` refuses to
+**§7.2 — the concurrency story is a cautionary tale.** `dispatch_agent` refuses to
 run on a busy agent and returns *"Agent is busy; nothing started, queued or
 charged."* There is **no queue, no scheduler, no pending-dispatch store**. Fan-out
 comes entirely from the model emitting N tool calls in one assistant turn.
@@ -1130,6 +1189,11 @@ Recorded because the failures are the transferable part.
   every one against the filesystem rather than accepting the correction.
 - **`mail-rust`'s subagent corrected itself**: its first LOC boundary produced
   `reservations.rs = 21 lines`, which was wrong.
+- **I under-described `pi-chat` and over-described `pi-ipc`.** I wrote `pi-chat`
+  up as "the only project that leaves the machine" without checking whether a
+  message ever reaches a model — it does not, its peers are humans. I left
+  `pi-ipc`'s transport blank when the answer was the filesystem. Both were fixed
+  after re-reading; §5.12 and §5.13 are now sourced rather than inferred.
 
 Two of the three findings this note is most confident in — the send-path
 authorisation gap (§5.11) and the absence of a nonce-exemption for heartbeats

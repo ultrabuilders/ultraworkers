@@ -49,6 +49,15 @@ function runner(choice: "Approve" | "Deny", opts: { hasUI?: boolean } = {}): Ext
 		}),
 		waitForToolApprovalPreview: async () => {},
 		recordApprovalEntry: () => {},
+		// Added when `wrapper.ts` began settling the batch it already decided. A
+		// refusal answers every prompt sharing that action key, so the others must
+		// resolve on the same exit rather than wait on an answer that is never
+		// coming — the wrapper calls this at three sites (`wrapper.ts:512`, `:587`,
+		// `:605`) and this fake predated the first one, so every row here was
+		// failing on `undefined is not a function` instead of the refusal it is
+		// written to assert. Returns 0 because nothing is queued in a unit test;
+		// the real method returns how many it settled and no row here reads it.
+		settlePendingApprovals: () => 0,
 		runScoped<T>(fn: () => T): T {
 			return fn();
 		},

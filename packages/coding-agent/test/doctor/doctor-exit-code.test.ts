@@ -34,14 +34,41 @@ interface CliRun {
 	readonly stdout: string;
 }
 
+/**
+ * Where XDG expects the app's data root.
+ *
+ * The variable alone is not enough: `resolveIf` in `dirs.ts` only accepts an XDG
+ * root when the app-prefixed path under it already exists, and XDG flattens that
+ * prefix — `$XDG_DATA_HOME/ultraworkers/plugins`, not `$XDG_DATA_HOME/plugins`.
+ * With the directory absent the resolver falls back to the config root and the
+ * doctor's `plugins_directory` line keeps naming the developer's real one.
+ */
+const XDG_APP_DIR = "ultraworkers";
+
 async function runPluginDoctor(cwd: string): Promise<CliRun> {
-	using agentDir = TempDir.createSync("@ultraworkers-doctor-exit-");
+	using dataDir = TempDir.createSync("@ultraworkers-doctor-data-");
+	// `node_modules` is what decides whether this run can be clean at all: the check
+	// is `error` (not `warning`) whenever a plugins `package.json` exists without
+	// one, and it reads the developer's real plugins dir unless XDG moves it. So
+	// the fixture builds the directory the healthy case needs, rather than asserting
+	// an outcome that depends on what happens to be installed on the host.
+	//
+	// PI_CODING_AGENT_DIR is deliberately NOT set. It was here to isolate the run,
+	// but it does not move the plugins dir — and it is worse than inert, because
+	// `DirResolver` only takes the XDG branch when `agentDir` is still the default,
+	// so setting it disables the one variable that does work. Measured, all three:
+	//
+	//   PI_CODING_AGENT_DIR only           → Found at /Users/<me>/.omp/plugins
+	//   PI_CODING_AGENT_DIR + XDG_DATA_HOME→ Found at /Users/<me>/.omp/plugins
+	//   XDG_DATA_HOME alone, no app dir     → Found at /Users/<me>/.omp/plugins
+	//   XDG_DATA_HOME + app dir + node_modules → Found at <temp>/ultraworkers/plugins
+	await fs.mkdir(path.join(dataDir.path(), XDG_APP_DIR, "plugins", "node_modules"), { recursive: true });
 	const proc = Bun.spawn([process.execPath, cliEntry, "plugin", "doctor"], {
 		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
 		stdin: "ignore",
-		env: { ...process.env, NO_COLOR: "1", PI_CODING_AGENT_DIR: agentDir.path() },
+		env: { ...process.env, NO_COLOR: "1", XDG_DATA_HOME: dataDir.path() },
 	});
 	const [stdout, , exitCode] = await Promise.all([
 		new Response(proc.stdout).text(),

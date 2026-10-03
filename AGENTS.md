@@ -303,6 +303,32 @@ For the bash tool specifically:
 - Never run `cargo test` directly for Rust tests — use `bun run test:rs`. It runs `cargo nextest run` (config: `.config/nextest.toml`) followed by a `cargo test --doc` pass, because nextest does not execute doctests. The doctest pass currently executes nothing (pi-natives is a `cdylib`, which rustdoc skips; pi-builtins' examples are `ignore`d vendored uutils docs) and exists so the first runnable doctest added to a lib crate is actually run.
 - Merge commits (maintainer merges of PRs) follow: `Merge PR #<number>: <conventional PR subject> (@<author>)` — e.g. `Merge PR #6386: feat(catalog): add native Meta Model API provider (@eggpeat)`.
 
+## Committing on a shared worktree
+
+Several agents work this tree at once. **The git index belongs to the whole tree, not to whoever
+staged last** — so a bare `git commit` commits every staged row in it, including rows you never
+touched. This has already produced cross-contaminated commits twice in one day (`f9b23a9cba`,
+`d985fe7dc9`, where a commit carried someone else's subject and four of another agent's rows).
+
+- **Always `git commit --only -- <exact paths>`.** Never `git commit` bare, never `git add -A`,
+  never `git add .`.
+- **`git add <path>` is not "stage my row".** It stages the path's *entire current content*,
+  including a peer's edit inside the same file. To stage one hunk of a shared file, use
+  `git apply --cached` with a hand-built patch, then `git diff --cached` to confirm the index
+  holds only your rows.
+- **`--only` is path-scoped, not row-scoped.** It protects the paths you name; it cannot protect
+  a row inside a path a peer also changed. That case needs the patch route above.
+- **The index can be rebuilt between your staging and your commit** — a peer's commit does exactly
+  that. After any staging, verify with `git diff --cached --name-only` immediately before
+  committing, and check `git show --name-only <sha>` after.
+- **Never `amend`, `reset`, or `rebase` published history on this tree.** Two agents have already
+  nearly destroyed each other's commits that way. To fix a wrong commit *message*, add a follow-up
+  commit referencing the old sha.
+- **`git stash`, `git checkout --`, `git clean`, `git restore` are all forbidden here.** They
+  operate on the whole tree, so they will discard a peer's uncommitted work along with yours.
+- The row-level alternative, which needs no clean index at all, is `git hash-object -w` plus
+  `git update-index --cacheinfo`.
+
 ## Rust Build Profiles
 
 Profiles live in the root `Cargo.toml`; `.cargo/config.toml` carries the settings Cargo.toml cannot express. Both are committed, so no local `~/.cargo/config.toml` is required.

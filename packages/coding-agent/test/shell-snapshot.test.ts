@@ -286,7 +286,7 @@ describe("getOrCreateSnapshot", () => {
 
 		// PR-review hardening: snapshot file must be group/world-unreadable since
 		// it now inlines env-var values. Directory must be 0700 for the same
-		// reason — UUID filenames shouldn't leak via `ls /tmp/omp-shell-snapshots-$(id -u)`.
+		// reason — UUID filenames shouldn't leak via `ls /tmp/ultraworkers-shell-snapshots-$(id -u)`.
 		const fileStat = await fs.stat(snapshotPath!);
 		expect(fileStat.mode & 0o077).toBe(0);
 		const dirStat = await fs.stat(path.dirname(snapshotPath!));
@@ -349,7 +349,7 @@ describe("getOrCreateSnapshot", () => {
 	});
 
 	it("cleans up the empty snapshot file when the shell fails to spawn", async () => {
-		const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "omp-snap-spawn-fail-"));
+		const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "uw-snap-spawn-fail-"));
 		const originalTmpDir = process.env.TMPDIR;
 		process.env.TMPDIR = testRoot;
 		try {

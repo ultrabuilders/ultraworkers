@@ -87,6 +87,51 @@ describe("pre-commit guard", () => {
 		expect(r.err).toContain("GUARD_FIRED");
 	});
 
+	it("fires from the shipped location under core.hooksPath, not only from git's default", async () => {
+		// Every other row installs the hook at `.git/hooks`, which is git's DEFAULT.
+		// This repo does not use the default: it installs with
+		// `git config core.hooksPath scripts/hooks`, so the shipped arrangement is a
+		// hook under the worktree root. A `core.hooksPath` that points somewhere the
+		// hook is not produces exactly the same silence as a missing hook — git runs
+		// nothing, no error, and a bare commit succeeds — so every row above stays
+		// green on such a clone. That is not hypothetical: the mode row above exists
+		// because this guard shipped 100644 once and 100755 in the wrong place once,
+		// and neither time did a single test go red.
+		//
+		// The hook is written at the mode git checks out, read from the INDEX rather
+		// than chmod'ed here: a local chmod would prove the copy is executable while
+		// the file that ships is not, which is the failure this repo already made.
+		const repoRoot = path.join(import.meta.dir, "..", "..");
+		const HOOKS_PATH = "scripts/hooks";
+		const mode = git(repoRoot, ["ls-files", "-s", `${HOOKS_PATH}/pre-commit`]).out.split(/\s+/)[0];
+		if (mode !== "100755") throw new Error(`shipped hook is mode ${mode} in the index, expected 100755`);
+
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "precommit-hookspath-"));
+		const run = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+		run(["init", "-q", "."]);
+		run(["config", "user.email", "guard@test"]);
+		run(["config", "user.name", "guard"]);
+		run(["config", "core.hooksPath", HOOKS_PATH]);
+		await fs.mkdir(path.join(dir, HOOKS_PATH), { recursive: true });
+		await fs.writeFile(path.join(dir, HOOKS_PATH, "pre-commit"), await fs.readFile(HOOK), { mode: 0o755 });
+
+		await Bun.write(path.join(dir, "a.txt"), "a\n");
+		run(["add", "a.txt"]);
+		run(["commit", "-qm", "seed"]);
+		await Bun.write(path.join(dir, "peer.txt"), "theirs\n");
+		run(["add", "peer.txt"]);
+
+		const before = run(["rev-parse", "HEAD"]).stdout.toString().trim();
+		const r = run(["commit", "-qm", "mine"]);
+
+		// Read as an OUTCOME, not as "the hook ran": if core.hooksPath were ignored
+		// and git fell back to `.git/hooks`, this commit would succeed and the peer's
+		// row would ride along, which is the harm — so that is what is asserted.
+		expect(r.exitCode).not.toBe(0);
+		expect(r.stderr.toString()).toContain("belongs to every agent");
+		expect(run(["rev-parse", "HEAD"]).stdout.toString().trim()).toBe(before);
+	});
+
 	it("refuses a bare commit, so a peer's staged row cannot ride along", async () => {
 		// The regression this exists for: `d985fe7dc9` and `f9b23a9cba` each
 		// committed another session's rows and git reported success.

@@ -69,17 +69,6 @@ const LEGACY_CONFIG_DIR_NAME: &str = ".omp";
 /// list (`dirs.ts:437`).
 const MAIN_CONFIG_FILENAMES: [&str; 2] = ["config.yml", "config.yaml"];
 
-/// Fallback directory name for the AGENT-DIR comparison only, used when
-/// neither `ULTRAWORKERS_CONFIG_DIR` nor `PI_CONFIG_DIR` is set.
-///
-/// This deliberately does NOT participate in the candidate scan that
-/// [`resolve_config_dir_name`] performs for the logs directory. The two are
-/// separate surfaces: this one answers "is `PI_CODING_AGENT_DIR` pointing
-/// somewhere custom?", which gates XDG eligibility, and that decision has its
-/// own pinned test below. Widening it belongs to its own change, measured
-/// separately -- see `epic-usoz`.
-const DEFAULT_CONFIG_DIR: &str = LEGACY_CONFIG_DIR_NAME;
-
 /// XDG-root subdirectory, i.e. `$XDG_STATE_HOME/ultraworkers/`: the FIRST entry
 /// of `XDG_CONFIG_DIR_CANDIDATES` in `packages/utils/src/dirs.ts`, which lists
 /// the new spelling before the old. Deliberately NOT `APP_NAME` from
@@ -430,7 +419,8 @@ fn list_profile_dirs(profiles_root: &Path) -> Vec<PathBuf> {
 /// `PI_CODING_AGENT_DIR` is unset or pointing at the default agent dir.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn xdg_state_logs_from_env(home: &Path, config_dir_override: Option<&OsStr>) -> Option<PathBuf> {
-	let default_agent_dir = default_agent_dir(home, config_dir_override);
+	let default_agent_dir =
+		default_agent_dir(home, config_dir_override, &Path::exists, &list_profile_dirs);
 	let agent_override = std::env::var_os("PI_CODING_AGENT_DIR");
 	let xdg_state_home = std::env::var_os("XDG_STATE_HOME");
 	xdg_state_logs(
@@ -474,12 +464,20 @@ fn xdg_state_logs(
 	Some(app_dir.join("logs"))
 }
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn default_agent_dir(home: &Path, config_dir_override: Option<&OsStr>) -> PathBuf {
-	let config_dir = config_dir_override
-		.filter(|s| !s.is_empty())
-		.unwrap_or_else(|| OsStr::new(DEFAULT_CONFIG_DIR));
-	let base = config_root_dir(home, config_dir);
-	base.join("agent")
+fn default_agent_dir(
+	home: &Path,
+	config_dir_override: Option<&OsStr>,
+	exists: &dyn Fn(&Path) -> bool,
+	profile_dirs: &dyn Fn(&Path) -> Vec<PathBuf>,
+) -> PathBuf {
+	// Probe-based, because the JS side is: `defaultAgent` at `dirs.ts:544` is
+	// `path.join(this.configRoot, "agent")`, and `configRoot` is the same
+	// resolved candidate the rest of `dirs.ts` walks. Pinning a literal `.omp`
+	// here instead made this comparison disagree with the very default it is
+	// meant to detect, so a user who set `PI_CODING_AGENT_DIR` to the CURRENT
+	// spelling read as "pointing somewhere custom" and lost XDG eligibility.
+	let config_dir = resolve_config_dir_name(home, config_dir_override, exists, profile_dirs);
+	config_root_dir(home, &config_dir).join("agent")
 }
 
 fn config_root_dir(home: &Path, config_dir: &OsStr) -> PathBuf {
@@ -831,15 +829,45 @@ mod tests {
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
-	fn default_agent_dir_uses_dot_omp_by_default() {
-		let dir = default_agent_dir(Path::new("/tmp/pi-natives-test-home"), None);
+	fn default_agent_dir_defaults_to_next_spelling_when_no_candidate_exists() {
+		// The agent-dir default is derived, not literal: with nothing on disk
+		// the candidate scan yields the write target, which is the spelling
+		// `PI_CODING_AGENT_DIR` is compared against. Pinning `.omp` here made
+		// that comparison reject a user pointing at the CURRENT spelling.
+		let dir = default_agent_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			&exists_in(&[]),
+			&no_profiles,
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.ultraworkers/agent"));
+	}
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[test]
+	fn default_agent_dir_follows_the_candidate_holding_the_config() {
+		// The half-migrated shape: both spellings present, only the legacy one
+		// holds an agent config. The default must follow the config, or the
+		// XDG eligibility check compares against a directory nobody is using.
+		let dir = default_agent_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			&exists_in(&[
+				"/tmp/pi-natives-test-home/.ultraworkers",
+				"/tmp/pi-natives-test-home/.omp/agent/config.yml",
+			]),
+			&no_profiles,
+		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/agent"));
 	}
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn default_agent_dir_respects_pi_config_dir() {
-		let dir =
-			default_agent_dir(Path::new("/tmp/pi-natives-test-home"), Some(OsStr::new(".omp-dev")));
+		let dir = default_agent_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			Some(OsStr::new(".omp-dev")),
+			&exists_in(&[]),
+			&no_profiles,
+		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp-dev/agent"));
 	}
 

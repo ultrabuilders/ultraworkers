@@ -208,7 +208,7 @@ describe("runGcCommand blob sweep", () => {
 
 		// A relative --session-dir transcript stored outside the managed roots.
 		const projectDir = path.join(root, "project");
-		const externalDir = path.join(projectDir, ".omp-sessions");
+		const externalDir = path.join(projectDir, ".ultraworkers-sessions");
 		await fs.mkdir(externalDir, { recursive: true });
 		const externalFile = path.join(externalDir, "work.jsonl");
 		await Bun.write(
@@ -223,7 +223,7 @@ describe("runGcCommand blob sweep", () => {
 		// would miss this transcript and delete its blob.
 		const crumbDir = getTerminalSessionsDir(root);
 		await fs.mkdir(crumbDir, { recursive: true });
-		await Bun.write(path.join(crumbDir, "tty-1"), `${projectDir}\n.omp-sessions/work.jsonl\n`);
+		await Bun.write(path.join(crumbDir, "tty-1"), `${projectDir}\n.ultraworkers-sessions/work.jsonl\n`);
 
 		const result = await runGcCommand({ flags: { agentDir: root, blobs: true, apply: true } });
 

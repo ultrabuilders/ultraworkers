@@ -1,6 +1,6 @@
 # hello-extension
 
-A minimal `ultraworkers` extension that demonstrates the two most common authoring patterns: subscribing to `session_start` to notify on load, and registering a `/hello` slash command that sends a greeting into the conversation. It is intentionally small — use it as a copy-paste starting point for your own extension.
+A minimal `ultraworkers` extension that demonstrates the three most common authoring patterns: subscribing to `session_start` to notify on load, registering a `hello_extension` tool the model can call, and registering a `/hello` slash command that sends a greeting into the conversation. It is intentionally small — use it as a copy-paste starting point for your own extension.
 
 ## Install
 
@@ -32,10 +32,13 @@ ultraworkers --extension ./hello-extension
 
 After loading, type `/hello` or `/hello Ada` in the ultraworkers prompt. The command sends a visible greeting custom message into the conversation and shows a "Message sent!" notification.
 
+The `hello_extension` tool is available to the model. Pass `--tools=hello_extension` to run a session with only that tool active, which is the quickest way to confirm the extension loaded.
+
 ## What it demonstrates
 
 - Default export factory receiving `ExtensionAPI`
 - `pi.on("session_start", ...)` — session lifecycle hook
+- `pi.registerTool(...)` — tool registration, with a `zod` parameter schema
 - `pi.registerCommand(...)` — slash command registration
 - `ctx.ui.notify(...)` — user-facing notification
 - `package.json` with `omp.extensions` manifest field

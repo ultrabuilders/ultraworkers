@@ -93,6 +93,13 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// edited one. Wired in the same commit that added it, so the gate that exists to
 	// catch unwired tests does not have to be the thing that reports it.
 	{ file: "revision-content-diff.test.ts", reason: "" },
+	// epic-jwsy.14's docblock scanner. Deliberately NOT named `check-*`: it is a
+	// measurement, not a gate — its tree-wide scan reports a false positive on a
+	// healthy file, and shipping that under a name CI reads as a passing gate is
+	// the failure the entries above exist to prevent. Registered in the same commit
+	// that added it, because an unclassified file makes the runner refuse before it
+	// executes ANY script test.
+	{ file: "docblock-scan.test.ts", reason: "" },
 	// The `runs-on` label gate's own test. It landed with the gate and was left
 	// unclassified, which is not a warning about this one file: the refusal at the
 	// top of the runner stops `test:scripts` before it executes ANY file, so the

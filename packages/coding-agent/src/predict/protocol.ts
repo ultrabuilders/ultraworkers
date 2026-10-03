@@ -58,7 +58,7 @@ export function textPredictDaemon(runtimeDir: string, agentDir: string): { name:
 	const key = Bun.hash.wyhash(path.resolve(agentDir)).toString(16).padStart(16, "0").slice(0, 12);
 	const endpoint =
 		process.platform === "win32"
-			? `\\\\.\\pipe\\omp-text-predict-${Bun.hash.wyhash(runtimeDir).toString(16)}-${key}`
+			? `\\\\.\\pipe\\text-predict-${Bun.hash.wyhash(runtimeDir).toString(16)}-${key}`
 			: path.join(runtimeDir, `text-predict-${key}.sock`);
 	return { name: `${TEXT_PREDICT_DAEMON_PREFIX}${key}`, endpoint };
 }

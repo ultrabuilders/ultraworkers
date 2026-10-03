@@ -20,9 +20,15 @@
  */
 import { describe, expect, it } from "bun:test";
 import { isProviderRetryableError } from "@oh-my-pi/pi-ai/error";
-import { ANTHROPIC_FIRST_EVENT_TIMEOUT_MESSAGE, ANTHROPIC_STREAM_IDLE_TIMEOUT_MESSAGE } from "@oh-my-pi/pi-ai/providers/anthropic";
+import {
+	ANTHROPIC_FIRST_EVENT_TIMEOUT_MESSAGE,
+	ANTHROPIC_STREAM_IDLE_TIMEOUT_MESSAGE,
+} from "@oh-my-pi/pi-ai/providers/anthropic";
 import { FIRST_EVENT_TIMEOUT_ERROR as GEMINI_FIRST_EVENT_TIMEOUT_ERROR } from "@oh-my-pi/pi-ai/providers/google-gemini-cli";
-import { OPENAI_CODEX_FIRST_EVENT_TIMEOUT_MESSAGE, OPENAI_CODEX_STREAM_IDLE_TIMEOUT_MESSAGE } from "@oh-my-pi/pi-ai/providers/openai-codex-responses";
+import {
+	OPENAI_CODEX_FIRST_EVENT_TIMEOUT_MESSAGE,
+	OPENAI_CODEX_STREAM_IDLE_TIMEOUT_MESSAGE,
+} from "@oh-my-pi/pi-ai/providers/openai-codex-responses";
 import {
 	OPENAI_COMPLETIONS_FIRST_EVENT_TIMEOUT_MESSAGE,
 	OPENAI_COMPLETIONS_STREAM_IDLE_TIMEOUT_MESSAGE,
@@ -61,9 +67,7 @@ describe("stream timeout messages are retryable", () => {
 		// classifier that ignored messages entirely would pass every row above.
 		expect(isProviderRetryableError(new Error(ANTHROPIC_FIRST_EVENT_TIMEOUT_MESSAGE))).toBe(true);
 		expect(
-			isProviderRetryableError(
-				new Error(ANTHROPIC_FIRST_EVENT_TIMEOUT_MESSAGE.replace("timed out", "waited")),
-			),
+			isProviderRetryableError(new Error(ANTHROPIC_FIRST_EVENT_TIMEOUT_MESSAGE.replace("timed out", "waited"))),
 		).toBe(false);
 
 		expect(isProviderRetryableError(new Error(ANTHROPIC_STREAM_IDLE_TIMEOUT_MESSAGE))).toBe(true);

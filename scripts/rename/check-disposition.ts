@@ -28,64 +28,50 @@
  * has occurrences; after it, 0 is the only legal value. Running only one of them
  * means half the table is never checked at the moment it matters.
  *
- * WHY THE PICKED EXPRESSION, AND THE 51% THAT IS PROSE
- * ---------------------------------------------------
- * The pinned expression is the one the bead ghim, byte for byte:
+ * -----------------------------------------------------------------
+ * WHY THE PICKED EXPRESSION, AND HOW MUCH OF THE CORPUS IS PROSE
+ * -----------------------------------------------------------------
+ * The pinned expression is deliberately NOT printed here. A second copy inside a
+ * docblock goes stale silently, and this one already proved it: it claimed to be
+ * the expression "byte for byte" and differed from the code on every edge at
+ * once -- both character classes, a missing `.sh` lookahead, and the `i` flag.
+ * Measured against the code, the printed copy disagreed on 4 of 8 probes,
+ * missing `x OMP y`, `OMP_NO_WEBP`, `a.omp/x` and the `OMP-Auth-Broker-Capabilities`
+ * header -- that last one being a published wire name neither gate can see. The
+ * one to read is `PINNED` below. If this block needs to talk about it, quote that
+ * line; otherwise say nothing and let the code speak.
  *
- *     (^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)
+ * Measured 2026-10-03 over `hitPaths()` -- the same corpus every stage walks --
+ * attributing each occurrence to its line with `isCommentLine`:
  *
- * It is a LOCATOR, not a judgement. It matches comments and doc strings exactly as
- * happily as it matches code, and on the tree at the time of writing that is most of
- * the corpus:
+ *     917 files      -- 693 with >=1 code occurrence, 224 comment-only
+ *     4405 occurrences -- 3244 in code (74%), 1161 in comment prose (26%)
  *
- *     2054 occurrences — 1047 in comment prose, 1007 in code
- *     704 files     — 318 with >=1 code occurrence, 386 comment-only
+ * Prose is the minority. The figures this block used to carry (2054 / 1007 /
+ * 1047 and 704 / 318 / 386) were internally consistent -- 318+386=704 -- so they
+ * were true when measured and are now simply out of date. A stale figure here is
+ * still worse than none: it reads as current.
  *
- * So a `rename` row is not automatically a code edit. Renaming inside a comment is
- * W13's job (the documentation sweep), not this table's, and whether the table needs
- * a `prose` disposition at all is an open owner decision — recorded in the bead, not
- * silently resolved here. Until it is made, `keep-prose` is NOT in the vocabulary and
- * a comment-only file has no lawful row to carry, which `--stage=pre` reports as a
- * missing row rather than inventing a class for it.
+ * `keep-prose` IS in the vocabulary (`:172`) and rows carry it. A comment-only
+ * file therefore HAS a lawful row, so `--stage=pre` reporting one as
+ * `missing-row` is not evidence of an absent class. (An earlier version of this
+ * block said the opposite. It was never true -- `keep-prose` was in the
+ * vocabulary from this gate's first commit.)
  *
- * WHY NOT A TEST
- * --------------
- * AGENTS.md bans source-grep *tests*: a test asserting on an implementation file's
- * text breaks on harmless refactors. The pure helpers below are covered by
- * `check-disposition.test.ts` against fixtures.
+ * Nor is prose W13's business here. W13 -- `check-docs-rename.ts:199` -- globs
+ * markdown paths, and `hitPaths()` globs source extensions. The two sets are
+ * disjoint, so source-comment prose is outside BOTH this table's settled policy
+ * and W13's reach. Naming W13 as the owner of a `.ts` comment names an owner
+ * that cannot see the file.
  *
- * WHAT RUNS IT — re-measured 2026-10-02, because this paragraph has now been wrong twice
- * ------------------------------------------------------------------------------
- * This gate is NOT a link in `check:ts`, and must not become one. `check:ts` is a `&&`
- * chain that stops at the first red link, and `check:test-rename-literals` sits at
- * position 7 and is red on this tree — so anything chained after it never executes. A
- * gate in that position is a gate that does not run, which is worse than an unwired
- * one because it looks enforced. (That is not hypothetical: the ratchet was first
- * chained at position 8 and would never have fired.)
- *
- * What DOES run it, and runs it even when `check:ts` is red:
- *
- *   scripts/rename/check-disposition-ratchet.ts   -> package.json `check:disposition-ratchet`
- *   -> `GATES` in scripts/ci-check-full.ts -> `ci:check:full`
- *
- * Measured, not asserted: `bun run ci:check:full` reports
- * `PASS check:disposition-ratchet (exit 0)` on a run where `check:ts` exited 1. The
- * ratchet re-implements no rule — it calls `checkPre` AND `checkPost` — so it cannot
- * drift from here. (`checkPost` is what makes `rename-incomplete` and `keep-shrank`
- * observable at all, since this file defaults to `--stage=pre`.)
- *
- * It is a RATCHET, not this gate in full, and that is deliberate. This gate reports
- * every way the table is incomplete, and the table is legitimately incomplete, so
- * running it as a gate would make CI red for work that is going correctly. The ratchet
- * pins the one number that may only rise when a frozen literal is deleted; everything
- * else it reports as a ceiling that must fall.
- *
- * Running this file directly reports the whole picture, now split by rule so a reader
- * can see which number is which without counting `FAIL` lines:
- *
- *   disposition(pre): missing-row = 628
- *   disposition(pre): literal-hits-imbalance = 0
- *   disposition(pre): stale-row = 9
+ * AND the class name does not mean what it says. `classMatcher` returns the SAME
+ * matcher for `rename`, `keep-wire` and `keep-prose`, so the gate cannot tell
+ * those three apart: a row's disposition selects what is COUNTED, not what is
+ * CLAIMED. A `keep-prose` row's `hits` is therefore the file's whole pinned
+ * total, which means one such row declares a `~/.omp` path, an `OMP_*` env var
+ * and a module name all to be prose -- and it still balances. `reason` is the
+ * only place a row's meaning can live, so a reason that does not name the thing
+ * actually kept is a false record wearing a green number.
  */
 
 import * as path from "node:path";

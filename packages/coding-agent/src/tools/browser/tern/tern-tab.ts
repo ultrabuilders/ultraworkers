@@ -1365,7 +1365,7 @@ export class TernTab implements InProcessRunTab {
 			throw new ToolError("highlight duration must be a non-negative number");
 		const spec = this.#spec(selector);
 		await this.#target(`tab.highlight(${describe(selector)})`, spec, "point", null);
-		const id = `omp-highlight-${crypto.randomUUID()}`;
+		const id = `ultraworkers-highlight-${crypto.randomUUID()}`;
 		await this.#kit("highlight", [spec, id]);
 		try {
 			await untilAborted(this.#signal, () => Bun.sleep(duration));

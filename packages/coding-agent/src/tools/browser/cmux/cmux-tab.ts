@@ -982,7 +982,7 @@ export class CmuxTab implements InProcessRunTab {
 		if (!Number.isFinite(duration) || duration < 0) {
 			throw new ToolError("highlight duration must be a non-negative number");
 		}
-		const id = `omp-highlight-${crypto.randomUUID()}`;
+		const id = `ultraworkers-highlight-${crypto.randomUUID()}`;
 		await this.#selectorAction(selector, "highlight", { id });
 		await untilAborted(this.#runContext?.signal, () => Bun.sleep(duration));
 		await this.#evalScript(`document.getElementById(${JSON.stringify(id)})?.remove()`);
@@ -1918,7 +1918,7 @@ export class CmuxTab implements InProcessRunTab {
 					const rect = element.getBoundingClientRect();
 					const overlay = document.createElement("div");
 					overlay.id = String(args.id);
-					overlay.dataset.ompHighlightOverlay = "";
+					overlay.dataset.ultraworkersHighlightOverlay = "";
 					overlay.setAttribute("aria-hidden", "true");
 					overlay.setAttribute("role", "presentation");
 					overlay.inert = true;

@@ -28,9 +28,10 @@
  * guess about which occurrence set the author meant. Refusing is the honest answer.
  */
 
+import { $ } from "bun";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { countRename, DISPOSITIONS, parseTable, requiresKeepRefs, RULES_VERSION } from "./check-disposition.ts";
+import { countRename, DISPOSITIONS, parseTable, requiresKeepRefs, RULES_VERSION } from "./check-disposition";
 
 const ROOT = path.resolve(import.meta.dir, "../..");
 const TABLE = path.join(ROOT, "scripts/rename/disposition.tsv");
@@ -202,6 +203,50 @@ async function main(): Promise<void> {
 	}
 }
 
+/**
+ * Parse `git status --porcelain` into the set of paths it reports as changed.
+ *
+ * Porcelain is `XY <path>`, so the path begins at index 3 — and that offset is
+ * the whole risk here. Slicing the wrong span yields a plausible path that
+ * matches nothing, and "no file is dirty" then reads as a result instead of a
+ * broken matcher. A rename is `R  old -> new`, and the new path is the one that
+ * exists in the working tree, so that is what goes in the set.
+ */
+export function parsePorcelainPaths(status: string): Set<string> {
+	const paths = new Set<string>();
+	for (const line of status.split("\n")) {
+		if (line.trim() === "") continue;
+		// Two status columns, one space, then the path.
+		const rest = line.slice(3).trim();
+		if (rest === "") continue;
+		const arrow = rest.indexOf(" -> ");
+		const path = (arrow >= 0 ? rest.slice(arrow + 4) : rest).replace(/\/+$/, "");
+		if (path !== "") paths.add(path);
+	}
+	return paths;
+}
+
+/**
+ * Paths with uncommitted edits, read once per batch.
+ *
+ * `hits-imbalance` measures the WORKING TREE, so a row can look settled only
+ * because a peer is mid-edit: correcting its count now closes the row of a change
+ * that has not landed, and the row goes red again the moment that peer commits.
+ * That is a row made green by overwriting a fact that has not happened yet.
+ *
+ * Outside a git repository — or with git unavailable — this is an empty set, so
+ * the check simply does not fire rather than blocking every batch.
+ */
+async function readDirtyPaths(): Promise<Set<string>> {
+	try {
+		const result = await $`git -C ${ROOT} status --porcelain`.nothrow().quiet();
+		if (result.exitCode !== 0) return new Set();
+		return parsePorcelainPaths(result.text());
+	} catch {
+		return new Set();
+	}
+}
+
 async function apply(input: string, dryRun: boolean): Promise<void> {
 	// The bytes as they are on disk right now. Every later write is conditional on
 	// this string still being what we read, which is the compare-and-swap that stops
@@ -210,6 +255,26 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 	const existingLines = before.split("\n");
 	const header = existingLines[0] ?? "";
 	const hasRulesColumn = (header.split("\t").length ?? 0) === 7;
+
+	// Read once, not per row: `git status` on a batch of twenty rows would cost
+	// twenty subprocesses to answer a question that cannot change mid-batch.
+	const dirtyPaths = await readDirtyPaths();
+
+	/**
+	 * True when `filePath` sits inside something with uncommitted edits.
+	 *
+	 * The prefix arm matters because git reports an untracked DIRECTORY as a
+	 * single `dir/` entry. Holding only `packages/new` and asking
+	 * `dirtyPaths.has("packages/new/src/x.ts")` answers false for every file
+	 * inside it, so the guard would pass exactly the rows it exists to stop.
+	 */
+	const isDirty = (filePath: string): boolean => {
+		if (dirtyPaths.has(filePath)) return true;
+		for (const dirty of dirtyPaths) {
+			if (filePath.startsWith(`${dirty}/`)) return true;
+		}
+		return false;
+	};
 
 	const incoming = input.split("\n").filter(line => line.trim() !== "");
 	const outcomes: Outcome[] = [];
@@ -224,6 +289,20 @@ async function apply(input: string, dryRun: boolean): Promise<void> {
 			continue;
 		}
 		const filePath = cells[1]!;
+
+		// A row about a file someone is currently editing describes a file that
+		// does not exist yet. Writing it now produces a row that is green until
+		// the peer commits, at which point the gate reopens it — and by then the
+		// author has forgotten why the number was chosen.
+		if (isDirty(filePath)) {
+			outcomes.push({
+				line: lineNo,
+				raw,
+				verdict: "reject",
+				reason: `${filePath} has uncommitted edits; a row written now would describe a file mid-change and reopen the moment that edit lands`,
+			});
+			continue;
+		}
 		const disposition = cells[3]!;
 		const hits = Number(cells[2]);
 

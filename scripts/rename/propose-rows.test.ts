@@ -10,7 +10,7 @@
  * what keeps them two.
  */
 import { describe, expect, it } from "bun:test";
-import { pageContainsToken, parseDocsCitations } from "./propose-rows";
+import { pageContainsToken, parseDocsCitations, parsePorcelainPaths } from "./propose-rows";
 
 /** A page that mentions one variable, and only that one. */
 const PAGE = "Set OMP_PROFILE=1 in your shell. OMP_PROFILE selects the active profile.";
@@ -105,5 +105,40 @@ describe("parseDocsCitations", () => {
 		const [{ path, token }] = parseDocsCitations("see docs:docs/mcp-config.md#OMP_MCP_TIMEOUT_MS.");
 		const page = await Bun.file(path).text();
 		expect(pageContainsToken(page, token)).toBe(true);
+	});
+});
+
+describe("parsePorcelainPaths", () => {
+	// The failure this guards: slice the wrong span and every path comes back
+	// wrong, so "no file is dirty" is reported as a result when it is really a
+	// broken matcher. A guard that cannot fail is not a guard.
+	it("reads the path out of a modified entry", () => {
+		expect([...parsePorcelainPaths(" M packages/a/src/b.ts")]).toEqual(["packages/a/src/b.ts"]);
+	});
+
+	// The control on the same input shape: the two status columns must not be
+	// mistaken for part of the path.
+	it("reads the same path whether the entry is staged, unstaged, or both", () => {
+		const expected = ["packages/a/src/b.ts"];
+		expect([...parsePorcelainPaths("M  packages/a/src/b.ts")]).toEqual(expected);
+		expect([...parsePorcelainPaths("MM packages/a/src/b.ts")]).toEqual(expected);
+		expect([...parsePorcelainPaths("?? packages/a/src/b.ts")]).toEqual(expected);
+	});
+
+	// A rename's old path no longer exists in the working tree, so the new one is
+	// the path a row could actually be written about.
+	it("takes the destination of a rename, not its source", () => {
+		expect([...parsePorcelainPaths("R  old/name.ts -> new/name.ts")]).toEqual(["new/name.ts"]);
+	});
+
+	// An untracked directory is reported with a trailing slash; the row names the
+	// files inside it, so keeping the slash would make every one of them look clean.
+	it("strips the trailing slash git puts on an untracked directory", () => {
+		expect([...parsePorcelainPaths("?? packages/new/")]).toEqual(["packages/new"]);
+	});
+
+	it("returns nothing for a clean tree, and skips blank lines", () => {
+		expect([...parsePorcelainPaths("")]).toEqual([]);
+		expect([...parsePorcelainPaths("\n\n")]).toEqual([]);
 	});
 });

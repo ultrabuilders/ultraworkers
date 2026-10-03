@@ -12,7 +12,7 @@ import {
 import type { Skill } from "@oh-my-pi/pi-coding-agent/capability/skill";
 import { loadSkills } from "@oh-my-pi/pi-coding-agent/extensibility/skills";
 import { loadAllExtensions } from "@oh-my-pi/pi-coding-agent/modes/components/extensions/state-manager";
-import { __resetDirsFromEnvForTests, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
+import { __resetDirsFromEnvForTests, getPluginsDir, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
 import "@oh-my-pi/pi-coding-agent/discovery/claude-plugins";
 
 describe("parseClaudePluginsRegistry", () => {
@@ -469,7 +469,18 @@ describe("listClaudePluginRoots", () => {
 			[firstHome, "first@market"],
 			[secondHome, "second@market"],
 		] as const) {
-			const pluginsDir = path.join(home, ".omp", "plugins");
+			// `getPluginsDir(home)`, not `path.join(home, ".omp", "plugins")`. This test
+			// used to write to a hardcoded ".omp", and `getConfigDirName()` does not return
+			// ".omp" here: it returns ".ultraworkers", because CONFIG_DIR_NAME_NEXT heads
+			// CONFIG_DIR_CANDIDATES (dirs.ts:62,73) and `setAgentDir` rebuilds the resolver
+			// against the temp home the `os.homedir()` mock installs. The two ends therefore
+			// disagreed on the directory and this test read back `[]` — no root, rather than
+			// a root with the wrong name, which is why it read like a discovery failure.
+			//
+			// The subject here is home isolation, not the config directory's spelling, so
+			// asking the resolver is also the honest way to keep testing that: the fixture
+			// follows production instead of pinning a name that is free to move.
+			const pluginsDir = getPluginsDir(home);
 			await fs.mkdir(pluginsDir, { recursive: true });
 			await fs.writeFile(
 				path.join(pluginsDir, "installed_plugins.json"),

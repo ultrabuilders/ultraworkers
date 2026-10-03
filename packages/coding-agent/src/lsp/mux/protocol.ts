@@ -33,6 +33,21 @@ export const LSP_MUX_PROJECT_DIR_ENV = "ULTRAWORKERS_LSP_MUX_PROJECT_DIR";
 export const LSP_MUX_DAEMON_NAME = `${APP_NAME}.lsp.mux`;
 
 /**
+ * The broker daemon name this service shipped under before the rename.
+ *
+ * Not derived from {@link LSP_MUX_DAEMON_NAME} and not a rename candidate, for
+ * the reason `update-cli.ts` documents on `LEGACY_WIRE_NAME`: the broker keeps
+ * this name as a directory under the project scope, so a daemon started by the
+ * previous version is still registered under it after an upgrade. A lookup that
+ * consults only the current name therefore cannot see that record.
+ *
+ * This is deliberately a lookup fallback and never a spawn target — new daemons
+ * register under {@link LSP_MUX_DAEMON_NAME}, so the wedged-daemon recovery in
+ * `daemon.ts` retires the old record instead of leaving it to accumulate.
+ */
+export const LSP_MUX_DAEMON_NAME_LEGACY = "omp.lsp.mux";
+
+/**
  * Broker readiness regex matched against the banner printed by the worker.
  *
  * Deliberately carries NO product name. The banner below leads with

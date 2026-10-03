@@ -53,7 +53,7 @@ export class DownloadManager {
 	constructor(browser: Browser, page: Page, tabId: string) {
 		this.#browser = browser;
 		this.#page = page;
-		this.#defaultDirectory = path.join(os.tmpdir(), `omp-downloads-${tabId}`);
+		this.#defaultDirectory = path.join(os.tmpdir(), `uw-downloads-${tabId}`);
 	}
 
 	/** Enable downloads into an absolute directory, replacing the previous destination. */

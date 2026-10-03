@@ -1838,7 +1838,7 @@ export class TernTab implements InProcessRunTab {
 					context.session.browserScreenshotDir,
 					`screenshot-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, -1)}.${ext}`,
 				)
-			: path.join(os.tmpdir(), `omp-sshots-${Snowflake.next()}.${ext}`);
+			: path.join(os.tmpdir(), `uw-sshots-${Snowflake.next()}.${ext}`);
 		await Bun.write(dest, savedBuffer);
 		context.screenshots.push({
 			dest,
@@ -2282,7 +2282,7 @@ export class TernTab implements InProcessRunTab {
 	}
 
 	async #enableDownloads(dir?: string): Promise<void> {
-		const resolved = path.resolve(dir ?? path.join(os.tmpdir(), `omp-downloads-tern-${this.block}`));
+		const resolved = path.resolve(dir ?? path.join(os.tmpdir(), `uw-downloads-tern-${this.block}`));
 		if (this.#downloadDir === resolved) return;
 		await fs.promises.mkdir(resolved, { recursive: true });
 		await this.#op("downloads", { dir: resolved });

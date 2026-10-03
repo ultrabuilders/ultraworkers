@@ -106,7 +106,7 @@ export async function validatePluginSource(
 		case "github":
 			return undefined;
 		case "git-subdir": {
-			const syntheticRoot = path.join(path.parse(process.cwd()).root, "omp-marketplace-validation");
+			const syntheticRoot = path.join(path.parse(process.cwd()).root, "uw-marketplace-validation");
 			const resolved = path.resolve(syntheticRoot, source.path);
 			if (!pathIsWithin(syntheticRoot, resolved)) {
 				throw new Error(`git-subdir path "${source.path}" escapes the cloned repository`);

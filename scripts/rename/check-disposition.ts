@@ -149,8 +149,9 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * that edge instead would sweep the entire `@oh-my-pi` namespace into scope and invalidate
  * every figure recorded in the ledger.
  *
- * Only the LEADING edge changed as far as `.` and `-` go, so `.omp/` is still not matched
- * and `omp-like` still is — both are separate axes, not this one.
+ * The LEADING class also admits `.`, `/`, `:` and space, so `.omp/` and `omp-like` both match;
+ * what it excludes is `_`, `-` and alphanumerics. `PI_OMP_X` and `_OMP_PROFILE` are blind here
+ * for that reason, not because a dotted path is out of scope.
  */
 const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9]|$)/i;
 

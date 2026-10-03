@@ -51,6 +51,19 @@ export interface TernCaptureConfig {
 export const TERN_CAPTURE_GLOBAL = "__ompTernCapture";
 
 /**
+ * Field the capture stamps on every message it posts, and the field the
+ * consumer guard reads.
+ *
+ * One constant, deliberately shared, because the guard is fail-closed: a field
+ * name that drifts between producer and consumer does not throw, it returns
+ * early and every Tern event disappears. It reaches the page through
+ * `config.messageField` rather than as a literal in the installer source,
+ * because that installer is a raw string evaluated in the page world and
+ * cannot reference a module binding.
+ */
+export const TERN_MESSAGE_FIELD = "ultraworkers";
+
+/**
  * Source of a page function `(config) => void` that installs the capture in
  * the current document (first call) or swaps its configuration (later
  * calls). No `eval`: page CSP never applies to it.
@@ -88,7 +101,7 @@ export const TERN_CAPTURE_INSTALLER = String.raw`function (config) {
 		if (now - state.window > 1000) { state.window = now; state.budget = 0; }
 		if (++state.budget > 400) { state.dropped++; return; }
 		if (state.dropped) { message.dropped = state.dropped; state.dropped = 0; }
-		message.ultraworkers = "tern";
+		message[config.messageField] = "tern";
 		message.doc = doc;
 		message.frame = framePath;
 		message.ts = now;
@@ -411,5 +424,7 @@ export const TERN_CAPTURE_INSTALLER = String.raw`function (config) {
 
 /** The document-start script installing the capture with `config` in every new document. */
 export function ternCaptureScript(config: TernCaptureConfig): string {
-	return `(${TERN_CAPTURE_INSTALLER})(${JSON.stringify(config)});`;
+	// The installer runs in the page world and cannot import this module, so the
+	// field name travels in its config rather than being written into its source.
+	return `(${TERN_CAPTURE_INSTALLER})(${JSON.stringify({ ...config, messageField: TERN_MESSAGE_FIELD })});`;
 }

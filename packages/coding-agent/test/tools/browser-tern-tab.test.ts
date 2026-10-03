@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { TernTab, userSourceFunction } from "@oh-my-pi/pi-coding-agent/tools/browser/tern/tern-tab";
 import { TernSocketClient } from "@oh-my-pi/pi-coding-agent/tools/browser/tern/wire";
+import { TERN_MESSAGE_FIELD } from "@oh-my-pi/pi-coding-agent/tools/browser/tern/page-capture";
 import { type FakeAnswer, type FakeDaemon, startFakeDaemon } from "./tern-fake-daemon";
 
 interface FakePage {
@@ -67,7 +68,7 @@ function capture(message: Record<string, unknown>): Record<string, unknown> {
 		world: "page",
 		main: true,
 		url: "https://example.test/",
-		body: JSON.stringify({ ultraworkers: "tern", ts: 1, ...message }),
+		body: JSON.stringify({ [TERN_MESSAGE_FIELD]: "tern", ts: 1, ...message }),
 	};
 }
 

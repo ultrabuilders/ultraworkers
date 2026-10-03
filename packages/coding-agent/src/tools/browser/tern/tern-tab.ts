@@ -143,7 +143,13 @@ import {
 } from "../webmcp";
 import { keyDownStep, keyUpStep, pressSteps, type TernInputStep, type TernModifier, ternKey, typeSteps } from "./keys";
 import { TernNetworkLog, type TernRequestEntry } from "./network-log";
-import { TERN_CAPTURE_GLOBAL, TERN_CAPTURE_INSTALLER, type TernPageEmulation, ternCaptureScript } from "./page-capture";
+import {
+	TERN_CAPTURE_GLOBAL,
+	TERN_CAPTURE_INSTALLER,
+	TERN_MESSAGE_FIELD,
+	type TernPageEmulation,
+	ternCaptureScript,
+} from "./page-capture";
 import {
 	TERN_KIT_SOURCE,
 	type TernAnnotation,
@@ -635,7 +641,7 @@ export class TernTab implements InProcessRunTab {
 		} catch {
 			return;
 		}
-		if (!isRecord(message) || message.ultraworkers !== "tern") return;
+		if (!isRecord(message) || message[TERN_MESSAGE_FIELD] !== "tern") return;
 		if (typeof message.dropped === "number") this.#consoleDropped += message.dropped;
 		const ts = numberOr(message.ts, Date.now());
 		const location = typeof message.location === "string" ? message.location : undefined;

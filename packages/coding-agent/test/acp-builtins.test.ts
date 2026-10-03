@@ -534,13 +534,13 @@ describe("ACP builtin slash commands", () => {
 	it("dump: outputs transcript with LLM request JSON path when sidecar succeeds", async () => {
 		const { output, runtime } = createRuntime();
 		runtime.session.formatSessionAsText = () => "Session content here";
-		runtime.session.dumpLlmRequestToTmpDir = async () => "/tmp/omp-llm-request-test.json";
+		runtime.session.dumpLlmRequestToTmpDir = async () => "/tmp/uw-llm-request-test.json";
 
 		const result = await executeAcpBuiltinSlashCommand("/dump", runtime);
 
 		expect(result).toEqual({ consumed: true });
 		expect(output[0]).toContain("Session content here");
-		expect(output[0]).toContain("LLM request JSON: /tmp/omp-llm-request-test.json");
+		expect(output[0]).toContain("LLM request JSON: /tmp/uw-llm-request-test.json");
 		expect(output[0]).toContain("persists on disk");
 	});
 
@@ -942,7 +942,7 @@ describe("wave 3 commands", () => {
 
 	it("/move: relocates the current session instead of switching to an empty target session", async () => {
 		const { output, runtime, session, fakeSessionManager } = createRuntime();
-		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-move-target-"));
+		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-move-target-"));
 		const originalProjectDir = process.cwd();
 		const reloadForCwd = spyOn(runtime.settings, "reloadForCwd");
 		let configNotified = 0;
@@ -970,7 +970,7 @@ describe("wave 3 commands", () => {
 	// /wt
 	it("/wt: refuses outside a git checkout", async () => {
 		const { output, runtime, fakeSessionManager } = createRuntime();
-		const plainDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-wt-plain-"));
+		const plainDir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-wt-plain-"));
 		fakeSessionManager._cwd = plainDir;
 		try {
 			const result = await executeAcpBuiltinSlashCommand("/wt feature", runtime);
@@ -984,7 +984,7 @@ describe("wave 3 commands", () => {
 
 	it("/wt: creates a worktree carrying uncommitted changes and relocates the session into it", async () => {
 		const { output, runtime, fakeSessionManager } = createRuntime();
-		const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-wt-"));
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "uw-wt-"));
 		const repoDir = path.join(root, "repo");
 		const worktreeBase = path.join(root, "wt");
 		const originalProjectDir = process.cwd();
@@ -1037,7 +1037,7 @@ describe("wave 3 commands", () => {
 	it("/wt: with worktree.cleanSource=true, cleans the source checkout while preserving the worktree", async () => {
 		const { output, runtime, fakeSessionManager } = createRuntime();
 		cfgWorktreeCleanSource.override(runtime.settings, true);
-		const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-wt-clean-"));
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "uw-wt-clean-"));
 		const repoDir = path.join(root, "repo");
 		const worktreeBase = path.join(root, "wt");
 		const originalProjectDir = process.cwd();
@@ -1092,7 +1092,7 @@ describe("wave 3 commands", () => {
 	it("/wt: aborts and leaves source checkout untouched when settings flush fails", async () => {
 		const { output, runtime, fakeSessionManager } = createRuntime();
 		spyOn(runtime.settings, "flush").mockRejectedValue(new Error("disk full"));
-		const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-wt-flush-fail-"));
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "uw-wt-flush-fail-"));
 		const repoDir = path.join(root, "repo");
 		const worktreeBase = path.join(root, "wt");
 		const originalProjectDir = process.cwd();
@@ -1502,7 +1502,7 @@ describe("wave 5 — adapters and polish", () => {
 
 describe("/move preflight flush", () => {
 	it("disposes the session when headless workspace rollback cannot recover", async () => {
-		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-acp-move-fatal-"));
+		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-acp-move-fatal-"));
 		const originalProjectDir = getProjectDir();
 		const { output, runtime, session } = createRuntime();
 		const dispose = spyOn(session, "dispose");
@@ -1523,7 +1523,7 @@ describe("/move preflight flush", () => {
 		}
 	});
 	it("aborts text-mode /move when pending settings flush fails", async () => {
-		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-acp-move-"));
+		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-acp-move-"));
 		try {
 			const { output, fakeSessionManager, runtime } = createRuntime();
 			spyOn(runtime.settings, "flush").mockRejectedValue(new Error("disk full"));
@@ -1539,7 +1539,7 @@ describe("/move preflight flush", () => {
 	});
 
 	it("completes text-mode /move when flush succeeds", async () => {
-		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-acp-move-ok-"));
+		const targetDir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-acp-move-ok-"));
 		const originalProjectDir = process.cwd();
 		try {
 			const { output, fakeSessionManager, runtime } = createRuntime();

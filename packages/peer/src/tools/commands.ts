@@ -21,7 +21,17 @@ export interface PeerCommandDeps {
 	readonly currentName: () => string;
 	/** Apply a new name. Runs inside the same critical section as allocation. */
 	readonly applyName: (next: string) => void;
-	/** Is some *other* session holding this case-folded key? */
+	/**
+	 * Is some *other* session holding this case-folded key?
+	 *
+	 * A boolean, so this path cannot report **why** a name is unavailable. That only
+	 * has teeth where tombstones exist but the rename does not go through the
+	 * registry — a host with no store has no holds either, so `held` and `taken` are
+	 * a distinction between two absences and the boolean loses nothing. Attach
+	 * {@link PeerCommandDeps.renameInRegistry} and the distinction survives: that
+	 * path refuses `held` and `taken` as separate reasons, which matters because a
+	 * held name frees itself and a taken one does not.
+	 */
 	readonly isNameTaken: (key: string) => boolean;
 	/** Live roster across sessions. */
 	readonly roster: () => Promise<readonly PeerRosterEntry[]>;

@@ -21,6 +21,16 @@
  * the name genuinely was never allocated to anyone reachable, so the refusal stops
  * being a loss of information and starts being the truth. There is no state where
  * the system knows a name existed and refuses to say so.
+ *
+ * The counter-reference is worth having on record, because it is the failure this
+ * shape avoids. `pi-mail` kept tombstones as `deletedAt` on a versioned record,
+ * then removed the feature and had to special-case the remains anyway —
+ * "may be a resumed legacy tombstone" (`mail-service.ts:1147`), with the comment
+ * at `peer-record.ts:15` explaining that new deletions no longer leave one. The
+ * cost of a tombstone is not the hold; it is that a **format** grows up around it
+ * and every reader must keep tolerating it forever. Clearing `instance_id` and
+ * keeping the name is data, not a format version, and `resolveName` answers in
+ * three states so nothing downstream needs to learn a `deletedAt` convention.
  */
 
 import type { Database } from "bun:sqlite";
@@ -39,6 +49,21 @@ const SCHEMA_VERSION = 1;
  * ambiguity the tombstone exists to prevent, so `/rename` back to a previous name
  * is refused while it stands — a deliberate inconvenience. Held rows are reaped
  * on `held_until`, so accumulation is bounded by rename rate, not session count.
+ *
+ * The value is **not** a guess. `pi-peer-sting8k` picked 24 h for the same
+ * decision — retain a record of something that is gone, so a peer can be told it
+ * existed rather than told nothing — and gave the same reason: "far beyond any
+ * laptop suspension" (`pi-extension/pi-peer/protocol.ts:66`). Two independent
+ * implementations of the same idea landing on the same number is evidence; a
+ * number nobody can source is a habit.
+ *
+ * Note the one thing that does **not** transfer from there. `sweepDeadSessions`
+ * requires a *second* observation before deleting, because its tombstone guards
+ * a peer's queued **work** — one stale read must not destroy artifacts a session
+ * was about to wake up and claim. A name hold guards a **label**, and the label
+ * after the deadline is not lost, it is gone: `unknown` is then the truth. Adding
+ * a second observation here would hold `expired` past the point where it stopped
+ * being knowledge, which is the opposite of what this store is for.
  */
 export const NAME_HOLD_TTL_MS = 24 * 60 * 60 * 1000;
 

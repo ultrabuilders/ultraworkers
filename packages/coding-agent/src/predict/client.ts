@@ -324,10 +324,10 @@ export function syncTextPrediction(): void {
  * and shut it down.
  */
 export async function smokeTestTextPredictDaemon(): Promise<void> {
-	const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-text-predict-smoke-"));
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-text-predict-smoke-"));
 	const endpoint =
 		process.platform === "win32"
-			? `\\\\.\\pipe\\omp-text-predict-smoke-${process.pid.toString(36)}`
+			? `\\\\.\\pipe\\ultraworkers-text-predict-smoke-${process.pid.toString(36)}`
 			: path.join(root, "text-predict.sock");
 	const spawn = resolveWorkerSpawnCmd(TEXT_PREDICT_WORKER_ARG);
 	const proc = ptree.spawn(spawn.cmd, {

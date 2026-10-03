@@ -290,7 +290,7 @@ export async function connectDaemonBlobBackend(
 
 /** Exercise worker-host blob daemon startup and the /info probe for distribution smoke tests. */
 export async function smokeTestBlobBroker(): Promise<void> {
-	const socket = path.join(os.tmpdir(), `omp-blob-smoke-${process.pid.toString(36)}.sock`);
+	const socket = path.join(os.tmpdir(), `ultraworkers-blob-smoke-${process.pid.toString(36)}.sock`);
 	const config: BlobBrokerWorkerConfig = {
 		kind: "direct",
 		options: {},

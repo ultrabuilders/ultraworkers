@@ -194,7 +194,7 @@ function buildVhsTheme(): string {
 	const foreground = theme.isLight ? "#1a1a1a" : "#d4d4d4";
 	const selection = theme.isLight ? "#c8d6ff" : "#404862";
 	return JSON.stringify({
-		name: "omp-gallery",
+		name: "ultraworkers-gallery",
 		background,
 		foreground,
 		cursor: foreground,

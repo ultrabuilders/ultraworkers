@@ -28,7 +28,7 @@ import { clearExtensionBuckets } from "@oh-my-pi/pi-coding-agent/extensibility/e
 import { PluginManager } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/manager";
 import { EventBus } from "@oh-my-pi/pi-coding-agent/utils/event-bus";
 
-const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "omp-doctor-seam-"));
+const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-doctor-seam-"));
 
 afterEach(async () => {
 	clearDiagnostics();

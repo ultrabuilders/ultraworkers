@@ -213,7 +213,7 @@ const publishWaiters: (() => void)[] = [];
 let capturedSockets: FakeWebSocket[] = [];
 
 beforeEach(async () => {
-	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "omp-collabctl-"));
+	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-collabctl-"));
 	utils.setAgentDir(path.join(tmp, "agent"));
 	installInMemoryRelay();
 	// Record every fake socket so a test can drive a terminal close on the host's transport.

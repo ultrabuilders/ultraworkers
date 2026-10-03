@@ -119,7 +119,7 @@ describe("upgrading a source the user pinned", () => {
 	}
 
 	beforeEach(async () => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-upgrade-pin-"));
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-upgrade-pin-"));
 		await initRepo();
 	});
 

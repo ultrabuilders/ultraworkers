@@ -1372,8 +1372,13 @@ export const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
  * (earlier = better). The mapper does not stamp `priority` yet — see
  * `mapDeepinfraModel` — but the params are sent so discovery picks the
  * ordering up as soon as the server honors it.
+ *
+ * `sort_by` is a free-form string on `/v1/models` (`anyOf: [string, null]`)
+ * that each client fills with ITS OWN name — the value is a namespace, not a
+ * server-defined enum, which is why it tracks this product's spelling rather
+ * than a wire constant.
  */
-const DEEPINFRA_MODELS_QUERY = "?filter=with_meta&sort_by=omp";
+const DEEPINFRA_MODELS_QUERY = "?filter=with_meta&sort_by=ultraworkers";
 const DEEPINFRA_EFFORTS = [Effort.Low, Effort.Medium, Effort.High] as const;
 
 /** DeepInfra OpenAI-compatible discovery configuration. */

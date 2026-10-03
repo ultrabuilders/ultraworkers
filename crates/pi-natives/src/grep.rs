@@ -39,12 +39,26 @@ use smallvec::SmallVec;
 use crate::{glob_util, iofs, shell::vfs::ShellFilesystem, task};
 
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
-/// PCRE2 JIT toggle: `ULTRAWORKERS_PCRE2_JIT=1` forces JIT on, `0`/`false` forces it
-/// off. Unset, JIT stays on everywhere except macOS, where PCRE2's SLJIT
-/// executable allocator can fault while compiling patterns (issue #7399).
-static PCRE2_JIT_ENABLED: LazyLock<bool> = LazyLock::new(|| match std::env::var("ULTRAWORKERS_PCRE2_JIT") {
-	Ok(v) if !v.is_empty() => v != "0" && !v.eq_ignore_ascii_case("false"),
-	_ => !cfg!(target_os = "macos"),
+/// PCRE2 JIT toggle: `ULTRAWORKERS_PCRE2_JIT=1` forces JIT on, `0`/`false`
+/// forces it off. Unset, JIT stays on everywhere except macOS, where PCRE2's
+/// SLJIT executable allocator can fault while compiling patterns (issue #7399).
+///
+/// `OMP_PCRE2_JIT` is the pre-rebrand spelling and is still read, but only when
+/// the canonical variable is *undefined*. A user who exported it before the
+/// rebrand keeps the setting they already have; an explicitly-empty
+/// `ULTRAWORKERS_PCRE2_JIT` selects the default rather than silently inheriting
+/// the old value. That is the precedence `resolveProfileEnv` already applies to
+/// `OMP_PROFILE`/`PI_PROFILE` in `packages/utils/src/dirs.ts`, and this
+/// variable is documented for hand-setting outside the repository, so a rename
+/// without it would break a setting out of sight.
+static PCRE2_JIT_ENABLED: LazyLock<bool> = LazyLock::new(|| {
+	let value = std::env::var("ULTRAWORKERS_PCRE2_JIT")
+		.or_else(|_| std::env::var("OMP_PCRE2_JIT"))
+		.ok();
+	match value.as_deref() {
+		Some(v) if !v.is_empty() => v != "0" && !v.eq_ignore_ascii_case("false"),
+		_ => !cfg!(target_os = "macos"),
+	}
 });
 
 /// Upper bound on entries per streamed `onMatches` batch; a file with more

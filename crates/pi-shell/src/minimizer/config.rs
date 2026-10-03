@@ -132,7 +132,11 @@ impl MinimizerConfig {
 		}
 		let legacy_requested = resolve_legacy_filters(
 			opts.legacy_filters,
+			// `OMP_MINIMIZER_LEGACY_FILTERS` is the pre-rebrand spelling, still read when
+			// the canonical variable is undefined so an existing export keeps working. Same
+			// precedence as `resolveProfileEnv`'s OMP_PROFILE/PI_PROFILE pair.
 			std::env::var("ULTRAWORKERS_MINIMIZER_LEGACY_FILTERS")
+				.or_else(|_| std::env::var("OMP_MINIMIZER_LEGACY_FILTERS"))
 				.ok()
 				.as_deref(),
 		);

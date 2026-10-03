@@ -24,8 +24,15 @@ use crate::host::{Host, Utility, util};
 /// PCRE2 JIT toggle: `ULTRAWORKERS_PCRE2_JIT=1` forces JIT on, `0`/`false` forces it
 /// off. Unset, JIT stays on everywhere except macOS, where PCRE2's SLJIT
 /// executable allocator can fault while compiling patterns (issue #7399).
+///
+/// The two crates read the same variable independently, so both arms have to move
+/// together or the greps disagree about whether JIT is safe on macOS — which is the
+/// setting issue #7399 exists to prevent. `OMP_PCRE2_JIT` is the pre-rebrand
+/// spelling and is still read when the canonical variable is undefined; see
+/// `crates/pi-natives/src/grep.rs` for the full precedence rule.
 pub(crate) fn pcre2_jit_enabled(host: &Host) -> bool {
-	match host.var("ULTRAWORKERS_PCRE2_JIT") {
+	let value = host.var("ULTRAWORKERS_PCRE2_JIT").or_else(|| host.var("OMP_PCRE2_JIT"));
+	match value {
 		Some(value) if !value.is_empty() => value != "0" && !value.eq_ignore_ascii_case("false"),
 		_ => !cfg!(target_os = "macos"),
 	}
@@ -1944,5 +1951,51 @@ mod tests {
 			assert_eq!(code, 2, "-E {pattern} must stay an error, got {out:?}");
 		}
 	}
-}
 
+	/// The JIT toggle has to keep working for anyone who exported it before the
+	/// rebrand. The canonical variable wins whenever it is defined; the legacy
+	/// spelling is consulted only when it is not, which is the same precedence
+	/// `resolveProfileEnv` applies to `OMP_PROFILE`/`PI_PROFILE`.
+	///
+	/// Each case asserts the *resolved* answer rather than a fixed true/false, so the
+	/// suite does not encode this platform's default as if it were the contract.
+	#[test]
+	fn pcre2_jit_toggle_accepts_the_legacy_variable_and_prefers_the_canonical_one() {
+		use super::pcre2_jit_enabled;
+		let platform_default = !cfg!(target_os = "macos");
+
+		let resolve = |canonical: Option<&str>, legacy: Option<&str>| {
+			let (mut host, _capture) = Host::for_test("grep", Vec::new(), "/");
+			if let Some(value) = canonical {
+				host.export_for_test("ULTRAWORKERS_PCRE2_JIT", value);
+			}
+			if let Some(value) = legacy {
+				host.export_for_test("OMP_PCRE2_JIT", value);
+			}
+			pcre2_jit_enabled(&host)
+		};
+
+		// Neither variable set: the platform default, unchanged by this fix.
+		assert_eq!(resolve(None, None), platform_default);
+
+		// The regression this guards. `OMP_PCRE2_JIT` was the only spelling that
+		// existed before the rename, so a user following the old docs exported it
+		// and nothing read it.
+		assert!(resolve(None, Some("1")), "legacy OMP_PCRE2_JIT=1 must still force JIT on");
+		assert!(!resolve(None, Some("0")), "legacy OMP_PCRE2_JIT=0 must still force JIT off");
+		assert!(!resolve(None, Some("false")), "legacy `false` must still read as off");
+
+		// Canonical wins when both are present, in both directions — so setting the
+		// new variable can never be silently overridden by a stale export.
+		assert!(!resolve(Some("0"), Some("1")), "canonical 0 must beat legacy 1");
+		assert!(resolve(Some("1"), Some("0")), "canonical 1 must beat legacy 0");
+
+		// An explicitly-empty canonical selects the default rather than inheriting
+		// the legacy value: unsetting the new variable and setting it to "" are
+		// different intents, and only the first may fall back.
+		assert_eq!(resolve(Some(""), Some("1")), platform_default);
+
+		assert_eq!(resolve(Some("true"), None), true);
+		assert_eq!(resolve(Some(""), None), platform_default);
+	}
+}

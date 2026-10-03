@@ -707,8 +707,15 @@ const KNOWN_TERMINALS = Object.freeze({
 	tern: new TerminalInfo("tern", ImageProtocol.Kitty, true, true, NotifyProtocol.Osc99),
 });
 
-/** Resolve terminal identity from environment markers used by common emulators. */
-export function detectTerminalId(env: NodeJS.ProcessEnv = Bun.env): TerminalId {
+/**
+ * Resolve terminal identity from environment markers used by common emulators.
+ *
+ * `timeoutMs` is forwarded to the tmux client-terminal probe and defaults to that
+ * probe's own budget, so omitting it changes nothing. It exists so a test can drive
+ * the probe's branches — notably the timeout one — without depending on how loaded
+ * the machine is when the suite runs.
+ */
+export function detectTerminalId(env: NodeJS.ProcessEnv = Bun.env, timeoutMs?: number): TerminalId {
 	function caseEq(a: string, b: string): boolean {
 		return a.toLowerCase() === b.toLowerCase(); // For compiler to pattern match
 	}
@@ -753,7 +760,7 @@ export function detectTerminalId(env: NodeJS.ProcessEnv = Bun.env): TerminalId {
 
 	// tmux >= 3.2 replaces the pane's identity with `TERM_PROGRAM=tmux`.
 	// Its server still holds the attached client's terminal-type reply.
-	const clientProgramId = fromProgram(resolveTmuxClientTerminalName(env) ?? undefined);
+	const clientProgramId = fromProgram(resolveTmuxClientTerminalName(env, timeoutMs) ?? undefined);
 	if (clientProgramId) return clientProgramId;
 
 	if (TERM?.toLowerCase().includes("ghostty")) return "ghostty";

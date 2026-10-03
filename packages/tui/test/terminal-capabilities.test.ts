@@ -133,8 +133,17 @@ printf "%s\\n" "WezTerm 20260905-175422-0f4b5596"
 				cmd: [
 					process.execPath,
 					"--eval",
-					`import { TERMINAL, TERMINAL_ID } from "@oh-my-pi/pi-tui/terminal-capabilities";
-console.log(JSON.stringify({ id: TERMINAL_ID, notifyProtocol: TERMINAL.notifyProtocol }));`,
+					// The budget is passed in rather than left to the production
+					// default, because the contract under test is "a WezTerm
+					// client_termtype yields the wezterm profile" — not "the
+					// default budget survives a loaded machine". Reading the same
+					// module-level TERMINAL_ID a production caller reads would put
+					// a 500ms wall-clock race between this assertion and whatever
+					// else the suite is running, which is how the test became
+					// flaky in the first place.
+					`import { detectTerminalId, getTerminalInfo } from "@oh-my-pi/pi-tui/terminal-capabilities";
+const id = detectTerminalId(process.env, 30000);
+console.log(JSON.stringify({ id, notifyProtocol: getTerminalInfo(id).notifyProtocol }));`,
 				],
 				env,
 				stdout: "pipe",
@@ -152,10 +161,11 @@ console.log(JSON.stringify({ id: TERMINAL_ID, notifyProtocol: TERMINAL.notifyPro
 			// only that some value differed and leaves the other two unread —
 			// and on a flake that runs once in hundreds, whatever is not printed
 			// is lost for good. Together these four separate the branches: a
-			// non-zero exit with empty stderr and no stdout is the timeout path,
-			// while exit 0 with the wrong stdout means the query succeeded and
-			// the 500ms budget is not the explanation. Elapsed is carried too,
-			// because a duration alone cannot tell those apart — see epic-afrw.
+			// non-zero exit with empty stderr and no stdout means the child
+			// itself failed, while exit 0 with the wrong stdout means the query
+			// succeeded and answered something other than WezTerm. Elapsed is
+			// carried too, because a duration alone cannot tell those apart —
+			// see epic-afrw.
 			expect({ exitCode, stderr, stdout, elapsedMs }).toEqual({
 				exitCode: 0,
 				stderr: "",

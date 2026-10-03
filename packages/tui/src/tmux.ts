@@ -65,7 +65,10 @@ interface TmuxQueryOutcome extends TmuxClientTerminalQuery {
  * output and into the log of whoever reads a red run: calling that a timeout would tell
  * them the machine was slow when the truth is that tmux was not there to be asked.
  */
-function queryTmuxClientTerminalName(env: NodeJS.ProcessEnv): TmuxQueryOutcome {
+function queryTmuxClientTerminalName(
+	env: NodeJS.ProcessEnv,
+	timeoutMs: number = CLIENT_TERMTYPE_TIMEOUT_MS,
+): TmuxQueryOutcome {
 	const tmux = $which("tmux", { PATH: env.PATH });
 	if (!tmux) return { value: null, reason: "not-found", definitive: true };
 	try {
@@ -73,7 +76,7 @@ function queryTmuxClientTerminalName(env: NodeJS.ProcessEnv): TmuxQueryOutcome {
 			env,
 			stdout: "pipe",
 			stderr: "ignore",
-			timeout: CLIENT_TERMTYPE_TIMEOUT_MS,
+			timeout: timeoutMs,
 			killSignal: "SIGKILL",
 		});
 		// The time budget fired — reported as a null exit code with a kill signal, which is
@@ -101,11 +104,14 @@ function queryTmuxClientTerminalName(env: NodeJS.ProcessEnv): TmuxQueryOutcome {
  * branch instead of inferring it from how long the call took, and elapsed time is exactly
  * the signal that cannot tell a killed query from an absent terminal.
  */
-export function resolveTmuxClientTerminalNameWithReason(env: NodeJS.ProcessEnv = Bun.env): TmuxClientTerminalQuery {
+export function resolveTmuxClientTerminalNameWithReason(
+	env: NodeJS.ProcessEnv = Bun.env,
+	timeoutMs: number = CLIENT_TERMTYPE_TIMEOUT_MS,
+): TmuxClientTerminalQuery {
 	if (!isInsideTmux(env) || isBunTestRuntime()) return { value: null, reason: "not-found" };
 	const cached = cachedClientTerminalName;
 	if (cached !== undefined) return { value: cached, reason: cached === null ? "not-found" : "ok" };
-	const outcome = queryTmuxClientTerminalName(env);
+	const outcome = queryTmuxClientTerminalName(env, timeoutMs);
 	// A query that never completed — budget fired, or tmux vanished mid-spawn — is not an
 	// answer, so nothing is cached and the next call tries again.
 	if (!outcome.definitive) return { value: outcome.value, reason: outcome.reason };
@@ -124,6 +130,9 @@ export function resolveTmuxClientTerminalNameWithReason(env: NodeJS.ProcessEnv =
  * without touching the cache, so the next call tries again — the run-once behaviour the
  * docblock describes still holds for every outcome that is actually an answer.
  */
-export function resolveTmuxClientTerminalName(env: NodeJS.ProcessEnv = Bun.env): string | null {
-	return resolveTmuxClientTerminalNameWithReason(env).value;
+export function resolveTmuxClientTerminalName(
+	env: NodeJS.ProcessEnv = Bun.env,
+	timeoutMs: number = CLIENT_TERMTYPE_TIMEOUT_MS,
+): string | null {
+	return resolveTmuxClientTerminalNameWithReason(env, timeoutMs).value;
 }

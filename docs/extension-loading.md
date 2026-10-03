@@ -41,7 +41,7 @@ The project root is the native provider's `.omp` directory (`SOURCE_PATHS.native
 Notes:
 
 - Native auto-discovery is currently `.omp` based.
-- Legacy `.pi` is still accepted in package manifests (`pi.extensions`) and project override lookup, but `.pi/extensions` is not a native root here.
+- Legacy `.pi` is still accepted in package manifests (the `pi` field's `extensions` array) and project override lookup, but `.pi/extensions` is not a native root here.
 
 ### 2) Discovered JS/TS hook factories
 
@@ -53,7 +53,7 @@ Hook-capability loading already applies its own hook-specific disabled ids, so t
 
 After hook discovery, `discoverAndLoadExtensions()` appends extension entry points from enabled installed plugins via `getAllPluginExtensionPaths(cwd)`.
 
-Plugin extension entries come from package `omp.extensions` / `pi.extensions` manifests, including enabled feature entries.
+Plugin extension entries come from the `extensions` array inside a package's top-level manifest field (the `omp` field, or the legacy `pi` one), including enabled feature entries. The two halves are distinct: the outer field is what the loader reads at `loader.ts:179`, and `extensions` is the key inside that object (`PluginManifest.extensions`).
 
 Installed-plugin manifest resolution accepts explicit `.ts`, `.js`, `.mjs`, and `.cjs` files. For a manifest entry that names a directory, it recognizes `index.ts`, `index.js`, `index.mjs`, or `index.cjs`; extension-directory expansion uses the same four suffixes. This is broader than native and configured-directory auto-scanning, which remains limited to `.ts` and `.js`.
 
@@ -104,7 +104,8 @@ Behavior split:
 
 - SDK: when `disableExtensionDiscovery=true`, ambient extension factories are
   excluded, while `additionalExtensionPaths` are still resolved normally
-  (including package directories with `package.json#omp.extensions`).
+  (including package directories whose `package.json` has an `omp` field with an
+  `extensions` array).
 - CLI: `--no-extensions` follows the same explicit-only contract. Explicit
   `-e/--extension` and `--hook` paths still load, and only sibling capability
   roots from explicitly named extension packages remain eligible. Project/user
@@ -201,13 +202,13 @@ It is used directly as a module entry candidate. Explicit `.ts`, `.js`, `.mjs`, 
 
 Resolution order:
 
-1. `package.json` in that directory with a non-empty `omp.extensions` (or legacy `pi.extensions`) array -> use declared entries
+1. `package.json` in that directory whose top-level `omp` (or legacy `pi`) field carries a non-empty `extensions` array -> use declared entries
 2. `index.ts`
 3. `index.js`
 4. Otherwise scan one level for extension entries:
    - direct `*.ts` / `*.js`
    - subdir `index.ts` / `index.js`
-   - subdir `package.json` with `omp.extensions` / `pi.extensions`
+   - subdir `package.json` with an `omp` / `pi` field carrying `extensions`
 
 Rules and constraints:
 

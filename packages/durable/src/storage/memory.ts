@@ -1,5 +1,5 @@
-import type { Context, JsonValue } from "@oh-my-pi/chord";
-import { applyImmutableBatches, type Op } from "@oh-my-pi/chord/delta";
+import type { Context, JsonValue } from "@ultraworkers/chord";
+import { applyImmutableBatches, type Op } from "@ultraworkers/chord/delta";
 import { StorageRejected } from "../errors";
 import { idFromNumber, seqFromNumber } from "../ids";
 import type {

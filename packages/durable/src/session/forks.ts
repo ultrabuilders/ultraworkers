@@ -1,4 +1,4 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import { addressId } from "../documents";
 import type {
 	ConversationId,

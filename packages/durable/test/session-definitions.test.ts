@@ -1,4 +1,4 @@
-import type { Draft } from "@oh-my-pi/chord";
+import type { Draft } from "@ultraworkers/chord";
 import {
 	type ConversationId,
 	createSession,

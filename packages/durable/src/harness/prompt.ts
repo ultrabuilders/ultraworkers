@@ -1,4 +1,4 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import { SystemEntry, type SystemSections } from "../entries";
 import { contributingEntries } from "./context";
 import type { ContextEdit, EntryRecord, TypedEntryDraft } from "../types";

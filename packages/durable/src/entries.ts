@@ -1,4 +1,4 @@
-import type { JsonValue } from "@oh-my-pi/chord";
+import type { JsonValue } from "@ultraworkers/chord";
 import type { Entry, EntryRecord, TypedEntry } from "./types";
 
 /** Define a typed entry kind whose `is()` guard narrows by `EntryRecord.kind`. */

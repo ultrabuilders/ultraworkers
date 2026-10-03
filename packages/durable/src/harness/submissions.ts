@@ -1,4 +1,4 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import { UserEntry } from "../entries";
 import { ConversationBusy } from "../errors";
 import type { SessionImpl } from "../session/session";

@@ -21,7 +21,7 @@ import { copyFile, cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { strictEqual } from "node:assert/strict";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import {
 	seedStorageBenchmark,
 	seedStorageWriteBenchmark,

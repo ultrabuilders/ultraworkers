@@ -21,7 +21,7 @@ import { Database } from "bun:sqlite";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import {
 	seedStorageBenchmark,
 	storageBenchmarkPrimaryRecordCount,

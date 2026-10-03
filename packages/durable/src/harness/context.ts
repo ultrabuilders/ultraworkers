@@ -1,4 +1,4 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import type { AssistantMessage, Message, ToolCall, ToolResultMessage } from "@oh-my-pi/pi-ai";
 import type { SessionImpl } from "../session/session";
 import type { ContextEdit, ConversationId, Cursor, EntryId, EntryRecord, Storage } from "../types";

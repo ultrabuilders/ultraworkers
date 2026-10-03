@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
-import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@oh-my-pi/chord";
-import { type Context } from "@oh-my-pi/chord";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@ultraworkers/chord";
+import { type Context } from "@ultraworkers/chord";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import type { SessionMetadata } from "./types";
 import type { RpcTarget, SessionTarget } from "@ultraworkers/pi-protocol";
 import { ServerDrainingError, SessionNotAttachedError } from "./errors";

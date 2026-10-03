@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { describe, expect, it } from "bun:test";
 import { StorageRejected } from "../src/errors";
 import { idFromNumber, seqFromNumber } from "../src/ids";

@@ -2,7 +2,7 @@
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/08-harness-conversations.ts
 import { exampleModels } from "./models";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { ConversationConfig, createRegistry, defineEntry, Harness, MemoryStorage } from "../../src/index";
 import { Effort } from "@oh-my-pi/pi-catalog/effort";
 

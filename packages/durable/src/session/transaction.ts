@@ -1,5 +1,5 @@
-import { type Context, copyJson, type Draft, type JsonValue } from "@oh-my-pi/chord";
-import { type Change, type Op, type Prepared, type Tracker, track } from "@oh-my-pi/chord/delta";
+import { type Context, copyJson, type Draft, type JsonValue } from "@ultraworkers/chord";
+import { type Change, type Op, type Prepared, type Tracker, track } from "@ultraworkers/chord/delta";
 import {
 	type AnyDocDefinition,
 	type AnyDocToken,

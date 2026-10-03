@@ -1,6 +1,6 @@
-import { type Context, type JsonValue, replicatedState } from "@oh-my-pi/chord";
-import { awaitWithContext, withoutAbortSignal } from "@oh-my-pi/chord/context";
-import { type Op, track } from "@oh-my-pi/chord/delta";
+import { type Context, type JsonValue, replicatedState } from "@ultraworkers/chord";
+import { awaitWithContext, withoutAbortSignal } from "@ultraworkers/chord/context";
+import { type Op, track } from "@ultraworkers/chord/delta";
 import {
 	type AnyDocToken,
 	checkRecordScope,

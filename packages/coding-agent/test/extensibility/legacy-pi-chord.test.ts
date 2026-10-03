@@ -3,7 +3,7 @@ import { ptree, TempDir } from "@oh-my-pi/pi-utils";
 
 // `pi` ships `chord` as its own package, `@earendil-works/chord`, with the
 // `./delta` subpath declared in its exports map. omp publishes the port as
-// `@oh-my-pi/chord` — but the legacy specifier filter only knew the six `pi-*`
+// `@ultraworkers/chord` — but the legacy specifier filter only knew the six `pi-*`
 // package names, so `@earendil-works/chord` and `@earendil-works/chord/delta`
 // matched nothing and a `pi` extension died at import with "Cannot find
 // module". omp having published the package is what makes this a publish-level
@@ -33,8 +33,8 @@ describe("legacy shim chord resolution", () => {
 import { installLegacyPiSpecifierShim, loadLegacyPiModule } from ${JSON.stringify(compatPath)};
 installLegacyPiSpecifierShim();
 const extension = await loadLegacyPiModule(${JSON.stringify(entry)});
-const hostChord = await import("@oh-my-pi/chord");
-const hostDelta = await import("@oh-my-pi/chord/delta");
+const hostChord = await import("@ultraworkers/chord");
+const hostDelta = await import("@ultraworkers/chord/delta");
 console.log(JSON.stringify({
   chordSameModule: extension.chord.defineService === hostChord.defineService,
   deltaSameModule: extension.delta.isReplace === hostDelta.isReplace,

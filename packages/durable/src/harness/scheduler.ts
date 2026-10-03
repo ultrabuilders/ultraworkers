@@ -1,5 +1,5 @@
-import { type Context, copyJson, type JsonValue } from "@oh-my-pi/chord";
-import { awaitWithContext, withAbortSignal } from "@oh-my-pi/chord/context";
+import { type Context, copyJson, type JsonValue } from "@ultraworkers/chord";
+import { awaitWithContext, withAbortSignal } from "@ultraworkers/chord/context";
 import type { SessionImpl } from "../session/session";
 import type { Transaction } from "../session/transaction";
 import type {

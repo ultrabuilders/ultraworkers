@@ -1,5 +1,5 @@
-import type { Context } from "@oh-my-pi/chord";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import type { Context } from "@ultraworkers/chord";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import {
 	type CommitPublication,
 	type ConversationId,

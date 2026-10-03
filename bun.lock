@@ -76,7 +76,7 @@
       },
     },
     "packages/chord": {
-      "name": "@oh-my-pi/chord",
+      "name": "@ultraworkers/chord",
       "version": "18.4.3",
       "dependencies": {
         "esbuild": "0.28.2",
@@ -89,7 +89,7 @@
       "name": "@ultraworkers/pi-client",
       "version": "18.4.3",
       "dependencies": {
-        "@oh-my-pi/chord": "catalog:",
+        "@ultraworkers/chord": "catalog:",
         "@ultraworkers/pi-protocol": "catalog:",
       },
       "devDependencies": {
@@ -169,7 +169,7 @@
       "name": "@ultraworkers/pi-durable",
       "version": "18.4.3",
       "dependencies": {
-        "@oh-my-pi/chord": "catalog:",
+        "@ultraworkers/chord": "catalog:",
         "@oh-my-pi/pi-ai": "catalog:",
         "@oh-my-pi/pi-catalog": "catalog:",
       },
@@ -277,7 +277,7 @@
       "name": "@ultraworkers/pi-protocol",
       "version": "18.4.3",
       "dependencies": {
-        "@oh-my-pi/chord": "catalog:",
+        "@ultraworkers/chord": "catalog:",
         "@oh-my-pi/omptype": "catalog:",
       },
       "devDependencies": {
@@ -288,7 +288,7 @@
       "name": "@ultraworkers/pi-server",
       "version": "18.4.3",
       "dependencies": {
-        "@oh-my-pi/chord": "catalog:",
+        "@ultraworkers/chord": "catalog:",
         "@ultraworkers/pi-protocol": "catalog:",
         "@oh-my-pi/pi-utils": "catalog:",
       },
@@ -425,7 +425,7 @@
     "@babel/types": "^7.29.7",
     "@huggingface/transformers": "^4.2.0",
     "@napi-rs/cli": "3.7.2",
-    "@oh-my-pi/chord": "18.4.3",
+    "@ultraworkers/chord": "18.4.3",
     "@oh-my-pi/omp-stats": "18.4.3",
     "@oh-my-pi/omptype": "18.4.3",
     "@oh-my-pi/pi-agent-core": "18.4.3",
@@ -839,7 +839,7 @@
 
     "@ultraworkers/browser-relay": ["@ultraworkers/browser-relay@workspace:packages/browser-relay"],
 
-    "@oh-my-pi/chord": ["@oh-my-pi/chord@workspace:packages/chord"],
+    "@ultraworkers/chord": ["@ultraworkers/chord@workspace:packages/chord"],
 
     "@ultraworkers/collab-web": ["@ultraworkers/collab-web@workspace:packages/collab-web"],
 

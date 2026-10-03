@@ -1,7 +1,7 @@
 // Expose a document through Chord.
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/04-chord-state.ts
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { createSession, defineDoc, MemoryStorage } from "../../src/index";
 
 const context = BACKGROUND_CONTEXT;

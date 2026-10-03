@@ -1,7 +1,7 @@
 // A real model: stream an answer from OpenAI.
 // Run from packages/durable (needs OPENAI_API_KEY):
 //   node --conditions=source --experimental-strip-types test/examples/16-real-model.ts
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import type { Message } from "@oh-my-pi/pi-ai";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import { streamOpenAIResponses } from "@oh-my-pi/pi-ai/providers/openai-responses";

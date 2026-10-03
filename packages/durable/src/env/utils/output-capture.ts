@@ -1,4 +1,4 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import type { ShellOutputCaptureOptions, ShellOutputMetadata, ShellOutputUpdate, ShellOutputView } from "../index";
 import { AdaptivePublisher } from "./adaptive-publisher";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateHead, truncateTail, utf8ByteLength } from "./truncate";

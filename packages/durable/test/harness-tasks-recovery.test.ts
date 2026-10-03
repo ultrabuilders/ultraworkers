@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Context, JsonValue } from "@oh-my-pi/chord";
+import type { Context, JsonValue } from "@ultraworkers/chord";
 import {
 	createRegistry,
 	defineDoc,

@@ -1,4 +1,4 @@
-import type { RemoteServiceErrorCode } from "@oh-my-pi/chord";
+import type { RemoteServiceErrorCode } from "@ultraworkers/chord";
 
 type ServerOperationErrorCode =
 	| RemoteServiceErrorCode

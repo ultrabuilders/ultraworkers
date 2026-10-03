@@ -1,4 +1,4 @@
-import type { Context, JsonValue, ServiceCall, ServiceProviderUpdate } from "@oh-my-pi/chord";
+import type { Context, JsonValue, ServiceCall, ServiceProviderUpdate } from "@ultraworkers/chord";
 import type { MaybePromise } from "@oh-my-pi/pi-utils/acp/protocol";
 import type { ServerListener } from "./listener";
 

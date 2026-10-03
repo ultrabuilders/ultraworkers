@@ -1,4 +1,4 @@
-import type { JsonValue } from "@oh-my-pi/chord";
+import type { JsonValue } from "@ultraworkers/chord";
 import { type Static, Type } from "@oh-my-pi/omptype/typebox";
 
 export const PROTOCOL_VERSION = 8 as const;

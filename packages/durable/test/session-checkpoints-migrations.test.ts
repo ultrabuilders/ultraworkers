@@ -1,4 +1,4 @@
-import type { Op } from "@oh-my-pi/chord/delta";
+import type { Op } from "@ultraworkers/chord/delta";
 import { defineDoc, defineDocFamily, type EntryId, type JsonObject, type StorageWrite } from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support";

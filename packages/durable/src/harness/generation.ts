@@ -1,4 +1,4 @@
-import { type Context, copyJson, type Draft, type JsonValue } from "@oh-my-pi/chord";
+import { type Context, copyJson, type Draft, type JsonValue } from "@ultraworkers/chord";
 import {
 	type Api,
 	type AssistantMessage,

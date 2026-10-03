@@ -1,4 +1,4 @@
-import { isJsonValue } from "@oh-my-pi/chord";
+import { isJsonValue } from "@ultraworkers/chord";
 import { decodeCbor, encodeCbor } from "./cbor/index";
 import { DEFAULT_MAX_FRAME_LENGTH, encodeFrame, FrameDecoder, type FrameDecoderOptions } from "./framing";
 import {

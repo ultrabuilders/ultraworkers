@@ -1,4 +1,4 @@
-import type { Context, JsonValue } from "@oh-my-pi/chord";
+import type { Context, JsonValue } from "@ultraworkers/chord";
 import type { FileError, FileSystem } from "../../env/index";
 import { idFromNumber, seqFromNumber } from "../../ids";
 import type {

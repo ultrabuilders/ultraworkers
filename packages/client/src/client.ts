@@ -15,8 +15,8 @@ import {
 	type ServiceProviderUpdate,
 	type ServiceStateDecoder,
 	type ServiceSubscriptionSnapshot,
-} from "@oh-my-pi/chord";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+} from "@ultraworkers/chord";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import {
 	type AttachmentEnvelope,
 	encodeClientMessage,

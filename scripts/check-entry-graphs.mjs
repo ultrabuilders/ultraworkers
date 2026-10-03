@@ -35,7 +35,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * measuring nothing at all.
  */
 const WORKSPACE = {
-	"@oh-my-pi/chord": "packages/chord/src",
+	"@ultraworkers/chord": "packages/chord/src",
 	"@oh-my-pi/collab-web": "packages/collab-web/src",
 	"@oh-my-pi/omptype": "packages/omptype/src",
 	"@oh-my-pi/pi-agent-core": "packages/agent/src",

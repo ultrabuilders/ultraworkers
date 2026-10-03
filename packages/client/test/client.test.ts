@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import {
 	encodeCbor,
 	encodeFrame,

@@ -57,7 +57,7 @@
 		"test": "bun test --parallel"
 	},
 	"dependencies": {
-		"@oh-my-pi/chord": "catalog:",
+		"@ultraworkers/chord": "catalog:",
 		"@ultraworkers/pi-protocol": "catalog:"
 	},
 	"devDependencies": {

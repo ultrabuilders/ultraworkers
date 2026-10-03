@@ -1,5 +1,5 @@
-import type { Context, Draft, JsonValue } from "@oh-my-pi/chord";
-import { withoutAbortSignal } from "@oh-my-pi/chord/context";
+import type { Context, Draft, JsonValue } from "@ultraworkers/chord";
+import { withoutAbortSignal } from "@ultraworkers/chord/context";
 import { SessionImpl } from "../session/session";
 import type { Transaction } from "../session/transaction";
 import type {

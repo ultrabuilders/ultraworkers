@@ -3,7 +3,7 @@
 //   node --conditions=source --experimental-strip-types test/examples/06-harness.ts
 import { Effort } from "@oh-my-pi/pi-catalog/effort";
 import { exampleModels } from "./models";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { type } from "@oh-my-pi/omptype";
 import {
 	ConversationConfig,

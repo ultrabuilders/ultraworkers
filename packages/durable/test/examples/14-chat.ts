@@ -2,7 +2,7 @@
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/14-chat.ts
 import { exampleModels } from "./models";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { fauxAssistantMessage, fauxProvider } from "@oh-my-pi/pi-ai/testing";
 import { AssistantEntry, ConversationConfig, createRegistry, Harness, MemoryStorage } from "../../src/index";
 

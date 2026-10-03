@@ -805,7 +805,7 @@ const PI_SCOPE_ALIASES = ["ultraworkers", "oh-my-pi", "mariozechner", "earendil-
 // Internal pi-* package basenames bundled inside the ultraworkers binary.
 // `chord` is the one entry that does not carry the `pi-` prefix: upstream ships
 // it as `@earendil-works/chord`, and ultraworkers publishes the port under the
-// canonicalised `@oh-my-pi/chord`, so the scope rewrite lands on a real package
+// canonicalised `@ultraworkers/chord`, so the scope rewrite lands on a real package
 // without a subpath remap. The filter matches on these names rather than on a
 // prefix, so listing it here is the whole change — see
 // `remapLegacyPiSubpath`, which only consults `PI_SUBPATH_REMAPS` and passes

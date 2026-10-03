@@ -1,5 +1,5 @@
 {
-	"name": "@oh-my-pi/chord",
+	"name": "@ultraworkers/chord",
 	"version": "18.4.3",
 	"description": "Application composition runtime for services, replicated state, RPC, and plugins",
 	"keywords": [

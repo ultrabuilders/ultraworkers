@@ -1,6 +1,6 @@
-import type { JsonValue, ServiceCall } from "@oh-my-pi/chord";
-import { type Context } from "@oh-my-pi/chord";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import type { JsonValue, ServiceCall } from "@ultraworkers/chord";
+import { type Context } from "@ultraworkers/chord";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import type { SessionMetadata } from "../types";
 import { SessionAmbiguousError, SessionNotFoundError } from "../errors";
 import type { RoutedServerServiceHost, RoutedSessionHandle, ServerHost } from "../types";

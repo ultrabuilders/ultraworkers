@@ -1,4 +1,4 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import { NodeExecutionEnv } from "../../env/node";
 import { JsonlStorage, type JsonlStorageOptions } from "./storage";
 

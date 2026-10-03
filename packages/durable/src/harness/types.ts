@@ -1,4 +1,4 @@
-import type { Context, JsonValue } from "@oh-my-pi/chord";
+import type { Context, JsonValue } from "@ultraworkers/chord";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import type {

@@ -1,6 +1,6 @@
 import * as events from "node:events";
 import * as net from "node:net";
-import type { JsonValue, ServiceCall } from "@oh-my-pi/chord";
+import type { JsonValue, ServiceCall } from "@ultraworkers/chord";
 import {
 	type ClientMessage,
 	encodeClientMessage,

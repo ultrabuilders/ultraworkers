@@ -1,4 +1,4 @@
-import type { Draft, JsonRepresentation, JsonValue } from "@oh-my-pi/chord";
+import type { Draft, JsonRepresentation, JsonValue } from "@ultraworkers/chord";
 import type { AssistantMessage } from "@oh-my-pi/pi-ai";
 import { defineDoc } from "../documents";
 import type { Transaction } from "../session/transaction";

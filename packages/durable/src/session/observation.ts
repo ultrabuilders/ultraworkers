@@ -3,9 +3,9 @@ import type {
 	ReplicatedStateSource,
 	ReplicatedStateSourceAttachment,
 	ReplicatedStateSourceFrame,
-} from "@oh-my-pi/chord";
-import { withoutAbortSignal } from "@oh-my-pi/chord/context";
-import type { Op } from "@oh-my-pi/chord/delta";
+} from "@ultraworkers/chord";
+import { withoutAbortSignal } from "@ultraworkers/chord/context";
+import type { Op } from "@ultraworkers/chord/delta";
 import type { JsonObject, WatchEnd, WatchHandle } from "../types";
 
 export type ObservedDocumentValue = Readonly<JsonObject> | null;

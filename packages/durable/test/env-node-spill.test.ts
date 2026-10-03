@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import * as nodeFs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import { getOrThrow } from "../src/env/index";
 import { NodeExecutionEnv } from "../src/env/node";

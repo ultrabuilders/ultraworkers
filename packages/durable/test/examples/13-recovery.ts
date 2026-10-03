@@ -5,7 +5,7 @@ import { exampleModels } from "./models";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { createRegistry, defineTask, Harness } from "../../src/index";
 import { openNodeSqliteStorage } from "../../src/storage/sqlite/node";
 

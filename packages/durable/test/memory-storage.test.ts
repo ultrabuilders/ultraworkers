@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { registerStorageConformance } from "@ultraworkers/pi-durable/testing";
 import { idFromNumber, seqFromNumber } from "../src/ids";
 import { MemoryStorage } from "../src/storage/memory";

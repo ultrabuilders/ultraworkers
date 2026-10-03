@@ -1,6 +1,6 @@
-import type { JsonValue } from "@oh-my-pi/chord";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
-import type { Op } from "@oh-my-pi/chord/delta";
+import type { JsonValue } from "@ultraworkers/chord";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
+import type { Op } from "@ultraworkers/chord/delta";
 import { idFromNumber } from "../ids";
 import {
 	type ConversationId,

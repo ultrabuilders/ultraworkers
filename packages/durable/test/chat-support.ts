@@ -1,4 +1,4 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import type { Message } from "@oh-my-pi/pi-ai";
 import type { FauxProviderHandle, FauxResponseStep, RegisterFauxProviderOptions } from "@oh-my-pi/pi-ai/testing";
 import { fauxProvider } from "@oh-my-pi/pi-ai/testing";

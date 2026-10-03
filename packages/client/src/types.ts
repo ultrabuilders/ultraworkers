@@ -1,4 +1,4 @@
-import type { ServiceSubscriptionSnapshot } from "@oh-my-pi/chord";
+import type { ServiceSubscriptionSnapshot } from "@ultraworkers/chord";
 import type { RpcTarget, SessionTarget } from "@ultraworkers/pi-protocol";
 import type { ByteTransportFactory } from "./transport";
 

@@ -1,12 +1,12 @@
-import type { Context } from "@oh-my-pi/chord";
+import type { Context } from "@ultraworkers/chord";
 import {
 	BACKGROUND_CONTEXT,
 	createContextKey,
 	withAbortSignal,
 	withCancel,
 	withContextValue,
-} from "@oh-my-pi/chord/context";
-import { applyImmutable } from "@oh-my-pi/chord/delta";
+} from "@ultraworkers/chord/context";
+import { applyImmutable } from "@ultraworkers/chord/delta";
 import { defineDoc } from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { context, documentChanges, flush, openTestSession, singleVersion } from "./session-support";

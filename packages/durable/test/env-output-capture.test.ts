@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { afterEach, describe, expect, it, vi, setSystemTime } from "bun:test";
 import type { ShellOutputUpdate, ShellOutputView } from "../src/env/index";
 import { applyShellOutputUpdate, OutputCapture, sanitizeShellOutput } from "../src/env/utils/output-capture";

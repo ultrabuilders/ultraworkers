@@ -1,4 +1,4 @@
-import type { JsonValue } from "@oh-my-pi/chord";
+import type { JsonValue } from "@ultraworkers/chord";
 import {
 	type ConversationId,
 	defineDoc,

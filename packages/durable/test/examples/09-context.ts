@@ -2,7 +2,7 @@
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/09-context.ts
 import { exampleModels } from "./models";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { type AssistantMessage, type Message, type StopReason, type ToolResultMessage } from "@oh-my-pi/pi-ai";
 import { createRegistry, Harness, MemoryStorage } from "../../src/index";
 

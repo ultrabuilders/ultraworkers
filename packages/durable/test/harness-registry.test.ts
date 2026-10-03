@@ -1,4 +1,4 @@
-import type { JsonValue } from "@oh-my-pi/chord";
+import type { JsonValue } from "@ultraworkers/chord";
 import { type } from "@oh-my-pi/pi-ai";
 import { createRegistry, defineTask, GenerationTask, type ToolRegistration } from "@ultraworkers/pi-durable";
 import { describe, expect, it } from "bun:test";

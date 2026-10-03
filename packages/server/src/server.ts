@@ -7,8 +7,8 @@ import {
 	RemoteServiceError,
 	type ServiceCall,
 	type ServiceProviderUpdate,
-} from "@oh-my-pi/chord";
-import { BACKGROUND_CONTEXT, TODO_CONTEXT, withAbortSignal } from "@oh-my-pi/chord/context";
+} from "@ultraworkers/chord";
+import { BACKGROUND_CONTEXT, TODO_CONTEXT, withAbortSignal } from "@ultraworkers/chord/context";
 import type { SessionMetadata } from "./types";
 import {
 	type CancelEnvelope,

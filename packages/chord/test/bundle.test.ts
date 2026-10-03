@@ -49,11 +49,11 @@ describe("facet bundles", () => {
 		const firstEntry = firstBuild.manifest.entries.worker!;
 		expect(firstEntry.file).toMatch(/^facet-[a-f0-9]{12}-[A-Z0-9]+\.cjs$/u);
 		expect(firstEntry.sourceMap).toBe(`${firstEntry.file}.map`);
-		expect(firstEntry.externalImports).toEqual(["@oh-my-pi/chord"]);
+		expect(firstEntry.externalImports).toEqual(["@ultraworkers/chord"]);
 		expect(firstBuild.manifest.entries.presentation!.file).not.toBe(firstEntry.file);
 		expect((await readdir(outputDirectory)).filter(path => path.endsWith(".cjs"))).toHaveLength(2);
 		const firstSource = await readFile(join(outputDirectory, firstEntry.file), "utf8");
-		expect(firstSource).toContain('require("@oh-my-pi/chord")');
+		expect(firstSource).toContain('require("@ultraworkers/chord")');
 		expect(firstSource).toContain("module.exports");
 		expect((await readFile(firstBuild.manifestPath, "utf8")).endsWith("\n")).toBe(true);
 
@@ -249,7 +249,7 @@ describe("facet bundles", () => {
 async function writeGeneration(path: string, generation: string): Promise<void> {
 	await writeFile(
 		path,
-		`import "@oh-my-pi/chord";\n` +
+		`import "@ultraworkers/chord";\n` +
 			`import { decorate } from "./helper";\n` +
 			`const Value = { id: "test.bundle.generation", local: true };\n` +
 			`export default { id: "bundle-provider", setup(env) {\n` +

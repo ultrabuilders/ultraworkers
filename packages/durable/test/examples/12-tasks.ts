@@ -2,7 +2,7 @@
 // Run from packages/durable:
 //   node --conditions=source --experimental-strip-types test/examples/12-tasks.ts
 import { exampleModels } from "./models";
-import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import { BACKGROUND_CONTEXT } from "@ultraworkers/chord/context";
 import { createRegistry, defineTask, Harness, MemoryStorage } from "../../src/index";
 
 const context = BACKGROUND_CONTEXT;

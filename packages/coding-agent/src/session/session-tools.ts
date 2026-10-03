@@ -1251,12 +1251,22 @@ export class SessionTools {
 					this.#host.agent.state.messages.some(message => message.role === "assistant");
 				if (freezeImplicitPromptRefresh) {
 					frozenSignature = triggerSignature;
-				} else if (forcePromptRefresh || triggerSignature !== this.#lastAppliedToolSignature) {
+				} else if (
+					// Disposal rolls this whole frame back at the commit guard below, so a
+					// rebuild started here is work whose result is thrown away. The prompt
+					// surface scope publishes nothing until that commit, so skipping the
+					// render leaves the committed snapshot exactly as the rollback would
+					// have restored it, without paying for the render.
+					!this.#host.isDisposed() &&
+					(forcePromptRefresh || triggerSignature !== this.#lastAppliedToolSignature)
+				) {
 					const signature = computeSignature(candidate);
 					const built = await untilAborted(
 						signal,
 						this.#promptSurfaceScope.run(candidate, () =>
-							rebuildSystemPrompt(promptToolNames, this.#toolRegistry, { directToolNames }),
+							console.error('[RB@1267] names=', JSON.stringify(promptToolNames));
+							console.error('[RB@1988] names=', JSON.stringify(promptToolNames));
+				rebuildSystemPrompt(promptToolNames, this.#toolRegistry, { directToolNames }),
 						),
 					);
 					rebuiltSystemPrompt = built.systemPrompt;

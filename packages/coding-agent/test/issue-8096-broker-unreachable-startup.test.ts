@@ -24,6 +24,26 @@ class ProcessExitSignal extends Error {
 	}
 }
 
+/**
+ * The command name a user of the installed package actually has on PATH.
+ *
+ * Read from the manifest rather than from a brand constant, because the manifest and the
+ * message are what can disagree: the message tells someone to type a command, and if that
+ * command is not in `bin`, the recovery guidance is unreachable. Deriving the expectation
+ * here means a rename turns this test red on its own.
+ */
+async function installedBinaryName(): Promise<string> {
+	const pkg = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as {
+		bin: Record<string, string>;
+	};
+	return Object.keys(pkg.bin)[0] ?? "";
+}
+
+/** Every backticked span in the message — the things it asks the user to type. */
+function quotedCommands(message: string): string[] {
+	return [...message.matchAll(/`([^`]+)`/g)].map(match => match[1] ?? "");
+}
+
 describe("describeAuthBrokerStartupError", () => {
 	it("turns a broker connection failure into recovery guidance", async () => {
 		const message = await describeAuthBrokerStartupError(
@@ -32,9 +52,27 @@ describe("describeAuthBrokerStartupError", () => {
 		expect(message).not.toBeNull();
 		expect(message).toContain("Auth broker request failed after 2 attempt(s)");
 		// Both recovery routes the reporter asked for: start it, or disable it.
-		expect(message).toContain("omp auth-broker serve");
-		expect(message).toContain("omp config reset auth.broker.url");
+		expect(message).toContain("auth-broker serve");
+		expect(message).toContain("config reset auth.broker.url");
 		expect(message).toContain("OMP_AUTH_BROKER_URL");
+	});
+
+	it("names commands the installed package actually provides", async () => {
+		// The defect this defends: the message told users to run `omp auth-broker serve` while
+		// `bin` publishes only `ultraworkers`, so the recovery route named no command they could
+		// type. Asserting on the literal "omp" instead would only catch that exact string — the
+		// next person to write a stale command writes a different one. What holds is that every
+		// command the message names is spelled with the binary this package installs.
+		const bin = await installedBinaryName();
+		const message = await describeAuthBrokerStartupError(
+			new AuthBrokerError("Auth broker request failed after 2 attempt(s)"),
+		);
+
+		expect(message).not.toBeNull();
+		const commands = quotedCommands(message ?? "");
+		expect(commands.length).toBeGreaterThan(0);
+		// The whole set, not one member: a message that fixes two of three routes still fails.
+		expect(commands.every(command => command.startsWith(`${bin} `))).toBe(true);
 	});
 
 	it("names the configured broker URL when it can be resolved", async () => {
@@ -102,6 +140,6 @@ describe("runRootCommand — unreachable auth broker at startup", () => {
 		expect(thrown).toBeInstanceOf(ProcessExitSignal);
 		expect(exitCodes).toEqual([1]);
 		expect(stderr).toContain("Auth broker request failed after 2 attempt(s)");
-		expect(stderr).toContain("omp auth-broker serve");
+		expect(stderr).toContain(`${await installedBinaryName()} auth-broker serve`);
 	}, 15_000);
 });

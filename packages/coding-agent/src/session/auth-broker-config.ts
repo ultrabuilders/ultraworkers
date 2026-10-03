@@ -249,8 +249,12 @@ export async function describeAuthBrokerStartupError(error: unknown): Promise<st
 	return (
 		`Auth broker${target} is unreachable (${error.message}). ` +
 		`${APP_NAME} is configured to use this broker for credentials and will not fall back to local credentials automatically.\n` +
-		"Start the broker with `omp auth-broker serve`, or disable it with " +
-		"`omp config reset auth.broker.url` and `omp config reset auth.broker.token` " +
+		// Spelled from APP_NAME rather than written out, because the recovery routes are commands
+		// the user has to type: a name this package does not put on PATH is not a recovery route.
+		// `bin-name-matches-app-name.test.ts` pins the manifest against APP_NAME, so both the
+		// installed name and this message move together on a rename.
+		`Start the broker with \`${APP_NAME} auth-broker serve\`, or disable it with ` +
+		`\`${APP_NAME} config reset auth.broker.url\` and \`${APP_NAME} config reset auth.broker.token\` ` +
 		"(or unset OMP_AUTH_BROKER_URL / OMP_AUTH_BROKER_TOKEN)."
 	);
 }

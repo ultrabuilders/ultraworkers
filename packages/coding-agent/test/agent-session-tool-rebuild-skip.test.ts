@@ -439,11 +439,24 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 
 		// Global route guidance is independent of optional server instructions.
 		// Adding a route for a server absent from the instructions map must rebuild.
+		// `2aac13437d` gates activation, so this refresh is a push: `uninstructed`
+		// arrives registered but NOT mounted. What this test measures is the MOUNTED
+		// route projection, so the mount has to be declared for the route to exist —
+		// added to the current sets rather than replacing them, because that is what a
+		// real activation does.
 		await session.refreshMCPTools([equivalentSearch, uninstructed]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), uninstructed.name],
+			[...session.getMountedXdevToolNames(), uninstructed.name],
+		);
 		expect(rebuildCount).toBe(2);
 		expect(session.systemPrompt).toEqual([searchAndUninstructedPrompt]);
 
 		await session.refreshMCPTools([equivalentSearch, fetch, uninstructed]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		expect(rebuildCount).toBe(3);
 		expect(session.systemPrompt).toEqual([searchFetchAndUninstructedPrompt]);
 
@@ -1278,6 +1291,13 @@ These tools became available:
 
 		// The already-announced device reconnects: no new notice is spliced in.
 		await session.refreshMCPTools([search]);
+		// "Reconnects" means it becomes mounted again. `2aac13437d` gates activation, so
+		// the refresh alone leaves it registered-but-unmounted and nothing reconnects —
+		// which would make this case pass for the wrong reason.
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), search.name],
+			[...session.getMountedXdevToolNames(), search.name],
+		);
 		await session.prompt("hello");
 		const afterReconnect = session.agent.state.messages.filter(
 			message => message.role === "custom" && message.customType === "xdev-mount-notice",
@@ -1287,6 +1307,10 @@ These tools became available:
 
 		// A genuinely new device still announces, and only for itself.
 		await session.refreshMCPTools([search, fetch]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		await session.prompt("again");
 		const afterNewDevice = session.agent.state.messages.filter(
 			(message): message is CustomMessage => message.role === "custom" && message.customType === "xdev-mount-notice",

@@ -9,7 +9,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { $ } from "bun";
 import { TempDir } from "@oh-my-pi/pi-utils";
-import { headBlob, stageReplacedLines } from "./stage-lines";
+import { headBlob, stageLines, stageReplacedLines } from "./stage-lines";
 import { commitStagedPaths } from "../commit-scoped";
 
 let repo: string | undefined;
@@ -207,6 +207,83 @@ describe("committing through a throwaway index", () => {
 		expect(await $`git show --name-only --format= HEAD`.cwd(repo!).quiet().text()).toContain(
 			"peer.tsv",
 		);
+	});
+});
+
+/**
+ * `.gitignore` is the repository's own statement of what it does not track, and the
+ * staging verb that makes this script worth using is also the one that ignores it.
+ *
+ * Measured on a throwaway repo with `.scratch/` ignored: `git add -A` respects the
+ * rule, `update-index --cacheinfo` does not. That combination is how `.lavish-wip/`
+ * reached 478 tracked files under a `.gitignore:100` that says "Ignored, not
+ * committed" — so this is the shape of a real drift, not a hypothetical.
+ */
+describe("staging a path the repository ignores", () => {
+	it("refuses, and names the rule instead of only the path", async () => {
+		const dir = TempDir.createSync("@pi-stage-ignored-").path();
+		const root = dir;
+		await $`git init -q`.cwd(root).quiet();
+		await $`git config user.email t@t.test`.cwd(root).quiet();
+		await $`git config user.name t`.cwd(root).quiet();
+		await fs.writeFile(path.join(root, ".gitignore"), ".scratch/\n");
+		await fs.mkdir(path.join(root, ".scratch"));
+		await $`git add .gitignore`.cwd(root).quiet();
+		await $`git commit -qm seed`.cwd(root).quiet();
+		await fs.writeFile(path.join(root, ".scratch/note.md"), "scratch\n");
+
+		await expect(
+			stageLines(".scratch/note.md", "scratch\n", "", root),
+		).rejects.toThrow(/refusing to stage .*\.scratch\/note\.md/);
+		// The refusal must actually leave the index alone, not merely complain.
+		expect(await $`git ls-files`.cwd(root).quiet().text()).not.toContain(".scratch/note.md");
+		await fs.rm(root, { recursive: true, force: true });
+	});
+
+	it("stages a path the repository does not ignore", async () => {
+		// The control. A guard that refused everything would pass the test above, and
+		// this script would be unusable rather than careful.
+		const dir = TempDir.createSync("@pi-stage-allowed-").path();
+		const root = dir;
+		await $`git init -q`.cwd(root).quiet();
+		await $`git config user.email t@t.test`.cwd(root).quiet();
+		await $`git config user.name t`.cwd(root).quiet();
+		await fs.writeFile(path.join(root, ".gitignore"), ".scratch/\n");
+		await fs.mkdir(path.join(root, ".scratch"));
+		await fs.writeFile(path.join(root, "rows.tsv"), "a\n");
+		await $`git add .gitignore rows.tsv`.cwd(root).quiet();
+		await $`git commit -qm seed`.cwd(root).quiet();
+
+		await stageLines("rows.tsv", "a\nb\n", "a\n", root);
+
+		expect(await $`git show :rows.tsv`.cwd(root).quiet().text()).toBe("a\nb\n");
+		await fs.rm(root, { recursive: true, force: true });
+	});
+
+	it("refuses a path the repository ignores even when it is ALREADY tracked", async () => {
+		// The case that makes `--no-index` load-bearing rather than defensive. A file
+		// tracked from before the ignore rule exists is exactly the shape
+		// `.lavish-wip/` is in: 478 of them. Without `--no-index`, `check-ignore`
+		// skips tracked paths, so the guard would go quiet on precisely the files it
+		// exists for — reading as careful while never firing.
+		const dir = TempDir.createSync("@pi-stage-tracked-").path();
+		const root = dir;
+		await $`git init -q`.cwd(root).quiet();
+		await $`git config user.email t@t.test`.cwd(root).quiet();
+		await $`git config user.name t`.cwd(root).quiet();
+		await fs.writeFile(path.join(root, ".gitignore"), ".scratch/\n");
+		await fs.mkdir(path.join(root, ".scratch"));
+		await fs.writeFile(path.join(root, ".scratch/n.md"), "old\n");
+		await $`git add -f .scratch/n.md`.cwd(root).quiet();
+		await $`git add .gitignore`.cwd(root).quiet();
+		await $`git commit -qm seed`.cwd(root).quiet();
+		// Control: git itself says the path is NOT ignored without --no-index.
+		expect((await $`git check-ignore -q .scratch/n.md`.cwd(root).quiet().nothrow()).exitCode).toBe(1);
+
+		await expect(stageLines(".scratch/n.md", "new\n", "old\n", root)).rejects.toThrow(
+			/refusing to stage/,
+		);
+		await fs.rm(root, { recursive: true, force: true });
 	});
 });
 

@@ -49,7 +49,51 @@ function parseArgs(argv: string[]): Options {
 	return { file, lines: rest };
 }
 
+/**
+ * Refuse to stage a path the repository has declared it does not track.
+ *
+ * WHY THIS GUARD EXISTS, measured rather than asserted. `update-index --add
+ * --cacheinfo` writes an index entry directly and never consults `.gitignore`, so
+ * a path the repo has ruled out of the index enters it anyway. Probed on a throwaway
+ * repository whose `.gitignore` held `.scratch/`, with `.scratch/n.md` already
+ * tracked from before the rule existed:
+ *
+ *     git add -A                            → tracked: .scratch/n.md            (respects it)
+ *     hash-object + update-index --add      → tracked: .scratch/n.md .scratch/n3.md  (does not)
+ *
+ * This is not hypothetical: `.lavish-wip/` is `.gitignore:100` — "Scratch working
+ * files for this session. Ignored, not committed" — and it holds 478 tracked files.
+ * Its own ignore rule was added by `0e7ce65ad5` on a tree holding *eleven untracked*
+ * files, and six commits have since added more. A tracked-and-ignored directory of
+ * 478 files is not an intended state that a gate should encode; it is the signature
+ * of exactly this path, and `hash-object` + `update-index` is what AGENTS.md tells an
+ * agent to reach for. Untracking those files is an owner decision this guard does not
+ * pre-empt — it stops the next one arriving.
+ *
+ * `--no-index` is required, not optional: `git check-ignore` otherwise skips any path
+ * already tracked, which is every path a staged edit lands on. That would make the
+ * guard read as careful and never fire.
+ */
+async function assertStagingIsAllowed(file: string, cwd: string): Promise<void> {
+	const result = await $`git check-ignore --no-index -q ${file}`.cwd(cwd).quiet().nothrow();
+	if (result.exitCode === 0) {
+		throw new Error(
+			`refusing to stage ${file}: the repository ignores it. ` +
+				`update-index never consults .gitignore, so this path would be committed against the rule that excludes it. ` +
+				`If it genuinely belongs in the index, remove the ignore rule first — that is a decision, not a staging step.`,
+		);
+	}
+	// exit 1 means "not ignored", which is the case that proceeds. Anything else is a
+	// git failure, and treating that as permission would make a broken probe an
+	// all-clear.
+	if (result.exitCode !== 1) {
+		throw new Error(`git check-ignore exited ${result.exitCode} for ${file}; refusing to stage on an unanswered question`);
+	}
+}
+
 export async function stageLines(file: string, contents: string, base: string, cwd = process.cwd()): Promise<string> {
+	await assertStagingIsAllowed(file, cwd);
+
 	// `git hash-object -w --stdin` writes the blob and prints its sha; nothing
 	// touches the index yet, so a failure here leaves the tree as it was.
 	// Bun.spawn rather than $`` because the payload is piped, not interpolated.

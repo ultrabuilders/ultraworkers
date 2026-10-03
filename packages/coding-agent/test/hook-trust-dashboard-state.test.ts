@@ -28,7 +28,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { invalidateAllCaches } from "@oh-my-pi/pi-coding-agent/capability";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { discoverExtensionPaths } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { loadAllExtensions } from "@oh-my-pi/pi-coding-agent/modes/components/extensions/state-manager";
 import type { Extension } from "@oh-my-pi/pi-tui/overlays/extensions/types";
 import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
@@ -76,8 +75,15 @@ describe("hook trust: the dashboard reports a hook the loader will not import", 
 		// against, so go through the real recording path rather than writing the
 		// record directly — otherwise the fixture would test a state production
 		// never reaches.
-		invalidateAllCaches();
-		await discoverExtensionPaths([], cwd, undefined, { ambient: true });
+		//
+		// This call was the migration 1e7add6114 left half-done: it added the
+		// `approveHooks` import and rewrote this comment to describe approving, but
+		// the statement below still read `discoverExtensionPaths`, whose only job had
+		// been the implicit first-sight recording that commit removed. So both hooks
+		// stayed unapproved, and because the dashboard builds rows straight from
+		// `loadCapability` — which never consults the trust record — that was invisible
+		// until the edit: nothing recorded means nothing can read as `modified`.
+		await approveHooks(cwd, [editedHook, untouchedHook]);
 	});
 
 	afterEach(() => {

@@ -13,7 +13,9 @@ import { buildHarLog } from "@oh-my-pi/pi-coding-agent/tools/browser/network";
 
 describe("a renamed HAR value is still produced", () => {
 	it("emits the current creator name in a HAR 1.2 log", () => {
-		const har = buildHarLog([]) as { log: { version: string; creator: { name: string; version: string } } };
+		const har = buildHarLog([]) as {
+			log: { version: string; entries: unknown[]; creator: { name: string; version: string } };
+		};
 		// The HAR 1.2 shape is the contract; only the creator's NAME is ours.
 		expect(har.log.version).toBe("1.2");
 		expect(har.log.creator.name).toBe("ultraworkers-browser");
@@ -21,6 +23,6 @@ describe("a renamed HAR value is still produced", () => {
 		// An empty entry list must still produce the document, or a recording that
 		// captured nothing would skip the creator block and a viewer would show a
 		// HAR with no producer at all.
-		expect(Array.isArray((har as { log: { entries: unknown[] } }).log.entries)).toBe(true);
+		expect(Array.isArray(har.log.entries)).toBe(true);
 	});
 });

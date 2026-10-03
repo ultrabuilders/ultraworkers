@@ -74,7 +74,12 @@ interface Manifest {
 	readonly namedTargets: string[];
 }
 
-const manifestCache = new Map<string, Manifest>();
+// The value is `Manifest | null` on purpose: `loadManifest` returns null for a
+// package whose manifest will not parse, and the read path distinguishes "not
+// cached" with `cached !== undefined`. Caching only the successes would re-read a
+// broken manifest from disk on every row — the type said otherwise, and the write
+// below has always stored both.
+const manifestCache = new Map<string, Manifest | null>();
 
 function wildcardSourcePrefix(exportKey: string, target: string): string | null {
 	const exportStar = exportKey.indexOf("*");

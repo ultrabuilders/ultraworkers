@@ -45,7 +45,10 @@ const GATE = path.join(REPO_ROOT, "scripts/ci-rename-test-literals.ts");
 async function readGateNeedles(): Promise<string[]> {
 	const source = await Bun.file(GATE).text();
 	const block = source.match(/const PATTERNS[^=]*=\s*\[([\s\S]*?)\];/);
-	if (!block[1]) throw new Error(`PATTERNS block not found in ${path.relative(REPO_ROOT, GATE)}`);
+	// `block?.[1]`, not `block[1]`: a match either yields the capture or is null, and
+	// narrowing the capture alone left `block` itself possibly-null at every use below.
+	// Optional chaining is what narrows both — `as` would only silence it.
+	if (!block?.[1]) throw new Error(`PATTERNS block not found in ${path.relative(REPO_ROOT, GATE)}`);
 	const needles = [...block[1].matchAll(/needle:\s*(['"])(.*?)\1/g)].map(match => match[2] ?? "");
 	// Control: every declared needle must survive the parse, or the "missed"
 	// column below is computed against a shorter list than the gate really uses.
@@ -69,9 +72,13 @@ const TOKEN = /[A-Za-z0-9@._/-]*omp[A-Za-z0-9@._/-]*/g;
 
 interface Shape {
 	readonly shape: string;
-	readonly hits: number;
+	// `hits` and `example` are reassigned while a shape is being tallied, so they are
+	// mutable; the entry is then stored back with `shapes.set`. Marking them readonly
+	// described an immutability this loop does not have. `shape` and `files` really are
+	// never reassigned — `files` is only ever mutated in place — so they stay readonly.
+	hits: number;
 	readonly files: Set<string>;
-	readonly example: string;
+	example: string;
 }
 
 const needles = await readGateNeedles();

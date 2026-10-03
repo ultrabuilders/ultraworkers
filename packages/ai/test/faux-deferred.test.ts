@@ -54,10 +54,12 @@ describe("faux deferred generation", () => {
 	it("defers the generation when the request asks for it, and not otherwise", async () => {
 		const deferredFaux = fauxProvider({ deferred: { pendingFetches: 0 } });
 		deferredFaux.setResponses([fauxAssistantMessage("deferred answer")]);
-		const deferredMessage = await last(deferredFaux.streamSimple(deferredFaux.getModel(), context(), {
-			cacheRetention: "short",
-			deferred: { window: "1h" },
-		}));
+		const deferredMessage = await last(
+			deferredFaux.streamSimple(deferredFaux.getModel(), context(), {
+				cacheRetention: "short",
+				deferred: { window: "1h" },
+			}),
+		);
 
 		// Asserted through the double's own output rather than by reading the options object back:
 		// an earlier version of this test read `options.deferred` off a locally declared type, which

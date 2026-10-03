@@ -46,7 +46,11 @@ import { chromiumAvailable } from "./chromium-probe";
 
 const CHROMIUM_AVAILABLE = await chromiumAvailable();
 function makeKind(socketSuffix: string): CmuxKind {
-	return { kind: "cmux", socketPath: `/tmp/ultraworkers-test-${socketSuffix}.sock`, surface: `surface-${socketSuffix}` };
+	return {
+		kind: "cmux",
+		socketPath: `/tmp/ultraworkers-test-${socketSuffix}.sock`,
+		surface: `surface-${socketSuffix}`,
+	};
 }
 
 function makeSession(cwd: string): ToolSession {

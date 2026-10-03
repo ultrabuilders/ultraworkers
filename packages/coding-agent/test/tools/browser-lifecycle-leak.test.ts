@@ -29,7 +29,11 @@ import {
 import { ToolAbortError } from "@oh-my-pi/pi-coding-agent/tools/tool-errors";
 
 function makeKind(socketSuffix: string): CmuxKind {
-	return { kind: "cmux", socketPath: `/tmp/ultraworkers-test-${socketSuffix}.sock`, surface: `surface-${socketSuffix}` };
+	return {
+		kind: "cmux",
+		socketPath: `/tmp/ultraworkers-test-${socketSuffix}.sock`,
+		surface: `surface-${socketSuffix}`,
+	};
 }
 
 async function drainAllTabs(): Promise<void> {

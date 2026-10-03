@@ -26,8 +26,7 @@
   "src",
   "README.md",
   "CHANGELOG.md",
-  "LICENSE",
-  "NOTICE"
+  "LICENSE"
  ],
  "type": "module",
  "sideEffects": false,
@@ -38,15 +37,47 @@
    "types": "./src/index.ts",
    "import": "./src/index.ts"
   },
-  "./identity": {
-   "types": "./src/identity/index.ts",
-   "import": "./src/identity/index.ts"
-  },
   "./*": {
    "types": "./src/*.ts",
    "import": "./src/*.ts"
   },
-  "./*.js": "./src/*.ts"
+  "./*.js": "./src/*.ts",
+  "./fence": {
+   "types": "./src/fence/index.ts",
+   "import": "./src/fence/index.ts"
+  },
+  "./identity": {
+   "types": "./src/identity/index.ts",
+   "import": "./src/identity/index.ts"
+  },
+  "./inbox": {
+   "types": "./src/inbox/index.ts",
+   "import": "./src/inbox/index.ts"
+  },
+  "./injection": {
+   "types": "./src/injection/index.ts",
+   "import": "./src/injection/index.ts"
+  },
+  "./lease": {
+   "types": "./src/lease/index.ts",
+   "import": "./src/lease/index.ts"
+  },
+  "./presence": {
+   "types": "./src/presence/index.ts",
+   "import": "./src/presence/index.ts"
+  },
+  "./seam": {
+   "types": "./src/seam/index.ts",
+   "import": "./src/seam/index.ts"
+  },
+  "./tools": {
+   "types": "./src/tools/index.ts",
+   "import": "./src/tools/index.ts"
+  },
+  "./transport": {
+   "types": "./src/transport/index.ts",
+   "import": "./src/transport/index.ts"
+  }
  },
  "scripts": {
   "check": "oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts' && bun run check:types",

@@ -648,17 +648,13 @@ function stripLaunchGlobalFlags(leading: readonly string[]): { kept: string[]; c
 				// strict, turns a flag the user typed with no operand into a hard error
 				// about a file they never named.
 				//
-				// Empty means absent on BOTH spellings, so the test is for a non-empty
-				// string rather than for `undefined`. `--config=` yields an inline `""`,
-				// which is not `undefined`, and `settings` resolves it with
-				// `path.resolve(cwd, "")` — the cwd directory. The overlay reader then
-				// fails with "Directories cannot be read like files" about a path the
-				// user never named, which is the exact outcome the note above exists to
-				// prevent. `--config` followed by a separate `""` reaches the same state
-				// through `consumesNext`, so one predicate covers both.
+				// A blank operand is dropped by the overlay reader, not here: `--config=`
+				// after the command token never reaches this parser at all, so filtering
+				// upstream would cover the launch path and silently leave that one broken.
+				// `Settings.#loadOverlayYaml` is the one point every producer reaches.
 				const inline = arg.startsWith(`${CONFIG_FLAG}=`) ? arg.slice(CONFIG_FLAG.length + 1) : undefined;
 				const value = inline ?? (consumesNext ? leading[index + 1] : undefined);
-				if (value) configFiles.push(value);
+				if (value !== undefined) configFiles.push(value);
 			}
 			if (consumesNext) index += 1;
 			continue;

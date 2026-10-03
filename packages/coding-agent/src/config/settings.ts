@@ -676,7 +676,22 @@ export class Settings {
 		// files, and a command-position `--config` is a `--config` file like any other.
 		configFiles.push(...globalConfigFiles);
 		if (options.configFiles) configFiles.push(...options.configFiles);
-		this.#configFiles = configFiles.map(file => path.resolve(this.#cwd, expandTilde(file)));
+		this.#configFiles = configFiles
+			.map(file => file.trim())
+			// A blank operand is not a path. `--config=` parses to `""`, and `path.resolve`
+			// turns it into the cwd DIRECTORY, which the strict overlay reader then rejects
+			// with "Directories cannot be read like files" — a hard error about a file the
+			// user never named.
+			//
+			// Filtered HERE, at the one line every source passes through, rather than at
+			// each producer. Filtering upstream covers only the producers you remembered:
+			// `PI_CONFIG_FILES` has always filtered its own entries (line above), the
+			// launch-flag channel re-arms on every invoke, and a command-position
+			// `--config` never reaches the launch-flag parser at all — it arrives straight
+			// in `options.configFiles`. Two of the three are fixed by the callers; only
+			// this line is fixed for all three.
+			.filter(file => file.length > 0)
+			.map(file => path.resolve(this.#cwd, expandTilde(file)));
 		this.#persist = !options.inMemory && options.readOnly !== true;
 		liveSettingsInstances.add(new WeakRef(this));
 		if (options.overrides) this.#overrides = this.#overrideLayer(options.overrides);

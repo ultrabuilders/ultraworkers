@@ -158,4 +158,36 @@ describe("a --config overlay reaches the commands that read settings", () => {
 			});
 		}
 	}, 120_000);
+
+	it("treats an empty --config operand as no flag at all AFTER the command too", async () => {
+		// The row above is the launch position. This one is the command position, and it
+		// is a DIFFERENT branch, not a longer version of the same one: a flag after the
+		// command token never reaches the launch-flag parser, so it is collected as an
+		// ordinary flag and arrives straight in `Settings.init({ configFiles })`.
+		//
+		// This is the branch a launch-position-only fix leaves broken — and it was broken,
+		// with the same user-visible error: `--config=` there yields `""`, `path.resolve`
+		// turns it into the cwd directory, and the strict overlay reader rejects a
+		// directory with "Directories cannot be read like files". A fix that only covers
+		// the launch path reports itself as covering "both spellings" while one position
+		// per spelling still fails.
+		const withoutFlag = await runArgv(["config", "get", "theme.dark"]);
+		expect(withoutFlag.exitCode).toBe(0);
+
+		for (const args of [
+			["config", "get", "theme.dark", "--config="],
+			["config", "get", "theme.dark", "--config", ""],
+		]) {
+			const result = await runArgv(args);
+
+			// Named rather than folded into the object compare: the error text is the
+			// failure a consumer actually saw, and it is what a regression reintroduces.
+			expect(result.stderr).not.toContain("Directories cannot be read like files");
+			expect({ args, exitCode: result.exitCode, stdout: result.stdout.trim() }).toEqual({
+				args,
+				exitCode: 0,
+				stdout: withoutFlag.stdout.trim(),
+			});
+		}
+	}, 120_000);
 });

@@ -571,7 +571,14 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 					// `actionKey` was computed above and is the same key the pending
 					// registry indexed this prompt under, so a grant here releases exactly
 					// the siblings it covers rather than an approximation of them.
-					this.runner.persistApprovalPolicy?.(actionKey, "allow", settings);
+					//
+					// Called unconditionally, like `settlePendingApprovals` below. The two
+					// halves of "always" are one decision: recording the grant without
+					// releasing the siblings leaves the user having answered a question the
+					// batch then asks again. `persistApprovalPolicy` is declared non-optional
+					// on `ExtensionRunner` (runner.ts:1097), a class with one implementation,
+					// so `?.` guarded nothing a caller could actually do.
+					this.runner.persistApprovalPolicy(actionKey, "allow", settings);
 					// Release the siblings still asking about this same action. They had
 					// already resolved and were already showing a prompt, so without this
 					// the new grant would be invisible to the calls it was made for — the

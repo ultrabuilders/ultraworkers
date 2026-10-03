@@ -6,7 +6,7 @@ import { runDoctorChecks } from "@oh-my-pi/pi-coding-agent/extensibility/plugins
 //
 // The logger creates the directory 0o700 and re-asserts it on every write, so the
 // mode worth reporting is the one on disk before that happens. `mkdirSync`'s `mode`
-// applies only to a directory the call creates, so a `~/.omp/logs` left behind by
+// applies only to a directory the call creates, so a logs directory left behind by
 // an older build keeps the mode it was born with — and that directory holds the
 // most accumulated transcripts, any of which can carry a request header, a resolved
 // URL, or a tool argument.

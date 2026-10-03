@@ -29,7 +29,7 @@
  *
  * ## Why not the logger
  *
- * `@oh-my-pi/pi-utils`'s `logger` writes to `~/.omp/logs/`. The runner captures the
+ * `@oh-my-pi/pi-utils`'s `logger` writes to the resolved logs directory. The runner captures the
  * chunk's **stdout and stderr**, so a logged probe is invisible to the thing that would
  * have to report it. This is the one place that must write to the stream the runner is
  * actually watching.

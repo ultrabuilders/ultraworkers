@@ -8,7 +8,7 @@ import { info, setTransports } from "../src/logger";
  * The log directory is created owner-only.
  *
  * A log line can carry a request header, a resolved URL, or a tool argument, and
- * `~/.omp/logs` sits inside the user's home directory. Left at the default, umask
+ * the logs directory sits inside the user's home directory. Left at the default, umask
  * decides whether every other local account can list and read it — so this is a
  * check that passes on one machine and fails on another, which is the worst kind.
  *

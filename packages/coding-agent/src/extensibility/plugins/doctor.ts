@@ -143,7 +143,7 @@ export async function runDoctorChecks(snapshot?: DoctorSnapshot): Promise<Doctor
  *
  * The logger creates the directory `0o700` and re-asserts it on every write, so the
  * interesting case is a directory that predates that: `mkdirSync`'s `mode` applies
- * only to a directory the call creates, so a `~/.omp/logs` left by an older build
+ * only to a directory the call creates, so a logs directory left by an older build
  * keeps whatever mode it was born with, and it is the directory holding the most
  * accumulated transcripts. A log line can carry a request header, a resolved URL, or
  * a tool argument, and a group- or world-readable log directory hands those to every

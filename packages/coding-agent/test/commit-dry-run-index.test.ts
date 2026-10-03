@@ -93,6 +93,21 @@ describe("resolveStagedFiles honours --dry-run", () => {
 		expect(await stagedPaths(dir)).toEqual([]);
 	});
 
+	// Git permits a newline in a filename. Splitting the line-terminated porcelain
+	// on "\n" cuts one path into two fragments, each of which matches nothing.
+	it("reports a filename containing a newline as one intact path", async () => {
+		const dir = await repoWithUnstagedFile("commit-staged-dry-newline-");
+		await fs.writeFile(path.join(dir, "weird\nnewline.txt"), "x\n");
+
+		const reported = await resolveStagedFiles(vcs.requireGit(dir), true);
+
+		expect(reported).toContain("weird\nnewline.txt");
+		// The two halves a line-split would have produced must not appear.
+		expect(reported).not.toContain("weird");
+		expect(reported).not.toContain("newline.txt");
+		expect(await stagedPaths(dir)).toEqual([]);
+	});
+
 	it("leaves an already-populated index exactly as it found it under a dry run", async () => {
 		const dir = await repoWithUnstagedFile("commit-staged-dry-populated-");
 		await runGit(dir, ["add", "uncommitted.txt"]);

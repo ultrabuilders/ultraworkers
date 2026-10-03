@@ -56,16 +56,24 @@ export async function resolveStagedFiles(repo: VcsGitRepo, dryRun: boolean): Pro
 
 /** The working-tree paths `stageFiles([])` would stage, read without staging. */
 async function reportablePaths(repo: VcsGitRepo): Promise<string[]> {
-	const porcelain = await repo.statusPorcelain({ untracked: "all", nulTerminated: false });
+	// NUL-terminated, because the line-terminated form cannot carry a path intact:
+	// a newline in a filename splits one path into two fragments, each of which
+	// matches no pathspec. `git status -z` is the only form where a record is
+	// exactly one field.
+	//
+	// No rename handling is needed here. An unstaged rename is not reported as one
+	// — git emits the deletion and the new file separately — and the `R` record
+	// that the line-terminated form writes as `"old -> new"` only appears for a
+	// staged rename, which would have returned above: this is only reached when
+	// `changedFiles({cached:true})` is empty. `VcsStatusOptions` has no rename
+	// detection to ask for either, so the record cannot arrive on this branch.
+	const porcelain = await repo.statusPorcelain({ untracked: "all", nulTerminated: true });
 	const paths: string[] = [];
-	for (const line of porcelain.split("\n")) {
-		if (line.length < 4) continue;
-		// Porcelain v1: a two-character status then a space then the path. The
-		// status is what says whether the entry is real work — a rename or copy
-		// carries its source in the path field, so take everything after the space.
-		const status = line.slice(0, 2);
-		if (status.trim() === "") continue;
-		paths.push(line.slice(3));
+	for (const field of porcelain.split("\0")) {
+		// Porcelain v1: two status characters, a space, then the path.
+		if (field.length < 4) continue;
+		if (field.slice(0, 2).trim() === "") continue;
+		paths.push(field.slice(3));
 	}
 	return paths;
 }

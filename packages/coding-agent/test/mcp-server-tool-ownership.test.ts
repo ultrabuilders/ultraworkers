@@ -66,7 +66,12 @@ describe("MCP tool ownership with prefix-colliding server names", () => {
 		});
 
 		// Same code path a reconnect takes: replace the named server's tools.
-		await manager.refreshServerTools(SHORT_SERVER);
+		// `"push"` because a refresh that replaces a live server's tools is the
+		// server reporting a changed catalog. This test asserts ownership — that the
+		// sibling's tools survive the replacement — so `"connect"` would pass for the
+		// wrong reason: it would activate the arriving catalog, which is not what's
+		// under test.
+		await manager.refreshServerTools(SHORT_SERVER, "push");
 
 		expect(names()).toHaveLength(MANY_TOOL_COUNT * 2);
 		expect(names()).toContain(COLON_TOOL);

@@ -157,15 +157,21 @@ describe("a server that changes its own tool catalog mid-session", () => {
 		// exclusion in `#replaceServerTools`, each pass would mint a fresh tombstone
 		// from the previous one — so the catalog would grow by one entry per refresh
 		// for the rest of the session, for a tool the server withdrew once.
-		await manager.refreshServerTools(SERVER);
-		await manager.refreshServerTools(SERVER);
+		//
+		// `"push"` because these refreshes stand in for the server reporting a changed
+		// catalog (`notifications/tools/list_changed`), which is what `#handleServerNotification`
+		// routes here. `"connect"` would activate the arriving catalog instead, and this test
+		// is about tombstone growth, not activation — a green run on the wrong reason is worse
+		// than a red one.
+		await manager.refreshServerTools(SERVER, "push");
+		await manager.refreshServerTools(SERVER, "push");
 
 		const tombstones = manager.getTools().filter(t => t.name === ALPHA && isWithdrawnMCPTool(t));
 		expect(tombstones).toHaveLength(1);
 		// And the catalog does not grow: `alpha` is the only entry, and it stays the
 		// only entry however many refreshes follow.
 		const sizeAfterWithdrawal = manager.getTools().length;
-		await manager.refreshServerTools(SERVER);
+		await manager.refreshServerTools(SERVER, "push");
 		expect(manager.getTools()).toHaveLength(sizeAfterWithdrawal);
 		expect(manager.getTools().map(t => t.name)).toEqual([ALPHA]);
 	}, 20_000);

@@ -70,7 +70,13 @@ const CONTROLS: readonly {
 	variants?: readonly string[];
 }[] = [
 	{
-		ref: "packages/coding-agent/src/tools/index.ts:888",
+		// The anchor must be the claim, not the declaration. This line reads
+		// "stay rejected (enforced by WriteTool via `session.deviceOnlyWrite`)" —
+		// the enforcement vocabulary the census exists to see. It cited :888,
+		// which has since rotted to a bare assignment (`session.toolRegistry =
+		// toolRegistry;`); no widening of RAW/NARROW can make a line with no claim
+		// in it visible, so the ref has to move to a line that still makes one.
+		ref: "packages/coding-agent/src/tools/index.ts:900",
 		expect: "deviceOnlyWrite",
 		verdict: "confirmed",
 	},

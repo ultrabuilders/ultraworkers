@@ -260,6 +260,56 @@ describe("commitStagedPaths", () => {
 		}
 	});
 
+	it("refuses a rename whose source was not named, instead of committing both copies", async () => {
+		// `git mv` stages only the DESTINATION, so naming it alone commits the addition and
+		// leaves the source in the tree — one file under two names, reported as a success.
+		//
+		// This was documented as unfixable because recovering the source "would be a guess".
+		// It is not: `git mv` records the pair, and `git diff --cached --diff-filter=R` reports
+		// it while the rename is staged and uncommitted — exactly when the caller is choosing
+		// what to name. So the tool asks git and refuses, naming the missing path.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "old.txt", "body\n");
+			await run(["add", "old.txt"], dir);
+			await run(["commit", "-q", "-m", "add old"], dir);
+			await run(["mv", "old.txt", "new.txt"], dir);
+
+			await expect(commitStagedPaths(["new.txt"], "dest only", { cwd: dir })).rejects.toThrow(
+				/half-named rename: old\.txt -> new\.txt/,
+			);
+			// Nothing was written, so HEAD still holds the pre-rename tree rather than a
+			// commit that duplicated the file.
+			expect(await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).toBe("old.txt\nseed.txt");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("accepts the same rename once the source is named too", async () => {
+		// The counterfactual for the refusal above. Without this row the guard could be
+		// satisfied by refusing EVERY rename — a refusal that never lets the legitimate case
+		// through protects nothing. The two rows differ in exactly one quantity: whether
+		// the source path is among the named files.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "old.txt", "body\n");
+			await run(["add", "old.txt"], dir);
+			await run(["commit", "-q", "-m", "add old"], dir);
+			await run(["mv", "old.txt", "new.txt"], dir);
+
+			const result = await commitStagedPaths(["old.txt", "new.txt"], "both named", { cwd: dir });
+
+			expect([...result.committed].sort()).toEqual(["new.txt", "old.txt"]);
+			expect((await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).split("\n").sort()).toEqual([
+				"new.txt",
+				"seed.txt",
+			]);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
 	it("commits a rename when both paths are named, since `git mv` stages only the destination", async () => {
 		// The index holds no entry for a rename's source, so it is a deletion wearing the
 		// destination's name. Naming both paths is what makes the rename whole.

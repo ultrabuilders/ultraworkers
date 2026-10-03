@@ -28,16 +28,17 @@
  *   bun scripts/commit-scoped.ts <file>... -m "<message>"      # commit
  *   bun scripts/commit-scoped.ts <file>... --dry-run          # report, write nothing
  *
- * ## A rename is two paths, so name both
+ * ## A rename is two paths, and a half-named one is refused
  *
  * `git mv` leaves the index holding only the DESTINATION; the source has no entry at all,
- * exactly like a deletion. So a rename committed here is only complete when the caller
- * names both paths. Naming the destination alone commits the addition and leaves the
- * source in the commit — a file duplicated under two names, reported as a success.
+ * exactly like a deletion. Naming the destination alone would commit the addition and
+ * leave the source in the tree — a file duplicated under two names, reported as a success.
  *
- * This is the tool's contract rather than a defect to paper over: it commits the paths it
- * is given and reports them, so the caller can see what it left out. The half-rename is
- * visible in that report and in `git show --name-only`, which is where a reviewer looks.
+ * That was once documented here as an accepted hazard, on the grounds that recovering the
+ * source from the destination "would be a guess". It is not a guess: `git mv` records the
+ * pair, and `git diff --cached --diff-filter=R` reports it while the rename is still staged
+ * and uncommitted — which is exactly when the caller is deciding what to name. So the tool
+ * asks git and **refuses**, naming the path that is missing.
  *
  * ## Why not `git commit` with a temporary index
  *
@@ -209,6 +210,41 @@ async function deletedPaths(head: string, files: string[], indexed: readonly str
 	return inHead.split("\n").filter(line => line.trim() !== "" && !present.has(line));
 }
 
+/**
+ * The rename SOURCE for each of `files` that is the destination half of a staged rename.
+ *
+ * `git mv` stages only the destination, so from the index alone a rename is
+ * indistinguishable from a deletion wearing the destination's name — and `read-tree HEAD`
+ * then puts the source back. Committing the destination alone therefore lands a file
+ * duplicated under two names while reporting only the paths it committed.
+ *
+ * This was documented as an unavoidable hazard on the grounds that recovering the source
+ * from the destination "would be a guess". It is not: `git mv` records the PAIR, and
+ * `git diff --cached --diff-filter=R` reports it, in the very state that matters (staged,
+ * not yet committed — the moment a caller is choosing what to name). Git does the rename
+ * detection; this only reads the answer git already computed.
+ *
+ * `--no-renames` is what a caller must NOT reach for: with it the source disappears from
+ * the report entirely, which is the ambiguity this function exists to remove.
+ */
+async function renameSources(files: readonly string[], cwd: string): Promise<Map<string, string>> {
+	const sources = new Map<string, string>();
+	if (files.length === 0) return sources;
+	// `-z` so a path containing a space or a newline cannot split a line into two fields.
+	// The NUL-separated form is `R100\0<src>\0<dst>`; without it the tab form is ambiguous.
+	const raw = await git(["diff", "--cached", "--name-status", "--diff-filter=R", "-z"], cwd);
+	const fields = raw.split("\0").filter(field => field !== "");
+	for (let i = 0; i + 2 < fields.length + 1; i += 3) {
+		const status = fields[i];
+		const source = fields[i + 1];
+		const destination = fields[i + 2];
+		// A rename is only relevant if the caller named the DESTINATION but not the source.
+		if (status?.startsWith("R") !== true || source === undefined || destination === undefined) continue;
+		if (files.includes(destination) && !files.includes(source)) sources.set(destination, source);
+	}
+	return sources;
+}
+
 /** Parse argv for the CLI wrapper. Kept separate so the shapes are testable. */
 export function parseArgs(argv: string[]): { files: string[]; message: string; dryRun: boolean } {
 	let dryRun = false;
@@ -320,6 +356,18 @@ export async function commitStagedPaths(
 		allEntries.map(e => e.file),
 		cwd,
 	);
+	// A rename the caller half-named is refused, not reported. Naming only the destination
+	// commits the addition and leaves the source in the tree — one file under two names,
+	// reported as a success. Git already knows the pair, so the tool can say which path is
+	// missing instead of letting the caller discover it in `git show` much later.
+	const halfRenames = await renameSources(files, cwd);
+	if (halfRenames.size > 0) {
+		const pairs = [...halfRenames].map(([destination, source]) => `${source} -> ${destination}`);
+		throw new Error(
+			`refusing a half-named rename: ${pairs.join(", ")} — a rename spans TWO paths, and ` +
+				"only the destination was named. Name the source too, so the commit removes it.",
+		);
+	}
 	if (entries.length === 0 && deleted.length === 0) {
 		throw new Error(
 			`nothing is staged for ${files.join(", ")} — stage the lines first (scripts/rename/stage-lines.ts)`,

@@ -419,7 +419,7 @@ export async function applyNestedPatches(
 		// Preserve any pre-existing dirty state (tracked + untracked) so we
 		// commit only the agent delta, not the user's in-flight work.
 		const stashed = (await repository.isDirty())
-			? await repository.stashPush(`omp-isolation-${Snowflake.next()}`)
+			? await repository.stashPush(`ultraworkers-isolation-${Snowflake.next()}`)
 			: false;
 		try {
 			for (const { patch } of repoPatches) {
@@ -852,7 +852,8 @@ async function replayFilteredAgentCommits(opts: FilteredAgentReplayOptions): Pro
 
 /**
  * Capture task-only changes from the isolation worktree onto a parent-repo
- * branch named `omp/task/${taskId}`. Only root-repo changes go on the branch;
+ * branch named `omp/task/${taskId}` (shared with `isolation-runner.ts`, so the two
+ * producers must keep agreeing). Only root-repo changes go on the branch;
  * nested-repo patches are returned separately because the parent git can't
  * track files inside gitlinks.
  *

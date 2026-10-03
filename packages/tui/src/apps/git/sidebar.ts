@@ -1262,7 +1262,7 @@ export class Sidebar {
 				: this.#model.staged.length > 0
 					? "Commit"
 					: "Stage all & commit";
-		// The panels' button (omp-panels.css `ultraworkers.btn`): accent while the keyboard is on it, muted when it can't run.
+		// The panels' button (role `ultraworkers.btn`, declared in native/overlay.ts): accent while the keyboard is on it, muted when it can't run.
 		const commitTone = !canCommit ? "muted" : on({ kind: "commit-button" }) ? "accent" : undefined;
 		return col(
 			[

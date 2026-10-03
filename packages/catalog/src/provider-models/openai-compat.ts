@@ -626,7 +626,7 @@ async function fetchOllamaNativeModels(
  * Ollama's cloud catalog reports for stock models.
  */
 const OLLAMA_FALLBACK_CONTEXT_WINDOW = 128_000;
-/** Cap max output tokens at a value that matches OMP's other openai-responses defaults. */
+/** Cap max output tokens at a value that matches our other openai-responses defaults. */
 const OLLAMA_DEFAULT_MAX_TOKENS = 8192;
 
 interface OllamaResolvedMetadata {
@@ -4112,7 +4112,7 @@ function toSyntheticStringList(value: unknown): readonly string[] {
 
 /**
  * Translate Synthetic's per-model `reasoning_effort` vocabulary into an effort
- * ladder. Every advertised value that names an OMP tier maps verbatim; `none`
+ * ladder. Every advertised value that names an ultraworkers tier maps verbatim; `none`
  * is the thinking-off state rather than a tier of its own, so it backs the
  * `minimal` selector through the wire map (same shape as the Fireworks
  * `minimal → none` map) and gives these routes a real no-thinking tier.
@@ -4314,9 +4314,9 @@ export interface BasetenModelManagerConfig {
 	fetch?: FetchImpl;
 }
 
-// A previous version of OMP shipped these models without reasoning levels.
+// A previous version of ultraworkers shipped these models without reasoning levels.
 // We've since fixed that (V4-generation whitelist). This const lets us bust
-// the cache so that users on that version of OMP pick up the reasoning levels
+// the cache so that users on that version of ultraworkers pick up the reasoning levels
 // immediately.
 const BASETEN_CACHE_MIGRATION_MODEL_IDS = [
 	"zai-org/GLM-5.3",
@@ -4346,10 +4346,10 @@ export function basetenModelManagerOptions(
 			const features = Array.isArray(raw.supported_features) ? raw.supported_features : [];
 			const modalities = Array.isArray(raw.input_modalities) ? raw.input_modalities : [];
 
-			// Baseten's discovery flags are not enough to enable OMP reasoning for every
+			// Baseten's discovery flags are not enough to enable ultraworkers reasoning for every
 			// model. Only models with a verified Baseten reasoning policy are enabled
 			// here; an unknown model may use a different reasoning wire shape or effort
-			// vocabulary, which OMP must not guess.
+			// vocabulary, which ultraworkers must not guess.
 			const identity = classifyModel("baseten", defaults.id, { lenient: true });
 			const isSupportedBasetenReasoningModel =
 				(identity.class === "kimi" && identity.family === "k3") ||
@@ -5001,7 +5001,7 @@ interface StepfunModelRecord extends OpenAICompatibleModelRecord {
 
 /**
  * Translate StepFun's per-model `reasoning_effort_support_list` into a ladder.
- * Every advertised value that names an OMP tier maps verbatim, in OMP's tier
+ * Every advertised value that names an ultraworkers tier maps verbatim, in ultraworkers's tier
  * order; a row advertising nothing (or only tiers this client does not know)
  * resolves to no thinking, so the wire path never sends a `reasoning_effort`
  * the endpoint rejects. Same shape as `mapOpenRouterThinking` for OpenRouter's

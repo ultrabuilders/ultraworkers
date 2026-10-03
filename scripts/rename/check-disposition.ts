@@ -775,8 +775,23 @@ export function countClass(text: string, disposition: Disposition): number {
 /**
  * `rename` occurrences for a file.
  *
- * The parameter is retained so callers can pass their keep classes, but NOTHING is
- * subtracted. Both subtraction attempts were measured wrong, in opposite directions:
+ * The parameter is retained so callers can pass their keep classes, but none of them
+ * is read. What IS subtracted is `keep-path`'s own literal, and it happens inside
+ * `countClass` rather than here — which is worth stating plainly, because this
+ * docblock used to say "NOTHING is subtracted" and `countRename` is the raw pinned
+ * total, and both halves of that were false. A reader who trusted it measured
+ * `manager.test.ts` as 37 pinned lines, called the unaccounted remainder "14
+ * occurrences that can never clear", and was about to send a sweepers' list built
+ * on it. The table balanced exactly (7 + 2 + 16 + 13 = 38): the real figure is 31,
+ * because `countRename` is the pinned count MINUS the keep-path literal.
+ *
+ * The subtraction that survives is the narrow one, for a reason recorded at
+ * `countClass`: widening `PINNED` to admit a leading `.` made `keep-path`'s quoted
+ * `".omp"` literal pinned-visible, so both classes claimed it. Removing a literal's
+ * own occurrences from the pinned total is not the same as removing another class's
+ * occurrences, which is why this one is safe and the two broader attempts were not.
+ *
+ * Those broader attempts were measured wrong, in opposite directions:
  *
  * 1. Subtracting every `keep-*` class. `keep-wire` shares the pinned expression, so
  *    `const ORIGINATOR = "omp"` went to 0 and `rename-incomplete` was unreachable.
@@ -787,13 +802,16 @@ export function countClass(text: string, disposition: Disposition): number {
  *        const a = "omp"; const b = "__omp_worker_x";
  *        pinned = 1, worker-selector = 1, countRename = 0   // the "omp" vanished
  *
- * The pinned count is therefore the rename count outright. A file holding both a
- * wire contract and a rename candidate simply has a `keep-wire` row whose `hits` is
- * a human-signed number; balancing checks that number against the file.
+ * So a file holding both a wire contract and a rename candidate still has a
+ * `keep-wire` row whose `hits` is a human-signed number; balancing checks that number
+ * against the file.
  *
  * Balancing, though, is the ONLY stage that checks it, and it checks the SUM —
  * see the `keep-shrank` note in `checkPost` for why a pinned `keep-*` row's own
  * `hits` is not verifiable on its own. Neither needs the rename total adjusted.
+ *
+ * Read the BODY, not this, when you need the number: `countClass` holds it, and a
+ * wrapper one line long is exactly where a description and its function drift apart.
  */
 export function countRename(text: string, _keepDispositions: readonly Disposition[] = []): number {
 	return countClass(text, "rename");

@@ -103,6 +103,23 @@ const EXCLUDED_FILES = /(?:^|\/)CHANGELOG\.md$/;
  */
 const EXCLUDED_PACKAGE_PATHS = /^packages\/[^/]+\/(?:src|test|bench)\//;
 
+/**
+ * Build output, excluded for the same reason as `node_modules/` above: the scan
+ * is a filesystem walk, so gitignored files reach the corpus, and a build
+ * artefact is not documentation a human accepted or should review.
+ *
+ * The pattern mirrors `.gitignore:7-10` rather than guessing a shape — a bare
+ * `dist` entry in EXCLUDED_PREFIXES would only match a repo-root one, since
+ * that list is matched with `startsWith`. Scoped to the package prefix, so a
+ * real top-level `docs` tree would still be scanned.
+ *
+ * Concretely: a build wrote a CHANGELOG under the coding-agent dist tree
+ * carrying 198 legacy tokens, and the build hash in the filename means the
+ * corpus differs per build — the same commit reaching two verdicts on two
+ * machines, which is the correctness problem the `node_modules/` note describes.
+ */
+const EXCLUDED_BUILD_OUTPUT = /^packages\/[^/]+\/dist(?:-chrome|-firefox)?\//;
+
 /** The legacy token. Word-bounded on both sides — see the `-E` note above. */
 const LEGACY_TOKEN = /\bomp\b/g;
 
@@ -110,6 +127,7 @@ export function isExcluded(relPath: string): boolean {
 	if (EXCLUDED_PREFIXES.some(prefix => relPath.startsWith(prefix))) return true;
 	if (EXCLUDED_ROOT.test(relPath)) return true;
 	if (EXCLUDED_PACKAGE_PATHS.test(relPath)) return true;
+	if (EXCLUDED_BUILD_OUTPUT.test(relPath)) return true;
 	return EXCLUDED_FILES.test(relPath);
 }
 

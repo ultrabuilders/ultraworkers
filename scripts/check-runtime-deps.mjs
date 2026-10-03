@@ -31,14 +31,14 @@ const failures = [];
  * `bun:sqlite` import reads here as an undeclared third-party package. The
  * prefix test is the fact, not a suppression: a real dependency cannot take it.
  *
- * `omp-legacy-pi-modules` never exists in `node_modules` at all. It is a
+ * `uw-legacy-pi-modules` never exists in `node_modules` at all. It is a
  * virtual module an esbuild plugin resolves at bundle time
  * (`packages/coding-agent/scripts/legacy-pi-virtual-module.ts`), reachable only
  * from compiled/npm builds — which is exactly why the import site documents that
  * source mode cannot take it statically.
  */
 function isNonDependencySpecifier(specifier) {
-	return specifier === "bun" || specifier.startsWith("bun:") || specifier === "omp-legacy-pi-modules";
+	return specifier === "bun" || specifier.startsWith("bun:") || specifier === "uw-legacy-pi-modules";
 }
 
 function checkSource(source, manifest) {

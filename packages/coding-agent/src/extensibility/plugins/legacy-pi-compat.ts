@@ -34,9 +34,9 @@ const USE_BUNDLED_PI_MODULES = isCompiledBinary() || Boolean(process.env.PI_BUND
 // or duplicate key list exists on disk. Deferring each host module evaluation
 // avoids cycles with an extension-loading command that is itself in the
 // retained package graph.
-const BUNDLED_VIRTUAL_SCHEME = "omp-legacy-pi-bundled:";
-const BUNDLED_VIRTUAL_NAMESPACE = "omp-legacy-pi-bundled";
-const BUNDLED_HOST_NAMESPACE = "omp-legacy-pi-host";
+const BUNDLED_VIRTUAL_SCHEME = "uw-legacy-pi-bundled:";
+const BUNDLED_VIRTUAL_NAMESPACE = "uw-legacy-pi-bundled";
+const BUNDLED_HOST_NAMESPACE = "uw-legacy-pi-host";
 const BUNDLED_HOST_SCHEME = `${BUNDLED_HOST_NAMESPACE}:`;
 const TYPEBOX_BUNDLED_MODULE_KEY = "typebox";
 
@@ -739,7 +739,7 @@ function ensureBundledModuleLoadersLoaded(): Promise<BundledModuleLoaders> {
 	}
 	if (!bundledModuleLoadersPromise) {
 		// This virtual module exists only in compiled/npm builds; source mode cannot import it statically.
-		bundledModuleLoadersPromise = import("omp-legacy-pi-modules").then(module => module.BUNDLED_PI_MODULE_LOADERS);
+		bundledModuleLoadersPromise = import("uw-legacy-pi-modules").then(module => module.BUNDLED_PI_MODULE_LOADERS);
 	}
 	return bundledModuleLoadersPromise;
 }
@@ -2751,10 +2751,10 @@ export function installLegacyPiSpecifierShim(): void {
 		setup(build) {
 			build.onResolve({ filter: LEGACY_PI_SPECIFIER_FILTER, namespace: "file" }, resolveLegacyPiSpecifier);
 			build.onResolve({ filter: TYPEBOX_SPECIFIER_FILTER, namespace: "file" }, resolveTypeBoxSpecifier);
-			build.onResolve({ filter: /^omp-legacy-pi-bundled:.+$/, namespace: "file" }, args =>
+			build.onResolve({ filter: /^uw-legacy-pi-bundled:.+$/, namespace: "file" }, args =>
 				resolveBundledVirtualSpecifier(args.path),
 			);
-			build.onResolve({ filter: /^omp-legacy-pi-host:.+$/, namespace: "file" }, args =>
+			build.onResolve({ filter: /^uw-legacy-pi-host:.+$/, namespace: "file" }, args =>
 				resolveBundledVirtualSpecifier(args.path, BUNDLED_HOST_NAMESPACE),
 			);
 			build.onResolve({ filter: /.*/, namespace: BUNDLED_VIRTUAL_NAMESPACE }, args =>

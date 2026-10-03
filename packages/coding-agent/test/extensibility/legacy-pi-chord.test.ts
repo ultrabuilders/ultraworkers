@@ -14,7 +14,7 @@ import { ptree, TempDir } from "@oh-my-pi/pi-utils";
 // host holds, or a value crossing the boundary would silently fork.
 describe("legacy shim chord resolution", () => {
 	it("resolves @earendil-works/chord and its subpath to the canonical module", async () => {
-		using dir = TempDir.createSync("omp-legacy-pi-chord-");
+		using dir = TempDir.createSync("uw-legacy-pi-chord-");
 		const entry = dir.join("extension.ts");
 		await Bun.write(
 			entry,

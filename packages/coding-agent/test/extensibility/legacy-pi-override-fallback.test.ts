@@ -16,7 +16,7 @@ import {
 //
 // Follow-up (issue #3423): on Bun 1.3.14 the compiled binary's
 // `/$bunfs/...` paths are unreachable via every filesystem API, so
-// compiled-binary mode now routes through `omp-legacy-pi-bundled:` virtual
+// compiled-binary mode now routes through `uw-legacy-pi-bundled:` virtual
 // specifiers instead. Those entries must always pass validation because
 // the bundled registry — not the filesystem — is the source of truth.
 describe("legacy pi compat package-root override validation (issue #2168)", () => {
@@ -41,19 +41,19 @@ describe("legacy pi compat package-root override validation (issue #2168)", () =
 		expect(result).not.toHaveProperty("@oh-my-pi/pi-tui");
 	});
 
-	it("keeps virtual omp-legacy-pi-bundled: entries without touching the filesystem (issue #3423)", () => {
+	it("keeps virtual uw-legacy-pi-bundled: entries without touching the filesystem (issue #3423)", () => {
 		// Bun 1.3.14 `fs.existsSync` returns false for every bunfs path, so the
 		// pre-#3423 fix dropped every override in compiled mode. The new
 		// virtual scheme is the source of truth in compiled-binary mode; the
 		// validator MUST short-circuit before any filesystem probe.
 		let probed = false;
 		const candidates = {
-			"@oh-my-pi/pi-ai": "omp-legacy-pi-bundled:@oh-my-pi/pi-ai",
-			"@oh-my-pi/pi-coding-agent": "omp-legacy-pi-bundled:@oh-my-pi/pi-coding-agent",
-			"@oh-my-pi/pi-agent-core": "omp-legacy-pi-bundled:@oh-my-pi/pi-agent-core",
-			"@oh-my-pi/pi-natives": "omp-legacy-pi-bundled:@oh-my-pi/pi-natives",
-			"@oh-my-pi/pi-tui": "omp-legacy-pi-bundled:@oh-my-pi/pi-tui",
-			"@oh-my-pi/pi-utils": "omp-legacy-pi-bundled:@oh-my-pi/pi-utils",
+			"@oh-my-pi/pi-ai": "uw-legacy-pi-bundled:@oh-my-pi/pi-ai",
+			"@oh-my-pi/pi-coding-agent": "uw-legacy-pi-bundled:@oh-my-pi/pi-coding-agent",
+			"@oh-my-pi/pi-agent-core": "uw-legacy-pi-bundled:@oh-my-pi/pi-agent-core",
+			"@oh-my-pi/pi-natives": "uw-legacy-pi-bundled:@oh-my-pi/pi-natives",
+			"@oh-my-pi/pi-tui": "uw-legacy-pi-bundled:@oh-my-pi/pi-tui",
+			"@oh-my-pi/pi-utils": "uw-legacy-pi-bundled:@oh-my-pi/pi-utils",
 		};
 		const result = __validateLegacyPiPackageRootOverrides(candidates, () => {
 			probed = true;
@@ -65,14 +65,14 @@ describe("legacy pi compat package-root override validation (issue #2168)", () =
 
 	it("mixes virtual and filesystem entries: virtuals always pass, filesystems gated", () => {
 		const candidates = {
-			"@oh-my-pi/pi-ai": "omp-legacy-pi-bundled:@oh-my-pi/pi-ai",
+			"@oh-my-pi/pi-ai": "uw-legacy-pi-bundled:@oh-my-pi/pi-ai",
 			"@oh-my-pi/pi-coding-agent": "/dev/source/legacy-pi-coding-agent-shim.ts",
 			"@oh-my-pi/pi-tui": "/missing/path.ts",
 		};
 		const missing = new Set(["/missing/path.ts"]);
 		const result = __validateLegacyPiPackageRootOverrides(candidates, p => !missing.has(p));
 		expect(result).toEqual({
-			"@oh-my-pi/pi-ai": "omp-legacy-pi-bundled:@oh-my-pi/pi-ai",
+			"@oh-my-pi/pi-ai": "uw-legacy-pi-bundled:@oh-my-pi/pi-ai",
 			"@oh-my-pi/pi-coding-agent": "/dev/source/legacy-pi-coding-agent-shim.ts",
 		});
 	});
@@ -91,7 +91,7 @@ describe("legacy pi compat typebox shim path resolution (issues #3414, #3423)", 
 			probed = true;
 			return false;
 		});
-		expect(result).toBe("omp-legacy-pi-bundled:typebox");
+		expect(result).toBe("uw-legacy-pi-bundled:typebox");
 		expect(probed).toBe(false);
 	});
 

@@ -142,8 +142,8 @@ export function normalizeProfileName(profile: string | undefined): string | unde
  * than silently inheriting `PI_PROFILE`. Delegates validation/normalization to
  * {@link normalizeProfileName} (which throws on a syntactically invalid value).
  */
-export function resolveProfileEnv(omp: string | undefined, pi: string | undefined): string | undefined {
-	return normalizeProfileName(omp !== undefined ? omp : pi);
+export function resolveProfileEnv(canonical: string | undefined, legacy: string | undefined): string | undefined {
+	return normalizeProfileName(canonical !== undefined ? canonical : legacy);
 }
 
 function getProfileFromEnv(): string | undefined {

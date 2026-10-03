@@ -15,7 +15,7 @@ const script = fileURLToPath(new URL("./check-runtime-deps.mjs", import.meta.url
 const nodePath = resolveNode();
 
 async function check(t, manifest, source, extraFiles = {}) {
-	const root = await mkdtemp(join(tmpdir(), "omp-runtime-deps-"));
+	const root = await mkdtemp(join(tmpdir(), "ultraworkers-runtime-deps-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const files = {
 		"packages/example/package.json": JSON.stringify({ name: "example", version: "1.0.0", ...manifest }),

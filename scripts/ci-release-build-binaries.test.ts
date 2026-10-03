@@ -57,7 +57,7 @@ describe("Windows release binary target", () => {
 });
 
 it("runs compiled bytecode containing dependency import.meta.resolve calls", async () => {
-	using temp = TempDir.createSync("@omp-bytecode-");
+	using temp = TempDir.createSync("@ultraworkers-bytecode-");
 	const entrypoint = temp.join("entry.ts");
 	const outfile = temp.join(process.platform === "win32" ? "probe.exe" : "probe");
 	await Bun.write(entrypoint, 'console.log(import.meta.resolve("node:fs"));\n');

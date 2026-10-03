@@ -70,7 +70,7 @@ async function runScript(root?: string): Promise<RunResult> {
 
 /** Build a throwaway tree: `patches/*.patch` plus a `patchedDependencies` block. */
 async function makeTree(patches: Record<string, string>, declared: Record<string, string>): Promise<string> {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-patch-ledger-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-patch-ledger-"));
 	for (const [rel, content] of Object.entries(patches)) {
 		const full = path.join(dir, rel);
 		await fs.mkdir(path.dirname(full), { recursive: true });

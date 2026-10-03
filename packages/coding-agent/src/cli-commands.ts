@@ -581,7 +581,10 @@ export function reservedTopLevelWordMessage(
 	return undefined;
 }
 
-export type ResolvedCliArgv = { argv: string[] } | { error: string };
+/** The `--config` overlay flag, as spelled on the launch surface. */
+const CONFIG_FLAG = "--config";
+
+export type ResolvedCliArgv = { argv: string[]; configFiles?: string[] } | { error: string };
 
 /**
  * Index of the first argv token that names a registered subcommand, skipping
@@ -619,18 +622,41 @@ function isLaunchGlobalFlag(arg: string): boolean {
  * whose strict parser would otherwise reject them with a cryptic
  * `node:util.parseArgs` error (#8891). Tokens the launch tables don't recognize
  * are kept, so a subcommand's own leading flags still reach it.
+ *
+ * `--config` is the one dropped flag whose value the command still needs, so it
+ * is reported rather than discarded with the rest. Reporting it HERE rather than
+ * re-parsing the original argv is what keeps one answer: this loop already decided
+ * which tokens are launch-global and, via {@link flagConsumesValue}, which token is
+ * that flag's value — a second parse would have to re-derive both and could
+ * disagree with the stripping it is trying to explain.
  */
-function stripLaunchGlobalFlags(leading: readonly string[]): string[] {
+function stripLaunchGlobalFlags(leading: readonly string[]): { kept: string[]; configFiles: string[] } {
 	const kept: string[] = [];
+	const configFiles: string[] = [];
 	for (let index = 0; index < leading.length; index += 1) {
 		const arg = leading[index];
 		if (isLaunchGlobalFlag(arg)) {
-			if (flagConsumesValue(arg, leading[index + 1])) index += 1;
+			const consumesNext = flagConsumesValue(arg, leading[index + 1]);
+			if (arg === CONFIG_FLAG || arg.startsWith(`${CONFIG_FLAG}=`)) {
+				// `--config=<path>` carries its value inline; `--config <path>` carries
+				// the next token. Both spellings load the overlay, so both are reported
+				// rather than only the one this loop happens to see most often.
+				//
+				// Recorded only when a value is actually there. A bare trailing `--config`
+				// consumes nothing, and reporting a synthetic empty path would hand
+				// settings a filename that was never typed — which, because overlays are
+				// strict, turns a flag the user typed with no operand into a hard error
+				// about a file they never named.
+				const inline = arg.startsWith(`${CONFIG_FLAG}=`) ? arg.slice(CONFIG_FLAG.length + 1) : undefined;
+				const value = inline ?? (consumesNext ? leading[index + 1] : undefined);
+				if (value !== undefined) configFiles.push(value);
+			}
+			if (consumesNext) index += 1;
 			continue;
 		}
 		kept.push(arg);
 	}
-	return kept;
+	return { kept, configFiles };
 }
 
 /**
@@ -665,8 +691,16 @@ export function resolveCliArgv(argv: string[]): ResolvedCliArgv {
 		const sub = argv[subIndex];
 		const leading = argv.slice(0, subIndex);
 		const trailing = argv.slice(subIndex + 1);
-		const forwardedLeading = LAUNCH_FLAG_COMMANDS[sub] === true ? leading : stripLaunchGlobalFlags(leading);
-		return { argv: [sub, ...forwardedLeading, ...trailing] };
+		if (LAUNCH_FLAG_COMMANDS[sub] === true) {
+			// Launch-shaped commands share the launch flag surface and re-parse it
+			// themselves, so their leading tokens are forwarded untouched. That makes
+			// them the one case where the argv already carries the overlays — reported
+			// here too so a command can read one place regardless of which branch it
+			// came through, but their own parse remains the authority for the value.
+			return { argv: [sub, ...leading, ...trailing] };
+		}
+		const { kept, configFiles } = stripLaunchGlobalFlags(leading);
+		return { argv: [sub, ...kept, ...trailing], ...(configFiles.length > 0 ? { configFiles } : {}) };
 	}
 	return { argv: ["launch", ...argv] };
 }

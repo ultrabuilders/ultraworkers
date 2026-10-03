@@ -656,6 +656,12 @@ export async function runCli(argv: string[]): Promise<void> {
 			// what makes a verb registered under a built-in name inert — which is why
 			// `registerSubcommand` refuses those registrations outright.
 			commands: [...commands, ...extensionCommandEntries()],
+			// `--config` sits on the global flag surface, ahead of the command token,
+			// and is stripped for any command that does not share the launch flag
+			// surface. Handing it over as data is what keeps `ultraworkers --config
+			// <path> config get <key>` — the spelling `docs/config-usage.md` documents —
+			// reaching the settings a subcommand initializes.
+			configFiles: resolved.configFiles,
 			metadataHelp: showHelp,
 		});
 	} finally {

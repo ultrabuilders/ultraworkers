@@ -34,6 +34,21 @@ export interface ConfigCommandArgs {
 		 * daemon refuses the move, because renaming it is what loses the data.
 		 */
 		force?: boolean;
+		/**
+		 * Extra `config.yml` overlays to apply for this invocation.
+		 *
+		 * Both `--config` spellings arrive here already merged by the caller: the
+		 * documented one, ahead of the command token (`ultraworkers --config <path>
+		 * config get <key>`), reaches the command on `CliConfig.configFiles` because
+		 * the runner strips it for every command that does not share the launch flag
+		 * surface; the command-position spelling is parsed as an ordinary flag.
+		 * Order is the order they were typed, and `PI_CONFIG_FILES` loads before both.
+		 *
+		 * Before this existed, `Settings.init` saw no overlay at all and fell back to
+		 * `PI_CONFIG_FILES` — which is why `--config` was documented, parsed, and
+		 * warned about in `shadowing.ts`, yet did nothing on this path.
+		 */
+		config?: string[];
 	};
 }
 // =============================================================================
@@ -174,7 +189,7 @@ function getTypeDisplay(def: CliSettingDef): string {
 // =============================================================================
 
 export async function runConfigCommand(cmd: ConfigCommandArgs): Promise<void> {
-	await Settings.init();
+	await Settings.init({ configFiles: cmd.flags.config });
 
 	switch (cmd.action) {
 		case "list":

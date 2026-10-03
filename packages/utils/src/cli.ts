@@ -164,6 +164,22 @@ export interface CliConfig<TCommand extends CommandMetadata = CommandCtor> {
 	version: string;
 	/** All registered commands keyed by their canonical name. */
 	commands: Map<string, TCommand>;
+	/**
+	 * `config.yml`-style overlays the launch asked for, taken from the global flag
+	 * surface (`ultraworkers --config <path> <command>`) before the command token.
+	 *
+	 * A side channel rather than a forwarded argv token, and the reason is the
+	 * stripping rule in `resolveCliArgv`: leading global flags are dropped for every
+	 * command that does not share the launch flag surface, because forwarding them
+	 * into a strict parser produces an "unknown flag" crash (#8891). So a token
+	 * cannot be how this reaches a command — a command that declares no `--config`
+	 * rejects it, and one that does would hold the same value in two places, keyed
+	 * on which position the user happened to type it in.
+	 *
+	 * Optional and absent rather than empty, so "the launch passed none" stays
+	 * distinguishable from a caller that never wired the field at all.
+	 */
+	configFiles?: string[];
 }
 
 /** Minimal Command base matching the oclif surface we use. */
@@ -431,6 +447,12 @@ export interface RunOptions {
 	version: string;
 	argv: string[];
 	commands: CommandEntry[];
+	/**
+	 * Overlays requested on the global flag surface, forwarded onto
+	 * {@link CliConfig.configFiles}. Parsed by the caller, because the global
+	 * tables live in the application and this module is the framework underneath it.
+	 */
+	configFiles?: string[];
 	/** Custom help renderer with the fully loaded command constructors. */
 	help?: (config: CliConfig) => Promise<void> | void;
 	/** Lightweight help renderer backed by static command metadata. */
@@ -449,7 +471,7 @@ function findEntry(commands: CommandEntry[], id: string): CommandEntry | undefin
  * No filesystem scanning, no plugin system, no package.json reading.
  */
 export async function run(opts: RunOptions): Promise<void> {
-	const { bin, version, argv } = opts;
+	const { bin, version, argv, configFiles } = opts;
 	const command = opts.command ?? bin;
 
 	const commandId = argv[0] ?? "";
@@ -500,7 +522,7 @@ export async function run(opts: RunOptions): Promise<void> {
 	}
 
 	const Cmd = await loadEntry(entry);
-	const config: CliConfig = { bin, command, version, commands: new Map([[entry.name, Cmd]]) };
+	const config: CliConfig = { bin, command, version, commands: new Map([[entry.name, Cmd]]), configFiles };
 	const instance = new Cmd(commandArgv, config);
 	try {
 		await instance.run();

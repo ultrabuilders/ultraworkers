@@ -31,6 +31,10 @@ export default class Config extends Command {
 	static flags = {
 		json: Flags.boolean({ description: "Output JSON" }),
 		apply: Flags.boolean({ description: "Actually move directories (config migrate only)" }),
+		config: Flags.string({
+			description: "Load an extra config.yml-style overlay for this run (repeatable)",
+			multiple: true,
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -45,6 +49,13 @@ export default class Config extends Command {
 			flags: {
 				json: flags.json,
 				apply: flags.apply,
+				// Both positions, because both are real and they are not alternatives:
+				// the documented spelling puts `--config` ahead of the command, where
+				// the runner strips it and hands it over on `this.config`, while a
+				// command-position flag is parsed here. Order follows
+				// `docs/config-usage.md`: `PI_CONFIG_FILES` first, then the `--config`
+				// files in the order they were typed, so a later overlay still wins.
+				config: [...(this.config.configFiles ?? []), ...(flags.config ?? [])],
 			},
 		};
 

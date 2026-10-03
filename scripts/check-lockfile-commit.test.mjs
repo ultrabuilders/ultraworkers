@@ -69,7 +69,7 @@ test("fails on a staged lockfile that bumps a dependency version", async t => {
 	// The message must name the package: a bare "review the lockfile" leaves the
 	// reviewer to diff two files by hand to find out what moved.
 	assert.match(result.stderr, /changed dep 1\.0\.0 -> 2\.0\.0/);
-	assert.match(result.stderr, /OMP_ALLOW_LOCKFILE_CHANGE=1 git commit/);
+	assert.match(result.stderr, /ULTRAWORKERS_ALLOW_LOCKFILE_CHANGE=1 git commit/);
 });
 
 test("fails on a lockfile that is staged with no baseline to compare", async t => {
@@ -101,7 +101,7 @@ test("still blocks a dependency bump when the override env var is off by spellin
 		const result = spawnSync(nodePath, [script], {
 			cwd: root,
 			encoding: "utf8",
-			env: { ...process.env, OMP_ALLOW_LOCKFILE_CHANGE: value },
+			env: { ...process.env, ULTRAWORKERS_ALLOW_LOCKFILE_CHANGE: value },
 		});
 		assert.equal(result.status, 1, `value ${JSON.stringify(value)} must not unlock the gate`);
 	}
@@ -115,8 +115,8 @@ test("honours the override env var when it is explicitly set", async t => {
 	const result = spawnSync(nodePath, [script], {
 		cwd: root,
 		encoding: "utf8",
-		env: { ...process.env, OMP_ALLOW_LOCKFILE_CHANGE: "1" },
+		env: { ...process.env, ULTRAWORKERS_ALLOW_LOCKFILE_CHANGE: "1" },
 	});
 	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.stderr, /OMP_ALLOW_LOCKFILE_CHANGE is set/);
+	assert.match(result.stderr, /ULTRAWORKERS_ALLOW_LOCKFILE_CHANGE is set/);
 });

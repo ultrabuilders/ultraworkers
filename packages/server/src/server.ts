@@ -28,7 +28,7 @@ import {
 	type ServerHello,
 	type ServerHelloError,
 	type ServerMessage,
-} from "@oh-my-pi/pi-protocol";
+} from "@ultraworkers/pi-protocol";
 import {
 	type ByteConnection,
 	type ByteConnectionHandler,

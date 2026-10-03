@@ -1,5 +1,5 @@
 {
-	"name": "@oh-my-pi/pi-protocol",
+	"name": "@ultraworkers/pi-protocol",
 	"version": "18.4.3",
 	"description": "Transport-neutral CBOR protocol for remote sessions",
 	"type": "module",

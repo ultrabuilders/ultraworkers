@@ -90,7 +90,7 @@
       "version": "18.4.3",
       "dependencies": {
         "@oh-my-pi/chord": "catalog:",
-        "@oh-my-pi/pi-protocol": "catalog:",
+        "@ultraworkers/pi-protocol": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -274,7 +274,7 @@
       },
     },
     "packages/protocol": {
-      "name": "@oh-my-pi/pi-protocol",
+      "name": "@ultraworkers/pi-protocol",
       "version": "18.4.3",
       "dependencies": {
         "@oh-my-pi/chord": "catalog:",
@@ -289,7 +289,7 @@
       "version": "18.4.3",
       "dependencies": {
         "@oh-my-pi/chord": "catalog:",
-        "@oh-my-pi/pi-protocol": "catalog:",
+        "@ultraworkers/pi-protocol": "catalog:",
         "@oh-my-pi/pi-utils": "catalog:",
       },
       "devDependencies": {
@@ -434,7 +434,7 @@
     "@oh-my-pi/pi-coding-agent": "18.4.3",
     "@oh-my-pi/pi-mnemopi": "18.4.3",
     "@oh-my-pi/pi-natives": "18.4.3",
-    "@oh-my-pi/pi-protocol": "18.4.3",
+    "@ultraworkers/pi-protocol": "18.4.3",
     "@oh-my-pi/pi-tui": "18.4.3",
     "@oh-my-pi/pi-utils": "18.4.3",
     "@oh-my-pi/pi-wire": "18.4.3",
@@ -867,7 +867,7 @@
 
     "@oh-my-pi/pi-natives": ["@oh-my-pi/pi-natives@workspace:packages/natives"],
 
-    "@oh-my-pi/pi-protocol": ["@oh-my-pi/pi-protocol@workspace:packages/protocol"],
+    "@ultraworkers/pi-protocol": ["@ultraworkers/pi-protocol@workspace:packages/protocol"],
 
     "@oh-my-pi/pi-tui": ["@oh-my-pi/pi-tui@workspace:packages/tui"],
 

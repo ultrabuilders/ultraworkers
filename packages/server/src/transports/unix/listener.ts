@@ -3,7 +3,7 @@ import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as net from "node:net";
 import * as path from "node:path";
-import { DEFAULT_MAX_FRAME_LENGTH } from "@oh-my-pi/pi-protocol";
+import { DEFAULT_MAX_FRAME_LENGTH } from "@ultraworkers/pi-protocol";
 import type { ByteConnection, ByteConnectionAcceptor } from "../../connection";
 import type { ServerListener } from "../../listener";
 import type { UnixListenerOptions } from "./types";

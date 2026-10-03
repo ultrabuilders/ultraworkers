@@ -1,4 +1,4 @@
-import type { ProtocolError, ProtocolErrorCode } from "@oh-my-pi/pi-protocol";
+import type { ProtocolError, ProtocolErrorCode } from "@ultraworkers/pi-protocol";
 
 export class ServerError extends Error {
 	readonly code: ProtocolErrorCode;

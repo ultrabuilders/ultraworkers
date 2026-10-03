@@ -9,7 +9,7 @@ import {
 	type RpcTarget,
 	type ServerMessage,
 	ServerMessageDecoder,
-} from "@oh-my-pi/pi-protocol";
+} from "@ultraworkers/pi-protocol";
 import { Deferred } from "./host";
 
 interface MessageWaiter {

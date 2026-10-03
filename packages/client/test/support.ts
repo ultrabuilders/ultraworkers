@@ -4,7 +4,7 @@ import {
 	encodeServerMessage,
 	PROTOCOL_VERSION,
 	type ServerMessage,
-} from "@oh-my-pi/pi-protocol";
+} from "@ultraworkers/pi-protocol";
 import type { ByteTransport, ByteTransportHandlers } from "../src/index";
 
 export class MemoryByteServer {

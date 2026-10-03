@@ -1,5 +1,5 @@
 import type { ServiceSubscriptionSnapshot } from "@oh-my-pi/chord";
-import type { RpcTarget, SessionTarget } from "@oh-my-pi/pi-protocol";
+import type { RpcTarget, SessionTarget } from "@ultraworkers/pi-protocol";
 import type { ByteTransportFactory } from "./transport";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected";

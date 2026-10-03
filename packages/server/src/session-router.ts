@@ -3,7 +3,7 @@ import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@oh-my-pi/ch
 import { type Context } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
 import type { SessionMetadata } from "./types";
-import type { RpcTarget, SessionTarget } from "@oh-my-pi/pi-protocol";
+import type { RpcTarget, SessionTarget } from "@ultraworkers/pi-protocol";
 import { ServerDrainingError, SessionNotAttachedError } from "./errors";
 import type { RoutedSessionAttachment, RoutedSessionHandle, ServerHost } from "./types";
 

@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
-import { encodeServerMessage, type ServerHelloError, ServerMessageDecoder } from "@oh-my-pi/pi-protocol";
+import { encodeServerMessage, type ServerHelloError, ServerMessageDecoder } from "@ultraworkers/pi-protocol";
 import { expect, test } from "bun:test";
 import { UnixByteConnection } from "../src/transports/unix/listener";
 import { waitFor } from "./helpers";

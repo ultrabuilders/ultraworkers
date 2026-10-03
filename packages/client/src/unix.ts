@@ -1,7 +1,12 @@
 import { lstat, readdir } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
 import { join } from "node:path";
-import { DEFAULT_MAX_FRAME_LENGTH, isServerId, ProtocolValidationError, type ServerId } from "@oh-my-pi/pi-protocol";
+import {
+	DEFAULT_MAX_FRAME_LENGTH,
+	isServerId,
+	ProtocolValidationError,
+	type ServerId,
+} from "@ultraworkers/pi-protocol";
 import { Client } from "./client";
 import { DisconnectedError, ServerError } from "./errors";
 import type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from "./transport";

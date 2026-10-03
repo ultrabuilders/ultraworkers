@@ -1,4 +1,4 @@
-import { encodeCbor, encodeClientMessage, encodeFrame, PROTOCOL_VERSION } from "@oh-my-pi/pi-protocol";
+import { encodeCbor, encodeClientMessage, encodeFrame, PROTOCOL_VERSION } from "@ultraworkers/pi-protocol";
 import { afterEach, expect, test } from "bun:test";
 import type { ByteConnection, ByteConnectionHandler } from "../src/connection";
 import { Server } from "../src/server";

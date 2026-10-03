@@ -5,7 +5,7 @@ import {
 	encodeServerMessage,
 	PROTOCOL_VERSION,
 	ProtocolValidationError,
-} from "@oh-my-pi/pi-protocol";
+} from "@ultraworkers/pi-protocol";
 import { describe, expect, test } from "bun:test";
 import {
 	type ByteTransportFactory,

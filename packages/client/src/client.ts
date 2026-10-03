@@ -27,7 +27,7 @@ import {
 	type ServerHello,
 	type ServiceEventEnvelope,
 	type SessionTarget,
-} from "@oh-my-pi/pi-protocol";
+} from "@ultraworkers/pi-protocol";
 import { Connection } from "./connection";
 import { ClientDisposedError, DisconnectedError, ServerError, toError } from "./errors";
 import { createPromiseResolvers } from "./promise";

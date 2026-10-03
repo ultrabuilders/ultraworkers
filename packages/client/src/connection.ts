@@ -6,7 +6,7 @@ import {
 	type ServerHello,
 	type ServerMessage,
 	ServerMessageDecoder,
-} from "@oh-my-pi/pi-protocol";
+} from "@ultraworkers/pi-protocol";
 import { DisconnectedError, ServerError, toDisconnectedError, toError } from "./errors";
 import { createPromiseResolvers, type PromiseResolvers } from "./promise";
 import type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from "./transport";

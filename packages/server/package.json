@@ -61,7 +61,7 @@
 	},
 	"dependencies": {
 		"@oh-my-pi/chord": "catalog:",
-		"@oh-my-pi/pi-protocol": "catalog:",
+		"@ultraworkers/pi-protocol": "catalog:",
 		"@oh-my-pi/pi-utils": "catalog:"
 	},
 	"devDependencies": {

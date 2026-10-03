@@ -1,17 +1,17 @@
-import { countRename, parseTable } from "./check-disposition";
+import { countRename, parseTable, PINNED } from "./check-disposition";
 
 /**
  * Classify the occurrences still open under `rename` rows by the shape that
  * decides whether a second copy must change with it.
  *
- * `countRename` is imported from the gate itself, never reimplemented: an
- * earlier hand-rolled count of the same PINNED expression disagreed with the
- * gate by 20, and a reimplementation is exactly how that happens. This script
- * only buckets what the gate already reports.
+ * `countRename` and `PINNED` are imported from the gate itself, never
+ * reimplemented: an earlier hand-rolled count of the same PINNED expression
+ * disagreed with the gate by 20, and a reimplementation is exactly how that
+ * happens. This script only buckets what the gate already reports.
  */
 const ROOT = new URL("../../", import.meta.url).pathname;
 const TABLE = `${ROOT}scripts/rename/disposition.tsv`;
-const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/g;
+const PINNED_GLOBAL = new RegExp(PINNED.source, `${PINNED.flags}g`);
 
 /**
  * Only `after` carries the decision: whether `omp` is the tail of a PATH, a
@@ -57,7 +57,7 @@ for (const row of renameRows) {
 		// own note about `"omp-wt-"`).
 		const magnitude = countRename(line);
 		if (magnitude === 0) continue;
-		const m = [...line.matchAll(PINNED)][0];
+		const m = [...line.matchAll(PINNED_GLOBAL)][0];
 		const key = classify(m?.[2] ?? "");
 		const b = buckets.get(key) ?? { occurrences: 0, files: new Set<string>(), samples: [] };
 		b.occurrences += magnitude;

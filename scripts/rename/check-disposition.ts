@@ -153,7 +153,7 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * what it excludes is `_`, `-` and alphanumerics. `PI_OMP_X` and `_OMP_PROFILE` are blind here
  * for that reason, not because a dotted path is out of scope.
  */
-const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9]|$)/i;
+export const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9]|$)/i;
 
 /** Repo-relative path of the table. */
 const TABLE_PATH = "scripts/rename/disposition.tsv";

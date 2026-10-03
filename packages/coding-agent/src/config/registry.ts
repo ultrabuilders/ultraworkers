@@ -895,8 +895,8 @@ export function registerOwned<const D extends SettingDefinition>(
 		throw new Error(
 			`Setting "${definition.id}" was declared by ${owner} outside the reserved ` +
 				`"${PLUGIN_SETTINGS_ROOT}." namespace. Settings an extension owns must be ` +
-				`registered as "${PLUGIN_SETTINGS_ROOT}.<id>.<key>" — build the id with ` +
-				`pluginSettingId() from extensibility/settings — so an extension cannot ` +
+				`registered as "${PLUGIN_SETTINGS_ROOT}.<id>.<key>" — build the id with the ` +
+				`injected api.pluginSettingId(<id>, <key>) — so an extension cannot ` +
 				`collide with a core setting or with another extension's.`,
 		);
 	}

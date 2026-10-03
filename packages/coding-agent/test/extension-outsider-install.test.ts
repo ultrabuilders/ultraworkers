@@ -6,7 +6,7 @@ import {
 	discoverAndLoadExtensions,
 	extensionSettingOwner,
 } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
-import { unregisterOwned } from "@oh-my-pi/pi-coding-agent/config/registry";
+import { lookup, unregisterOwned } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { modeRegistry } from "@oh-my-pi/pi-coding-agent/modes/mode-registry";
 import { getAgentDir, getPluginsDir, removeSyncWithRetries, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 
@@ -162,6 +162,26 @@ describe("an extension installed from outside the repo", () => {
 		modeRegistry.setActivation("outsider");
 		expect(modeRegistry.resolvedMode()?.statusLine.label).toBe("Outsider");
 		expect(modeRegistry.writePolicy()).toEqual({ denyDelete: true });
+	});
+
+	it("builds an extension-owned setting id through the injected builder, not an import", async () => {
+		// The contract: an extension outside this repo registers a setting in the
+		// reserved namespace using only what the host handed it. `config/registry.ts`
+		// rejects any other id by THROWING during registration, so a regression here
+		// does not degrade one key — it fails the whole load and takes the tool, the
+		// slash command, the hook, the panel and the mode down with it. That makes
+		// `errors` empty plus the key present the observable contract, and it is why
+		// this cannot be asserted by inspecting the fixture's source.
+		installInto(getAgentDir());
+		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
+
+		const result = await loadInstalled(projectDir.path());
+		expect(result.errors).toHaveLength(0);
+
+		// `api.pluginSettingId("outsider", "greeting")` is what the fixture calls.
+		// If the injection is dropped, the fixture throws on `api.pluginSettingId`
+		// being undefined and this lookup is empty.
+		expect(lookup("plugins.outsider.greeting")).toBeDefined();
 	});
 
 	it("needed no core change: it loaded the installed copy, never the one in this repo", async () => {

@@ -1,6 +1,7 @@
 import type { CompactionTransactionObserver } from "../../session/compaction-transaction";
 export type { CompactionTransactionObserver };
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
+import type { pluginSettingId } from "../settings";
 // Extension surface -> config layer, never the reverse: `Settings` must not have to
 // know the extension API exists, which is the same reason the registry itself lives
 // in `reload-observer.ts` rather than on `Settings`.
@@ -1540,6 +1541,16 @@ export interface ExtensionAPI {
 
 	/** Injected Zod-compatible omptype builder for extension tools. */
 	zod: typeof zod;
+
+	/**
+	 * Builds the `plugins.<id>.<key>` setting id an extension-owned setting must use.
+	 *
+	 * Injected rather than exported for the same reason as {@link zod}: an extension
+	 * installed outside the repo lives in a config directory with no `node_modules`, so
+	 * it cannot resolve `@oh-my-pi/pi-coding-agent/extensibility/settings` at runtime
+	 * even though that subpath is published.
+	 */
+	pluginSettingId: typeof pluginSettingId;
 
 	/** Injected pi-coding-agent exports for accessing SDK utilities */
 	pi: typeof PiCodingAgent;

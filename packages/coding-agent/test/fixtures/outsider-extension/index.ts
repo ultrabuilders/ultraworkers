@@ -42,19 +42,17 @@ export default function outsider(api: ExtensionAPI): void {
 	});
 
 	api.registerSetting({
-		// The id is written out in full rather than built, because an extension installed
-		// outside this repo CANNOT import the builder. `pluginSettingId()` lives in
-		// `src/extensibility/settings.ts`, and that module's only export from the package
-		// root is the *type* `SkillsSettings` — a runtime import would have to resolve
-		// `@oh-my-pi/pi-coding-agent` from a config directory that has no `node_modules`,
-		// which is the same failure already documented on `api.zod` below. Every in-repo
-		// `registerSetting` call site writes the literal too.
+		// `api.pluginSettingId`, the builder the host injects — not an import of
+		// `extensibility/settings`. An extension installed outside this repo lives in a
+		// config directory that has no `node_modules`, so that subpath resolves in a
+		// normal consumer but throws ERR_MODULE_NOT_FOUND from where extensions
+		// actually live. Same reason `api.zod` is injected below.
 		//
 		// The `plugins.` prefix is not cosmetic. `config/registry.ts:899` refuses any id
 		// outside `plugins.<id>.<key>`, and it throws during registration — so a flat id
 		// does not merely lose this one key, it fails the whole load and takes the other
 		// surfaces down with it.
-		id: "plugins.outsider.greeting",
+		id: api.pluginSettingId("outsider", "greeting"),
 		type: "string",
 		default: "outsider default",
 	});

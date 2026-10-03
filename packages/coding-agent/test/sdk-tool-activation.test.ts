@@ -997,7 +997,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			if (!runner) throw new Error("expected extension runner");
 			const emission = runner.emit({ type: "session_start" });
 			await activationEntered.promise;
-			const mcpRefresh = session.refreshMCPTools([mcpTool]);
+			const mcpRefresh = session.refreshMCPTools([mcpTool], "connect");
 			await Promise.resolve();
 			expect(session.getToolByName(mcpTool.name)).toBeUndefined();
 
@@ -1621,7 +1621,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		};
 
 		try {
-			await session.refreshMCPTools([externalMcpTool]);
+			await session.refreshMCPTools([externalMcpTool], "connect");
 			const deviceNames = session.getXdevToolEntries().map(entry => entry.name);
 			expect(deviceNames).toEqual(expect.arrayContaining(["ast_edit", "mcp__fixture_report"]));
 			expect(session.getActiveToolNames()).not.toContain("mcp__fixture_report");
@@ -2537,21 +2537,24 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			const { session } = await createAgentSession({ ...baseOptions(tempDir), settings });
 			try {
 				let executed = 0;
-				await session.refreshMCPTools([
-					{
-						// Exactly what `createMCPToolName("seedpatch-client", "bank")` mints.
-						name: "mcp__seedpatch_client_bank",
-						label: "seedpatch-client/bank",
-						description: "Read the bank",
-						parameters: type({}),
-						mcpServerName: "seedpatch-client",
-						mcpToolName: "bank",
-						async execute() {
-							executed += 1;
-							return { content: [{ type: "text", text: "bank contents" }] };
-						},
-					} satisfies CustomTool,
-				]);
+				await session.refreshMCPTools(
+					[
+						{
+							// Exactly what `createMCPToolName("seedpatch-client", "bank")` mints.
+							name: "mcp__seedpatch_client_bank",
+							label: "seedpatch-client/bank",
+							description: "Read the bank",
+							parameters: type({}),
+							mcpServerName: "seedpatch-client",
+							mcpToolName: "bank",
+							async execute() {
+								executed += 1;
+								return { content: [{ type: "text", text: "bank contents" }] };
+							},
+						} satisfies CustomTool,
+					],
+					"connect",
+				);
 
 				// The configuration under test: advertised top-level, nothing mounted.
 				expect(session.getActiveToolNames()).toContain("mcp__seedpatch_client_bank");

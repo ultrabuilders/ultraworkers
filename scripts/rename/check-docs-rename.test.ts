@@ -6,6 +6,7 @@ import {
 	formatRuleAReport,
 	isExcluded,
 	loadAllowlist,
+	readMarkdown,
 	scanRuleA,
 	staleAllowlistEntries,
 	ungatedViolations,
@@ -195,16 +196,19 @@ describe("rule A allow-list", () => {
 	});
 });
 
-describe("rule A reporting", () => {
-	// The regression these two rows exist for: the gate printed only its own
-	// metrics (`0 not on the allow-list`), so a green run with 869 occurrences
-	// behind the allow-list read as a finished sweep. The count was on screen
-	// and unlabeled. Deleting the outstanding clause from the line kills row 1.
-	function outstanding(line: string): { occurrences: number; files: number } | null {
-		const match = /(\d+) occurrence\(s\) in (\d+) file\(s\)/.exec(line);
-		return match ? { occurrences: Number(match[1]), files: Number(match[2]) } : null;
-	}
+// The regression these rows exist for: the gate printed only its own
+// metrics (`0 not on the allow-list`), so a green run with 869 occurrences
+// behind the allow-list read as a finished sweep. The count was on screen
+// and unlabeled. Deleting the outstanding clause from the line kills row 1.
+// Module scope, not inside one `describe`: the concurrent-write rows below
+// assert the same counts survive alongside a caveat, and a copy of this
+// parser in two blocks is two parsers that can drift.
+function outstanding(line: string): { occurrences: number; files: number } | null {
+	const match = /(\d+) occurrence\(s\) in (\d+) file\(s\)/.exec(line);
+	return match ? { occurrences: Number(match[1]), files: Number(match[2]) } : null;
+}
 
+describe("rule A reporting", () => {
 	it("surfaces the accepted occurrences still awaiting classification", () => {
 		// `docs/b.md` is allow-listed at its current size, so it passes the gate —
 		// but its 4 occurrences are still legacy tokens in an unclassified file,
@@ -228,6 +232,53 @@ describe("rule A reporting", () => {
 	it("reports nothing outstanding once the allow-list is empty of matches", () => {
 		const line = formatRuleAReport([], [], [], []);
 		expect(outstanding(line)).toEqual({ occurrences: 0, files: 0 });
+	});
+});
+
+/**
+ * The scan walks the filesystem, so it races every peer writing in this tree.
+ * Measured 2026-10-04: a vanished path threw ENOENT out of the read, the gate
+ * exited 1 with zero `FAIL ruleA` lines, and a reader would have gone looking for
+ * a documentation violation that did not exist. The regression these rows defend
+ * is the gate reaching a verdict at all.
+ */
+describe("rule A concurrent tree writes", () => {
+	it("reports a path that vanished rather than throwing out of the scan", async () => {
+		// A real ENOENT on a real read: the path is genuinely absent, which is
+		// exactly the state a peer leaves behind when it removes a scratch dir.
+		const absent = path.join(os.tmpdir(), `omp-gate-absent-${process.pid}-${Date.now()}.md`);
+		const read = await readMarkdown(absent);
+		expect(read).toEqual({ ok: false, vanished: true });
+	});
+
+	it("still reads a file that is there, so the absent case is not the only outcome", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-gate-read-"));
+		try {
+			const file = path.join(dir, "live.md");
+			await fs.writeFile(file, "legacy omp token\n");
+			const read = await readMarkdown(file);
+			// Without this the row above passes on a function that always answers
+			// `vanished`, which would make the gate blind to every real file.
+			expect(read).toEqual({ ok: true, text: "legacy omp token\n" });
+		} finally {
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("qualifies the summary count with the paths that vanished, so it cannot be read as final", () => {
+		const violations = [{ path: "docs/a.md", occurrences: 3 }];
+		const allowlist = [{ path: "docs/a.md", budget: 3 }];
+		const line = formatRuleAReport(violations, allowlist, [], [], ["scratch/gone.md"]);
+		expect(line).toContain("VANISHED mid-scan");
+		expect(line).toContain("scratch/gone.md");
+		// The counts survive; only the caveat is added. A reader acting on the
+		// number must still find it, with the caveat travelling alongside it.
+		expect(outstanding(line)).toEqual({ occurrences: 3, files: 1 });
+	});
+
+	it("omits the caveat entirely when nothing vanished, so it cannot be a constant", () => {
+		const line = formatRuleAReport([], [], [], []);
+		expect(line).not.toContain("VANISHED");
 	});
 });
 

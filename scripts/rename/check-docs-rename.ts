@@ -43,6 +43,7 @@
  * surfaces as new failures rather than as a silently-passing check.
  */
 import * as path from "node:path";
+import { isEnoent } from "@oh-my-pi/pi-utils";
 import { readGateArgsOrExit } from "./args";
 import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
 
@@ -212,19 +213,76 @@ export async function loadAllowlist(root: string): Promise<AllowlistEntry[]> {
 	return entries;
 }
 
+/**
+ * Read one markdown file, distinguishing "definitely gone" from every other
+ * read failure.
+ *
+ * Measured 2026-10-04: this scan walks the FILESYSTEM (see the `node_modules/`
+ * note on `EXCLUDED_PREFIXES`), so it competes with anything else writing in the
+ * tree. A peer's browser recording created and removed a scratch directory
+ * mid-walk, the read threw `ENOENT`, and the gate died before printing a single
+ * verdict — exit 1 with ZERO `FAIL ruleA` lines. That is the worst shape a gate
+ * has: a reader sees a non-zero exit, concludes a documentation violation, and
+ * goes hunting for a problem that does not exist. The re-run was clean.
+ *
+ * The classification matches `check-disposition.ts`'s `hitPaths`, which hit this
+ * first: only ENOENT/ENOTDIR is a peer moving a file out from under the walk.
+ * EACCES, EISDIR and EMFILE say the path is unreadable, which is a different
+ * fault and is rethrown rather than folded into the same bucket — skipping those
+ * would drop a file from the corpus and lower the count with no signal.
+ */
+export type MarkdownRead =
+	| { readonly ok: true; readonly text: string }
+	| { readonly ok: false; readonly vanished: true };
+
+export async function readMarkdown(full: string): Promise<MarkdownRead> {
+	try {
+		return { ok: true, text: await Bun.file(full).text() };
+	} catch (err) {
+		if (isEnoent(err)) return { ok: false, vanished: true };
+		throw err;
+	}
+}
+
+/** The scan's result, plus the paths that were gone by the time they were read. */
+export interface ScanResult {
+	readonly violations: readonly RuleAViolation[];
+	/**
+	 * Paths the walk yielded and the read could not find. Reported rather than
+	 * dropped: the count in the summary is otherwise silently short, and "the
+	 * number was measured while the tree moved" is the one thing a reader of a
+	 * filesystem-walk gate needs to know.
+	 */
+	readonly vanished: readonly string[];
+}
+
 /** Count legacy-token occurrences per markdown file, minus the excluded paths. */
-export async function scanRuleA(root: string): Promise<RuleAViolation[]> {
+export async function scanRuleAResult(root: string): Promise<ScanResult> {
 	const glob = new Bun.Glob("**/*.md");
 	const violations: RuleAViolation[] = [];
+	const vanished: string[] = [];
 	const nestedRepos = nestedRepoCache();
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {
 		if (isInsideNestedRepository(root, relPath, nestedRepos)) continue;
 		if (isExcluded(relPath)) continue;
-		const text = await Bun.file(path.join(root, relPath)).text();
-		const matches = text.match(LEGACY_TOKEN);
+		const read = await readMarkdown(path.join(root, relPath));
+		if (!read.ok) {
+			vanished.push(relPath);
+			continue;
+		}
+		const matches = read.text.match(LEGACY_TOKEN);
 		if (matches && matches.length > 0) violations.push({ path: relPath, occurrences: matches.length });
 	}
-	return violations.sort((a, b) => a.path.localeCompare(b.path));
+	return { violations: violations.sort((a, b) => a.path.localeCompare(b.path)), vanished };
+}
+
+/**
+ * The violations alone, for callers that do not report on the scan's timing.
+ * `scanRuleAResult` is the shape the CLI uses; this keeps the narrower contract
+ * the existing callers and tests are written against.
+ */
+export async function scanRuleA(root: string): Promise<RuleAViolation[]> {
+	return [...(await scanRuleAResult(root)).violations];
 }
 
 /**
@@ -281,6 +339,7 @@ export function formatRuleAReport(
 	allowlist: readonly AllowlistEntry[],
 	blocking: readonly RuleAViolation[],
 	stale: readonly string[],
+	vanished: readonly string[] = [],
 ): string {
 	const accepted = violations.length - blocking.length;
 	const acceptedOccurrences = violations
@@ -289,9 +348,17 @@ export function formatRuleAReport(
 	const outstanding =
 		`${acceptedOccurrences} occurrence(s) in ${accepted} file(s) still carry the legacy token ` +
 		`awaiting classification or sweep`;
+	// Said on the same line as the counts it qualifies. A separate warning line is
+	// scrolled past; the counts are the thing a reader acts on, so the caveat has
+	// to travel with them or it never reaches anyone.
+	const raced =
+		vanished.length > 0
+			? `; ${vanished.length} path(s) VANISHED mid-scan, counts exclude them: ` +
+				`${vanished.slice(0, 3).join(", ")}${vanished.length > 3 ? ", …" : ""}`
+			: "";
 	return (
 		`REPORT ruleA ${outstanding}; ${blocking.length} file(s) unapproved, ${stale.length} stale line(s) ` +
-		`in ${ALLOWLIST_PATH} (${allowlist.length} line(s))\n`
+		`in ${ALLOWLIST_PATH} (${allowlist.length} line(s))${raced}\n`
 	);
 }
 
@@ -300,7 +367,7 @@ if (import.meta.main) {
 	// surfaced as an ENOENT crash against a filename that never existed; refusing it
 	// names the mistake instead of blaming the filesystem.
 	const root = readGateArgsOrExit(process.argv.slice(2), { positionals: 1 })[0] ?? process.cwd();
-	const violations = await scanRuleA(root);
+	const { violations, vanished } = await scanRuleAResult(root);
 	const allowlist = await loadAllowlist(root);
 	const blocking = ungatedViolations(violations, allowlist);
 	const stale = staleAllowlistEntries(violations, allowlist);
@@ -310,7 +377,7 @@ if (import.meta.main) {
 	for (const entry of stale) {
 		process.stdout.write(`WARN ruleA stale ${entry} — on the allow-list but no longer matches; drop the line\n`);
 	}
-	process.stdout.write(formatRuleAReport(violations, allowlist, blocking, stale));
+	process.stdout.write(formatRuleAReport(violations, allowlist, blocking, stale, vanished));
 	if (blocking.length > 0) {
 		process.stdout.write(
 			`FAIL ruleA ${blocking.length} file(s) carry the legacy display token without an accepted reason. ` +

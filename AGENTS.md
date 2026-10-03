@@ -310,24 +310,42 @@ staged last** — so a bare `git commit` commits every staged row in it, includi
 touched. This has already produced cross-contaminated commits twice in one day (`f9b23a9cba`,
 `d985fe7dc9`, where a commit carried someone else's subject and four of another agent's rows).
 
-- **Always `git commit --only -- <exact paths>`.** Never `git commit` bare, never `git add -A`,
-  never `git add .`.
+- **Never `git commit` bare, never `git add -A`, never `git add .`.** A bare commit takes every
+  staged row in the index, including rows another session staged.
+- **Use the repo's tools, in three steps.** They exist because the git verbs below cannot close the
+  gap — measured four times in one day, a read-back of the staged set was correct and the commit
+  still carried a peer's row staged in between.
+
+  | step | command | use when |
+  | --- | --- | --- |
+  | stage | `bun scripts/stage-files.ts <file>...` | you authored or rewrote the file end to end |
+  | stage | `bun scripts/rename/stage-lines.ts <file> <line>...` | a peer is editing the **same** file — takes only your lines |
+  | commit | `bun scripts/commit-scoped.ts <file>... -m "<msg>"` | always; commits in a tree of its own |
+
+  `commit-scoped.ts` builds its commit from HEAD plus only the named paths' staged entries and
+  moves the ref with a compare-and-swap, so a peer who committed in the meantime makes the swap
+  fail instead of losing their commit. It reads your real index only for the paths you name, and
+  never writes to it, so their staged rows survive still-staged. It does **not** run pre-commit
+  hooks — run `bun run check:ts` and the tests yourself first.
 - **`git add <path>` is not "stage my row".** It stages the path's *entire current content*,
-  including a peer's edit inside the same file. To stage one hunk of a shared file, use
-  `git apply --cached` with a hand-built patch, then `git diff --cached` to confirm the index
-  holds only your rows.
-- **`--only` is path-scoped, not row-scoped.** It protects the paths you name; it cannot protect
-  a row inside a path a peer also changed. That case needs the patch route above.
+  including a peer's edit inside the same file. `git apply --cached` with a hand-built patch is the
+  manual fallback when the tools don't fit; `git diff --cached` confirms the index holds only your
+  rows. Do not use `git add` and `git commit` as two separate commands — the gap between them is
+  where the contaminations landed.
+- **`--only` is path-scoped, not row-scoped.** It protects the paths you name; it cannot protect a
+  row inside a path a peer also changed.
 - **The index can be rebuilt between your staging and your commit** — a peer's commit does exactly
   that. After any staging, verify with `git diff --cached --name-only` immediately before
-  committing, and check `git show --name-only <sha>` after.
+  committing, and check `git show --name-only <sha>` after. That read-back is necessary and **not
+  sufficient**: it was correct four times while the commit still went wrong.
 - **Never `amend`, `reset`, or `rebase` published history on this tree.** Two agents have already
   nearly destroyed each other's commits that way. To fix a wrong commit *message*, add a follow-up
   commit referencing the old sha.
 - **`git stash`, `git checkout --`, `git clean`, `git restore` are all forbidden here.** They
   operate on the whole tree, so they will discard a peer's uncommitted work along with yours.
-- The row-level alternative, which needs no clean index at all, is `git hash-object -w` plus
-  `git update-index --cacheinfo`.
+- The row-level fallback, needing no clean index, is `git hash-object -w` plus
+  `git update-index --cacheinfo` — but prefer `stage-lines.ts`, which does this correctly and is
+  tested against real git repos.
 
 ## Rust Build Profiles
 

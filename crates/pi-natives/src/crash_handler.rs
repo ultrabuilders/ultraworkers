@@ -44,9 +44,22 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
-/// Default directory name for OMP's per-user state (overridable via
-/// `ULTRAWORKERS_CONFIG_DIR`, then `PI_CONFIG_DIR`, matching
-/// `packages/utils/src/dirs.ts`).
+/// Fallback directory name for per-user state, used only when neither
+/// `ULTRAWORKERS_CONFIG_DIR` nor `PI_CONFIG_DIR` is set.
+///
+/// The env-var PRECEDENCE matches `packages/utils/src/dirs.ts`. The DEFAULT
+/// does NOT, and the difference is load-bearing on macOS:
+///
+/// `dirs.ts` scans `CONFIG_DIR_CANDIDATES` (`CONFIG_DIR_NAME_NEXT` first) and
+/// falls back to the write root, so it resolves `~/.ultraworkers`. This is a
+/// bare `.unwrap_or`, so it resolves `~/.omp`.
+///
+/// The XDG branch above hides this for Linux users who set `XDG_STATE_HOME`,
+/// but macOS does not set it, so there the native panic handler writes crash
+/// reports somewhere `getLogsDir()` never looks -- and `omp debug report`
+/// bundles from `getLogsDir()`. Tracked as `epic-usoz`; do not "fix" this by
+/// editing the string alone, because the tests below pin the current value and
+/// the real fix is to scan the candidate list the way `dirs.ts` does.
 const DEFAULT_CONFIG_DIR: &str = ".omp";
 
 /// XDG-root subdirectory, i.e. `$XDG_STATE_HOME/ultraworkers/`: the FIRST entry

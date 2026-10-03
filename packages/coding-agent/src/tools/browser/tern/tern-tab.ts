@@ -635,7 +635,7 @@ export class TernTab implements InProcessRunTab {
 		} catch {
 			return;
 		}
-		if (!isRecord(message) || message.omp !== "tern") return;
+		if (!isRecord(message) || message.ultraworkers !== "tern") return;
 		if (typeof message.dropped === "number") this.#consoleDropped += message.dropped;
 		const ts = numberOr(message.ts, Date.now());
 		const location = typeof message.location === "string" ? message.location : undefined;

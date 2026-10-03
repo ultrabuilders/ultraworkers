@@ -88,7 +88,7 @@ export const TERN_CAPTURE_INSTALLER = String.raw`function (config) {
 		if (now - state.window > 1000) { state.window = now; state.budget = 0; }
 		if (++state.budget > 400) { state.dropped++; return; }
 		if (state.dropped) { message.dropped = state.dropped; state.dropped = 0; }
-		message.omp = "tern";
+		message.ultraworkers = "tern";
 		message.doc = doc;
 		message.frame = framePath;
 		message.ts = now;

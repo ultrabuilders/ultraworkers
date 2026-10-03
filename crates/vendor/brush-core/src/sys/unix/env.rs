@@ -29,31 +29,31 @@ mod tests {
 		// SAFETY: the corrupt + sentinel keys are unique to this test and the
 		// environment is not contended elsewhere in this process.
 		unsafe {
-			std::env::set_var("OMP_TEST_BAD_VALUE_8925", std::ffi::OsStr::from_bytes(&[0x9d, 0xd9, 0x50]));
-			std::env::set_var(std::ffi::OsStr::from_bytes(b"\xffOMP_TEST_BAD_KEY_8925"), "value");
-			std::env::set_var("OMP_TEST_KEEP_8925", "kept");
+			std::env::set_var("ULTRAWORKERS_TEST_BAD_VALUE_8925", std::ffi::OsStr::from_bytes(&[0x9d, 0xd9, 0x50]));
+			std::env::set_var(std::ffi::OsStr::from_bytes(b"\xffULTRAWORKERS_TEST_BAD_KEY_8925"), "value");
+			std::env::set_var("ULTRAWORKERS_TEST_KEEP_8925", "kept");
 		}
 
 		let entries: Vec<(String, String)> = get_host_env_vars().collect();
 
 		assert!(
-			!entries.iter().any(|(key, _)| key == "OMP_TEST_BAD_VALUE_8925"),
+			!entries.iter().any(|(key, _)| key == "ULTRAWORKERS_TEST_BAD_VALUE_8925"),
 			"a non-UTF-8 value must be skipped"
 		);
 		assert!(
-			!entries.iter().any(|(key, _)| key.contains("OMP_TEST_BAD_KEY")),
+			!entries.iter().any(|(key, _)| key.contains("ULTRAWORKERS_TEST_BAD_KEY")),
 			"a non-UTF-8 key must be skipped"
 		);
 		assert!(
-			entries.iter().any(|(key, value)| key == "OMP_TEST_KEEP_8925" && value == "kept"),
+			entries.iter().any(|(key, value)| key == "ULTRAWORKERS_TEST_KEEP_8925" && value == "kept"),
 			"valid entries must still be returned"
 		);
 
 		// SAFETY: reads are done; restore the host environment.
 		unsafe {
-			std::env::remove_var("OMP_TEST_BAD_VALUE_8925");
-			std::env::remove_var(std::ffi::OsStr::from_bytes(b"\xffOMP_TEST_BAD_KEY_8925"));
-			std::env::remove_var("OMP_TEST_KEEP_8925");
+			std::env::remove_var("ULTRAWORKERS_TEST_BAD_VALUE_8925");
+			std::env::remove_var(std::ffi::OsStr::from_bytes(b"\xffULTRAWORKERS_TEST_BAD_KEY_8925"));
+			std::env::remove_var("ULTRAWORKERS_TEST_KEEP_8925");
 		}
 	}
 }

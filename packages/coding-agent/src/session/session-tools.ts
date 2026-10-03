@@ -2275,7 +2275,7 @@ export class SessionTools {
 		// `disconnect` retracts, and likewise keeps only what was already active. An
 		// ABSENT reason is handled as `push` — a caller that cannot state its intent
 		// must not widen anything.
-		const activateArrivingCatalog = reason !== "push";
+		const activateArrivingCatalog = reason === "connect";
 		const retainedActiveManagerToolNames = activateArrivingCatalog
 			? [...this.#mcpManagerToolNames]
 			: previousActiveMcpToolNames.filter(name => this.#mcpManagerToolNames.has(name));

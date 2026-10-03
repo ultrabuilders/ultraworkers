@@ -1,5 +1,5 @@
 /**
- * OMP extension package roots.
+ * ultraworkers extension package roots.
  *
  * An "extension package root" is a directory configured via either
  * `extensions:` in user/project settings or the `--extension`/`-e` CLI flag

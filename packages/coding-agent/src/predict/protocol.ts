@@ -3,7 +3,7 @@
  *
  * One daemon per agent directory runs under the `text-predict` global daemon
  * broker (`ultraworkers ps --global text-predict`) and serves ghost-text word
- * completion to every omp process over newline-delimited JSON on a Unix socket
+ * completion to every ultraworkers process over newline-delimited JSON on a Unix socket
  * (a named pipe on Windows). Each request carries a numeric `id` echoed by its
  * response; responses may arrive out of order.
  */
@@ -60,7 +60,7 @@ export type TextPredictRequest =
 	  }
 	/** Ingest history rows newer than each open engine's cursor. */
 	| { id: number; op: "sync" }
-	/** Persist and exit (a client found a daemon from another omp version). */
+	/** Persist and exit (a client found a daemon from another ultraworkers version). */
 	| { id: number; op: "shutdown" };
 
 /** Daemon → client response. */

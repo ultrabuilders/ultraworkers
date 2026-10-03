@@ -24,7 +24,7 @@ describe("restoring a plugin is pinned; installing one is not", () => {
 	let manager: MarketplaceManager;
 
 	beforeEach(async () => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-restore-pin-"));
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-restore-pin-"));
 		manager = new MarketplaceManager({
 			marketplacesRegistryPath: path.join(tmpDir, "marketplaces.json"),
 			installedRegistryPath: path.join(tmpDir, "installed_plugins.json"),
@@ -47,7 +47,7 @@ describe("restoring a plugin is pinned; installing one is not", () => {
 	});
 
 	it("still installs that same unpinned source, because the user asked for it", async () => {
-		// The mandatory negative case. `omp plugin install <tag>` is a supported
+		// The mandatory negative case. `ultraworkers plugin install <tag>` is a supported
 		// state and must keep working; only *restoring* is refused. If this ever
 		// fails, the gate has stopped being a gate and become a ban.
 		const entry = await manager.installPlugin("hello-plugin", "test-marketplace");

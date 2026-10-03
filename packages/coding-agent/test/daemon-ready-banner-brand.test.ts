@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { APP_NAME } from "@oh-my-pi/pi-utils";
 import {
 	BLOB_BROKER_CONFIG_ENV,
+	BLOB_BROKER_DAEMON_NAME,
 	BLOB_BROKER_READY_PATTERN,
 	BLOB_BROKER_SOCKET_ENV,
 	blobBrokerReadyBanner,
@@ -14,6 +15,7 @@ import {
 	idaHostReadyBanner,
 } from "../src/ida/protocol";
 import {
+	LSP_MUX_DAEMON_NAME,
 	LSP_MUX_PROJECT_DIR_ENV,
 	LSP_MUX_READY_PATTERN,
 	LSP_MUX_SOCKET_ENV,
@@ -23,6 +25,7 @@ import {
 	TEXT_PREDICT_AGENT_DIR_ENV,
 	TEXT_PREDICT_READY_PATTERN,
 	TEXT_PREDICT_SOCKET_ENV,
+	textPredictDaemon,
 	textPredictReadyBanner,
 } from "../src/predict/protocol";
 
@@ -76,6 +79,57 @@ describe.each(HANDSHAKES)("$name readiness handshake", ({ pattern, banner }) => 
 		// The name is moved, not erased. A banner stripped of it would satisfy both
 		// assertions above and still be a worse product.
 		expect(banner("endpoint-1")).toContain(APP_NAME);
+	});
+});
+
+// The other three broker daemon names, which the IDA case above is the model for:
+// each is a fixed broker daemon name (`daemon.ts` starts, describes and stops by
+// it) that the same broker keys a runtime directory by. Deriving all four from
+// APP_NAME is what keeps the string `ultraworkers ps` prints and the product that
+// printed it from drifting apart.
+//
+// The text-predict row is the awkward one — that name is not a constant but
+// assembled per agent directory — so it is probed through the function that
+// builds it, which is the only surface a consumer ever sees.
+const DAEMON_NAMES: { label: string; name: string }[] = [
+	{ label: "lsp mux", name: LSP_MUX_DAEMON_NAME },
+	{ label: "blob broker", name: BLOB_BROKER_DAEMON_NAME },
+	{ label: "text-predict", name: textPredictDaemon("/tmp/runtime", "/tmp/agent").name },
+];
+
+describe.each(DAEMON_NAMES)("$label daemon name", ({ name }) => {
+	it("carries the current product name, not the legacy spelling", () => {
+		expect(name.startsWith(`${APP_NAME}.`)).toBe(true);
+		expect(name).not.toMatch(/^omp\./);
+	});
+
+	it("is a name the broker accepts", () => {
+		// `broker.ts` rejects anything outside this shape at `#start`, so a name
+		// that drifts out of it fails at spawn — hours later, in a log — instead
+		// of here. `ultraworkers` is 12 chars, so the 48-char cap is 36 spare for
+		// the scope suffix the per-directory name appends.
+		expect(name).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$/);
+	});
+});
+
+// Only the per-directory daemon can collide: the mux and blob broker are
+// deliberately one-per-project and share a constant. Two agent directories must
+// still never produce the same broker key, or one profile's ghost-text daemon
+// would answer for another's history.
+describe("text-predict daemon name", () => {
+	it("is distinct per agent directory", () => {
+		expect(textPredictDaemon("/tmp/runtime", "/tmp/agent-a").name).not.toBe(
+			textPredictDaemon("/tmp/runtime", "/tmp/agent-b").name,
+		);
+	});
+
+	it("is stable for one agent directory, so a client reattaches its daemon", () => {
+		// The opposite property, and the one that actually matters day to day: a
+		// name that changed per call would orphan a running daemon on every
+		// keystroke and leak a broker process per prompt.
+		expect(textPredictDaemon("/tmp/runtime", "/tmp/agent").name).toBe(
+			textPredictDaemon("/tmp/runtime", "/tmp/agent").name,
+		);
 	});
 });
 

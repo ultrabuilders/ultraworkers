@@ -21,8 +21,16 @@ export const BLOB_BROKER_SOCKET_ENV = "ULTRAWORKERS_BLOB_BROKER_SOCKET";
 /** Environment key carrying the JSON {@link BlobBrokerWorkerConfig}. */
 export const BLOB_BROKER_CONFIG_ENV = "ULTRAWORKERS_BLOB_BROKER_CONFIG";
 
-/** Stable broker daemon name for the shared blob broker. */
-export const BLOB_BROKER_DAEMON_NAME = "omp.blob.broker";
+/**
+ * Stable broker daemon name for the shared blob broker — what `ultraworkers ps`
+ * shows the user.
+ *
+ * Derived from {@link APP_NAME}, same rule and same reason as
+ * `LSP_MUX_DAEMON_NAME`: this is a human-facing label, so spelling the product
+ * out here is what let it drift. The only consumer is `daemon.ts` in this
+ * package, which starts, describes and stops by this constant.
+ */
+export const BLOB_BROKER_DAEMON_NAME = `${APP_NAME}.blob.broker`;
 
 /**
  * Broker readiness regex matched against the banner printed by the worker.

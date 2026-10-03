@@ -39,6 +39,17 @@ export function textPredictReadyBanner(endpoint: string): string {
 }
 
 /**
+ * Name prefix of every text-predict daemon in the global broker scope — what
+ * `ultraworkers ps --global text-predict` shows the user.
+ *
+ * Derived from {@link APP_NAME}, same rule and same reason as `ida/protocol.ts`
+ * documents at length: a human-facing label spelled out literally is a label
+ * that drifts from the product. The one consumer (`client.ts` starts, describes
+ * and stops by the name this function returns) follows it automatically.
+ */
+const TEXT_PREDICT_DAEMON_PREFIX = `${APP_NAME}.text-predict.`;
+
+/**
  * Daemon identity for one agent directory: the broker daemon name and its
  * endpoint inside the broker runtime dir. Different agent directories (profiles,
  * tests) get separate daemons because history and learned state are per agent dir.
@@ -49,7 +60,7 @@ export function textPredictDaemon(runtimeDir: string, agentDir: string): { name:
 		process.platform === "win32"
 			? `\\\\.\\pipe\\omp-text-predict-${Bun.hash.wyhash(runtimeDir).toString(16)}-${key}`
 			: path.join(runtimeDir, `text-predict-${key}.sock`);
-	return { name: `omp.text-predict.${key}`, endpoint };
+	return { name: `${TEXT_PREDICT_DAEMON_PREFIX}${key}`, endpoint };
 }
 
 /** Client → daemon request. */

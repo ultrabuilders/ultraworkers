@@ -19,8 +19,18 @@ export const LSP_MUX_SOCKET_ENV = "ULTRAWORKERS_LSP_MUX_SOCKET";
 /** Environment key carrying the canonical project directory the mux serves. */
 export const LSP_MUX_PROJECT_DIR_ENV = "ULTRAWORKERS_LSP_MUX_PROJECT_DIR";
 
-/** Stable broker daemon name for the shared LSP mux. */
-export const LSP_MUX_DAEMON_NAME = "omp.lsp.mux";
+/**
+ * Stable broker daemon name for the shared LSP mux — what `ultraworkers ps`
+ * shows the user.
+ *
+ * Derived from {@link APP_NAME} for the reason `ida/protocol.ts` documents at
+ * length: this string is a human-facing label, and spelling the product out
+ * here is what let it drift from the product in the first place. Every consumer
+ * (`daemon.ts` starts, describes and stops by this constant) follows it
+ * automatically, and the broker stores it only as a directory name under the
+ * project scope — nothing outside this repo parses it.
+ */
+export const LSP_MUX_DAEMON_NAME = `${APP_NAME}.lsp.mux`;
 
 /**
  * Broker readiness regex matched against the banner printed by the worker.

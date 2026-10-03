@@ -30,13 +30,16 @@ describe("generate-share-viewer: the brand name is injected, not typed", () => {
 
 			expect(html).toContain(`<title>${WIRE_NAME} session</title>`);
 			// The loader is inlined verbatim except for the substituted brand, so the
-			// assignment it makes in the browser must carry the same name.
-			expect(html).toContain(`' — ${WIRE_NAME} session'`);
+			// assignment it makes in the browser must carry the same name. Matched
+			// without pinning the quote style: the loader is a browser file that gets
+			// reformatted, and an assertion on one quote style would report the
+			// formatter as a brand regression — or hide a real miss behind it.
+			expect(html).toMatch(new RegExp(`(["']) — ${WIRE_NAME} session\\1`));
 
 			// A rename that half-applied would leave one of the two behind; assert the
 			// absence rather than only the presence so that is caught here too.
 			expect(html).not.toContain("<title>omp session</title>");
-			expect(html).not.toContain("' — omp session'");
+			expect(html).not.toMatch(/(["']) — omp session\1/);
 		} finally {
 			await fs.rm(dir, { recursive: true, force: true });
 		}

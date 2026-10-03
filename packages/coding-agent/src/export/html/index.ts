@@ -21,6 +21,30 @@ import type { OutputFormat } from "../../extensibility/extensions/types";
 export { type ExportThemeNames, parseExportArgs } from "./args";
 
 let cachedTemplate: string | undefined;
+
+/**
+ * Substitute one template slot, tolerating the whitespace a formatter may put
+ * around it, and throw when the slot is not there at all.
+ *
+ * `String.replace` with a string needle reports nothing when it misses: the page
+ * then ships carrying a literal `<template-css />` with no stylesheet and no
+ * script inlined, and every symptom points at the CSS rather than at the miss.
+ * This template has been reformatted more than once, and each pass moved these
+ * slots far enough to break the match, so the needle absorbs whitespace before
+ * its closing `/>` and a genuine miss is raised instead of shipped.
+ *
+ * Replacements are function-valued so `$&`, `$'` and `$$` in the substituted
+ * CSS/JS stay literal.
+ */
+export function substituteTemplateSlot(html: string, placeholder: string, value: () => string): string {
+	// Only a self-closing tag can gain or lose the space a formatter writes
+	// (`<template-css/>` and `<template-css />` are the same slot); every
+	// placeholder used here has at most one `/`, and when there is one it is that.
+	const pattern = new RegExp(placeholder.replace("/", "\\s*/"));
+	if (!pattern.test(html)) throw new Error(`template placeholder not found: ${placeholder}`);
+	return html.replace(pattern, () => value());
+}
+
 /** Resolve a Bun file-loader value without parsing Windows drive letters as URL schemes. */
 export function resolveBundledHtmlAssetPath(assetPath: string, moduleDir: string = import.meta.dir): string {
 	if (path.isAbsolute(assetPath) || path.win32.isAbsolute(assetPath)) return assetPath;
@@ -41,14 +65,16 @@ export function getTemplate(): string {
 		.replace(/\s+/g, " ")
 		.replace(/\s*([{}:;,])\s*/g, "$1")
 		.trim();
-	// Function replacements so `$'`, `$&`, `$$`, etc. inside the embedded
-	// CSS/JS are not interpreted as substitution patterns.
-	cachedTemplate = templateHtml
-		.replace("<template-css/>", () => `<style>${minifiedCss}</style>`)
-		.replace("<template-marked/>", () => `<script>${markedJs}</script>`)
-		.replace("<template-highlight/>", () => `<script>${highlightJs}</script>`)
-		.replace("<template-tool-views/>", () => `<script>${toolViewsJs}</script>`)
-		.replace("<template-js/>", () => `<script>${templateJs}</script>`);
+	// Every slot goes through `substituteTemplateSlot`, which throws on a miss:
+	// a slot that stopped matching would otherwise leave the page carrying a
+	// literal `<template-js />` and no behaviour at all, with nothing failing.
+	cachedTemplate = [
+		["<template-css/>", `<style>${minifiedCss}</style>`],
+		["<template-marked/>", `<script>${markedJs}</script>`],
+		["<template-highlight/>", `<script>${highlightJs}</script>`],
+		["<template-tool-views/>", `<script>${toolViewsJs}</script>`],
+		["<template-js/>", `<script>${templateJs}</script>`],
+	].reduce((html, [slot, value]) => substituteTemplateSlot(html, slot, () => value), templateHtml);
 	return cachedTemplate;
 }
 
@@ -271,11 +297,14 @@ async function generateHtml(
 	const themeStyles = await generateThemeStyles(palette, themeNames, themeName);
 	const sessionDataBase64 = Buffer.from(JSON.stringify(sessionData)).toBase64();
 
-	// Use function replacements so `$'`, `$&`, `$$`, `$n`, etc. in the
-	// substituted CSS/base64 are not interpreted as substitution patterns.
-	return getTemplate()
-		.replace("<theme-vars/>", () => `<style>${themeStyles}</style>`)
-		.replace("{{SESSION_DATA}}", () => sessionDataBase64);
+	// Same contract as `getTemplate`: a slot that stops matching throws here
+	// rather than shipping an export whose session data silently never loads.
+	// Both export paths depend on these two slots, so both go through the same
+	// helper — a guard on one path and not the other is how this drifted apart.
+	return [
+		["<theme-vars/>", `<style>${themeStyles}</style>`],
+		["{{SESSION_DATA}}", sessionDataBase64],
+	].reduce((html, [slot, value]) => substituteTemplateSlot(html, slot, () => value), getTemplate());
 }
 
 /** Export session to HTML using SessionManager and AgentState. */

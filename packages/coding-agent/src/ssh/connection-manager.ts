@@ -128,14 +128,22 @@ export function controlPathFitsBudget(controlDir: string, platform: SshPlatform)
  * path bytes on the decimal uid.
  *
  * The prefix and digest length are one budget decision, not two. This path is
- * itself a `sun_path` consumer: `controlPathFitsBudget` admits a dir up to 40
- * bytes on macOS, and `/tmp/ultraworkers-` plus a 20-char digest is 38 — it
- * fits, with 3 bytes spare instead of the 12 the shorter prefix bought. Since
- * the length here is constant (production never passes `tmpBase`), that margin
- * is spent on the product name and cannot be recovered. Trimming the digest to
- * 11 hex chars holds the whole path at 29 bytes, so the rename costs no budget.
- * 44 bits still separates every (uid, control dir) pair a machine actually
- * holds, and a collision still has to pass `assertOwnerPrivateDir`.
+ * itself a `sun_path` consumer, and every byte of the margin behind that
+ * decision is spent on the product name: the length here is constant
+ * (production never passes `tmpBase`), so a longer name comes straight out of
+ * the budget and cannot be recovered. Trimming the digest to the length the
+ * `slice` below already uses holds the whole path inside the tightest ceiling,
+ * so the rename costs no budget. The remaining bits still separate every
+ * (uid, control dir) pair a machine actually holds, and a collision still has
+ * to pass `assertOwnerPrivateDir`.
+ *
+ * No byte counts are given here, deliberately: they are the difference of
+ * constants that move independently, which is what {@link controlPathHeadroom}
+ * is for. Spelled out, this paragraph drifted once already — it carried a
+ * spare-bytes figure that the socket overhead had quietly invalidated, with
+ * nothing to notice. The digest length stays named because it is a decision
+ * with a rationale rather than a derived quantity, and the slice is right
+ * below.
  */
 export function sshControlFallbackDir(canonicalDir: string, uid: number, tmpBase = "/tmp"): string {
 	const key = new Bun.CryptoHasher("sha256")

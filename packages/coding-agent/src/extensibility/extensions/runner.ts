@@ -2204,15 +2204,35 @@ export class ExtensionRunner {
 		if (!extension) return this.#uiContext;
 		const existing = this.#ownedUiContexts.get(extension);
 		if (existing) return existing;
-		const wrapped: ExtensionUIContext = {
-			...this.#uiContext,
-			setWidget: (key, content, options) =>
-				this.#uiContext.setWidget(key, content, { ...options, owner: extension.resolvedPath }),
-			setHeader: (factory, options) =>
-				this.#uiContext.setHeader(factory, { ...options, owner: extension.resolvedPath }),
-			setFooter: (factory, options) =>
-				this.#uiContext.setFooter(factory, { ...options, owner: extension.resolvedPath }),
+		const owner = extension.resolvedPath;
+		const target = this.#uiContext;
+		const owned: Partial<ExtensionUIContext> = {
+			setWidget: (key, content, options) => target.setWidget(key, content, { ...options, owner }),
+			setHeader: (factory, options) => target.setHeader(factory, { ...options, owner }),
+			setFooter: (factory, options) => target.setFooter(factory, { ...options, owner }),
 		};
+		// Forwarded, not copied. A spread takes only own enumerable properties, and the
+		// one context in the tree that is a class rather than an object literal —
+		// `RpcExtensionUIContext` — keeps all 25 of its members on its prototype, so the
+		// spread dropped every one of them. An extension hook in RPC mode called
+		// `ctx.ui.notify(...)` and got a `TypeError`, while `hasUI` — a field, hence an
+		// own property — survived and still advertised a live UI.
+		//
+		// Members are *bound* to the target rather than only read off it. Passing
+		// `target` as `Reflect.get`'s receiver pins `this` for a getter, but calling
+		// `proxy.notify(...)` still invokes the function with `this` bound to the proxy,
+		// and reading a `#private` field through that throws.
+		const forwarded = new Map<PropertyKey, unknown>();
+		const wrapped: ExtensionUIContext = new Proxy(target, {
+			get: (receiver, prop) => {
+				if (prop in owned) return owned[prop as keyof typeof owned];
+				if (!forwarded.has(prop)) {
+					const value = Reflect.get(receiver, prop, receiver);
+					forwarded.set(prop, typeof value === "function" ? value.bind(receiver) : value);
+				}
+				return forwarded.get(prop);
+			},
+		});
 		this.#ownedUiContexts.set(extension, wrapped);
 		return wrapped;
 	}

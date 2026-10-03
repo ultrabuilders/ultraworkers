@@ -1545,10 +1545,14 @@ export interface ExtensionAPI {
 	/**
 	 * Builds the `plugins.<id>.<key>` setting id an extension-owned setting must use.
 	 *
-	 * Injected rather than exported for the same reason as {@link zod}: an extension
-	 * installed outside the repo lives in a config directory with no `node_modules`, so
-	 * it cannot resolve `@oh-my-pi/pi-coding-agent/extensibility/settings` at runtime
-	 * even though that subpath is published.
+	 * Injected beside {@link zod} so a registration needs no import of its own — the
+	 * same shape every other builder on this interface uses, and it keeps the reserved
+	 * prefix in one place next to the call that enforces it.
+	 *
+	 * It is NOT injected because the specifier is unreachable: an installed extension
+	 * CAN resolve `@oh-my-pi/pi-coding-agent/extensibility/settings`, because the host
+	 * installs a `Bun.plugin` that resolves its specifiers from the host's own
+	 * directory. Measured through the loader — see `epic-ibg4`.
 	 */
 	pluginSettingId: typeof pluginSettingId;
 

@@ -63,6 +63,11 @@ describe("ratchet arithmetic", () => {
 		expect(verdict.staleRow).toBe(0);
 		expect(verdict.missingRow).toBe(700);
 		expect(verdict.literalImbalance).toBe(71);
+		// `hits-imbalance` is built into this fixture — 40 of them — and nothing
+		// asserted it. The case proved the other three counts and said nothing about
+		// the fourth, so a `count` that stopped matching this rule's name still
+		// passed: the number would read 0, and 0 is under every ceiling in sight.
+		expect(verdict.hitsImbalance).toBe(40);
 		expect(verdict.ok).toBe(true);
 	});
 
@@ -173,12 +178,6 @@ describe("the ratchet as a runnable gate", () => {
 		expect(out).toContain("metric    : stale-row");
 		expect(out).toContain(`[ratchet] ceiling   : ${STALE_ROW_BASELINE}`);
 		expect(out).toMatch(/measured  : \d+/);
-		// The post stage is reported HERE because nothing else runs it.
-		// `check-disposition.ts` defaults to `--stage=pre`, and `checkPost` is the
-		// only source of `rename-incomplete` — so a hand run of that gate exits 0
-		// with the renames unfinished, which is how epic-m5.3 got closed on a
-		// "0 rename-incomplete" that no process ever produced.
-		expect(out).toMatch(/\[ratchet\]\s+rename-incomplete\s+= \d+/);
 		// The COMPUTED digest, matched through its own line. An earlier version of this
 		// assertion was a bare `/md5:[0-9a-f]{32}/`, which the baseline line also
 		// satisfies — deleting the computed digest entirely left it green. Verified by
@@ -204,29 +203,66 @@ describe("the ratchet as a runnable gate", () => {
 		expect(out).toContain(`[ratchet] ceiling set against md5:${BASELINE_TABLE_DIGEST}`);
 		// …and the rules it was measured under, which the digest above cannot cover.
 		expect(out).toMatch(/\[ratchet\] rules {5}: \S+ \(ceiling set against \S+\)/);
-		// A green run must still name the numbers it deliberately does not gate on, and
-		// say they are ceilings. An unlabelled 71 reads as a threshold to defend rather
-		// than a number that falls when someone fixes a row.
-		//
-		// The ceiling label is matched without its count. It used to assert the literal
-		// "both are CEILINGS", which pinned the number of ungated rules to the shape of
-		// the sentence — adding a third ungated rule reddened a test whose subject was
-		// the labelling, not the arithmetic. Each rule is then asserted to carry a value
-		// of its own, so the contract (every ungated number is named) survives the next
-		// rule and deleting any one of these lines still fails.
-		//
-		// The `m` flag and the `\[ratchet\]   ` prefix are load-bearing, not decoration.
-		// `/hits-imbalance\s+= \d+/` is ALSO satisfied by the `literal-hits-imbalance`
-		// line immediately above it, so deleting the real hits-imbalance line left all
-		// nine tests green — measured, not assumed. The sentence above claimed that
-		// deleting any one of these lines fails, and for that one it was simply wrong.
+		// A green run must still LABEL the numbers it does not gate on. An unlabelled 71
+		// reads as a threshold to defend rather than a number that falls when someone
+		// fixes a row. Matched without its count: the literal "both are CEILINGS" pinned
+		// the number of ungated rules to the shape of the sentence, so adding a third
+		// reddened a test whose subject was the labelling, not the arithmetic.
 		expect(out).toMatch(/are CEILINGS, they must fall/);
-		expect(out).toMatch(/^\[ratchet\]   missing-row\s+= \d+/m);
-		expect(out).toMatch(/^\[ratchet\]   literal-hits-imbalance\s+= \d+/m);
-		expect(out).toMatch(/^\[ratchet\]   hits-imbalance\s+= \d+/m);
-		expect(out).toMatch(/^\[ratchet\]   unreconciled-pinned\s+= \d+/m);
+
+		// …and every number it reports must actually be PRINTED. For eight of the ten
+		// this printed line is the entire enforcement mechanism: `ok` is computed from
+		// two of them (`check-disposition-ratchet.ts:223`), so for the rest the number
+		// on screen IS the thing that forces the ceiling down. A number nobody sees is
+		// a ceiling nobody can move, and it can be removed with nothing turning red.
+		//
+		// Compared as a SET, in both directions, which is the whole point. `toContain`
+		// is blind to a deletion, and five of these ten had no assertion at all
+		// (`dangling-keep-ref`, `rename-hits-drift`, `keep-shrank`, `coined-ref`,
+		// `published-file-rename`) — so dropping their print lines left all sixteen tests
+		// green. Equality closes that, and it closes the other direction too: a metric
+		// added without anyone deciding whether it is real is the same defect wearing a
+		// different hat, and this is what forces that decision.
+		//
+		// The expected set is owned by THIS test and is not exported from the gate.
+		// Importing it would make the assertion a tautology — dropping an entry would
+		// shrink the printer and the expectation together, and the two would stay
+		// consistent. Two copies, of which this one is the spec, is the only
+		// arrangement in which a deletion is visible.
+		//
+		// `^` and the `[ratchet]` prefix are load-bearing, not decoration:
+		// `literal-hits-imbalance` CONTAINS `hits-imbalance`, so an unanchored
+		// `/hits-imbalance\s+= \d+/` is satisfied by the line printed above the one it
+		// means. Measured: that is how a deleted `hits-imbalance` line once survived.
+		// Requiring `\d+` is the other half — a name with its value stripped out is
+		// still a name, and still reads as reported.
+		//
+		// `rename-incomplete` and `keep-shrank` are here for a second reason. Both come
+		// from `checkPost`, which `check-disposition.ts` never runs by DEFAULT
+		// (`--stage=pre`), so this ratchet is their only producer and the only place
+		// they can go red. That blind spot is how epic-m5.3 got closed on a
+		// "0 rename-incomplete" that no process had ever emitted.
+		const printed = [...out.matchAll(/^\[ratchet\]\s{2,}([a-z][a-z-]*)\s+=\s+(\d+)/gm)].map(m => m[1]!);
+		expect(printed.sort()).toEqual([
+			"coined-ref",
+			"dangling-keep-ref",
+			"hits-imbalance",
+			"keep-shrank",
+			"literal-hits-imbalance",
+			"missing-row",
+			"published-file-rename",
+			"rename-hits-drift",
+			"rename-incomplete",
+			"unreconciled-pinned",
+		]);
 		expect(proc.exitCode).toBe(0);
-	});
+		// The gate is spawned synchronously and reads the whole repository: measured at
+		// 2.7–3.7s against bun's 5s default, so on a tree where peers are running gates
+		// at the same time it crosses the line and the test times out — which looks
+		// exactly like an assertion failing, and costs the reader the whole diff. It did:
+		// the first run of this test after the assertion below was added reported a
+		// failure that was really the clock.
+	}, 60000);
 
 	it("carries the unreconciled count through instead of printing a constant", () => {
 		// The control. A ratchet line that always reads the same proves nothing about

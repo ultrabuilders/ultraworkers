@@ -295,6 +295,64 @@ Three different things, and conflating them is a common bug.
   contend for. With UDS-only transport we have one path, so this cost disappears —
   which is an argument for same-machine scope.
 
+### 5.1 The fourth kind: fencing — and a TTL lease alone is not enough
+
+The three kinds above are all **mutual exclusion**. A TTL lease is *not* safe on
+its own, and the reason is worth stating precisely, because it is the failure this
+repo has already paid for.
+
+A lease says *"I hold until T."* But the holder **can still be alive at T** — the
+machine slept, a GC ran long, a debugger held the process. It comes back, still
+believes it holds, and overwrites whoever replaced it. **A TTL decides who is
+*considered* dead. It does not decide who is *prevented from writing*.**
+
+> **Fencing:** every acquisition issues a **monotonically increasing token** from
+> the store; every write must carry that token; the store **rejects a stale token**.
+
+Without it, kind #3 above is a hope rather than a guarantee.
+
+**This is not hypothetical here.** `epic-z4zg` (P1, open) records it: on this shared
+tree, `git add <path>` stages the *entire current file content*, so one session's
+`git add` put another session's lines into the index, and a third session's bare
+`git commit` committed the whole index. `.git/index.lock` did its job perfectly —
+it stopped two processes writing at once — and that was **not sufficient**, because
+nothing stopped a value staged by one session being read as valid by another. The
+recorded rule is three-tier, and only the third is actually yours:
+
+```
+git commit <paths>         → SWEPT directories you do not own      ✗
+git commit --only <path>   → your path, but the WHOLE file          ⚠️
+hash-object + update-index → only the lines you actually produced    ✓
+```
+
+**Distinct from reaping.** `force_release_file_reservation` uses external
+heuristics — the holder is inactive, no recent mail/git/filesystem activity — to
+free a slot. It does **not invalidate the holder**. A force-released agent whose
+in-flight write lands afterwards is a **zombie writer**, and nothing on the write
+path asks it. Age is a heuristic; a token is a guarantee. `lsof` decides whether
+something is held *now*; it cannot decide whether it is still *valid*.
+
+### 5.2 A fifth, only if we ever hold two leases
+
+**Lock ordering.** A TTL lease does not prevent deadlock: A holds X wants Y, B
+holds Y wants X, and both sit there until the TTL expires and both lose their work.
+Cheapest fix is a **total order on resource names** — always acquire in name order
+— which is far cheaper than deadlock detection.
+
+Only write this down if some path in the plan holds more than one lease. **One lease
+per agent makes ordering meaningless.**
+
+### 5.3 Overflow is a send-side problem, not a drop
+
+`IrcBus` caps its mailbox at 100 and drops the oldest, with a log line
+(`bus.ts:304-319`). Drop-oldest is a **data-loss policy**, and the log only proves
+we know we lost something.
+
+For a mailbox that *is* the truth, drop may be legitimate — that is what mailboxes
+do. But on overflow the honest move is to **slow the sender, not silently drop**.
+`injected / woken / revived / failed` already has room for it: a full recipient is
+`failed`, with a reason.
+
 ---
 
 ## 6. Addressing and identity
@@ -319,11 +377,60 @@ Three different things, and conflating them is a common bug.
   the rule worth adopting: same room or ancestor cwd, and **`$HOME` never counts as
   an ancestor**, so a session opened at `~` cannot see the whole machine (§5.2).
 
+### 6.1 Every agent needs a name — and ours are currently session-local
+
+**Owner decision: yes, each agent carries its own name.** The machinery is already
+here:
+
+```ts
+// packages/coding-agent/src/task/output-manager.ts:112-117
+ * @param id Requested ID (e.g., "Anna")
+ * @returns Unique ID ("Anna" first, then "Anna-2", "Anna-3", …)
+async allocate(id: string): Promise<string> { … }
+```
+
+and `task/index.ts:748` feeds it `spawn.name?.trim() || generateTaskName()`. The
+main agent is `"Main"` (`packages/tui/src/overlays/agent-hub-types.ts:5`).
+
+**Two properties of this scheme do not survive crossing a process boundary:**
+
+1. **Uniqueness is per-session.** The allocator is an `OutputManager` owned by one
+   session, so two sessions each spawning an agent named `Anna` both get `Anna`.
+   Cross-session, that is a silent collision between two live peers.
+2. **`Anna-2` is disambiguation, not identity.** It encodes *how many* same-named
+   agents that one session happened to create. It is not stable, and it is not
+   meaningful to another process.
+
+So the name must be resolved against a **machine-scoped** namespace, and the
+addressing key must carry the instance, not just the name. Two workable shapes:
+
+- **(a) machine-scoped name allocation** — `Anna` is unique across every live
+  session, so the name alone addresses. Needs its own lock (§5) to be race-free.
+- **(b) composite address** `{ instanceId, name }` — no new allocator, and
+  **ambiguity is impossible by construction** rather than by check.
+
+**Prefer (b).** It is §6.6's derived-ownership lesson: making the mistake
+unrepresentable beats validating against it, and it needs no cross-session lock to
+stay correct. (a) is nicer to type and reintroduces exactly the allocation race
+that §5 exists to handle.
+
+Either way the name must be **discoverable but not guessable into someone else's
+identity** — §6.3's impersonation risk, and `sting8k`'s exact failure.
+
 ---
 
 ## 7. Injection
 
-`IrcBus` already owns this, and owns it well:
+**Owner decision: a peer message may wake an idle agent. Yes, definitely.**
+
+That is not free, and the cost is named rather than absorbed:
+
+- it requires a **session-lifetime drain timer**, not only turn-boundary drains, or a
+  message that arrives between turns is never noticed (`pi-team-mode` §5.7);
+- it makes the wake path a **real interruption surface**, so it must respect
+  `accept / hold / refuse` (§8) and must go through the fence, never `steer`.
+
+`IrcBus` already owns the mechanics:
 
 - **idle → real turn**, **busy → non-interrupting aside at the next step boundary**
   (`AgentSession.deliverIrcMessage`, per `bus.ts:8-9`).

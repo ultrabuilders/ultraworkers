@@ -93,6 +93,31 @@ export interface ScopedCommitResult {
 	readonly wroteCommit: boolean;
 }
 
+/**
+ * Write `bytes` into the object store and return its blob id.
+ *
+ * `hash-object -w` touches the OBJECT STORE and nothing else — no index, no ref, no
+ * worktree. That is what makes it safe to run against the caller's repository here: the
+ * blob becomes available for the scoped tree to reference, and nothing on the real index
+ * moves. A `--stdin` path avoids the temp-file dance, which would put a peer's
+ * simultaneous write of the same path in the way.
+ */
+async function hashBytes(bytes: Uint8Array, cwd: string): Promise<string> {
+	const proc = Bun.spawn(["git", "hash-object", "-w", "--stdin"], {
+		cwd,
+		stdin: new Blob([bytes]),
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	if (code !== 0) throw new Error(`git hash-object exited ${code}: ${stderr.trim()}`);
+	return stdout.trim();
+}
+
 /** Run git with `env` applied, returning stdout; throw with git's stderr on failure. */
 async function git(args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
 	const proc = Bun.spawn(["git", ...args], {
@@ -265,15 +290,24 @@ export async function commitStagedPaths(
 			const [headMode, , headBlob] = inHead.split(/\s+/);
 			if (headMode === entry.mode && headBlob === entry.blob) continue;
 		} else if (entry.blob === EMPTY_BLOB) {
-			// Intent-to-add (`git add -N`) records the path with git's EMPTY blob — the
-			// empty tree's hash — which is a placeholder, not the file's content. The path
-			// is absent from HEAD so it reads as new, and committing it wrote a 0-byte file
-			// over real content on disk. git refuses this outright for the same reason: the
-			// index entry does not mean what it looks like.
-			throw new Error(
-				`${entry.file} is staged intent-to-add (empty placeholder blob), not real content — ` +
-					"run `git add` on it to stage its contents, or leave it out.",
-			);
+			// Intent-to-add (`git add -N`) records the path with git's EMPTY blob as a
+			// placeholder. Committing THAT blob writes a 0-byte file over real content on
+			// disk — which is what an earlier version of this did.
+			//
+			// It is not a reason to refuse, though. `git add -N` exists precisely so that a
+			// NEW file can be committed by path, and `git commit --only <new-file>` commits
+			// it correctly by reading the working tree — the same source this tool reads for
+			// every other path. Refusing here made this tool reject a state the tool it
+			// replaces accepts, which is the wrong way round.
+			//
+			// So the placeholder is resolved the way `--only` resolves it: hash what is on
+			// disk. If the file is gone there is nothing to commit, and `deletedPaths` reports
+			// the path as a deletion.
+			const bytes = await fs.promises.readFile(path.resolve(cwd, entry.file)).catch(() => null);
+			if (bytes === null) continue;
+			const written = await hashBytes(bytes, cwd);
+			entries.push({ ...entry, blob: written });
+			continue;
 		}
 		entries.push(entry);
 	}

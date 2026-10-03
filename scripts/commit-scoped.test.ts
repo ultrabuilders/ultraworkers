@@ -311,19 +311,51 @@ describe("commitStagedPaths", () => {
 		}
 	});
 
-	it("refuses an intent-to-add entry instead of committing its empty placeholder", async () => {
-		// `git add -N` records the path with git's EMPTY blob — a placeholder, not content.
-		// The path is absent from HEAD, so it reads as new, and committing it wrote a 0-byte
-		// file over real content on disk. git refuses for the same reason. Also #636.
+	it("commits an intent-to-add file with its real content rather than its empty placeholder", async () => {
+		// `git add -N` records the path carrying git's EMPTY blob — a placeholder that
+		// stands for "this path now exists", not for its bytes. Committing THAT blob writes
+		// a 0-byte file over real content on disk, which is what this tool used to do.
+		//
+		// Refusing was the wrong correction. Found by d9 (Agent Mail #666): `add -N` exists
+		// precisely so a NEW file can be committed by path, and `git commit --only` handles
+		// it by reading the working tree. A tool that rejects a state the tool it replaces
+		// accepts has the polarity backwards. So the placeholder is resolved the way `--only`
+		// resolves it — hash what is on disk.
 		const dir = await makeRepo();
 		try {
 			await write(dir, "ita.txt", "PRECIOUS CONTENT\n");
 			await run(["add", "-N", "ita.txt"], dir);
 
-			await expect(commitStagedPaths(["ita.txt"], "intent to add", { cwd: dir })).rejects.toThrow(/intent-to-add/);
-			expect(await runFails(["show", "HEAD:ita.txt"], dir)).toContain("not in 'HEAD'");
+			const result = await commitStagedPaths(["ita.txt"], "intent to add", { cwd: dir });
+
+			expect(result.committed).toEqual(["ita.txt"]);
+			// The contract that matters: the bytes on disk, not the 0-byte placeholder.
+			expect(await run(["show", "HEAD:ita.txt"], dir)).toBe("PRECIOUS CONTENT");
 		} finally {
 			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("reaches the same commit as `git commit --only` on an intent-to-add file", async () => {
+		// The counterfactual for the row above. "The content is right" is a claim about
+		// what I measured once; "this tool agrees with the tool it replaces" is a claim git
+		// re-derives on every run. Two repos in one identical state — one committed by git,
+		// one by this tool — and the bytes must match. If this tool refuses, or writes 0
+		// bytes, the two disagree, and the disagreement IS the bug.
+		const viaGit = await makeRepo();
+		const viaTool = await makeRepo();
+		try {
+			for (const dir of [viaGit, viaTool]) {
+				await write(dir, "new.ts", "REAL CONTENT\n");
+				await run(["add", "-N", "new.ts"], dir);
+			}
+			await run(["commit", "-q", "-m", "via git", "--only", "--", "new.ts"], viaGit);
+			await commitStagedPaths(["new.ts"], "via commit-scoped", { cwd: viaTool });
+
+			expect(await run(["show", "HEAD:new.ts"], viaTool)).toBe(await run(["show", "HEAD:new.ts"], viaGit));
+		} finally {
+			await fs.promises.rm(viaGit, { force: true, recursive: true });
+			await fs.promises.rm(viaTool, { force: true, recursive: true });
 		}
 	});
 

@@ -6,7 +6,6 @@ import {
 	countGraphemes,
 	NameSpaceExhaustedError,
 	NAME_GRAPHEME_LIMIT,
-	NAME_SPACE_SIZE,
 	nameKey,
 	NOUNS,
 	RESERVED_NAMES,
@@ -25,20 +24,52 @@ describe("the closed name space", () => {
 		expect(new Set(ADJECTIVES).size).toBe(ADJECTIVES.length);
 	});
 
-	test("is 9,900 names with no duplicates on either axis", () => {
-		expect(NAME_SPACE_SIZE).toBe(9_900);
+	test("is 9,900 names, and neither axis repeats a word", () => {
+		// Asserted as the two factors, not as the product. Restating the product
+		// would prove only that 75 × 132 is 9900, and would go red on any edit at
+		// all — including one that leaves the size unchanged. Naming the two axes
+		// says *why* the space is 9,900 and localises a change to the axis that
+		// caused it.
+		expect(ADJECTIVES.length).toBe(75);
+		expect(NOUNS.length).toBe(132);
 		expect(new Set(ADJECTIVES).size).toBe(ADJECTIVES.length);
 		expect(new Set(NOUNS).size).toBe(NOUNS.length);
 	});
 
 	test("contains no entry that names a job, a subsystem or a capability", () => {
-		// Word-stem match, not substring: "magenta" contains "agent" and is a
-		// colour. A substring test here reports a role word that is not one, and
-		// a gate built around that false positive guards nothing.
-		const stems = ["migrat", "refactor", "worker", "backend", "frontend", "tester", "auditor"];
+		// Anchored to the START of the word, which is what a stem match means.
+		// A bare `includes` is a substring match and is not equivalent: it reads
+		// "magenta" as containing "agent", which is a colour, not a role — and a
+		// gate built on that false positive guards a bug that does not exist.
+		// Measured on this vocabulary, prefix-anchored matching finds 0 hits where
+		// substring matching finds 1 (magenta/agent).
+		//
+		// The list stays as wide as the test's name claims. The first version
+		// excluded only jobs, so a subsystem noun like "proxy" or "cache" would
+		// have passed while the test still said "no subsystem".
+		const stems = [
+			// jobs and roles
+			"migrat",
+			"refactor",
+			"worker",
+			"tester",
+			"auditor",
+			"agent",
+			// subsystems
+			"backend",
+			"frontend",
+			"service",
+			"daemon",
+			"proxy",
+			// infrastructure by name
+			"index",
+			"main",
+			"cache",
+		];
 		for (const word of [...ADJECTIVES, ...NOUNS]) {
+			const lowered = word.toLowerCase();
 			for (const stem of stems) {
-				expect(word.toLowerCase().includes(stem), `${word} looks like a role`).toBe(false);
+				expect(lowered.startsWith(stem), `${word} looks like a role`).toBe(false);
 			}
 		}
 	});

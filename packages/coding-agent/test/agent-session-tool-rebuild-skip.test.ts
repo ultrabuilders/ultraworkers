@@ -596,10 +596,17 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const a = createMcpCustomTool("mcp__nucleus_search", "nucleus", "search", "Search");
 		const b = createMcpCustomTool("mcp__nucleus_explain", "nucleus", "explain", "Explain");
 
-		// Connected MCP tools are all enabled after refresh.
+		// NOT "connected MCP tools are all enabled after refresh" — `2aac13437d` made that
+		// false. The trust fix treats a refresh as a *push* whenever the registry already held
+		// MCP tools, so `explain` arrives registered and visible but NOT active. This session
+		// already carries `search`, so the push branch is the one under test. The boundary is
+		// registered ≠ active, so activate it the way a user would rather than asserting the
+		// refresh did it: everything below then measures the active set, which is what the
+		// shrink/restore cycle is actually about.
 		await session.refreshMCPTools([a, b]);
+		await session.setActiveToolsByName(["read", "mcp__nucleus_search", "mcp__nucleus_explain"]);
 		const baseline = rebuildCount;
-		expect(baseline).toBeGreaterThanOrEqual(1);
+		expect(session.getEnabledToolNames()).toEqual(["read", "mcp__nucleus_search", "mcp__nucleus_explain"]);
 
 		// Remove one active tool: the active list shrinks, so rebuild must fire.
 		await session.setActiveToolsByName(["read", "mcp__nucleus_search"]);

@@ -249,7 +249,7 @@ async function writeSyntheticTree(
 	patches: readonly string[],
 	options: SyntheticTreeOptions = {},
 ): Promise<string> {
-	const tempIndex = path.join(os.tmpdir(), `omp-task-index-${Snowflake.next()}`);
+	const tempIndex = path.join(os.tmpdir(), `uw-task-index-${Snowflake.next()}`);
 	const repo = vcs.requireGit(repoDir);
 	try {
 		await repo.readTree(baseTreeish, tempIndex);
@@ -786,7 +786,7 @@ async function replayFilteredAgentCommits(opts: FilteredAgentReplayOptions): Pro
 	const isolationRepo = vcs.requireGit(opts.isolationDir);
 	await repo.createBranch(opts.branchName, baselineSha, false);
 
-	const tmpDir = path.join(os.tmpdir(), `omp-branch-${Snowflake.next()}`);
+	const tmpDir = path.join(os.tmpdir(), `uw-branch-${Snowflake.next()}`);
 	try {
 		await repo.worktreeAdd(tmpDir, opts.branchName, { detach: false, clone: false });
 		const agentCommits = await isolationRepo.revListRange(baselineSha, opts.isolationHead);
@@ -925,7 +925,7 @@ export async function commitToBranch(
 				untrackedPatch: "",
 			});
 			if (leftoverPatch.trim()) {
-				const tmpDir = path.join(os.tmpdir(), `omp-branch-${Snowflake.next()}`);
+				const tmpDir = path.join(os.tmpdir(), `uw-branch-${Snowflake.next()}`);
 				try {
 					await repo.worktreeAdd(tmpDir, branchName, { detach: false, clone: false });
 					const msg = (commitMessage && (await commitMessage(leftoverPatch))) || fallbackMessage;
@@ -940,7 +940,7 @@ export async function commitToBranch(
 	} else if (rootPatch.trim()) {
 		await repo.createBranch(branchName, baselineSha, false);
 		branchCreated = true;
-		const tmpDir = path.join(os.tmpdir(), `omp-branch-${Snowflake.next()}`);
+		const tmpDir = path.join(os.tmpdir(), `uw-branch-${Snowflake.next()}`);
 		try {
 			await repo.worktreeAdd(tmpDir, branchName, { detach: false, clone: false });
 
@@ -991,7 +991,7 @@ export async function mergeTaskBranches(
 
 		// Stash dirty working tree so cherry-pick can operate on a clean HEAD.
 		// Without this, cherry-pick refuses to run when uncommitted changes exist.
-		const didStash = await repo.stashPush("omp-task-merge");
+		const didStash = await repo.stashPush("uw-task-merge");
 
 		let conflictResult: MergeBranchResult | undefined;
 

@@ -26,11 +26,11 @@ import {
 } from "@oh-my-pi/pi-coding-agent/tools/browser/orphan-registry";
 import type { Browser } from "puppeteer-core";
 
-const DAEMON_NAME = "omp.browser.headless";
+const DAEMON_NAME = "uw.browser.headless";
 
 /** Unique per-test scope so registry dirs never collide across the suite. */
 function makeScope(): SharedTargetScope {
-	const projectDir = path.join("/tmp", `omp-orphan-test-${crypto.randomUUID()}`);
+	const projectDir = path.join("/tmp", `uw-orphan-test-${crypto.randomUUID()}`);
 	return { projectDir, daemonName: DAEMON_NAME };
 }
 

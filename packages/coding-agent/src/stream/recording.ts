@@ -1,7 +1,7 @@
 /**
- * Session recordings (`/record`, `omp play`).
+ * Session recordings (`/record`, `ultraworkers play`).
  *
- * A recording is the single-pane `omp stream` feed persisted to disk: the same
+ * A recording is the single-pane `ultraworkers stream` feed persisted to disk: the same
  * normalized, redacted screen frames {@link StreamPaintEncoder} produces for
  * live viewers, stamped with their offset from the start of the recording.
  *
@@ -22,7 +22,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { TUI } from "@oh-my-pi/pi-tui";
-import { isEnoent } from "@oh-my-pi/pi-utils";
+import { APP_NAME, isEnoent } from "@oh-my-pi/pi-utils";
 import { STREAM_FLUSH_INTERVAL_MS, StreamPaintEncoder } from "./paint-encoder";
 import { isDimension, isSessionFrame, type StreamScreenFrame } from "./protocol";
 import type { StreamRedactor } from "./redactor";
@@ -37,7 +37,7 @@ export interface RecordingHeader {
 	rows: number;
 	title: string;
 	createdAt: string;
-	/** Clip description, set by `omp clip --description`. */
+	/** Clip description, set by `ultraworkers clip --description`. */
 	description?: string;
 	/** Uploading Stencil username, stamped by the clip server. */
 	owner?: string;
@@ -56,7 +56,7 @@ export interface Recording {
 
 /** Directory `/record` writes into (temporary storage for now). */
 export function recordingsDir(): string {
-	return path.join(os.tmpdir(), "omp-recordings");
+	return path.join(os.tmpdir(), `${APP_NAME}-recordings`);
 }
 
 /** Fresh, sortable recording path for one session: `<recordingsDir>/<utc-stamp>-<session>.ompcast`. */

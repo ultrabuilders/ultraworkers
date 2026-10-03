@@ -49,12 +49,33 @@ function cells(line: string): string[] {
 		.map(c => c.trim());
 }
 
-const isSeparator = (line: string) => cells(line).every(c => /^-{3,}$/.test(c));
+/**
+ * A delimiter row: every cell is dashes, and at least one cell is non-empty.
+ *
+ * Markdown requires only ONE dash per column, so `|-|-|-|` is a legal table and a
+ * `^-{3,}$` would swallow it as a data row — costing a row and failing the row-count
+ * guard for a table that is entirely fine. That is worse than a correct red: it teaches
+ * the next reader the table is broken when it is not.
+ *
+ * The `.some(c => c.length > 0)` clause is what keeps `^-*$` honest. Without it a blank
+ * line splits to `[""]`, matches, and the loop would eat the blank instead of stopping.
+ *
+ * This guards *this* table, written by hand. It is deliberately not a general markdown
+ * table parser.
+ */
+const isSeparator = (cs: string[]): boolean => {
+	const dashed = cs.map(c => c.trim());
+	return dashed.some(c => c.length > 0) && dashed.every(c => /^-*$/.test(c));
+};
 
-/** Read the `input | matches | …` table out of the README, wherever it sits. */
-async function readPinnedTable(): Promise<PinnedRow[]> {
-	const readme = await Bun.file(path.join(import.meta.dir, "README.md")).text();
-	const lines = readme.split("\n");
+/**
+ * Read the `input | matches | …` table out of a markdown document.
+ *
+ * Takes the text rather than the path so the parser's edge shapes can be exercised
+ * directly, instead of only ever being reachable by editing the README.
+ */
+function parsePinnedTable(markdown: string): PinnedRow[] {
+	const lines = markdown.split("\n");
 
 	const start = lines.findIndex(line => {
 		const c = cells(line);
@@ -67,7 +88,7 @@ async function readPinnedTable(): Promise<PinnedRow[]> {
 	const rows: PinnedRow[] = [];
 	for (const line of lines.slice(start + 1)) {
 		if (!line.trim().startsWith("|")) break;
-		if (isSeparator(line)) continue;
+		if (isSeparator(cells(line))) continue;
 		const [input, matches] = cells(line);
 		if (input === undefined || matches === undefined) continue;
 		rows.push({
@@ -76,6 +97,11 @@ async function readPinnedTable(): Promise<PinnedRow[]> {
 		});
 	}
 	return rows;
+}
+
+async function readPinnedTable(): Promise<PinnedRow[]> {
+	const readme = await Bun.file(path.join(import.meta.dir, "README.md")).text();
+	return parsePinnedTable(readme);
 }
 
 describe("README PINNED table", () => {
@@ -110,5 +136,25 @@ describe("README PINNED table", () => {
 		expect(PINNED.test("aomp")).toBe(false);
 		expect(rows.find(r => r.input === "omp")?.claimed).toBe(true);
 		expect(rows.find(r => r.input === "aomp")?.claimed).toBe(false);
+	});
+
+	// eb's shapes, as a table. Each row is one input and what the parser must do with it;
+	// the point of the first two is that a shorter dash run is still a legal delimiter, and
+	// a blank line must end the table rather than be absorbed by a permissive `^-*$`.
+	test("the delimiter reader admits every legal dash run and stops at a blank line", () => {
+		const header = "| input | matches | note |";
+		const data = "| `omp` | yes | token |";
+		const twoRows = `${data}\n| \`aomp\` | no | glued |`;
+
+		// Both legal delimiters, and both must leave exactly the data rows behind.
+		expect(parsePinnedTable(`${header}\n| --- | --- | --- |\n${twoRows}`).length).toBe(2);
+		expect(parsePinnedTable(`${header}\n|-|-|-|\n${twoRows}`).length).toBe(2);
+
+		// A blank line ends the table. Without the non-empty clause this swallows it, and
+		// the loop would carry on into whatever follows.
+		expect(parsePinnedTable(`${header}\n| --- | --- | --- |\n${twoRows}\n`).length).toBe(2);
+
+		// And a data row is never mistaken for a delimiter.
+		expect(parsePinnedTable(`${header}\n| --- | --- | --- |\n${twoRows}`).map(r => r.input)).toEqual(["omp", "aomp"]);
 	});
 });

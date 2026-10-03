@@ -1,7 +1,7 @@
 """Harbor agent that runs the LOCAL `ultraworkers` build inside task containers.
 
 Unlike Harbor's built-in `pi` agent (which `npm i -g @mariozechner/pi-coding-agent`),
-this runs the working tree at `/work/pi`. Install modes (`OMP_BENCH_INSTALL`):
+this runs the working tree at `/work/pi`. Install modes (`ULTRAWORKERS_BENCH_INSTALL`):
 
   * `source` (default): the runner bind-mounts the repo read-only plus a
     prebuilt linux `node_modules` tree and a linux `bun` binary; ultraworkers runs
@@ -20,7 +20,7 @@ configured providers' `baseUrl` at the host's pm2 auth-gateway (default
 resolves credentials host-side. No provider API keys are passed in.
 
 All knobs come from environment variables the runner sets on the `harbor` process
-(see `OMP_BENCH_*` below); the agent reads them from `os.environ` directly.
+(see `ULTRAWORKERS_BENCH_*` below); the agent reads them from `os.environ` directly.
 
 Selected via `harbor run --agent-import-path omp_local:OmpLocal` with the
 directory of this file on `PYTHONPATH`.
@@ -93,9 +93,9 @@ def _patch_apple_container_dns() -> None:
 
     Containers default to the vmnet gateway resolver (192.168.64.1:53), which is
     unreachable when VPN/DNS agents on the host intercept port 53. The runner
-    sets OMP_BENCH_CONTAINER_DNS for apple-container jobs; absent, no-op.
+    sets ULTRAWORKERS_BENCH_CONTAINER_DNS for apple-container jobs; absent, no-op.
     """
-    dns = os.environ.get("OMP_BENCH_CONTAINER_DNS")
+    dns = os.environ.get("ULTRAWORKERS_BENCH_CONTAINER_DNS")
     if not dns:
         return
     from harbor.environments.apple_container import AppleContainerEnvironment
@@ -214,51 +214,51 @@ class OmpLocal(BaseInstalledAgent):
 
     def __init__(self, *args, **kwargs) -> None:  # noqa: D401 - thin wrapper
         super().__init__(*args, **kwargs)
-        self._install_mode = _env("OMP_BENCH_INSTALL", "source")
-        self._tarball = _env("OMP_BENCH_TARBALL")
-        self._pkg_version = _env("OMP_BENCH_VERSION", "latest")
-        self._models_yaml_path = _env("OMP_BENCH_MODELS_YAML")
+        self._install_mode = _env("ULTRAWORKERS_BENCH_INSTALL", "source")
+        self._tarball = _env("ULTRAWORKERS_BENCH_TARBALL")
+        self._pkg_version = _env("ULTRAWORKERS_BENCH_VERSION", "latest")
+        self._models_yaml_path = _env("ULTRAWORKERS_BENCH_MODELS_YAML")
         self._gateway_url = _env(
-            "OMP_BENCH_GATEWAY_URL", "http://host.docker.internal:4000"
+            "ULTRAWORKERS_BENCH_GATEWAY_URL", "http://host.docker.internal:4000"
         )
-        self._gateway_token = _env("OMP_BENCH_GATEWAY_TOKEN", "no-auth-dummy")
+        self._gateway_token = _env("ULTRAWORKERS_BENCH_GATEWAY_TOKEN", "no-auth-dummy")
         self._gateway_providers = [
             p.strip()
             for p in _env(
-                "OMP_BENCH_GATEWAY_PROVIDERS", "anthropic,openai-codex"
+                "ULTRAWORKERS_BENCH_GATEWAY_PROVIDERS", "anthropic,openai-codex"
             ).split(",")
             if p.strip()
         ]
-        self._thinking = _env("OMP_BENCH_THINKING")
-        self._auto_approve = _truthy(_env("OMP_BENCH_AUTO_APPROVE", "1"))
+        self._thinking = _env("ULTRAWORKERS_BENCH_THINKING")
+        self._auto_approve = _truthy(_env("ULTRAWORKERS_BENCH_AUTO_APPROVE", "1"))
         # Extra CLI args forwarded verbatim to the in-container ultraworkers invocation,
-        # JSON-array-encoded by the runner (OMP_BENCH_AGENT_ARGS) so multi-word
+        # JSON-array-encoded by the runner (ULTRAWORKERS_BENCH_AGENT_ARGS) so multi-word
         # values survive without a second layer of shell quoting.
         self._agent_args = self._parse_agent_args()
-        self._bun_version = _env("OMP_BENCH_BUN_VERSION", "1.4.0")
-        self._gateway_on = _env("OMP_BENCH_GATEWAY", "1") != "0"
+        self._bun_version = _env("ULTRAWORKERS_BENCH_BUN_VERSION", "1.4.0")
+        self._gateway_on = _env("ULTRAWORKERS_BENCH_GATEWAY", "1") != "0"
 
         # web_search auth can't route through the gateway (dedicated provider creds);
         # off by default so search-using tasks don't false-negative on 401s.
-        self._web_search = _truthy(_env("OMP_BENCH_WEB_SEARCH", "0"))
+        self._web_search = _truthy(_env("ULTRAWORKERS_BENCH_WEB_SEARCH", "0"))
         # ultraworkers tool allowlist (`--tools`); empty keeps the default tool set.
-        self._tools = [t for t in _env("OMP_BENCH_TOOLS", "").split(",") if t]
+        self._tools = [t for t in _env("ULTRAWORKERS_BENCH_TOOLS", "").split(",") if t]
         # Extra settings for the container config.yml: {"edit.mode": "sloppy", ...}.
-        raw_settings = _env("OMP_BENCH_SETTINGS")
+        raw_settings = _env("ULTRAWORKERS_BENCH_SETTINGS")
         self._settings: dict[str, object] = json.loads(raw_settings) if raw_settings else {}
         # Extra env (PI_* dialect knobs, explicit --env) the runner forwards into
-        # the in-container ultraworkers run, JSON-encoded in OMP_BENCH_FORWARD_ENV.
+        # the in-container ultraworkers run, JSON-encoded in ULTRAWORKERS_BENCH_FORWARD_ENV.
         self._forward_env = self._parse_forward_env()
         # Source-mount paths (defaults must match the runner's compose overlay).
-        self._source_dir = _env("OMP_BENCH_SOURCE_DIR", "/opt/omp/src")
-        self._source_bun = _env("OMP_BENCH_SOURCE_BUN", "/opt/omp/bin/bun")
-        self._source_arch = _env("OMP_BENCH_SOURCE_ARCH")
+        self._source_dir = _env("ULTRAWORKERS_BENCH_SOURCE_DIR", "/opt/omp/src")
+        self._source_bun = _env("ULTRAWORKERS_BENCH_SOURCE_BUN", "/opt/omp/bin/bun")
+        self._source_arch = _env("ULTRAWORKERS_BENCH_SOURCE_ARCH")
         # Resolved during install(); reused by version + run commands.
         self._home = "/root"
         self._bun = "/root/.bun/bin/bun"
         self._cli = "/root/.omp-bench/app/dist/cli.js"
-        self._binary_arm64 = _env("OMP_BENCH_BINARY_ARM64")
-        self._binary_x64 = _env("OMP_BENCH_BINARY_X64")
+        self._binary_arm64 = _env("ULTRAWORKERS_BENCH_BINARY_ARM64")
+        self._binary_x64 = _env("ULTRAWORKERS_BENCH_BINARY_X64")
         self._binary = bool(self._binary_arm64 or self._binary_x64)
 
     @staticmethod
@@ -389,7 +389,7 @@ class OmpLocal(BaseInstalledAgent):
     async def _install_local(self, environment: BaseEnvironment) -> str:
         if not self._tarball:
             raise RuntimeError(
-                "OMP_BENCH_INSTALL=local requires OMP_BENCH_TARBALL (host tarball path)"
+                "ULTRAWORKERS_BENCH_INSTALL=local requires ULTRAWORKERS_BENCH_TARBALL (host tarball path)"
             )
         await environment.upload_file(self._tarball, _TARBALL_DST)
         app = f"{self._home}/.omp-bench/app"
@@ -526,8 +526,8 @@ class OmpLocal(BaseInstalledAgent):
 
     @staticmethod
     def _parse_forward_env() -> dict[str, str]:
-        """Extra run-time env from the runner (OMP_BENCH_FORWARD_ENV = JSON object)."""
-        raw = _env("OMP_BENCH_FORWARD_ENV")
+        """Extra run-time env from the runner (ULTRAWORKERS_BENCH_FORWARD_ENV = JSON object)."""
+        raw = _env("ULTRAWORKERS_BENCH_FORWARD_ENV")
         if not raw:
             return {}
         try:
@@ -540,8 +540,8 @@ class OmpLocal(BaseInstalledAgent):
 
     @staticmethod
     def _parse_agent_args() -> list[str]:
-        """Extra CLI args from the runner (OMP_BENCH_AGENT_ARGS = JSON array)."""
-        raw = _env("OMP_BENCH_AGENT_ARGS")
+        """Extra CLI args from the runner (ULTRAWORKERS_BENCH_AGENT_ARGS = JSON array)."""
+        raw = _env("ULTRAWORKERS_BENCH_AGENT_ARGS")
         if not raw:
             return []
         try:

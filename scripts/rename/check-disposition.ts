@@ -75,6 +75,10 @@
  */
 
 import * as path from "node:path";
+// `hitPaths` reads through an open descriptor so a rename between the glob and
+// the read cannot swap the file under it; `Bun.file()` does not expose one.
+import * as fs from "node:fs/promises";
+import { isEnoent } from "@oh-my-pi/pi-utils";
 import { readGateArgsOrExit } from "./args";
 import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
 
@@ -1202,16 +1206,61 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
 	const glob = new Bun.Glob("**/*.{ts,tsx,js,mjs,rs,py,sh}");
 	const found: string[] = [];
 	const nestedRepos = nestedRepoCache();
+	// A path that disappears between the glob above and the read below is a
+	// four-way failure, so each case is handled by what it can be trusted for.
+	// Measured 2026-10-03: a probe file with a space in its name, deleted mid-scan,
+	// made `Bun.file().text()` throw ENOENT and took the whole gate down. The gate
+	// then printed NO verdict at all, and the absence read as "0 missing-row" — the
+	// most attractive reading available. Skip-and-continue would have been worse:
+	// it drops the file from the corpus and lowers the count by one with no signal.
+	// So: vanished is reported loudly, unreadable and empty are hard errors, and
+	// only a file that was definitely absent is skipped.
+	const vanished: string[] = [];
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {
 		if (EXCLUDED_PREFIXES.some(prefix => relPath.startsWith(prefix))) continue;
 		if (isBuildOutput(relPath)) continue;
 		if (isInsideNestedRepository(root, relPath, nestedRepos)) continue;
-		const text = await Bun.file(path.join(root, relPath)).text();
-		// Carries `PINNED.flags` for the same reason the counter above does: without the
-		// case-blind flag this list of paths and the counts reported against it describe
-		// two different corpora, and a file whose only occurrences are uppercase is absent
-		// from one and present in the other.
-		if (new RegExp(PINNED.source, PINNED.flags).test(text)) found.push(relPath);
+		const full = path.join(root, relPath);
+		// Read through an OPEN fd rather than reopening by name. A peer that
+		// renames A→B→A between two `stat` calls defeats a stat-pair check, but it
+		// cannot change what an already-open descriptor points at: the bytes and
+		// the inode are fixed at `open`. This is the one place `node:fs` is the
+		// right tool, because `Bun.file()` does not hand out a descriptor.
+		const handle = await fs.open(full, "r").catch((err: unknown) => {
+			// Only ENOENT/ENOTDIR is a peer that moved a file out from under us.
+			// Anything else (EACCES, EISDIR, EMFILE) says this path is unreadable,
+			// which is a different fault and must not be folded into the same
+			// bucket: skipping it would drop the file and lower the count.
+			if (isEnoent(err)) {
+				vanished.push(relPath);
+				return null;
+			}
+			throw new Error(`hitPaths: cannot open ${relPath}`, { cause: err });
+		});
+		if (handle === null) continue;
+		try {
+			const text = await handle.readFile("utf8");
+			// An empty read is only suspicious for a file that should have content,
+			// and the exceptions are real: two tracked `__init__.py` files in this
+			// corpus are genuinely zero bytes (a Python package marker). So the
+			// test is scoped rather than universal, and `scripts/__init__.py` is
+			// named here because it is what a blanket version got wrong.
+			if (text.length === 0 && !/\/__init__\.py$/.test(relPath)) {
+				throw new Error(`hitPaths: ${relPath} read as empty — refusing to treat an unread file as a clean one`);
+			}
+			// Carries `PINNED.flags` for the same reason the counter above does: without the
+			// case-blind flag this list of paths and the counts reported against it describe
+			// two different corpora, and a file whose only occurrences are uppercase is absent
+			// from one and present in the other.
+			if (new RegExp(PINNED.source, PINNED.flags).test(text)) found.push(relPath);
+		} finally {
+			await handle.close();
+		}
+	}
+	if (vanished.length > 0) {
+		throw new Error(
+			`hitPaths: ${vanished.length} path(s) vanished while scanning (another process is writing in this tree): ${vanished.slice(0, 5).join(", ")}${vanished.length > 5 ? ", …" : ""}. Every count below would silently exclude them.`,
+		);
 	}
 	return found.sort();
 }

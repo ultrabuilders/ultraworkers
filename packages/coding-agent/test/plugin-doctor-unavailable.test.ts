@@ -39,21 +39,46 @@ afterEach(async () => {
  * The manager is pointed at `scratch`, which has no `patches/` directory. That is
  * what makes the premise genuinely missing — the repo checkout always has one, so
  * a test driven against it could only ever watch the ledger pass.
+ *
+ * WHAT THIS DOES NOT ISOLATE, and why `exits` is returned rather than asserted
+ * here. `PluginManager.doctor()` calls `getPluginsDir()` with no argument
+ * (`manager.ts:1105`), and that resolver's own docblock records why a `home`
+ * parameter exists only for tests while this caller does not pass one. So the
+ * OTHER checks in this report come from the developer's real `~/.omp/plugins`,
+ * not from `scratch`. On a machine whose plugins dir has no `node_modules`, that
+ * check is an `error`, and `handleDoctor` exits 1 for it.
+ *
+ * That makes "the doctor exited non-zero" the wrong proxy for the contract: it
+ * conflates "an unavailable ledger was turned into an error" — the defect this
+ * file exists to catch — with "something unrelated on this machine is broken",
+ * which the ledger cannot affect. Both callers below therefore assert about the
+ * ledger's own line and about the arithmetic, and read `exits` only where the
+ * exit code itself is the subject.
  */
-async function renderedLines(): Promise<string[]> {
+async function renderedLines(): Promise<{ lines: string[]; exits: number[] }> {
 	const lines: string[] = [];
 	spyOn(console, "log").mockImplementation((...args: unknown[]) => {
 		lines.push(args.map(String).join(" "));
 	});
-	// `process.exit` is only reached when errors exist; a ledger that reports
-	// `unavailable` must not be turned into one, so this stub also asserts that.
 	const exits: number[] = [];
 	spyOn(process, "exit").mockImplementation(((code?: number) => {
 		exits.push(code ?? 0);
 	}) as never);
 	await handleDoctor(new PluginManager(scratch), {});
-	expect(exits).toEqual([]);
-	return lines;
+	return { lines, exits };
+}
+
+/**
+ * The check line for `name`, or undefined when the report never printed one.
+ *
+ * Matched structurally (icon, then `name:`) rather than against glyphs, so adding
+ * a status cannot silently stop this matching.
+ */
+function checkLine(lines: string[], name: string): string | undefined {
+	return (
+		lines.find(line => line.trim().startsWith("Plugin Health Check")) &&
+		lines.find(line => new RegExp(`\\S+\\s+${name}:`).test(line.trim()))
+	);
 }
 
 /**
@@ -76,8 +101,19 @@ describe("the doctor reports a ledger it could not check", () => {
 	test("the patch ledger appears in the doctor's own output", async () => {
 		// The registry that used to hold this check was never imported by the
 		// shipped doctor, so this check existed only in tests.
-		const lines = await renderedLines();
-		expect(lines.some(line => line.includes("patch_ledger"))).toBe(true);
+		const { lines } = await renderedLines();
+		const ledger = checkLine(lines, "patch_ledger");
+		expect(ledger).toBeDefined();
+		// Presence, and the sentence that tells a reader the premise was missing.
+		//
+		// WHAT THIS ROW DOES NOT PROVE, because a counterfactual says so: flipping
+		// `unavailable` to `ok` in the manager leaves this row GREEN — the message
+		// still reads "patch ledger not checked" either way, because the message
+		// describes the premise and the STATUS is a separate field. The bucket is
+		// discriminated by the two rows below, which read `isUnavailable` and the
+		// summary counts. Stating it here because the obvious reading of this row's
+		// name is that it catches the defect, and it does not.
+		expect(ledger).toContain("not checked");
 	});
 
 	test("an unmeasurable ledger is counted as unchecked, not as ok", async () => {
@@ -93,7 +129,7 @@ describe("the doctor reports a ledger it could not check", () => {
 	});
 
 	test("the summary counts every check it printed", async () => {
-		const lines = await renderedLines();
+		const { lines } = await renderedLines();
 		// Matched structurally — icon, then `name:` — rather than against a list of
 		// glyphs, so adding a status cannot silently stop being counted here.
 		// Scoped to the plugin block: the summary read below is that block's, so
@@ -103,6 +139,10 @@ describe("the doctor reports a ledger it could not check", () => {
 		const counts = summaryCounts(lines);
 		const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 		expect(total).toBe(printed);
+		// And the ledger is in a bucket of its own rather than folded into `ok`,
+		// which is what makes the sum above mean anything: without it the numbers
+		// still add up, just over a denominator that quietly excluded the line.
+		expect(counts["not checked"]).toBe(1);
 	});
 });
 

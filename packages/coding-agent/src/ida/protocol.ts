@@ -14,8 +14,16 @@ export { IDA_HOST_WORKER_ARG } from "../cli/worker-selectors";
 /** Environment key carrying the JSON {@link IdaHostConfig} for the daemon. */
 export const IDA_HOST_CONFIG_ENV = "OMP_IDA_HOST_CONFIG";
 
-/** Name prefix of every IDA daemon in a broker scope. */
-export const IDA_DAEMON_PREFIX = "omp.ida.";
+/**
+ * Name prefix of every IDA daemon in a broker scope.
+ *
+ * Derived from {@link APP_NAME} rather than spelled out, because this string is
+ * what `ultraworkers ps` shows a user and what both docblocks above this module
+ * describe. A literal here drifts from those claims the moment either moves; the
+ * two clients of this constant (`client.ts` filters and parses by prefix) follow
+ * it automatically, and nothing persists it, so there is no migration to write.
+ */
+export const IDA_DAEMON_PREFIX = `${APP_NAME}.ida.`;
 
 /** Broker daemon names are capped at 48 characters (`broker.ts`). */
 const DAEMON_NAME_MAX = 48;

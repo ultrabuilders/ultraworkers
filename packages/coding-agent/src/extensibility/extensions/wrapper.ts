@@ -509,7 +509,7 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			// veto never reaches the screen. With no handler returning `cancel`, `this` is
 			// undefined and the prompt is asked exactly as it was before the seam existed.
 			if (approvalVeto?.cancel) {
-				this.runner.settlePendingApprovals?.(actionKey, "deny");
+				this.runner.settlePendingApprovals(actionKey, "deny");
 				await emitApprovalResolved(false, approvalVeto.reason);
 				cancelPreflight();
 				throw new ToolCallBlockedError(
@@ -577,18 +577,25 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 					// the new grant would be invisible to the calls it was made for — the
 					// user answers "always" and the batch still nags them one prompt per
 					// remaining call.
-					this.runner.settlePendingApprovals?.(actionKey, "approve");
+					this.runner.settlePendingApprovals(actionKey, "approve");
 				}
 			}
 			await emitApprovalResolved(approved, approved ? undefined : "denied by user");
 			if (!approved) {
+				// Called unconditionally, and NOT through `?.`. The cascade is what stops the
+				// siblings hanging on a prompt nobody will ever see, so a runner that cannot
+				// perform it is a broken approval path — that must be loud. An optional call
+				// here would turn the exact failure this comment describes into a silent one:
+				// the deny would be recorded, the cascade would not happen, and the batch would
+				// wait on an answer already given. `settlePendingApprovals` is declared
+				// non-optional on `ExtensionRunner`, so `?.` guarded nothing the type permits.
 				// A denial settles the siblings asking about the same action, for the same
 				// reason the grant above does. The refaudit states the failure precisely:
 				// without a cascade, rejecting one leaves the rest of the batch hanging on a
 				// prompt nobody will ever see, because the user has already answered. They
 				// resolve as denied and take the same exit this call takes, rather than
 				// waiting on an answer that is never coming.
-				this.runner.settlePendingApprovals?.(actionKey, "deny");
+				this.runner.settlePendingApprovals(actionKey, "deny");
 				cancelPreflight();
 				throw new ToolCallBlockedError("denied", `Tool call denied by user: ${this.tool.name}`);
 			}

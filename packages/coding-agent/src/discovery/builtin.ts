@@ -37,8 +37,8 @@ import {
 } from "./helpers";
 
 const PROVIDER_ID = "native";
-const DISPLAY_NAME = "OMP";
-const DESCRIPTION = "Native OMP configuration from ~/.omp and .omp/";
+const DISPLAY_NAME = "ultraworkers";
+const DESCRIPTION = "Native ultraworkers configuration from ~/.omp and .omp/";
 const PRIORITY = 100;
 
 const PATHS = SOURCE_PATHS.native;

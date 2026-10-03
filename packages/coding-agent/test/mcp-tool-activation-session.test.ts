@@ -21,6 +21,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
 import { AuthStorage } from "@oh-my-pi/pi-ai";
+import { type AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { CustomTool } from "@oh-my-pi/pi-coding-agent/extensibility/custom-tools/types";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
@@ -51,6 +52,44 @@ function waitUntil(predicate: () => boolean, label: string, timeoutMs = 10_000):
 	};
 	tick();
 	return promise;
+}
+
+const extensionToolParameters = type({});
+
+/**
+ * A stand-in for a tool an extension registers over MCP.
+ *
+ * It only has to be a well-formed `AgentTool` with an `mcp__` name, because that is
+ * all `setExtensionMCPTool` looks at before storing it (:690 bails on anything
+ * else). Nothing in this file ever calls it — the assertions are about which
+ * names the model may reach, not about what the tool does.
+ */
+function extensionMcpTool(name: string): AgentTool<typeof extensionToolParameters> {
+	return {
+		name,
+		label: name,
+		description: `Extension-owned MCP tool ${name}`,
+		parameters: extensionToolParameters,
+		async execute() {
+			return { content: [{ type: "text", text: "ok" }] };
+		},
+	};
+}
+
+/** Copied from `agent-session-tool-rebuild-skip.test.ts`, which needs the same shape. */
+function managerMcpTool(name: string, serverName: string, mcpToolName: string, description: string): CustomTool {
+	return {
+		name,
+		label: `${serverName}/${mcpToolName}`,
+		description,
+		parameters: type({ q: "string" }),
+		strict: true,
+		mcpServerName: serverName,
+		mcpToolName,
+		async execute() {
+			return { content: [{ type: "text", text: `${name} executed` }] };
+		},
+	} as CustomTool;
 }
 
 describe("a session's active tool set after the server pushes a new tool", () => {
@@ -269,6 +308,111 @@ describe("a session's active tool set after the server pushes a new tool", () =>
 			expect(session.getAllToolNames()).toContain("mcp__two_gamma");
 			expect(session.getEnabledToolNames()).not.toContain("mcp__two_gamma");
 			expect(session.getEnabledToolNames()).toEqual(connected);
+		} finally {
+			await session.dispose();
+			removeSyncWithRetries(workDir);
+		}
+	}, 40_000);
+
+	/**
+	 * The extension-owned clause of the same invariant.
+	 *
+	 * `#applyMCPToolRefresh` rebuilds the whole active set on every refresh
+	 * (session-tools.ts:2283), from three sources. Two of them are the manager's:
+	 * the carried-over selection, and — on a first connection — the arriving
+	 * catalog wholesale. Neither can retain an extension-owned tool, because
+	 * `setExtensionMCPTool` deliberately deletes the name from
+	 * `#mcpManagerToolNames` (:693) so the manager and the extension cannot both
+	 * claim it. The third source, `retainedActiveExtensionToolNames` (:2280), is
+	 * therefore the only thing standing between an extension's tool and a refresh
+	 * that silently switches it off.
+	 *
+	 * Both clauses matter, and they are not the same clause. Retention is a
+	 * contract: the user turned the tool on, and losing that across an unrelated
+	 * server-side catalogue change would be a bug. Widening is security:
+	 * retention filters `previousActiveMcpToolNames`, so it can only ever keep a
+	 * tool that was already on — it must never be the way a newly registered
+	 * extension tool becomes callable.
+	 */
+	it("keeps an extension-owned MCP tool's selection across a manager refresh, without activating a newly registered one", async () => {
+		const { session } = await createAgentSession({
+			cwd: workDir,
+			agentDir: workDir,
+			modelRegistry,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated({ "mcp.enableProjectConfig": true, "mcp.startupTimeoutMs": 15_000 }),
+			model: getBundledModel("openai", "gpt-4o-mini"),
+			disableExtensionDiscovery: true,
+			skills: [],
+			contextFiles: [],
+			promptTemplates: [],
+			slashCommands: [],
+			enableLsp: false,
+			skipPythonPreflight: true,
+			enableMCP: true,
+		});
+		try {
+			await waitUntil(() => session.getEnabledToolNames().includes(ALPHA), `${ALPHA} to be active`);
+
+			// An extension registers two MCP tools it owns. Ownership is not
+			// activation, so only the first is ever switched on — by the user,
+			// through the same call any other tool is switched on through.
+			const owned = extensionMcpTool("mcp__extwidget_do");
+			const unregistered = extensionMcpTool("mcp__extwidget_late");
+			for (const tool of [owned, unregistered]) {
+				session.setToolBuiltIn(tool.name, false);
+				session.setExtensionMCPTool(tool.name, tool);
+			}
+
+			// Refresh #1. Every refresh clears the `mcp__` names and re-adds them from
+			// `#extensionMcpTools` plus the manager's catalogue (session-tools.ts:2246),
+			// so this is what puts the extension's tools in the registry at all. Until
+			// it has happened they cannot be selected, which is why the user's
+			// activation below has to come after it rather than before.
+			//
+			// The reason is passed EXPLICITLY on every refresh here. It is load-bearing
+			// and the default is not a fixed thing: at HEAD an absent reason reads as
+			// "not a push" and widens the active set, so a test that left it out would
+			// be asserting whatever the default happens to be on the day. "push" says
+			// what this row means — the catalogue moved mid-session — and is correct
+			// under either reading.
+			const catalog = [
+				managerMcpTool(ALPHA, SERVER, ALPHA_TOOL, "Alpha"),
+				managerMcpTool(BETA, SERVER, BETA_TOOL, "Beta"),
+			];
+			await session.refreshMCPTools(catalog, "push");
+			expect(session.getAllToolNames()).toContain(owned.name);
+			expect(session.getAllToolNames()).toContain(unregistered.name);
+
+			// The extension's tool is enabled the way any tool is enabled: the user
+			// asks for it by name. Ownership is not activation, so `unregistered` is
+			// left alone and must stay off through the refresh below.
+			await session.setActiveToolsByName([...session.getEnabledToolNames(), owned.name]);
+			expect(session.getEnabledToolNames()).toContain(owned.name);
+
+			// Refresh #2, and the one under test. Awaited rather than waited for, so
+			// there is no window in which the assertions could read a half-applied
+			// set. BETA is in the manager's catalogue and has never been active, so
+			// this is also a push — the manager's own gate is what must refuse it.
+			await session.refreshMCPTools(catalog, "push");
+
+			// Clause 1, the contract: the tool the user enabled is still enabled.
+			// Without `retainedActiveExtensionToolNames` this is the assertion that
+			// goes red — `nextActive` is rebuilt from scratch on every refresh, and
+			// neither manager-side term can carry this name, because
+			// `setExtensionMCPTool` deleted it from `#mcpManagerToolNames`.
+			expect(session.getEnabledToolNames()).toContain(owned.name);
+
+			// Clause 2, the security half: retention filters the names that were
+			// ALREADY active, so a tool that was registered but never switched on is
+			// still off after the same refresh. Registered and visible, never
+			// callable.
+			expect(session.getAllToolNames()).toContain(unregistered.name);
+			expect(session.getEnabledToolNames()).not.toContain(unregistered.name);
+
+			// And the refresh genuinely re-derived the set rather than no-opping:
+			// the manager's own pushed tool is still refused.
+			expect(session.getEnabledToolNames()).not.toContain(BETA);
 		} finally {
 			await session.dispose();
 			removeSyncWithRetries(workDir);

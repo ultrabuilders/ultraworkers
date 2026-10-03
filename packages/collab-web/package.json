@@ -1,6 +1,6 @@
 {
   "type": "module",
-  "name": "@oh-my-pi/collab-web",
+  "name": "@ultraworkers/collab-web",
   "version": "16.3.6",
   "private": true,
   "description": "Browser guest client and local relay tools for ultraworkers collab live sessions",

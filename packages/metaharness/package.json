@@ -1,7 +1,7 @@
 {
 	"type": "module",
 	"private": true,
-	"name": "@oh-my-pi/pi-metaharness",
+	"name": "@ultraworkers/pi-metaharness",
 	"version": "0.0.1",
 	"description": "Unified benchmark runners plus Harbor run storage, REST/SSE APIs, and a live web dashboard",
 	"homepage": "https://omp.sh",

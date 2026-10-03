@@ -1,6 +1,6 @@
 {
   "type": "module",
-  "name": "@oh-my-pi/pi-codemode",
+  "name": "@ultraworkers/pi-codemode",
   "version": "18.4.3",
   "description": "Sandboxed JavaScript execution where the only capability is calling injected tools",
   "homepage": "https://omp.sh",

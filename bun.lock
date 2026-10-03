@@ -55,7 +55,7 @@
       },
     },
     "packages/browser-relay": {
-      "name": "@oh-my-pi/browser-relay",
+      "name": "@ultraworkers/browser-relay",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -98,7 +98,7 @@
       },
     },
     "packages/codemode": {
-      "name": "@oh-my-pi/pi-codemode",
+      "name": "@ultraworkers/pi-codemode",
       "version": "18.4.3",
       "dependencies": {
         "quickjs-wasi": "3.6.2",
@@ -149,7 +149,7 @@
       },
     },
     "packages/collab-web": {
-      "name": "@oh-my-pi/collab-web",
+      "name": "@ultraworkers/collab-web",
       "version": "16.3.6",
       "dependencies": {
         "@oh-my-pi/pi-utils": "catalog:",
@@ -178,7 +178,7 @@
       },
     },
     "packages/evals": {
-      "name": "@oh-my-pi/pi-evals",
+      "name": "@ultraworkers/pi-evals",
       "version": "18.4.3",
       "devDependencies": {
         "@oh-my-pi/pi-ai": "catalog:",
@@ -187,7 +187,7 @@
       },
     },
     "packages/metaharness": {
-      "name": "@oh-my-pi/pi-metaharness",
+      "name": "@ultraworkers/pi-metaharness",
       "version": "0.0.1",
       "bin": {
         "metaharness": "src/server.ts",
@@ -837,11 +837,11 @@
 
     "@octokit/types": ["@octokit/types@18.0.0", "", { "dependencies": { "@octokit/openapi-types": "^29.0.1" } }, "sha512-l6bAF43PNxkJp6g+W4PjoUSSkxHomXw2nOum5CTftJz1NlV3vu93NImgOYtLf6CbBUb5j+fiuzW0PPQ5JTSvZA=="],
 
-    "@oh-my-pi/browser-relay": ["@oh-my-pi/browser-relay@workspace:packages/browser-relay"],
+    "@ultraworkers/browser-relay": ["@ultraworkers/browser-relay@workspace:packages/browser-relay"],
 
     "@oh-my-pi/chord": ["@oh-my-pi/chord@workspace:packages/chord"],
 
-    "@oh-my-pi/collab-web": ["@oh-my-pi/collab-web@workspace:packages/collab-web"],
+    "@ultraworkers/collab-web": ["@ultraworkers/collab-web@workspace:packages/collab-web"],
 
     "@oh-my-pi/omp-stats": ["@oh-my-pi/omp-stats@workspace:packages/stats"],
 
@@ -853,15 +853,15 @@
 
     "@oh-my-pi/pi-catalog": ["@oh-my-pi/pi-catalog@workspace:packages/catalog"],
 
-    "@oh-my-pi/pi-codemode": ["@oh-my-pi/pi-codemode@workspace:packages/codemode"],
+    "@ultraworkers/pi-codemode": ["@ultraworkers/pi-codemode@workspace:packages/codemode"],
 
     "@oh-my-pi/pi-coding-agent": ["@oh-my-pi/pi-coding-agent@workspace:packages/coding-agent"],
 
     "@ultraworkers/pi-durable": ["@ultraworkers/pi-durable@workspace:packages/durable"],
 
-    "@oh-my-pi/pi-evals": ["@oh-my-pi/pi-evals@workspace:packages/evals"],
+    "@ultraworkers/pi-evals": ["@ultraworkers/pi-evals@workspace:packages/evals"],
 
-    "@oh-my-pi/pi-metaharness": ["@oh-my-pi/pi-metaharness@workspace:packages/metaharness"],
+    "@ultraworkers/pi-metaharness": ["@ultraworkers/pi-metaharness@workspace:packages/metaharness"],
 
     "@oh-my-pi/pi-mnemopi": ["@oh-my-pi/pi-mnemopi@workspace:packages/mnemopi"],
 

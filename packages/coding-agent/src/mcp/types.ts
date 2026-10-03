@@ -565,6 +565,21 @@ export const MCPNotificationMethods = {
 	PROMPTS_LIST_CHANGED: "notifications/prompts/list_changed",
 } as const;
 
+/**
+ * Why an MCP tool catalog reached the session.
+ *
+ * Every one of these arrives downstream as the same `tools` array, so the reason
+ * cannot be recovered from the argument and has to be declared by the caller:
+ *
+ * - `connect` — a server finished connecting (or reconnected) and handed over its
+ *   full catalog. Arriving tools become active: the user connected this server.
+ * - `push` — the server sent `notifications/tools/list_changed`. A connected and
+ *   already-trusted server widening its own reach. Only tools already active stay
+ *   active; this is the trust boundary.
+ * - `disconnect` — a server went away and its tools are retracted.
+ */
+export type McpCatalogRefreshReason = "connect" | "push" | "disconnect";
+
 /** Extract a JsonRpcError from a thrown value. Preserves `.code` and `.message` from Error instances or plain objects. */
 export function toJsonRpcError(error: unknown): JsonRpcError {
 	if (error instanceof Error) {

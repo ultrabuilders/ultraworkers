@@ -17,6 +17,7 @@ import { loadSkills, type Skill, type SkillWarning, setActiveSkills } from "../e
 import { type LocalProtocolOptions } from "../internal-urls";
 import { stripXdUrlPrefix, XD_URL_PREFIX } from "@oh-my-pi/pi-tui/tools/xd-url";
 import { deduplicateMCPToolsByName, resolveMCPToolAlias } from "../mcp/tool-bridge";
+import type { McpCatalogRefreshReason } from "../mcp/types";
 import { resolveMemoryBackend } from "../memory-backend/resolve";
 import { MEMORY_BACKEND_TOOL_NAMES } from "../memory-backend/tool-names";
 import { invalidateToolSchemaMetadata } from "@oh-my-pi/pi-tui/status-line/context-usage";
@@ -2193,14 +2194,14 @@ export class SessionTools {
 	 * after a newer catalog snapshot. Every connected MCP tool becomes available
 	 * (mounted under `xd://` when that transport is active, else top-level).
 	 */
-	refreshMCPTools(mcpTools: CustomTool[]): Promise<void> {
+	refreshMCPTools(mcpTools: CustomTool[], reason?: McpCatalogRefreshReason): Promise<void> {
 		const snapshot = [...mcpTools];
 		return this.runToolRegistryMutation(() =>
-			this.#host.isDisposed() ? Promise.resolve() : this.#applyMCPToolRefresh(snapshot),
+			this.#host.isDisposed() ? Promise.resolve() : this.#applyMCPToolRefresh(snapshot, reason),
 		);
 	}
 
-	async #applyMCPToolRefresh(mcpTools: CustomTool[]): Promise<void> {
+	async #applyMCPToolRefresh(mcpTools: CustomTool[], reason?: McpCatalogRefreshReason): Promise<void> {
 		const previousMcpTools = new Map<string, AgentTool>();
 		for (const [name, tool] of this.#toolRegistry) {
 			if (isMCPToolName(name)) previousMcpTools.set(name, tool);
@@ -2260,19 +2261,22 @@ export class SessionTools {
 		// absent. Asserting "the registry has it" would pass on the unpatched tree —
 		// the boundary that matters is registered ≠ active.
 		//
-		// A FIRST connection is not a push, though. `previousActiveMcpToolNames` is
-		// empty on the session's first MCP refresh, so gating that one as a push left a
-		// tool the user deliberately connected registered but never activated: invisible
-		// to the model and absent from the xd:// route guidance. The startup path never
-		// hit this because it hands its catalog over as `initialMcpManagerTools` and
-		// activates it wholesale, so deferred discovery (`hasUI`) and awaited startup
-		// diverged on which MCP tools the model could actually call.
-		// `mcp-tool-activation-session.test.ts` already pins the intended contract —
-		// ALPHA (connected) becomes active, BETA (pushed afterwards) does not — so the
-		// discriminator is whether the registry already held MCP tools: false for a
-		// first connection, true for every `list_changed` push that follows it.
-		const isFirstMCPConnection = previousMcpTools.size === 0;
-		const retainedActiveManagerToolNames = isFirstMCPConnection
+		// The manager DECLARES why the catalog changed, because the reason cannot be
+		// recovered from the argument: a connect, a `notifications/tools/list_changed`
+		// push and a disconnect all arrive as the same array of tools. Guessing it here
+		// — as `previousMcpTools.size === 0` did — cannot tell a second server
+		// connecting from a push onto an established one, so a deliberately connected
+		// tool stayed registered but never activated: invisible to the model and absent
+		// from the xd:// route guidance.
+		//
+		// Only `connect` activates the arriving catalog, because that is the one case
+		// where the user connected the server. `push` is the trust boundary: a trusted
+		// server widening its own reach after the user approved the connection. A
+		// `disconnect` retracts, and likewise keeps only what was already active. An
+		// ABSENT reason is handled as `push` — a caller that cannot state its intent
+		// must not widen anything.
+		const activateArrivingCatalog = reason !== "push";
+		const retainedActiveManagerToolNames = activateArrivingCatalog
 			? [...this.#mcpManagerToolNames]
 			: previousActiveMcpToolNames.filter(name => this.#mcpManagerToolNames.has(name));
 		// Extension-owned MCP tools retain their prior selection unchanged: they do not

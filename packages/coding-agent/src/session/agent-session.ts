@@ -139,6 +139,7 @@ import type { BashPtyOptions, BashResult } from "../exec/bash-executor";
 import type { TtsrManager } from "../export/ttsr";
 import type { LoadedCustomCommand } from "../extensibility/custom-commands";
 import type { CustomTool } from "../extensibility/custom-tools/types";
+import type { McpCatalogRefreshReason } from "../mcp/types";
 import type {
 	ExtensionCommandContext,
 	ExtensionRunner,
@@ -6295,9 +6296,15 @@ export class AgentSession implements SettingsScope {
 		return this.#tools.refreshBaseSystemPrompt(commitIf);
 	}
 
-	/** Replaces connected MCP tools and enables them immediately. */
-	refreshMCPTools(mcpTools: CustomTool[]): Promise<void> {
-		return this.#tools.refreshMCPTools(mcpTools);
+	/**
+	 * Replaces connected MCP tools and enables them immediately.
+	 *
+	 * `reason` is the manager's declared intent — see {@link McpCatalogRefreshReason}.
+	 * Omitting it keeps the trust boundary (only already-active tools stay active),
+	 * so a caller with no intent to declare cannot widen a server's reach.
+	 */
+	refreshMCPTools(mcpTools: CustomTool[], reason?: McpCatalogRefreshReason): Promise<void> {
+		return this.#tools.refreshMCPTools(mcpTools, reason);
 	}
 
 	/** Replaces host-owned RPC tools before the next model call. */

@@ -65,7 +65,7 @@ import type {
 	MCPToolDefinition,
 	MCPTransport,
 } from "./types";
-import { MCPNotificationMethods } from "./types";
+import { MCPNotificationMethods, type McpCatalogRefreshReason } from "./types";
 
 export type McpCatalogChangeEvent = { serverName: string; kind: "resources" | "prompts" };
 export type MCPConfigLoader = (cwd: string, options?: LoadMCPConfigsOptions) => Promise<LoadMCPConfigsResult>;
@@ -353,7 +353,10 @@ export class MCPManager {
 	 * {@link NOTIFICATION_BUFFER_CAP}, drop-oldest on overflow.
 	 */
 	#pendingNotifications: Array<{ server: string; method: string; params: unknown }> = [];
-	#onToolsChanged?: (tools: CustomTool<TSchema, MCPToolDetails>[]) => void | Promise<void>;
+	#onToolsChanged?: (
+		tools: CustomTool<TSchema, MCPToolDetails>[],
+		reason: McpCatalogRefreshReason,
+	) => void | Promise<void>;
 	#onResourcesChanged?: (serverName: string, uri: string) => void;
 	#onPromptsChanged?: (serverName: string) => void;
 	#notificationsEnabled = false;
@@ -506,7 +509,9 @@ export class MCPManager {
 	 * disconnect, reconnect) invoke the handler synchronously — their downstream
 	 * chains don't need to serialize on the rebind.
 	 */
-	setOnToolsChanged(handler: (tools: CustomTool<TSchema, MCPToolDetails>[]) => void | Promise<void>): void {
+	setOnToolsChanged(
+		handler: (tools: CustomTool<TSchema, MCPToolDetails>[], reason: McpCatalogRefreshReason) => void | Promise<void>,
+	): void {
 		this.#onToolsChanged = handler;
 	}
 
@@ -935,7 +940,7 @@ export class MCPManager {
 						this.reconnectServer(name, options);
 					const customTools = MCPTool.fromTools(connection, serverTools, reconnect);
 					this.#replaceServerTools(name, customTools);
-					await this.#onToolsChanged?.(this.#tools);
+					await this.#onToolsChanged?.(this.#tools, "connect");
 					void this.toolCache?.set(name, config, serverTools);
 
 					notify({ type: "connected", serverName: name });
@@ -1429,7 +1434,7 @@ export class MCPManager {
 		// Remove tools from this server and notify consumers
 		const hadTools = this.#tools.some(t => t.mcpServerName === name);
 		this.#tools = this.#tools.filter(t => t.mcpServerName !== name);
-		if (hadTools) void this.#onToolsChanged?.(this.#tools);
+		if (hadTools) void this.#onToolsChanged?.(this.#tools, "disconnect");
 
 		// Notify prompt consumers so stale commands are cleared
 		if (connection?.prompts?.length) this.#onPromptsChanged?.(name);
@@ -1747,7 +1752,7 @@ export class MCPManager {
 			const customTools = MCPTool.fromTools(connection, serverTools, reconnect);
 			void this.toolCache?.set(name, config, serverTools);
 			this.#replaceServerTools(name, customTools);
-			void this.#onToolsChanged?.(this.#tools);
+			void this.#onToolsChanged?.(this.#tools, "connect");
 			void this.#loadServerResourcesAndPrompts(name, connection);
 			return connection;
 		} catch (error) {
@@ -1799,7 +1804,7 @@ export class MCPManager {
 
 		// Replace tools from this server
 		this.#replaceServerTools(name, customTools);
-		await this.#onToolsChanged?.(this.#tools);
+		await this.#onToolsChanged?.(this.#tools, "push");
 	}
 
 	/**

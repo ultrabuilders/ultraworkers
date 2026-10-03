@@ -5182,9 +5182,9 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		//     `extensionRunner` so extensions loaded in that session receive frames.
 		//     Guarded only by `mcpManager` (see the second `if` below).
 		if (mcpManager && !options.mcpManager) {
-			mcpManager.setOnToolsChanged(async tools => {
+			mcpManager.setOnToolsChanged(async (tools, reason) => {
 				try {
-					await session.refreshMCPTools(tools);
+					await session.refreshMCPTools(tools, reason);
 				} catch (error) {
 					logger.warn("MCP tool refresh failed", {
 						error: error instanceof Error ? error.message : String(error),

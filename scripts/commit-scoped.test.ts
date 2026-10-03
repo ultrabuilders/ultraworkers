@@ -198,6 +198,31 @@ describe("commitStagedPaths", () => {
 		}
 	});
 
+	it("treats a re-added file as a modification, not a deletion", async () => {
+		// The neighbour of the deletion shape, and the one a deletion-blind fix gets
+		// wrong in the opposite direction: `git rm` then `git add` leaves the index WITH
+		// an entry, so the path must commit as a modification carrying the re-added bytes.
+		// Reading it as a deletion would drop a file the caller still has.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "back.txt", "original\n");
+			await run(["add", "back.txt"], dir);
+			await run(["commit", "-q", "-m", "add back"], dir);
+
+			await run(["rm", "-q", "back.txt"], dir);
+			await write(dir, "back.txt", "re-added v2\n");
+			await run(["add", "back.txt"], dir);
+
+			const result = await commitStagedPaths(["back.txt"], "rm then re-add", { cwd: dir });
+
+			expect(result.committed).toEqual(["back.txt"]);
+			expect(await run(["ls-tree", "--name-only", "HEAD"], dir)).toContain("back.txt");
+			expect(await run(["show", "HEAD:back.txt"], dir)).toBe("re-added v2");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
 	it("commits a deletion that is the only staged change, rather than reporting nothing staged", async () => {
 		// The single-deletion shape reaches the emptiness check first, so it is a separate
 		// failure: the tool reported "nothing is staged" for a path whose only change was

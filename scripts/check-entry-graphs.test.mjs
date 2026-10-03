@@ -44,22 +44,48 @@ function runMutated(t, edits) {
 	return spawnSync(nodePath, [probe], { encoding: "utf8" });
 }
 
-const CLI_BUDGET = '"src/cli.ts": { maxFiles: 24 }';
+/**
+ * The budget line for `entry`, read from the gate rather than restated here.
+ *
+ * These ceilings move on purpose: a leaf that genuinely grows one file must be able to
+ * move its budget without a test standing in the way, and the gate's own notes give the
+ * procedure (let it print `reaches N files`, then pin N). Copying the number into this
+ * file inverted that — raising a legitimate budget turned three tests red with an anchor
+ * error, which reads as "the gate is broken" when the gate is the thing that was right.
+ *
+ * So the anchor is derived. A test that re-states a value the subject is allowed to change
+ * stops watching the subject and starts watching its own transcription of it.
+ */
+function budgetLine(entry) {
+	const source = readFileSync(script, "utf8");
+	const match = source.match(new RegExp(`"${entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}": \\{ maxFiles: \\d+ \\}`));
+	assert.ok(match, `no budget line for ${entry} in the gate — the entry was renamed or removed`);
+	return match[0];
+}
+
+/** The `maxFiles` number the gate currently pins for `entry`. */
+function budgetFor(entry) {
+	return Number(budgetLine(entry).match(/maxFiles: (\d+)/)?.[1]);
+}
 
 // A gate that is always green is not a gate: nothing fails, so nobody asks why
 // the number stopped moving. Both directions are asserted, because an inverted
 // comparison is green for the same reason a missing one is.
 test("fails when an entry's graph exceeds its budget, and names the numbers", t => {
-	const result = runMutated(t, [[CLI_BUDGET, '"src/cli.ts": { maxFiles: 3 }']]);
+	// The measured count is read from the gate's own report rather than pinned here: the
+	// graph is a real property of this tree, and the budget tracks it. Asserting a literal
+	// count would make an unrelated import removal look like a broken gate.
+	const measured = budgetFor("src/cli.ts");
+	const result = runMutated(t, [[budgetLine("src/cli.ts"), '"src/cli.ts": { maxFiles: 3 }']]);
 	assert.equal(result.status, 1);
-	assert.match(result.stderr, /reaches 24 files, budget 3/);
+	assert.match(result.stderr, new RegExp(`reaches ${measured} files, budget 3`));
 	// The number has to be in the report: a red line naming no figures leaves the
 	// reader to re-run the tool to find out what moved.
 	assert.match(result.stderr, /src[\\/]cli\.ts/);
 });
 
 test("passes when the budget is above the measured graph", t => {
-	const result = runMutated(t, [[CLI_BUDGET, '"src/cli.ts": { maxFiles: 9999 }']]);
+	const result = runMutated(t, [[budgetLine("src/cli.ts"), '"src/cli.ts": { maxFiles: 9999 }']]);
 	assert.equal(result.status, 0, result.stderr);
 });
 
@@ -106,7 +132,7 @@ test("does not report a miss for our own package that has no source tree", t => 
 // Without this the entry is simply never walked and the gate has no opinion.
 test("fails when a budget names an entry that does not exist", t => {
 	const result = runMutated(t, [
-		['"src/cli/worker-selectors.ts": { maxFiles: 5 }', '"src/cli/no-such-entry.ts": { maxFiles: 5 }'],
+		[budgetLine("src/cli/worker-selectors.ts"), '"src/cli/no-such-entry.ts": { maxFiles: 5 }'],
 	]);
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /does not exist/);

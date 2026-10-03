@@ -29,6 +29,7 @@ import {
 	isCommentLine,
 	parseTable,
 	requiresKeepRefs,
+	RULES_VERSION,
 	tallyByRule,
 	checkPreWithCoverage,
 } from "./check-disposition";
@@ -52,17 +53,39 @@ async function tree(files: Record<string, string>): Promise<string> {
 	return root;
 }
 
-const row_ = (filePath: string, hits: number, disposition: string, reason: string, keepRefs = "") => ({
+const row_ = (filePath: string, hits: number, disposition: string, reason: string, keepRefs = "", rules = "") => ({
 	scope: "src",
 	path: filePath,
 	hits,
 	disposition: disposition as never,
 	reason,
 	keepRefs,
+	rules,
 	line: 2,
 });
 
 describe("disposition table parsing", () => {
+	it("reads the optional `rules` column, and reads a table that has none", () => {
+		// The column is additive, so BOTH shapes have to parse: a table that adopted
+		// it, and one that has not. If the six-cell header were rejected, adopting the
+		// column would fail every existing row at once and the migration would be
+		// indistinguishable from breaking the table.
+		const withColumn = parseTable(
+			[
+				"scope\tpath\thits\tdisposition\treason\tkeep_refs\trules",
+				"src\ta.ts\t1\tkeep-wire\twhy\tN3\t2026-10-03.2",
+				"src\tb.ts\t1\trename\twhy\t\t", // six cells under a seven-cell header
+			].join("\n"),
+		);
+		expect(withColumn.problems).toEqual([]);
+		expect(withColumn.rows[0].rules).toBe("2026-10-03.2");
+		expect(withColumn.rows[1].rules).toBe("");
+
+		const withoutColumn = parseTable(table(row("a.ts", 1, "keep-wire", "why", "N3")));
+		expect(withoutColumn.problems).toEqual([]);
+		expect(withoutColumn.rows[0].rules).toBe("");
+	});
+
 	it("rejects a table whose header is not the agreed six columns", () => {
 		// A header mismatch must fail loudly. Silently parsing anyway would let a
 		// reordered or truncated schema through with every row shifted by one cell.
@@ -228,6 +251,44 @@ describe("occurrence counting", () => {
 		expect(isCommentLine("   // run omp now")).toBe(true);
 		expect(isCommentLine(" * omp is the agent")).toBe(true);
 		expect(isCommentLine(`const x = "omp"; // note`)).toBe(false);
+	});
+});
+
+describe("rules column", () => {
+	const FILES = { "src/a.ts": `const n = "omp";\n` };
+
+	it("passes a row whose stated rule version is the one this build runs", async () => {
+		// The green arm. Without it the rule below could be satisfied by a check that
+		// never fires at all, which is the shape a vacuous guard takes.
+		const root = await tree(FILES);
+		const violations = await checkPre(root, [row_("src/a.ts", 1, "keep-wire", "why", "N3", RULES_VERSION)]);
+		expect(violations).toEqual([]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("reports a row measured under a rule version this build no longer runs", async () => {
+		// The red arm, and the whole reason the column exists: a row's `hits` is a
+		// claim produced by a rule, and nothing else recorded which one. Measured
+		// 2026-10-03, two rows drifted by +104 and +32 while their files moved −3 and
+		// −1, purely because `PINNED` was widened and `countRename` gained a
+		// subtraction. Every other rule in this file was still green throughout.
+		const root = await tree(FILES);
+		const violations = await checkPre(root, [row_("src/a.ts", 1, "keep-wire", "why", "N3", "2026-10-02.3")]);
+		expect(violations.map(v => `${v.rule}:${v.detail}`)).toEqual([
+			`rules-drift:src/a.ts (line 2): hits measured under 2026-10-02.3, this build runs ${RULES_VERSION}`,
+		]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("stays silent on a row that states no rule version", async () => {
+		// The no-flood contract, and it is the reason `rules` is optional rather than
+		// required. Every existing row is unstated; reporting them all would bury the
+		// one drifted row in a wall of red, and a gate that floods gets switched off
+		// rather than fixed. Silence here is the designed behaviour, not a gap.
+		const root = await tree(FILES);
+		const violations = await checkPre(root, [row_("src/a.ts", 1, "keep-wire", "why", "N3")]);
+		expect(violations).toEqual([]);
+		await Bun.$`rm -rf ${root}`.quiet();
 	});
 });
 

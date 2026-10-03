@@ -742,6 +742,22 @@ export interface Row {
 	readonly disposition: Disposition;
 	readonly reason: string;
 	readonly keepRefs: string;
+	/**
+	 * The `RULES_VERSION` its `hits` was measured under, or `""` when the row
+	 * predates the column.
+	 *
+	 * `hits` is a claim about the file, and a claim is only as good as the rule that
+	 * produced it. Measured 2026-10-03: `PINNED` has been widened twice since the
+	 * table was filled, and `countRename` gained a subtraction, so rows written under
+	 * the old rules drifted by +104 and +32 on two files while the code itself moved
+	 * −3 and −1. Nothing reported it — `RULES_VERSION` guards the RATCHET's ceiling,
+	 * which is a different contract from row-to-rule. This column is that contract.
+	 *
+	 * Optional on purpose: `""` means "not stated", which is NOT the same as "wrong".
+	 * Treating a missing value as drift would redden every existing row at once, and a
+	 * gate that floods is a gate that gets switched off rather than fixed.
+	 */
+	readonly rules: string;
 	/** 1-based line in the TSV, for error messages. */
 	readonly line: number;
 }
@@ -752,6 +768,16 @@ export interface ParseResult {
 }
 
 const HEADER = "scope\tpath\thits\tdisposition\treason\tkeep_refs";
+/**
+ * The same header with the optional `rules` column.
+ *
+ * BOTH headers parse. A table written before the column existed still has the
+ * six-cell header, and rejecting it would fail every row at once — the gate would
+ * report one problem per file for a change that changed no decision. The column is
+ * additive: `rules` says which rule version produced a row's `hits`, and a table
+ * that has not adopted it yet says nothing false by its silence.
+ */
+const HEADER_WITH_RULES = `${HEADER}\trules`;
 
 /**
  * Parse the TSV.
@@ -766,8 +792,9 @@ export function parseTable(text: string): ParseResult {
 	const problems: string[] = [];
 	const lines = text.split("\n");
 
-	if (lines[0] !== HEADER) {
-		problems.push(`line 1: header must be exactly ${JSON.stringify(HEADER)}`);
+	const hasRulesColumn = lines[0] === HEADER_WITH_RULES;
+	if (lines[0] !== HEADER && !hasRulesColumn) {
+		problems.push(`line 1: header must be exactly ${JSON.stringify(HEADER)} or ${JSON.stringify(HEADER_WITH_RULES)}`);
 		return { rows, problems };
 	}
 
@@ -777,17 +804,22 @@ export function parseTable(text: string): ParseResult {
 		if (raw.trim() === "") continue;
 
 		const cells = raw.split("\t");
-		if (cells.length !== 6) {
-			problems.push(`line ${line}: expected 6 tab-separated cells, got ${cells.length}`);
+		// Six cells always; a seventh only where the header declares the column. A
+		// row that omits it is a row that has not stated its rule version, which is
+		// `""` and is reported as unstated rather than as drift.
+		const allowed = hasRulesColumn ? [6, 7] : [6];
+		if (!allowed.includes(cells.length)) {
+			problems.push(`line ${line}: expected ${allowed.join(" or ")} tab-separated cells, got ${cells.length}`);
 			continue;
 		}
-		const [scope, filePath, hitsRaw, disposition, reason, keepRefs] = cells as [
+		const [scope, filePath, hitsRaw, disposition, reason, keepRefs, rules = ""] = cells as [
 			string,
 			string,
 			string,
 			string,
 			string,
 			string,
+			string?,
 		];
 
 		if (!(DISPOSITIONS as readonly string[]).includes(disposition)) {
@@ -806,6 +838,7 @@ export function parseTable(text: string): ParseResult {
 			disposition: disposition as Disposition,
 			reason,
 			keepRefs,
+			rules,
 			line,
 		});
 	}
@@ -1118,6 +1151,17 @@ export async function checkPreWithCoverage(
 	// Per-row reviewability.
 	for (const row of rows) {
 		if (row.reason.trim() === "") violations.push({ rule: "empty-reason", detail: `${row.path} (line ${row.line})` });
+		// A row that STATES which rule version produced its `hits`, and states a
+		// version this build no longer runs, is a row whose number was measured by
+		// something else. `""` is unstated and is deliberately silent: the column is
+		// optional, and reporting every un-migrated row would be a flood rather than a
+		// finding. This fires only on a claim that is checkably out of date.
+		if (row.rules !== "" && row.rules !== RULES_VERSION) {
+			violations.push({
+				rule: "rules-drift",
+				detail: `${row.path} (line ${row.line}): hits measured under ${row.rules}, this build runs ${RULES_VERSION}`,
+			});
+		}
 		if (requiresKeepRefs(row.disposition) && row.keepRefs.trim() === "") {
 			violations.push({ rule: "missing-keep-refs", detail: `${row.path} (line ${row.line})` });
 		}

@@ -1500,7 +1500,7 @@ export class CommandController {
 				if (shouldPersistCwd) return await this.#applyBashResultCwd(result);
 			} catch (error) {
 				this.ctx.showError(
-					`Bash command completed, but OMP failed to update its working directory: ${
+					`Bash command completed, but ultraworkers failed to update its working directory: ${
 						error instanceof Error ? error.message : "Unknown error"
 					}`,
 				);

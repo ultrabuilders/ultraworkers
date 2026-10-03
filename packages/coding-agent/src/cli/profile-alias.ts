@@ -300,7 +300,7 @@ function renderAliasBlock(
 				// hardcoded literal, so after the rename the function body called
 				// `ultraworkers` while fish resolved completions against `omp` — a
 				// binary the alias never runs, and nothing at install time to say so.
-				`function ${aliasName} --wraps ${command.fish} --description 'OMP profile ${profile}'`,
+				`function ${aliasName} --wraps ${command.fish} --description 'ultraworkers profile ${profile}'`,
 				`    command ${command.fish} --profile=${profile} $argv`,
 				"end",
 			].join("\n");

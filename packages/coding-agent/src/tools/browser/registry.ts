@@ -249,7 +249,7 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 		const outcome = await waitForRelayExtension(cdpUrl, opts.signal);
 		if (outcome === "unreachable") {
 			throw new ToolError(
-				`${APP_NAME} browser relay is not reachable at ${cdpUrl}. Start it with \`${APP_NAME} browser-relay\` (or check the endpoint), and make sure the OMP Browser Relay extension is loaded in Chrome.`,
+				`${APP_NAME} browser relay is not reachable at ${cdpUrl}. Start it with \`${APP_NAME} browser-relay\` (or check the endpoint), and make sure the ultraworkers Browser Relay extension is loaded in Chrome.`,
 			);
 		}
 		if (outcome === "no-extension") {

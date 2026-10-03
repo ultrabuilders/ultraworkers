@@ -27,11 +27,16 @@ describe("ultraworkers read MCP resources", () => {
 		// resource" with an empty list — which reads like a broken resource router
 		// rather than a config the test never enabled.
 		//
-		// `config.yml`, not `settings.json`: the CLI migrates a `settings.json` it
-		// finds to `config.yml` on startup, so writing the former here leaves the
-		// value in a file this test no longer controls and the assertion passes for
-		// the wrong reason. Verified by ablation both ways — with this line the probe
-		// prints the fixture content; deleting it returns the empty-resources error.
+		// `config.yml` because that is the file the CLI reads once startup has run.
+		// A `settings.json` written here would work too: the CLI migrates it to
+		// `config.yml` (leaving a `.bak` behind) and carries the value across, so the
+		// assertion would still pass — for the right reason, not a wrong one.
+		// Writing `config.yml` directly just skips a step this test has no reason to
+		// observe.
+		//
+		// Ablation, both directions: with this line the probe prints the fixture
+		// content; delete it and the empty-resources error returns. That ablation is
+		// evidence for the OPT-IN. It says nothing about the file name.
 		await Bun.write(path.join(agentDir, "config.yml"), "mcp:\n  enableProjectConfig: true\n");
 		await Bun.write(
 			path.join(projectDir, ".mcp.json"),

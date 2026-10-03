@@ -21,7 +21,11 @@ describe("parseArgs — Windows extension paths", () => {
 
 describe("parseArgs — trusted extension allowlist", () => {
 	it("accepts repeatable native absolute paths", () => {
-		const parsed = parseArgs(["--trusted-extension", "/opt/ultraworkers/policy.ts", "--trusted-extension=/opt/ultraworkers/audit.ts"]);
+		const parsed = parseArgs([
+			"--trusted-extension",
+			"/opt/ultraworkers/policy.ts",
+			"--trusted-extension=/opt/ultraworkers/audit.ts",
+		]);
 
 		expect(parsed.trustedExtensions).toEqual(["/opt/ultraworkers/policy.ts", "/opt/ultraworkers/audit.ts"]);
 	});

@@ -170,7 +170,7 @@ try {
 						USERPROFILE: home,
 						PI_CONFIG_DIR: ".omp",
 						OMP_PROFILE: profile,
-						OMP_DAEMON_IDLE_GRACE_MS: "200",
+						ULTRAWORKERS_DAEMON_IDLE_GRACE_MS: "200",
 						OMP_TEST_RELAY_URL: cdpUrl,
 						OMP_TEST_READY_MARKER: marker,
 					},

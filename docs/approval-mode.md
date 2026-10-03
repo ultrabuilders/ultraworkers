@@ -111,6 +111,24 @@ These explicit chain and segment restrictions are resolved before the existing r
 
 This pattern policy controls approval for the `bash` tool; it is not process or filesystem containment. An approved command retains the shell's ambient filesystem, network, and subprocess access. The `eval` tool also declares the `exec` tier and can spawn a shell via subprocess, so a `bash.patterns` `deny` rule does not apply to the same command run through `eval` — under `yolo`, that `exec` call resolves to `allow`. To gate the shell `eval` can reach, add a `tools.approval.eval` policy (`prompt` or `deny`) alongside `bash.patterns`.
 
+**The missing containment is a decision, not an unfinished feature.** On 2026-09-29
+the owner settled to defer OS-tier containment — `FileSystemSandboxPolicy` and
+`NetworkSandboxPolicy`, which need kernel, syscall, or OS-profile support. In the same
+decision a proposal to move the default `tools.approvalMode` from `yolo` to `write` was
+dropped, so the default stays `yolo`. The paragraph above is therefore correct as
+written and nobody is waiting on a patch for it: under `yolo`, no rule in this file
+stops a command run through `eval`. `tools.approval.eval` is a policy you write, not a
+boundary the runtime enforces, and an unset approval mode fails closed only when no
+settings exist at all — a settings file that omits the key gets `yolo`.
+
+If you depend on that default, check it is still what this record claims:
+
+```bash
+grep -n 'isApprovalMode(configured) ? configured : "yolo"' packages/coding-agent/src/tools/approval.ts
+```
+
+No output means the default moved and this paragraph is stale.
+
 ### Path rules
 
 `pathRules.deny` and `pathRules.allow` name the paths a project has declared

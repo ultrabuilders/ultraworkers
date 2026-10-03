@@ -1,6 +1,7 @@
 //! Transactional native OAuth callback registration and one-shot delivery.
 
 mod context;
+mod marker;
 #[cfg(target_os = "macos")]
 mod darwin;
 #[cfg(target_os = "linux")]

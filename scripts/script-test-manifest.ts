@@ -63,6 +63,14 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "check-grp-c-test-baseline.test.ts", reason: "" },
 	{ file: "ci-check-full.test.ts", reason: "" },
 	{ file: "check-script-tests.test.ts", reason: "" },
+	// The `runs-on` label gate's own test. It landed with the gate and was left
+	// unclassified, which is not a warning about this one file: the refusal at the
+	// top of the runner stops `test:scripts` before it executes ANY file, so the
+	// whole script-test suite — this one included — gated nothing. CI runs
+	// `bun run test:scripts` (.github/workflows/ci.yml:644), so the omission was a
+	// red step in CI, not just a local one. It needs no credentials and no network:
+	// it reads `.github/workflows/*.yml` and `infra/docs/`, and runs in 32ms.
+	{ file: "ci-check-runner-labels.test.ts", reason: "" },
 	// Guards the census's admissibility, not its arithmetic: a confirmed control
 	// the pattern cannot see means the counts are not quotable, and the census
 	// reports that row while still exiting 0.

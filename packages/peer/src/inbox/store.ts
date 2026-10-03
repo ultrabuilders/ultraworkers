@@ -29,8 +29,25 @@ import { atomicWriteJson } from "@oh-my-pi/pi-utils";
  * unread message because a backlog built up while nobody was running is exactly
  * the silent loss this store exists to make impossible. The two caps are
  * separate on purpose; see the table in `epic-jwsy.6`.
+ *
+ * NOT 8192 EITHER, and the bead that asked for it was wrong about its source.
+ * `epic-jwsy.8` attributes 8192 to `pi-parley`'s mailbox cap. Measured in
+ * `pi-peer-messaging-ref/pi-parley/broker/broker.ts:109`:
+ *
+ *     const MAX_MAILBOX_MESSAGES = 256;
+ *
+ * The 8192 that appears in that repo is a barrier-directory capacity
+ * (`federation-conversation.ts:64`), a max qualified-id length, and a metrics
+ * cache in a different repo — none of them a mailbox. The number was borrowed
+ * from a premise that does not hold, so it is not reproduced here.
+ *
+ * This is a PLACEHOLDER pending the owner's backlog measurement, which
+ * `epic-jwsy.8` calls a hard first step: a horizon too low loses history when a
+ * user returns after a day, too high lets the inbox grow without bound. 256 is
+ * the one number here that was measured rather than assumed, and it is the right
+ * default to start from.
  */
-export const INBOX_HORIZON = 8192;
+export const INBOX_HORIZON = 256;
 
 /**
  * One delivered message.
@@ -160,12 +177,27 @@ export class InboxStore {
 	}
 
 	/**
-	 * Delete the oldest entries until the inbox is within its horizon.
+	 * Delete one envelope by identity.
 	 *
-	 * Only ever called on entries a reader has already consumed, or when the
-	 * caller has decided retention may advance. That decision belongs to the
-	 * cursor layer (`epic-jwsy.8`), not here — this is the mechanism, and it
-	 * takes the number to remove so nothing here decides what "read" means.
+	 * Takes BOTH parts of the name rather than a sequence alone, because the
+	 * envelope id is what distinguishes two messages that would otherwise share a
+	 * filename — removing by sequence alone would delete the wrong one of a pair.
+	 *
+	 * `force` makes an absent file a no-op, so a retention pass racing another
+	 * process does not fail halfway: the message is already gone, which is the
+	 * state the caller asked for.
+	 */
+	async remove(seq: number, envelopeId: string): Promise<void> {
+		await fs.rm(path.join(this.#dir, inboxFileName(seq, envelopeId)), { force: true });
+	}
+
+	/**
+	 * Delete the oldest entries until the inbox is within `count`.
+	 *
+	 * The blunt instrument, kept for callers that genuinely only care about size.
+	 * The cursor layer (`epic-jwsy.8`) does NOT use this: retention there follows
+	 * the read cursor, and must report what it removed and why, which a count
+	 * cannot express.
 	 */
 	async pruneTo(count: number): Promise<number> {
 		const names = await this.#names();

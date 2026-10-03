@@ -45,7 +45,6 @@ describe("sshControlFallbackDir", () => {
 		const b = sshControlFallbackDir(canonicalDir, 501);
 		expect(a).toBe(b);
 		expect(a).toBe("/tmp/ultraworkers-5434354bc38");
-		expect(Buffer.byteLength(a)).toBe(29);
 		const tempBind = path.join(a, `${"a".repeat(40)}.sock.${"b".repeat(16)}`);
 		expect(Buffer.byteLength(tempBind)).toBe(92);
 		expect(103 - Buffer.byteLength(tempBind)).toBe(11);

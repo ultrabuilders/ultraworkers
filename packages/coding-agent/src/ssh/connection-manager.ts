@@ -75,7 +75,7 @@ export function controlPathFitsBudget(controlDir: string, platform: SshPlatform)
  * path bytes on the decimal uid.
  *
  * The prefix and digest length are one budget decision, not two. This path is
- * itself a `sun_path` consumer: `controlPathFitsBudget` admits a dir up to 39
+ * itself a `sun_path` consumer: `controlPathFitsBudget` admits a dir up to 40
  * bytes on macOS, and `/tmp/ultraworkers-` plus a 20-char digest is 38 — it
  * fits, with 2 bytes spare instead of the 11 the shorter prefix bought. Since
  * the length here is constant (production never passes `tmpBase`), that margin

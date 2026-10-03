@@ -14,15 +14,28 @@
 #   alone. Do not read section 1 as "also keep these".
 #
 # HOW SECTION 1 WAS GENERATED (regenerate with exactly this, do not hand-edit)
-#   git grep -l "@oh-my-pi/" -- 'packages/*/package.json' > /tmp/manifests.txt
-#   Regenerated 2026-10-01 at commit 1afdc3cebb: 24 manifests.
+#   for f in packages/*/package.json; do
+#     jq -e '.name | startswith("@oh-my-pi/")' "$f" >/dev/null && echo "$f"
+#   done | sort > /tmp/manifests.txt
+#   Regenerated 2026-10-04 at commit 0d0eb8c741: 12 manifests.
+#
+#   This used to be `git grep -l "@oh-my-pi/" -- 'packages/*/package.json'`,
+#   which is NOT equivalent and could not satisfy the drift constraint below.
+#   `git grep` matches the string anywhere in the file, so it also matches a
+#   manifest whose OWN name has already migrated but which still depends on
+#   `@oh-my-pi/*` packages — measured here: 7 of them (collab-web, durable,
+#   evals, metaharness, protocol, server, typescript-edit-benchmark). Those are
+#   not stale entries; they are correct, and listing them aims the rename at
+#   manifests that no longer resolve under the old scope. `keep-list-drift.test.mjs`
+#   reads `.name`, so the two disagreed by construction and the gate could only
+#   ever be red. Section 1 is about a manifest's own npm name — see below.
 #
 # DRIFT CONSTRAINT — a gate must compare this list against that command and fail
 #   when they differ. A keep-list written by hand decays SILENTLY: each new
 #   package that forgets to be added is skipped by the rename with no error and
-#   no way to notice afterwards. "23" above is a claim that goes stale the
-#   moment a package is added or removed, which is exactly why it is written
-#   down rather than left implicit.
+#   no way to notice afterwards. The count above is a claim that goes stale the
+#   moment a package is added, removed or renamed, which is exactly why it is
+#   written down rather than left implicit.
 #
 # ---------------------------------------------------------------------------
 # 1. SCOPE IDENTIFIERS — rewrite `@oh-my-pi/` → new scope
@@ -33,28 +46,17 @@
 # the one other packages import.
 packages/agent/package.json
 packages/ai/package.json
-packages/browser-relay/package.json
 packages/catalog/package.json
-packages/chord/package.json
-packages/client/package.json
-packages/codemode/package.json
 packages/coding-agent/package.json
-packages/collab-web/package.json
-packages/durable/package.json
-packages/evals/package.json
-packages/metaharness/package.json
 packages/mnemopi/package.json
 packages/natives/package.json
 packages/omptype/package.json
-packages/protocol/package.json
-packages/server/package.json
 packages/snapcompact/package.json
 packages/stats/package.json
-packages/telemetry/package.json
 packages/tui/package.json
-packages/typescript-edit-benchmark/package.json
 packages/utils/package.json
 packages/wire/package.json
+
 #
 # ---------------------------------------------------------------------------
 # 2. WIRE / OPS IDENTITY — DO NOT REWRITE

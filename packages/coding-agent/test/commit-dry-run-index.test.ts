@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 import { resolveStagedFiles } from "../src/commit/agentic/index";
+import { createCommitTools } from "../src/commit/agentic/tools";
 
 const tempDirs: string[] = [];
 
@@ -72,9 +73,10 @@ describe("resolveStagedFiles honours --dry-run", () => {
 	it("leaves the index empty under a dry run", async () => {
 		const dir = await repoWithUnstagedFile("commit-staged-dry-");
 
-		const staged = await resolveStagedFiles(vcs.requireGit(dir), true);
+		// The call itself is the trigger; the index is the contract. `--dry-run`
+		// reports, it does not stage.
+		await resolveStagedFiles(vcs.requireGit(dir), true);
 
-		// The index is the contract: `--dry-run` reports, it does not stage.
 		expect(await stagedPaths(dir)).toEqual([]);
 	});
 
@@ -116,5 +118,46 @@ describe("resolveStagedFiles honours --dry-run", () => {
 
 		expect(staged).toEqual(["uncommitted.txt"]);
 		expect(await stagedPaths(dir)).toEqual(["uncommitted.txt"]);
+	});
+
+	// The agent runs on tools of its own, and `restrictToolNames` locks the session to
+	// exactly those, so the built-in toolset is unreachable. That makes the dry-run
+	// contract hold through the agent too — but only while every tool here is
+	// read-only. `dryRun` is not plumbed into the session, so a tool that staged,
+	// committed or unstaged would mutate the index during a preview and NOTHING in
+	// this command would report it: the next bare `git commit` would sweep the result
+	// under someone else's message.
+	//
+	// If this row goes red, a tool was ADDED or REMOVED. Do not widen the list to make
+	// it pass — decide first whether the new tool can write.
+	it("gives the commit agent only read-and-propose tools, none able to touch the index", async () => {
+		const dir = await repoWithUnstagedFile("commit-tool-surface-");
+		const options = {
+			cwd: dir,
+			authStorage: {} as never,
+			modelRegistry: {} as never,
+			settings: {} as never,
+			spawns: "",
+			state: {} as never,
+			changelogTargets: [] as string[],
+		};
+
+		expect(
+			createCommitTools(options)
+				.map(tool => tool.name)
+				.sort(),
+		).toEqual([
+			"analyze_files",
+			"git_file_diff",
+			"git_hunk",
+			"git_overview",
+			"propose_changelog",
+			"propose_commit",
+			"recent_commits",
+			"split_commit",
+		]);
+		// The one tool that is conditionally absent; a count that silently drops it
+		// would still satisfy the list above if it were ever renamed into another entry.
+		expect(createCommitTools({ ...options, enableAnalyzeFiles: false }).map(tool => tool.name)).toHaveLength(7);
 	});
 });

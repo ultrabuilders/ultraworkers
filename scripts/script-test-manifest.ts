@@ -63,6 +63,13 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "check-grp-c-test-baseline.test.ts", reason: "" },
 	{ file: "ci-check-full.test.ts", reason: "" },
 	{ file: "check-script-tests.test.ts", reason: "" },
+	// `check:metaharness-output-filename`'s own test. Unclassified like the two above,
+	// and the consequence is the same and larger: `run-script-tests.ts:20` exits before
+	// spawning anything when the manifest does not describe this tree, so ONE
+	// unclassified file stops every OTHER script test too — measured, not assumed:
+	// with these four unclassified, `bun run test:scripts` exited 1 having run
+	// **0** files (no `N pass` line at all).
+	{ file: "check-metaharness-output-filename.test.ts", reason: "" },
 	// The `runs-on` label gate's own test. It landed with the gate and was left
 	// unclassified, which is not a warning about this one file: the refusal at the
 	// top of the runner stops `test:scripts` before it executes ANY file, so the
@@ -86,10 +93,13 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "plan/split-grp-c.test.ts", reason: "" },
 	{ file: "rename/args.test.ts", reason: "" },
 	{ file: "rename/bucket-legacy-token.test.ts", reason: "" },
+	{ file: "rename/check-disposition-case-blind.test.ts", reason: "" },
 	{ file: "rename/check-disposition-ratchet.test.ts", reason: "" },
 	{ file: "rename/check-disposition.test.ts", reason: "" },
 	{ file: "rename/check-docs-rename.test.ts", reason: "" },
 	{ file: "rename/check-runtime-rename.test.ts", reason: "" },
+	{ file: "rename/propose-rows.test.ts", reason: "" },
+	{ file: "rename/readme-pinned-table.test.ts", reason: "" },
 	{ file: "session-stats/audit.test.ts", reason: "" },
 	// Pins `programs.omp` in `nix/nixos-module.nix` + `nix/home-manager.nix`
 	// against the README that teaches it, and the module's default against an

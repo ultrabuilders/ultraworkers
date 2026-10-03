@@ -28,7 +28,7 @@ import type { Color, KittyEvent, KittyTerminal } from "kitty-vt-wasm";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-/** Minimal slice of the host schema builder (`omp.zod`) this tool uses. */
+/** Minimal slice of the host schema builder (`host.zod`) this tool uses. */
 interface Schema {
 	describe(text: string): Schema;
 	optional(): Schema;
@@ -964,7 +964,7 @@ function gated(gate: string, command: string[]): string[] {
 
 // ─── Tool ────────────────────────────────────────────────────────────────────
 
-const factory = (omp: ToolHost) => {
+const factory = (host: ToolHost) => {
 	const startSession = async (params: TuiParams): Promise<string> => {
 		const name = params.name ?? "main";
 		if (sessions.has(name)) {
@@ -977,12 +977,12 @@ const factory = (omp: ToolHost) => {
 		const file = params.bin ? undefined : (params.file ?? "packages/coding-agent/src/cli.ts");
 		const target = file ?? params.bin ?? "";
 		const command = file
-			? [process.execPath, resolve(omp.cwd, file), ...(params.args ?? [])]
+			? [process.execPath, resolve(host.cwd, file), ...(params.args ?? [])]
 			: [target, ...(params.args ?? [])];
 
 		const rows = params.rows ?? 30;
 		const cols = params.cols ?? 100;
-		const dir = mkdtempSync(join(tmpdir(), `omp-tui-${name}-`));
+		const dir = mkdtempSync(join(tmpdir(), `uw-tui-${name}-`));
 		const sockPath = join(dir, "debug.sock");
 		const gatePath = join(dir, "spawn.gate");
 		const screen = await Screen.create(cols, rows);
@@ -993,7 +993,7 @@ const factory = (omp: ToolHost) => {
 		let proc: Child;
 		try {
 			const spawned = Bun.spawn(gated(gatePath, command), {
-				cwd: omp.cwd,
+				cwd: host.cwd,
 				env: {
 					...process.env,
 					OMP_TUI_DEBUG: sockPath,
@@ -1110,65 +1110,65 @@ const factory = (omp: ToolHost) => {
 			"resize) return an after-screenshot of the resulting display (quiet:true " +
 			"skips it). Sessions persist across calls; injected input rides the " +
 			"app's real input path.",
-		parameters: omp.zod.object({
-			op: omp.zod
+		parameters: host.zod.object({
+			op: host.zod
 				.string()
 				.describe(
 					"operation: start | stop | list | text | screen | shot | frame | tree | values | info | keys | type | paste | mouse | send | resize | raw",
 				),
-			name: omp.zod
+			name: host.zod
 				.string()
 				.optional()
 				.describe("session name (default: main)"),
-			file: omp.zod
+			file: host.zod
 				.string()
 				.optional()
 				.describe("start: TS/JS entry path relative to cwd (default: packages/coding-agent/src/cli.ts — omp itself)"),
-			bin: omp.zod
+			bin: host.zod
 				.string()
 				.optional()
 				.describe("start: executable name or path"),
-			args: omp.zod
-				.array(omp.zod.string())
+			args: host.zod
+				.array(host.zod.string())
 				.optional()
 				.describe("start: program argv"),
-			rows: omp.zod
+			rows: host.zod
 				.number()
 				.optional()
 				.describe("start/resize: pty rows (default 30)"),
-			cols: omp.zod
+			cols: host.zod
 				.number()
 				.optional()
 				.describe("start/resize: pty cols (default 100)"),
-			keys: omp.zod
+			keys: host.zod
 				.string()
 				.optional()
 				.describe("keys: spec, e.g. \"tab tab enter C-c pgdn 'hello'\""),
-			text: omp.zod
+			text: host.zod
 				.string()
 				.optional()
 				.describe("type/paste/send: payload text"),
-			x: omp.zod.number().optional().describe("mouse: zero-based column"),
-			y: omp.zod.number().optional().describe("mouse: zero-based viewport row"),
-			action: omp.zod
+			x: host.zod.number().optional().describe("mouse: zero-based column"),
+			y: host.zod.number().optional().describe("mouse: zero-based viewport row"),
+			action: host.zod
 				.string()
 				.optional()
 				.describe("mouse: gesture (default click)"),
-			peek: omp.zod
+			peek: host.zod
 				.number()
 				.optional()
 				.describe(
 					"screen: scrollback lines to include; raw: tail bytes (default 2000)",
 				),
-			clear: omp.zod
+			clear: host.zod
 				.boolean()
 				.optional()
 				.describe("raw: reset capture after reading"),
-			quiet: omp.zod
+			quiet: host.zod
 				.boolean()
 				.optional()
 				.describe("input ops: skip the after-screenshot"),
-			timeout: omp.zod
+			timeout: host.zod
 				.number()
 				.optional()
 				.describe("start: socket wait seconds (default 15)"),

@@ -5416,7 +5416,7 @@ export class AgentSession implements SettingsScope {
 	 * Turn-settle checkpoint for owned headless browser tabs (issue #8246).
 	 * Close tabs idle past `browser.idleCloseSec` as the memory backstop,
 	 * then freeze the survivors so idle animated pages stop burning CPU/GPU
-	 * while keeping their state for millisecond resume. Scoped to OMP-owned
+	 * while keeping their state for millisecond resume. Scoped to ultraworkers-owned
 	 * headless tabs of this session only — relay/CDP/spawned tabs, other
 	 * sessions' tabs, and `persist` tabs are never touched. Best-effort:
 	 * never throws, so teardown cannot break the event flow.
@@ -7833,7 +7833,7 @@ export class AgentSession implements SettingsScope {
 				// Await the idempotent dispose() before exiting so the browser
 				// reaper and other bounded teardown complete — a fire-and-forget
 				// `void this.dispose()` raced process.exit() and could leave an
-				// OMP-owned Chromium alive (#5643).
+				// ultraworkers-owned Chromium alive (#5643).
 				void this.dispose().finally(() => process.exit(0));
 			},
 			getContextUsage: () => this.getContextUsage(),

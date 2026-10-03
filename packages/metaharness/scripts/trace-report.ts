@@ -24,7 +24,8 @@
  *   ... --synth openrouter/openai/gpt-oss-120b
  *
  * Auth: provider API keys resolve through ultraworkers' auth storage
- * (~/.omp/agent/agent.db: stored key, OAuth, or env var fallback).
+ * (~/.omp/agent/agent.db: stored key, OAuth, or env var fallback). That path
+ * segment is the live config dir (`CONFIG_DIR_NAME`), not the brand.
  */
 
 import { parseArgs } from "node:util";

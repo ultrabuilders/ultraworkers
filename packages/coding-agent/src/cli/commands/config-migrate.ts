@@ -23,6 +23,7 @@ import {
 	planConfigMigration,
 } from "@oh-my-pi/pi-utils/config-migrate";
 import {
+	APP_NAME,
 	$which,
 	CONFIG_DIR_NAME_NEXT,
 	getAgentDbPath,
@@ -327,7 +328,7 @@ export function openRootWarning(holders: readonly LiveHolder[]): string[] {
 		"",
 		"Moving these renames SQLite databases that are still open. The holder keeps",
 		"writing to the renamed file and loses its config root, which looks like the",
-		"migration deleting your history and auth. Quit omp and any other process using",
+		`migration deleting your history and auth. Quit ${APP_NAME} and any other process using`,
 		"this config root, then re-run — or pass --force to move anyway.",
 	);
 	return lines;

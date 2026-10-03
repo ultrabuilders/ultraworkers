@@ -1305,7 +1305,7 @@ export class PluginManager {
 		//
 		// Each is run with a timeout rather than awaited bare: a diagnostic is
 		// third-party code on a path that must still print the built-in findings.
-		// An extension that hangs here would otherwise take `omp plugin doctor`
+		// An extension that hangs here would otherwise take `ultraworkers plugin doctor`
 		// down with it — the check meant to report a broken extension becoming the
 		// outage.
 		for (const { source, diagnostic } of collectDiagnostics()) {

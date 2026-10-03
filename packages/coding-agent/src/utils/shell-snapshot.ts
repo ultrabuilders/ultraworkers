@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getSafeProjectCwd, logger, postmortem } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getSafeProjectCwd, logger, postmortem } from "@oh-my-pi/pi-utils";
 import fnEnvHelper from "./shell-snapshot-fn-env.sh" with { type: "text" };
 
 const cachedSnapshotPaths = new Map<string, string>();
@@ -240,7 +240,10 @@ export async function getOrCreateSnapshot(
 	// exclusive dir and every other account's pre-create write below fails with
 	// EACCES — which used to escape into `executeBash` and break every bash call.
 	const uid = process.getuid?.();
-	const snapshotDir = path.join(os.tmpdir(), uid === undefined ? "omp-shell-snapshots" : `omp-shell-snapshots-${uid}`);
+	const snapshotDir = path.join(
+		os.tmpdir(),
+		uid === undefined ? `${APP_NAME}-shell-snapshots` : `${APP_NAME}-shell-snapshots-${uid}`,
+	);
 
 	// Generate unique snapshot path
 	const shellName = shell.includes("zsh") ? "zsh" : shell.includes("bash") ? "bash" : "sh";

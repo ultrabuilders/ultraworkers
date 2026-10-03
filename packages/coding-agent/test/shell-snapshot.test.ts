@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { getOrCreateSnapshot, sanitizeSnapshotForBrush } from "@oh-my-pi/pi-coding-agent/utils/shell-snapshot";
 import fnEnvHelper from "../src/utils/shell-snapshot-fn-env.sh" with { type: "text" };
 
@@ -19,7 +20,7 @@ const REAL_ECHO = Bun.which("echo") ?? "/bin/echo";
 /** Mirrors the per-uid snapshot dir name computed in `getOrCreateSnapshot`. */
 function snapshotDirIn(tmpRoot: string): string {
 	const uid = process.getuid?.();
-	return path.join(tmpRoot, uid === undefined ? "omp-shell-snapshots" : `omp-shell-snapshots-${uid}`);
+	return path.join(tmpRoot, uid === undefined ? `${APP_NAME}-shell-snapshots` : `${APP_NAME}-shell-snapshots-${uid}`);
 }
 
 // `sanitizeSnapshotForBrush` is the snapshot-side mitigation for brush's

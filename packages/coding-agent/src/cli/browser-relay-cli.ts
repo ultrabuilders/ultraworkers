@@ -1,5 +1,5 @@
 /**
- * `omp browser-relay` implementation: serve the local CDP relay and install
+ * `ultraworkers browser-relay` implementation: serve the local CDP relay and install
  * its Chrome extension. Standalone CLI command — console output here is
  * intentional user-facing output.
  */
@@ -95,7 +95,7 @@ async function runServe(args: BrowserRelayCommandArgs): Promise<void> {
 		console.log(`  enable with         ${APP_NAME} config set browser.relay true`);
 	} else {
 		console.log(
-			`  enable with         omp config set browser.relay true && omp config set browser.relayUrl http://127.0.0.1:${args.port}`,
+			`  enable with         ${APP_NAME} config set browser.relay true && ${APP_NAME} config set browser.relayUrl http://127.0.0.1:${args.port}`,
 		);
 	}
 	console.log(`Waiting for the Browser Relay extension to connect (${APP_NAME} browser-relay install)...`);

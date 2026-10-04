@@ -9,9 +9,15 @@
  * DETERMINISM_PRELUDE is a CONTRACT, not hardening. Remove it and the restart key and
  * resume become lies: a re-run would produce different values than the cached journal,
  * and every guarantee built on the journal would be describing a run that cannot
- * happen. It is best-effort against ACCIDENTAL nondeterminism in trusted scripts, not a
- * security wall — a determined script can still reach a host Function through a
- * capability bridge's `.constructor`.
+ * happen.
+ *
+ * The prelude only defends a script that CALLS `Math.random`/`Date.now`. It never defended
+ * one that walks to the original through a host value's `.constructor`, because every value
+ * this module injects is a HOST value and a host function's `.constructor` is the HOST
+ * `Function`. `REALM_GLOBALS_SOURCE` below is what closed that: injected globals are now
+ * realm-local stand-ins, so `.constructor` lands on a realm intrinsic and the route stops
+ * at the realm. It remains best-effort against ACCIDENTAL nondeterminism in trusted
+ * scripts rather than a security wall against a determined one.
  */
 import * as vm from "node:vm";
 import { WorkflowError, WorkflowErrorCode, type WorkflowMeta } from "../errors";
@@ -107,6 +113,58 @@ function notWiredImplementations(): WorkflowRuntimeImplementations {
 }
 
 /**
+ * Builds realm-local stand-ins for every injected global.
+ *
+ * WHY THIS EXISTS. `assembleRuntimeBindings` copies the owner's implementations into the
+ * context verbatim, and every one of them is a HOST value. A host function's `.constructor`
+ * is the HOST `Function`, and a host object's `.constructor.constructor` is too — so a script
+ * holding ANY global could walk back out of the realm and defeat everything
+ * DETERMINISM_PRELUDE does:
+ *
+ *     agent.constructor("return Math.random()")()
+ *
+ * That route never touches the prelude, so the real `Math.random` runs, a re-run diverges
+ * from the journal, and every guarantee built on the journal describes a run that cannot
+ * happen. `parse.ts`'s DETERMINISM_BLOCKLIST cannot catch it — it matches source text, and
+ * this path is built at runtime.
+ *
+ * It is not only owner-supplied capabilities. The default globals include host OBJECTS
+ * (`process`, `console`, `budget`), so `process.constructor.constructor("return process.env")()`
+ * reached real environment variables before this, with nothing wired at all.
+ *
+ * WHY IT IS BUILT IN-REALM RATHER THAN HOST-SIDE. A wrapper authored on the host would
+ * carry the host `Function` in its own `.constructor` and leak by the same door. These
+ * wrappers are created by running this source INSIDE the context, so they are realm
+ * intrinsics: `agent.constructor` is the realm's `Function`, and realm `Function` compiles
+ * into the realm, where the prelude has already replaced `Math.random`.
+ *
+ * The host implementations live only in these closures. Nothing reachable from a script
+ * holds one, so there is no path back to them.
+ *
+ * WHAT THIS CHANGES. A host object arrives as a realm-local copy with realm-local methods,
+ * so identity does not survive: an object passed in is not the same object a script sees.
+ * For the declared globals — functions and small frozen stubs — that is the intended trade,
+ * and it is the reason this lives here rather than in `assembleRuntimeBindings`: the contract
+ * assembles bindings, and deciding what a realm may observe is this module's job.
+ */
+const REALM_GLOBALS_SOURCE = `(hostGlobals) => {
+  const wrap = (value) => {
+    if (typeof value === "function") {
+      return function (...args) { return value.apply(this, args); };
+    }
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      const copy = {};
+      for (const key of Object.keys(value)) copy[key] = wrap(value[key]);
+      return copy;
+    }
+    return value;
+  };
+  const out = {};
+  for (const key of Object.keys(hostGlobals)) out[key] = wrap(hostGlobals[key]);
+  return out;
+}`;
+
+/**
  * Run a workflow body and resolve with whatever it returned.
  *
  * The body is wrapped in an IIFE because scripts have no `import`: there is no module
@@ -130,12 +188,14 @@ export async function runWorkflowScript<T = unknown>(
 	const { globals, diagnostics } = WORKFLOW_CAPABILITY_CONTRACT.assembleRuntimeBindings(implementations);
 	for (const diagnostic of diagnostics) onDiagnostic?.(diagnostic);
 	const context = vm.createContext({
-		...globals,
 		// Object/Array/JSON/Math/Date/Promise/Set/Map/etc. come from the vm realm
 		// itself — we deliberately do NOT inject host built-ins, whose .constructor
 		// would be the host Function (a determinism-guard bypass). Math/Date are
 		// neutered in-realm by DETERMINISM_PRELUDE below.
 	});
+	// Assigned after the context exists, because the stand-ins have to be manufactured
+	// by the realm — see REALM_GLOBALS_SOURCE.
+	Object.assign(context, vm.runInContext(REALM_GLOBALS_SOURCE, context)(globals));
 
 	const wrapped = `${DETERMINISM_PRELUDE}\n(async () => {\n${body}\n})()`;
 	return (await new vm.Script(wrapped, { filename: `${meta.name || "workflow"}.js` }).runInContext(context)) as T;

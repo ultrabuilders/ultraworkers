@@ -256,7 +256,7 @@ class OmpLocal(BaseInstalledAgent):
         # Resolved during install(); reused by version + run commands.
         self._home = "/root"
         self._bun = "/root/.bun/bin/bun"
-        self._cli = "/root/.omp-bench/app/dist/cli.js"
+        self._cli = "/root/.ultraworkers-bench/app/dist/cli.js"
         self._binary_arm64 = _env("ULTRAWORKERS_BENCH_BINARY_ARM64")
         self._binary_x64 = _env("ULTRAWORKERS_BENCH_BINARY_X64")
         self._binary = bool(self._binary_arm64 or self._binary_x64)
@@ -392,7 +392,7 @@ class OmpLocal(BaseInstalledAgent):
                 "ULTRAWORKERS_BENCH_INSTALL=local requires ULTRAWORKERS_BENCH_TARBALL (host tarball path)"
             )
         await environment.upload_file(self._tarball, _TARBALL_DST)
-        app = f"{self._home}/.omp-bench/app"
+        app = f"{self._home}/.ultraworkers-bench/app"
         await self.exec_as_agent(
             environment,
             command=self._wrap(
@@ -431,9 +431,9 @@ class OmpLocal(BaseInstalledAgent):
             raise RuntimeError(
                 f"binary mode: no ultraworkers binary provided for container arch {arch}"
             )
-        app_dir = f"{self._home}/.omp-bench"
-        dst = f"{app_dir}/omp"
-        staging = "/tmp/omp-bin"
+        app_dir = f"{self._home}/.ultraworkers-bench"
+        dst = f"{app_dir}/ultraworkers"
+        staging = "/tmp/ultraworkers-bin"
         await self.exec_as_agent(
             environment, command=f"mkdir -p {shlex.quote(app_dir)}"
         )
@@ -446,7 +446,7 @@ class OmpLocal(BaseInstalledAgent):
         return dst
 
     async def _install_published(self, environment: BaseEnvironment) -> str:
-        app = f"{self._home}/.omp-bench/app"
+        app = f"{self._home}/.ultraworkers-bench/app"
         spec = f"@oh-my-pi/pi-coding-agent@{self._pkg_version}"
         await self.exec_as_agent(
             environment,

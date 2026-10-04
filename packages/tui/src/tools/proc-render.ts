@@ -321,6 +321,10 @@ const RECEIPT_TONE: Record<IrcDeliveryReceipt["outcome"], TspTone> = {
 	injected: "success",
 	woken: "success",
 	revived: "warning",
+	// A durable hand-off is a success: the message is on disk on the far side.
+	// It is not styled like `injected` in meaning, but it is not a failure, and
+	// colouring it `error` would train the reader to distrust real deliveries.
+	persisted: "success",
 	failed: "error",
 };
 

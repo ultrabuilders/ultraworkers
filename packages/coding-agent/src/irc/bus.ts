@@ -15,6 +15,7 @@ import { AgentLifecycleManager } from "../registry/agent-lifecycle";
 import { AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
 import type { CustomMessage } from "../session/messages";
 import { resolveInboundFenceContext } from "./inbound-fence";
+import { deliverPeerMessage } from "./peer-transport";
 
 interface IrcWaiter {
 	from?: string;
@@ -286,6 +287,25 @@ export class IrcBus {
 
 		const ref = this.#registry.get(message.to);
 		if (!ref) {
+			// CROSS-PROCESS TRANSPORT, consulted for a target this bus's registry
+			// does not know.
+			//
+			// Placement: after the fence, before the registry error. The fence must
+			// stay first — a transport carries the message to another process, and
+			// that is the most irreversible effect in this method, so it must never
+			// run behind a decision the user already made.
+			//
+			// Scope: only an UNKNOWN target reaches here. An agent this bus owns is
+			// delivered locally whether or not a transport is installed, so an
+			// extension cannot intercept local delivery by registering one.
+			//
+			// A refusal is NOT reported as the outcome. `deliverPeerMessage` refuses
+			// for `no-route` whenever no transport is registered, which is the
+			// common case, and answering that with a transport-shaped error would
+			// replace the actionable roster hint below with a worse message. So a
+			// refusal falls through and the caller gets the registry error.
+			const viaTransport = await this.#deliverViaTransport(message);
+			if (viaTransport) return viaTransport;
 			return {
 				to: message.to,
 				outcome: "failed",
@@ -372,6 +392,29 @@ export class IrcBus {
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}
+	}
+
+	/**
+	 * Hand `message` to the installed peer transport, or `undefined` when no
+	 * transport took it.
+	 *
+	 * `undefined` means "fall through to the caller's own error", which is the
+	 * right answer for every refusal: `no-route` (nothing registered) is the
+	 * common case and not an error worth reporting as one, and
+	 * `peer-unregistered` / `capability-missing` name the transport's own
+	 * misconfiguration rather than the recipient being unknown.
+	 *
+	 * A transport that THROWS is not swallowed. That is a transport bug, and
+	 * converting it into `undefined` would report it as an unknown agent — the
+	 * one diagnosis the sender cannot act on.
+	 */
+	async #deliverViaTransport(message: IrcMessage): Promise<IrcDeliveryReceipt | undefined> {
+		const outcome = await deliverPeerMessage(message.to, message.body);
+		if (outcome.outcome === "refused") return undefined;
+		// `injected`/`woken`/`revived` carry over unchanged; `persisted` needed a
+		// receipt member of its own because folding it into `injected` would
+		// claim a transcript read that a socket cannot promise.
+		return { to: message.to, outcome: outcome.outcome };
 	}
 
 	/**

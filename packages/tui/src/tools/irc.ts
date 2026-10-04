@@ -60,7 +60,17 @@ export interface IrcMessage {
 /** Delivery outcome for one peer recipient. */
 export interface IrcDeliveryReceipt {
 	to: string;
-	outcome: "injected" | "woken" | "revived" | "failed";
+	/**
+	 * `persisted` is delivery to a durable inbox on the far side of a peer
+	 * transport, with no claim that the recipient's transcript has seen it yet.
+	 *
+	 * It is deliberately NOT folded into `injected`. A cross-process transport
+	 * puts the message on a socket; whether it reaches the recipient is not
+	 * something the sender can know, so reporting `injected` here is the exact
+	 * `success: true` for an undelivered message that `peer-transport.ts` names
+	 * as the bug this seam exists to prevent.
+	 */
+	outcome: "injected" | "woken" | "revived" | "persisted" | "failed";
 	error?: string;
 }
 /** Status ordering for peer rosters in child prompts. */

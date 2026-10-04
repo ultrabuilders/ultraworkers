@@ -8,6 +8,8 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { AgentRegistry } from "../../src/registry/agent-registry";
+import { IrcBus } from "../../src/irc/bus";
 import {
 	PEER_TRANSPORT_PROTOCOL_VERSION,
 	PeerTransportProtocolMismatch,
@@ -160,5 +162,136 @@ describe("lock backend", () => {
 		const off = addPeerLockBackend({ id: "c", shouldAdmit: () => false });
 		expect(shouldAdmitPeerLock("src/**")).toBe(true);
 		off();
+	});
+});
+
+/**
+ * The seam is only real if the bus reaches it.
+ *
+ * Every row above exercises `deliverPeerMessage` directly, which is exactly why
+ * the gap was invisible: `deliverPeerMessage` had eight test call sites and no
+ * production one, and `bus.ts` did not import `peer-transport` at all. A seam
+ * with a green suite and no caller is a registry that grew, not a seam that
+ * binds — so these rows drive `IrcBus.send`, which is where the wiring either
+ * exists or does not.
+ */
+describe("bus wiring", () => {
+	function makeBus() {
+		const agents = new AgentRegistry();
+		return { agents, irc: new IrcBus(agents) };
+	}
+
+	test("a message for an agent this bus does not own reaches the transport", async () => {
+		// WHY THIS ROW — the contract. The failure it defends: a peer session runs
+		// in another process, so it is absent from this bus's registry, and the
+		// bus answered every such send with "Unknown agent" while an installed
+		// transport sat unused. The transport's own `deliver` is the observer here,
+		// not the receipt, so this row proves the CALL and not the mapping.
+		const seen: Array<{ to: string; message: string }> = [];
+		addPeerTransport(
+			transport({
+				id: "test",
+				deliver: async (to: string, message: string) => {
+					seen.push({ to, message });
+					return { outcome: "injected" };
+				},
+			}),
+		);
+
+		const { irc } = makeBus();
+		const receipt = await irc.send({ from: "Main", to: "far-peer", body: "ping" });
+
+		expect(seen).toEqual([{ to: "far-peer", message: "ping" }]);
+		expect(receipt.outcome).toBe("injected");
+	});
+
+	test("a durable hand-off reports `persisted`, never `injected`", async () => {
+		// WHY THIS ROW — the #87501 guard, at the layer a reader actually sees.
+		// `deliverPeerMessage` already refuses a transport that claims `injected`
+		// without `injects`, but a DURABLE transport legitimately reports
+		// `persisted`, and the receipt had nowhere to put that. Folding it into
+		// `injected` is the exact "success for a message nobody read" shape the
+		// seam's own docblock names as the bug it exists to prevent — so the
+		// receipt carries a distinct member and the transport's word survives.
+		addPeerTransport(
+			transport({
+				id: "test",
+				capabilities: { crossProcess: true, durable: true, injects: false },
+				deliver: async () => ({ outcome: "persisted" }),
+			}),
+		);
+
+		const { irc } = makeBus();
+		const receipt = await irc.send({ from: "Main", to: "far-peer", body: "ping" });
+
+		expect(receipt.outcome).toBe("persisted");
+		// The negative half, stated so a future widening cannot quietly erase it.
+		expect(receipt.outcome).not.toBe("injected");
+	});
+
+	test("registering a transport does not intercept an agent this bus owns", async () => {
+		// WHY THIS ROW — the precedence contract. Without it, any extension that
+		// registers a transport would silently take over delivery for LOCAL peers,
+		// which is neither documented nor reversible from the sender's side. The
+		// registry owns its agents; the transport is for the ones it does not have.
+		let consulted = 0;
+		addPeerTransport(
+			transport({
+				id: "test",
+				deliver: async () => {
+					consulted++;
+					return { outcome: "injected" };
+				},
+			}),
+		);
+
+		const { agents, irc } = makeBus();
+		agents.register({
+			id: "local",
+			displayName: "local",
+			kind: "sub",
+			parentId: "Main",
+			// No live session: the send fails, and that is the point. The assertion
+			// is that the transport was never asked, so the local path is proven
+			// without standing up a full session fixture to receive the message.
+			session: null,
+			sessionFile: null,
+			status: "running",
+		});
+
+		const receipt = await irc.send({ from: "Main", to: "local", body: "ping" });
+
+		expect(consulted).toBe(0);
+		// And the failure is the local one, not a transport outcome.
+		expect(receipt.outcome).toBe("failed");
+	});
+
+	test("a transport refusal falls through to the roster hint", async () => {
+		// WHY THIS ROW — the fall-through contract. `deliverPeerMessage` refuses
+		// whenever the transport declines, and `no-route` (nothing registered) is
+		// the COMMON case. Reporting the refusal would replace the actionable
+		// roster hint with transport vocabulary nobody can act on.
+		//
+		// The refusal is produced EXPLICITLY rather than by registering nothing.
+		// `setBuiltinPeerTransport` writes a module-level `builtinTransport` that
+		// `removePeerTransport` cannot clear — it only deletes from the override
+		// map — so an earlier row in this file has already installed one and "no
+		// transport at all" is not a state this file can reach. Asserting the
+		// unreachable state would be a row that passes for the wrong reason.
+		// (Reported to peers as its own finding.)
+		addPeerTransport(
+			transport({
+				id: "test",
+				deliver: async () => ({ outcome: "refused", cause: "peer-unregistered" }),
+			}),
+		);
+
+		const { irc } = makeBus();
+		const receipt = await irc.send({ from: "Main", to: "nobody", body: "ping" });
+
+		expect(receipt.outcome).toBe("failed");
+		expect(receipt.error).toContain("Unknown agent");
+		// The transport's own vocabulary must not leak into the roster error.
+		expect(receipt.error).not.toContain("peer-unregistered");
 	});
 });

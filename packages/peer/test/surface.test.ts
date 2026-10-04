@@ -196,22 +196,21 @@ describe("the peer tool surface", () => {
 		expect(delivered).toEqual([]);
 	});
 
-
-/**
- * The parsed payload of a tool result.
- *
- * A tool result is an envelope whose `content[0].text` is pretty-printed JSON, so
- * asserting on `JSON.stringify(result)` means asserting on that formatter's spacing.
- * Parsing instead keeps these rows about the verdict, not about how it is rendered.
- */
-async function resultOf(
-	defs: Map<string, RecordedTool>,
-	params: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-	const raw = await defs.get("peer.send")?.execute("id", params);
-	const envelope = raw as { content: Array<{ text: string }> };
-	return JSON.parse(envelope.content[0]!.text) as Record<string, unknown>;
-}
+	/**
+	 * The parsed payload of a tool result.
+	 *
+	 * A tool result is an envelope whose `content[0].text` is pretty-printed JSON, so
+	 * asserting on `JSON.stringify(result)` means asserting on that formatter's spacing.
+	 * Parsing instead keeps these rows about the verdict, not about how it is rendered.
+	 */
+	async function resultOf(
+		defs: Map<string, RecordedTool>,
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> {
+		const raw = await defs.get("peer.send")?.execute("id", params);
+		const envelope = raw as { content: Array<{ text: string }> };
+		return JSON.parse(envelope.content[0]!.text) as Record<string, unknown>;
+	}
 
 	it("refuses a send whose idle notice was dropped, instead of answering ok to a promise", async () => {
 		// epic-m9wi. `notify_when_idle` is a PUBLIC parameter, and its own description
@@ -240,6 +239,50 @@ async function resultOf(
 		}));
 		const honoured = await resultOf(kept.defs, { to: "StormyOx", message: "hi", notify_when_idle: true });
 		expect(honoured.ok).toBe(true);
+	});
+
+	it("refuses a send the transport delivered to nobody, instead of answering ok", async () => {
+		// The other half of epic-m9wi, and the one that was still open after
+		// `8cb9de942f` fixed the idle-notice half. `peer.send` returned
+		// `{ ok: true, delivered: 0 }` for a send that reached no one — the exact
+		// `#87501` shape `irc/peer-transport.ts:24-27` is written to prevent, and the
+		// only thing an agent reading just `ok` will act on.
+		//
+		// A PAIR, and the pair is the point. A row asserting only "refuses on zero"
+		// passes for a tool that refuses EVERY send, which is the neighbouring defect;
+		// the mirror row below asserts a real delivery still succeeds. Neither half
+		// separates them.
+		const nobody = recordSurface(async () => ({ delivered: 0, receipts: [] }));
+		const refused = await resultOf(nobody.defs, { to: "StormyOx", message: "hi" });
+		expect(refused.ok).toBe(false);
+		expect(refused.delivered).toBe(0);
+		// The reason has to name what did NOT happen and what the agent can do about
+		// it, or it cannot tell a dead recipient from an unreachable transport.
+		expect(String(refused.error)).toContain("0 recipients");
+
+		// The mirror: a transport that reached somebody is still a success. Without
+		// this the row above is satisfiable by a tool that refuses unconditionally.
+		const somebody = recordSurface(async () => ({ delivered: 1, receipts: [{ name: "StormyOx" }] }));
+		const delivered = await resultOf(somebody.defs, { to: "StormyOx", message: "hi" });
+		expect(delivered.ok).toBe(true);
+		expect(delivered.delivered).toBe(1);
+	});
+
+	it("keeps the dropped-notice diagnosis when a send both reached nobody and dropped the notice", async () => {
+		// Ordering, stated as a contract. Both facts are true at once and the more
+		// specific one is the idle notice, because it names the CAUSE; the zero-delivery
+		// branch can only report the effect. A tool that checked `delivered` first would
+		// return an error that never mentions the notice, and the existing dropped-notice
+		// row asserts it does — this row makes that assertion reachable from a send that
+		// trips both branches rather than only the idle one.
+		const both = recordSurface(async () => ({
+			delivered: 0,
+			receipts: [],
+			notifyWhenIdleHonoured: false,
+		}));
+		const refused = await resultOf(both.defs, { to: "StormyOx", message: "hi", notify_when_idle: true });
+		expect(refused.ok).toBe(false);
+		expect(String(refused.error)).toContain("idle");
 	});
 
 	it("leaves an ordinary send alone, since it asked for no notice", async () => {

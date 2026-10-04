@@ -55,11 +55,7 @@ export interface PeerToolDeps {
 	 * reaches `addPeerTransport` in the coding-agent's irc layer; until one is installed,
 	 * this is whatever the host wires in.
 	 */
-	readonly deliver: (params: {
-		to: string;
-		message: string;
-		notifyWhenIdle: boolean;
-	}) => Promise<{
+	readonly deliver: (params: { to: string; message: string; notifyWhenIdle: boolean }) => Promise<{
 		readonly delivered: number;
 		readonly receipts: readonly unknown[];
 		/**
@@ -182,8 +178,35 @@ export function registerPeerTools(api: ExtensionAPI, deps: PeerToolDeps): void {
 					ok: false,
 					to,
 					...result,
-					error:
-						"The message was not delivered to anyone yet, and no idle notice was arranged: no transport is registered. Nothing will notify you when the recipient goes idle.",
+					error: "The message was not delivered to anyone yet, and no idle notice was arranged: no transport is registered. Nothing will notify you when the recipient goes idle.",
+				});
+			}
+			// THE ORDINARY SEND, which is where #87501 still lived.
+			//
+			// `8cb9de942f` fixed the `notify_when_idle` half: a dropped notice no longer
+			// answers `ok`. The half it left is the common one — a send that asks for
+			// nothing and reaches nobody. `delivered: 0` is the field saying so, and
+			// `ok: true` on top of it is the exact shape the transport docblock warns
+			// about (`irc/peer-transport.ts:24-27`): a verdict of success for a message
+			// no one received. An agent reading only `ok` would wait for a reply that
+			// cannot come.
+			//
+			// Placed AFTER the idle branch deliberately, for two reasons. It is the more
+			// specific diagnosis when both apply — "no transport, so nothing was
+			// delivered and no notice arranged" names the cause, where this one can only
+			// say the effect. And the dropped-notice row asserts the error mentions
+			// "idle"; a zero-delivered check in front of it would replace that text and
+			// leave the row passing for the wrong reason.
+			//
+			// `delivered === 0` and not `!result.delivered`: a transport reporting
+			// `undefined` is a broken transport, and coercing that into a verdict would
+			// be this function inventing an answer on its behalf.
+			if (result.delivered === 0) {
+				return text({
+					ok: false,
+					to,
+					...result,
+					error: `Nothing received this message: the transport delivered it to 0 recipients. Check that "${to}" names a live peer session.`,
 				});
 			}
 			return text({ ok: true, to, ...result });

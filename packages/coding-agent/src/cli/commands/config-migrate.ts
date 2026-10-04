@@ -122,7 +122,20 @@ const RESOLVED_DBS: readonly string[] = [getAgentDbPath(), getHistoryDbPath()];
 const DB_LAYOUT: readonly string[] = [getAgentDbPath(), getHistoryDbPath()]
 	.map(file => path.relative(CONFIG_ROOT, file))
 	.filter(segment => segment !== "" && !segment.startsWith("..") && !path.isAbsolute(segment));
-const DAEMON_LAYOUT = path.relative(CONFIG_ROOT, getDaemonRuntimeRoot());
+// Same filter as DB_LAYOUT above, and for the same reason: this is a path
+// RELATIVE to CONFIG_ROOT, so rejoining it onto a different move root lets any
+// `..` segment escape and name a directory outside every root being renamed.
+// Measured: joining "../../Users/<me>/.omp/run/daemons" onto "/tmp/legacy-root"
+// resolves to the real home daemon directory, so `guardedPaths` readdir'd the
+// developer's live daemons and guarded them for a migration that cannot touch
+// them — the false refusal this function exists to avoid, and a read of a path
+// the plan never named. Dropping the segment leaves the layout empty, which is
+// correct: a daemon root that is not under this one cannot be harmed by it.
+const DAEMON_LAYOUT = path
+	.relative(CONFIG_ROOT, getDaemonRuntimeRoot())
+	.split(path.sep)
+	.filter(segment => segment !== "" && segment !== ".." && segment !== "." && !segment.includes(path.sep))
+	.join(path.sep);
 
 /**
  * True when `file` really lives under `root`.

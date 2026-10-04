@@ -312,8 +312,9 @@ touched. This has already produced cross-contaminated commits twice in one day (
 
 - **Never `git commit` bare, never `git add -A`, never `git add .`.** A bare commit takes every
   staged row in the index, including rows another session staged.
-- **A hook enforces that first bullet** — enable it once per clone with
-  `git config core.hooksPath scripts/hooks`. It refuses a bare commit and names the scoped tool
+- **A hook enforces that first bullet** — `bun setup` arms it (first step, `scripts/install-git-hooks.ts`,
+  idempotent); to arm a clone by hand, `git config core.hooksPath scripts/hooks`. It refuses a bare
+  commit and names the scoped tool
   instead. It works because git leaks the discriminator: a **bare** commit runs the hook with
   `GIT_INDEX_FILE=.git/index` (the shared one), while `git commit --only -- <path>` runs it with a
   temporary `.git/next-index-*.lock` it built for that invocation. So the shared index is exactly
@@ -321,8 +322,14 @@ touched. This has already produced cross-contaminated commits twice in one day (
   deliberately allowed: a commit with nothing staged (git's own message is clearer than this
   guard's) and the **first** commit (its index is an import, not a staging area, and
   `commit-scoped.ts` needs a HEAD to build against). It also does **not** touch the index on
-  refusal — a guard that cleaned up would destroy the staging it exists to protect. `core.hooksPath`
-  is local config, so each clone sets it once; the hook itself is tracked in `scripts/hooks/`.
+  refusal — a guard that cleaned up would destroy the staging it exists to protect.
+- **`core.hooksPath` is local config, and that is why an armed-looking guard can be inert.** Git does
+  not read hooks from the tree; it resolves them from this key, which no commit carries. So the
+  tracked, executable `scripts/hooks/pre-commit` is *documentation* on a clone that never ran the
+  installer — and an inert guard is indistinguishable from a working one, because both leave a
+  peer's staged row riding along in a successful commit. This repo has shipped that inert state
+  twice (tracked `100644`, then `100755` in the wrong directory) with no test going red either
+  time. Check it with `git config --get core.hooksPath`, not by looking at the file.
 - **Use the repo's tools, in three steps.** They exist because the git verbs below cannot close the
   gap — measured four times in one day, a read-back of the staged set was correct and the commit
   still carried a peer's row staged in between.

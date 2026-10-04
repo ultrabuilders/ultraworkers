@@ -1,10 +1,15 @@
 #!/usr/bin/env bun
 /**
- * `bun setup` entrypoint. Chains the four setup steps (install → native
- * addon build → coding-agent link → omp link). The native host build uses
- * the local Cargo/N-API backend by default; set
+ * `bun setup` entrypoint. Chains the five setup steps (git hooks → install →
+ * native addon build → coding-agent link → omp link). The native host build
+ * uses the local Cargo/N-API backend by default; set
  * `OMP_NATIVE_BUILD_BACKEND=bazel` to opt into bazel. Flags after `--` are
  * appended to the native build invocation.
+ *
+ * The git-hooks step runs FIRST on purpose: it is the only step that protects
+ * the rest of this run. `core.hooksPath` is local config that no commit carries,
+ * so a clone without it has an armed-looking guard that never fires — the exact
+ * shape of the two `epic-z4zg` incidents. See `scripts/install-git-hooks.ts`.
  *
  * On Windows the final `link omp` step runs natively in this file instead of
  * spawning `sh` (issue #12483): same target check, same global-bin lookup
@@ -81,6 +86,9 @@ function linkOmpWindows(repoRoot: string): number {
 }
 
 const steps: Step[] = [
+	// First: arms the guard that refuses a bare `git commit`, before anything
+	// below can create one. Idempotent, so re-running `bun setup` is free.
+	{ label: "git hooks", cmd: ["bun", "scripts/install-git-hooks.ts"] },
 	{ label: "bun install", cmd: ["bun", "install"] },
 	{ label: "build:native", cmd: ["bun", "run", "build:native", ...passthrough] },
 	{ label: "coding-agent link", cmd: ["bun", "--cwd=packages/coding-agent", "link"] },

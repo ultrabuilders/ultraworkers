@@ -30,6 +30,7 @@ import {
 	parseTable,
 	requiresKeepRefs,
 	RULES_VERSION,
+	RULES,
 	tallyByRule,
 	checkPreWithCoverage,
 } from "./check-disposition";
@@ -583,6 +584,19 @@ describe("rule tally", () => {
 			["stale-row", 1],
 		]);
 		expect([...tallyByRule([])]).toEqual([]);
+	});
+
+	it("refuses to tally a rule that is not in RULES", () => {
+		// The drift guard `epic-jwsy.14` needs. A rule emitted without being registered
+		// would otherwise be tallied like any other, and the tally is exactly what a
+		// reader trusts to name every distinct problem — so a renamed rule would hide
+		// inside the summary, and the ratchet's ceiling is computed from those counts.
+		expect(() => tallyByRule([v("stale-row", "x"), v("renamed-by-mistake", "y")])).toThrow(
+			/not in RULES/,
+		);
+		// And the vocabulary is not decorative: every rule it names must be one this
+		// gate can actually produce, or the guard above rejects the gate's own output.
+		for (const rule of RULES) expect([...tallyByRule([v(rule, "x")])]).toEqual([[rule, 1]]);
 	});
 });
 

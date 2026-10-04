@@ -1330,6 +1330,35 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
  */
 export const RULES_VERSION = "2026-10-03.2";
 
+/**
+ * Every rule name this gate can emit, published by name.
+ *
+ * It exists for `epic-jwsy.14`'s falsifier, which has to know the full set to assert
+ * that each rule is reachable — and it could not be written before, because nothing
+ * outside this file could enumerate the rules without grepping its source, which
+ * measures the shape of the code rather than what the gate does.
+ *
+ * The list is enforced in {@link tallyByRule}, not checked by a test. A test that
+ * grepped these names would pass on a rule that no longer fires and fail on a rule
+ * spelled slightly differently; a rule emitted without being registered here throws
+ * where it is counted instead, which is the point at which someone is adding it.
+ */
+export const RULES = [
+	"dangling-keep-ref",
+	"empty-reason",
+	"hits-imbalance",
+	"keep-ref-shape",
+	"keep-shrank",
+	"literal-hits-imbalance",
+	"missing-keep-refs",
+	"missing-row",
+	"rename-incomplete",
+	"rules-drift",
+	"stale-row",
+] as const;
+
+export type Rule = (typeof RULES)[number];
+
 interface Violation {
 	readonly rule: string;
 	readonly detail: string;
@@ -1341,13 +1370,24 @@ interface Violation {
  * The single `N failures over M rows` line this replaces could not be acted on: a
  * reader cannot tell 9 stale rows from 90, and the baseline of 9 existed only as 9
  * scattered `FAIL stale-row` lines. A ceiling nobody can see is not a ceiling.
+ *
+ * A rule outside {@link RULES} throws rather than being tallied. Tallying it would let
+ * a renamed or misspelled rule hide inside the very summary a reader trusts to name
+ * every distinct problem, and the ratchet's ceiling is computed from those counts.
  */
 export function tallyByRule(
 	violations: readonly { readonly rule: string }[],
 	problems: readonly string[] = [],
 ): ReadonlyMap<string, number> {
+	const known = new Set<string>(RULES);
 	const counts = new Map<string, number>();
 	for (const violation of violations) {
+		if (!known.has(violation.rule)) {
+			throw new Error(
+				`rule "${violation.rule}" is emitted but not in RULES — add it to RULES in check-disposition.ts. ` +
+					`Known rules: ${[...RULES].join(", ")}.`,
+			);
+		}
 		counts.set(violation.rule, (counts.get(violation.rule) ?? 0) + 1);
 	}
 	if (problems.length > 0) counts.set("parse", problems.length);

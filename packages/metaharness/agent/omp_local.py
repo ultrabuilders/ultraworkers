@@ -117,9 +117,9 @@ _patch_harbor_cleanup_cancellation()
 _patch_apple_container_dns()
 
 # Container-side staging paths (absolute; never depend on $HOME at write time).
-_TARBALL_DST = "/tmp/omp-local.tgz"
-_MODELS_DST = "/tmp/omp-models.yml"
-_CONFIG_DST = "/tmp/omp-config.yml"
+_TARBALL_DST = "/tmp/ultraworkers-local.tgz"
+_MODELS_DST = "/tmp/ultraworkers-models.yml"
+_CONFIG_DST = "/tmp/ultraworkers-config.yml"
 _OUTPUT_FILENAME = "omp.txt"
 
 # Provider → host env vars used in --no-gateway (direct-auth) mode only.

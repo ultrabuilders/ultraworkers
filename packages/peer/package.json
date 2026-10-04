@@ -24,6 +24,7 @@
  },
  "files": [
   "src",
+  "extensions",
   "README.md",
   "CHANGELOG.md",
   "LICENSE"
@@ -32,6 +33,11 @@
  "sideEffects": false,
  "main": "./src/index.ts",
  "types": "./src/index.ts",
+ "omp": {
+  "extensions": [
+   "./extensions"
+  ]
+ },
  "exports": {
   ".": {
    "types": "./src/index.ts",

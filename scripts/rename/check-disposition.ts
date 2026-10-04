@@ -1563,7 +1563,13 @@ export async function checkPreWithCoverage(
  * Stage `post`: the sweep is done.
  *
  * `rename` rows must be at 0 — a leftover means someone renamed the file's other
- * occurrences and missed this class.
+ * occurrences and missed this class. "Leftover" is the file's pinned total minus
+ * what the path's pinned `keep-*` rows have already claimed: `countRename` is
+ * file-wide, so without that subtraction the rule demanded occurrences the table
+ * has promised to keep, and no rename could ever clear them. That is not a
+ * judgement call about the table — `checkPre`'s `hits-imbalance` independently
+ * proves `Σ rows.hits === countRename(text)`, which is what makes the remainder
+ * the rename rows' share.
  *
  * `keep-*` rows are checked per row, and what that means DIFFERS BY CLASS, which is
  * why the split below is not uniform:
@@ -1603,7 +1609,28 @@ export async function checkPost(root: string, rows: readonly Row[]): Promise<rea
 		if (!(await handle.exists())) continue;
 		const text = await handle.text();
 		const keeps = group.filter(row => row.disposition !== "rename").map(row => row.disposition);
-		const renameRemaining = countRename(text, keeps);
+		// `countRename` is the FILE-WIDE pinned total (see `countClass`: `rename`,
+		// `keep-wire` and `keep-prose` are one arm of `classMatcher` and each return
+		// the same number). So on a file that also carries a pinned `keep-*` row, the
+		// occurrences that row has already promised to keep were being demanded as
+		// rename debt — and no rename could ever clear them, because clearing them is
+		// exactly what the keep row forbids.
+		//
+		// Subtracting the keep rows' DECLARED hits is sound because `checkPre` proves
+		// the table balanced against this same total: `hits-imbalance` requires
+		// `Σ rows.hits === countRename(text)`, so the remainder is the rename rows'
+		// share by construction. Where the table is NOT balanced, `hits-imbalance` is
+		// red and names the drift, so this number is never the only thing reporting it.
+		//
+		// Only PINNED keep rows are subtracted. `countRename` has already removed
+		// `keep-path`'s own literal from the total, so subtracting that row again
+		// would credit the file with occurrences it never had.
+		const keepClaimed = group
+			.filter(row => row.disposition !== "rename" && classMatcher(row.disposition).pinned === true)
+			.reduce((sum, row) => sum + row.hits, 0);
+		// Clamped: keep rows claiming more than the file holds means the table drifted,
+		// and a negative "left" would read as a pass with a nonsensical number in it.
+		const renameRemaining = Math.max(0, countRename(text, keeps) - keepClaimed);
 		for (const row of group) {
 			if (row.disposition === "rename") {
 				if (renameRemaining > 0) {

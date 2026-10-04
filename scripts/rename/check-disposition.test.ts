@@ -457,6 +457,30 @@ describe("stage post", () => {
 		await Bun.$`rm -rf ${swept} ${unswept}`.quiet();
 	});
 
+	it("counts rename debt as the file's pinned total minus what the keep rows claim", async () => {
+		// Three pinned occurrences: two are the wire contract the keep row promised to
+		// keep, the third is the rename row's own. Only the third is rename debt — and
+		// before this rule was corrected, all three were demanded, so the file could
+		// never clear no matter how much was renamed.
+		const owed = await tree({ "src/a.ts": `const A = "omp";\nconst B = "omp";\nconst C = "omp";\n` });
+		const violations = await checkPost(owed, [
+			row_("src/a.ts", 1, "rename", "W1"),
+			row_("src/a.ts", 2, "keep-wire", "N3", "N3"),
+		]);
+		// The NUMBER matters as much as the rule name: a rule that reported "3 left"
+		// here would send a sweeper after occurrences the keep row forbids removing.
+		expect(violations.map(v => v.rule)).toEqual(["rename-incomplete"]);
+		expect(violations[0]!.detail).toContain(": 1 left");
+
+		// What remains is exactly the keep contract. Reporting here would be a rule no
+		// rename could ever satisfy, which is the defect this row exists to rule out.
+		const settled = await tree({ "src/a.ts": `const A = "omp";\nconst B = "omp";\n` });
+		expect(
+			await checkPost(settled, [row_("src/a.ts", 0, "rename", "W1"), row_("src/a.ts", 2, "keep-wire", "N3", "N3")]),
+		).toEqual([]);
+		await Bun.$`rm -rf ${owed} ${settled}`.quiet();
+	});
+
 	it("fails when a keep-* contract shrank without a decision", async () => {
 		// The row recorded 1 approved occurrence and the file now has 0: someone
 		// renamed a wire contract. That is the opposite of what the row authorised.

@@ -386,6 +386,42 @@ describe("commitStagedPaths", () => {
 		}
 	});
 
+	it("commits a TRACKED path whose index entry was emptied, not the empty placeholder", async () => {
+		// The intent-to-add guard above is attached to the `else` of "does HEAD have this
+		// path", so it only fires for a NEW file. A path that is already in HEAD takes the
+		// `if` branch instead — and `git rm --cached` + `git add -N` on such a path leaves
+		// the index holding git's EMPTY blob while HEAD still carries the real source
+		// (`git status` reports `DA`). The empty blob then survives to the commit and
+		// writes a 0-byte file over kilobytes of real source.
+		//
+		// Found by d9 on the shared tree, where six such paths were staged at once, each
+		// holding 2.6-7.7 KB in HEAD. The safe tool was the one that would have destroyed
+		// them, so this is the row that keeps the guard from being new-file-only.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "tracked.ts", "REAL SOURCE\nline two\n");
+			await run(["add", "tracked.ts"], dir);
+			await run(["commit", "-q", "-m", "add tracked"], dir);
+			await run(["rm", "--cached", "-q", "tracked.ts"], dir);
+			await run(["add", "-N", "tracked.ts"], dir);
+			// The state itself, asserted so the row cannot pass on a fixture that drifted.
+			expect(await run(["status", "--porcelain", "--", "tracked.ts"], dir)).toBe("DA tracked.ts");
+			expect(await run(["ls-files", "-s", "--", "tracked.ts"], dir)).toContain(
+				"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+			);
+
+			const result = await commitStagedPaths(["tracked.ts"], "tracked placeholder", { cwd: dir });
+
+			expect(result.committed).toEqual(["tracked.ts"]);
+			// The contract: HEAD keeps the bytes that were on disk, not the 0-byte placeholder.
+			// `run` trims, so this compares without the trailing newline — the same shape as
+			// the intent-to-add row above.
+			expect(await run(["show", "HEAD:tracked.ts"], dir)).toBe("REAL SOURCE\nline two");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
 	it("reaches the same commit as `git commit --only` on an intent-to-add file", async () => {
 		// The counterfactual for the row above. "The content is right" is a claim about
 		// what I measured once; "this tool agrees with the tool it replaces" is a claim git

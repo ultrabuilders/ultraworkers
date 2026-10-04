@@ -318,6 +318,33 @@ export async function commitStagedPaths(
 		// STRING — testing `!== null` here treated every new file as one HEAD already
 		// had, and the intent-to-add guard below could never run. Both empty results mean
 		// the same thing: HEAD has no entry for this path.
+		// An EMPTY blob is a PLACEHOLDER, not content — and that is a property of the
+		// index entry alone. It says nothing about whether HEAD has the path, so this test
+		// must not sit in an `else` on "is this path in HEAD".
+		//
+		// `git add -N` on a NEW path records it with git's EMPTY blob, and so does
+		// `git rm --cached` + `git add -N` on a path that is ALREADY COMMITTED: HEAD keeps
+		// the real source while the index carries the placeholder (`git status` reports
+		// `DA`). Keyed on the `else` — as this was — the second shape took the `if` branch,
+		// the empty blob survived, and the commit wrote a 0-byte file over kilobytes of
+		// real source. Found on the shared tree with six such paths staged at once.
+		//
+		// Committing the placeholder blob is never right, so this is not a reason to
+		// refuse. `git add -N` exists precisely so a file can be committed by path, and
+		// `git commit --only <path>` commits it correctly by reading the working tree — the
+		// same source this tool reads for every other path. Refusing here made this tool
+		// reject a state the tool it replaces accepts, which is the wrong way round.
+		//
+		// So the placeholder is resolved the way `--only` resolves it: hash what is on
+		// disk. If the file is gone there is nothing to commit, and `deletedPaths` reports
+		// the path as a deletion.
+		if (entry.blob === EMPTY_BLOB) {
+			const bytes = await fs.promises.readFile(path.resolve(cwd, entry.file)).catch(() => null);
+			if (bytes === null) continue;
+			const written = await hashBytes(bytes, cwd);
+			entries.push({ ...entry, blob: written });
+			continue;
+		}
 		if (inHead) {
 			// `<mode> SP <type> SP <sha> TAB <path>` — the type sits BETWEEN the mode and
 			// the sha, so the blob is field 2, not field 1. Reading field 1 compares every
@@ -325,25 +352,6 @@ export async function commitStagedPaths(
 			// turns the refusal below into a false alarm on an unchanged file.
 			const [headMode, , headBlob] = inHead.split(/\s+/);
 			if (headMode === entry.mode && headBlob === entry.blob) continue;
-		} else if (entry.blob === EMPTY_BLOB) {
-			// Intent-to-add (`git add -N`) records the path with git's EMPTY blob as a
-			// placeholder. Committing THAT blob writes a 0-byte file over real content on
-			// disk — which is what an earlier version of this did.
-			//
-			// It is not a reason to refuse, though. `git add -N` exists precisely so that a
-			// NEW file can be committed by path, and `git commit --only <new-file>` commits
-			// it correctly by reading the working tree — the same source this tool reads for
-			// every other path. Refusing here made this tool reject a state the tool it
-			// replaces accepts, which is the wrong way round.
-			//
-			// So the placeholder is resolved the way `--only` resolves it: hash what is on
-			// disk. If the file is gone there is nothing to commit, and `deletedPaths` reports
-			// the path as a deletion.
-			const bytes = await fs.promises.readFile(path.resolve(cwd, entry.file)).catch(() => null);
-			if (bytes === null) continue;
-			const written = await hashBytes(bytes, cwd);
-			entries.push({ ...entry, blob: written });
-			continue;
 		}
 		entries.push(entry);
 	}

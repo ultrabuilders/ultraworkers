@@ -73,13 +73,18 @@ function splitSteps(script) {
 
 function loadSteps() {
 	const pkg = JSON.parse(readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"));
-	const script = pkg.scripts?.["check:ts"];
+	// Read `check:ts:fast`, not `check:ts`. `check:ts` is now `scripts/check-chain.ts`,
+	// which no longer short-circuits — so it does the job this script exists to do,
+	// and there is no `&&` chain left in it to parse. `check:ts:fast` holds that same
+	// chain byte-for-byte, so this diagnostic keeps working against an unchanged
+	// member list.
+	const script = pkg.scripts?.["check:ts:fast"];
 	if (typeof script !== "string") {
-		throw new Error('package.json has no "check:ts" script');
+		throw new Error('package.json has no "check:ts:fast" script');
 	}
 	const steps = splitSteps(script);
 	if (steps.length < 2) {
-		throw new Error(`check:ts parsed to ${steps.length} step(s); expected a && chain`);
+		throw new Error(`check:ts:fast parsed to ${steps.length} step(s); expected a && chain`);
 	}
 	return steps;
 }

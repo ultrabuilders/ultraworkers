@@ -9,9 +9,9 @@ changing it is a breaking change for anyone already published against it. A list
 names things which do not exist is worse than no list, so every row here was opened and
 read before it was written down.
 
-Measured 2026-10-03 at HEAD `2f277d83b1`. Corrected 2026-10-04 at HEAD `6f87a78be7`:
-the TUI row named a line that was not the function it claimed, and the "four of the five"
-conclusion below was wrong — the acceptance test passes all five.
+Measured 2026-10-03 at HEAD `2f277d83b1`. Corrected 2026-10-04: the TUI row named a
+line that was not the function it claimed, and the "four of the five" conclusion below was
+wrong — `programme-acceptance-five-surfaces.test.ts` passes all five.
 
 Line numbers are deliberately absent from the rows below. A number is a claim about a
 revision, and this file outlives revisions; a path and a symbol name are the parts that

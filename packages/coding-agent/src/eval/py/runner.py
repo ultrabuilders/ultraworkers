@@ -198,11 +198,11 @@ class _RunnerState:
 
 
 _CURRENT_RID: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "omp_current_rid", default=None
+    "ultraworkers_current_rid", default=None
 )
 _CURRENT_DISPLAYED_MATPLOTLIB_FIGURE_IDS: contextvars.ContextVar[set[int] | None] = (
     contextvars.ContextVar(
-        "omp_displayed_matplotlib_figure_ids",
+        "ultraworkers_displayed_matplotlib_figure_ids",
         default=None,
     )
 )
@@ -2278,7 +2278,7 @@ def _read_stdin(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue, stdin) ->
             threading.Thread(
                 target=_handle_tool_request,
                 args=(req,),
-                name=f"omp-tool-{req.get('id')}",
+                name=f"ultraworkers-tool-{req.get('id')}",
                 daemon=True,
             ).start()
             continue
@@ -2376,7 +2376,7 @@ async def _serve_windows(loop: asyncio.AbstractEventLoop, stdin) -> None:
             threading.Thread(
                 target=_handle_tool_request,
                 args=(req,),
-                name=f"omp-tool-{req.get('id')}",
+                name=f"ultraworkers-tool-{req.get('id')}",
                 daemon=True,
             ).start()
             continue

@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
 	type AgentCallIdentity,
+	type ResumeJournalEntry,
 	type ResumeState,
 	decideResume,
 	deltaKeyFor,
@@ -21,6 +22,9 @@ import {
 } from "../../src/persistence/resume-journal";
 
 const base: AgentCallIdentity = { prompt: "p", agentDefKey: null };
+
+/** Entries carry the call index the lookup uses; these rows are about the HASH, so 0 is enough. */
+const cachedEntry = (hash: string, result: unknown): ResumeJournalEntry => ({ index: 0, hash, result });
 
 function state(): ResumeState {
 	return newResumeState();
@@ -67,7 +71,7 @@ describe("resume identity", () => {
 		// longer exists. Replaying it would splice old and new execution into one run.
 		const s = state();
 		const hash = hashAgentCall(base);
-		const cached = { hash, result: "cached" };
+		const cached = cachedEntry(hash, "cached");
 		s.firstMiss = 3;
 
 		// Before the barrier: unchanged, cached, live-eligible → replay.
@@ -120,7 +124,7 @@ describe("resume identity", () => {
 		expect(after).not.toBe(before);
 		const decision = decideResume({
 			barrierReached: false,
-			cached: { hash: before, result: "old" },
+			cached: cachedEntry(before, "old"),
 			callHash: after,
 			cachedEmptyOutput: false,
 			callIndex: 0,
@@ -137,7 +141,7 @@ describe("resume identity", () => {
 		const hash = hashAgentCall(base);
 		const decision = decideResume({
 			barrierReached: false,
-			cached: { hash, result: "" },
+			cached: cachedEntry(hash, ""),
 			callHash: hash,
 			cachedEmptyOutput: true,
 			callIndex: 0,
@@ -155,7 +159,7 @@ describe("resume identity", () => {
 		// from the "changed or new" case above.
 		const s = state();
 		const hash = hashAgentCall(base);
-		const cached = { hash, result: "cached" };
+		const cached = cachedEntry(hash, "cached");
 		s.resumeBarrierReached = true;
 
 		const after = decideResume({

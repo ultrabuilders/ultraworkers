@@ -32,15 +32,16 @@
  */
 import { createHash } from "node:crypto";
 
-/** A cached result, as the resume journal holds it. */
-export interface ResumeJournalEntry {
-	hash: string;
-	result: unknown;
-	/** The model the call ran on; absent on journals written before this field existed. */
-	model?: string;
-	/** This call's store write delta, replayed additively on resume. */
-	storeDelta?: Record<string, unknown>;
-}
+/**
+ * A cached result, as the resume journal holds it.
+ *
+ * NOT a local shape: this is `PersistedJournalEntry` from `./run-persistence`, which already
+ * carries the `index` and `runId` a lookup needs. Defining a second entry type here produced one
+ * without those fields, so the test that looks entries up by `runId` + `index` could not even be
+ * written against it — a duplicate type that quietly dropped the keys its consumers require.
+ */
+import type { PersistedJournalEntry as ResumeJournalEntry } from "./run-persistence";
+export type { ResumeJournalEntry };
 
 /**
  * The subset of `agent()` options that participate in the call hash.

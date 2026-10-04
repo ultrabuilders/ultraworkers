@@ -129,7 +129,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 	});
 
 	it("rejects --resume with unknown id instead of falling back to latest persisted session", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-resume-unknown-id-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-resume-unknown-id-"));
 		const sessionDir = path.join(cwd, "sessions");
 		const missingId = "019ea530-ffff-7000-8000-000000000000";
 		try {
@@ -152,7 +152,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 	});
 
 	it("rejects --continue followed by an unknown session id instead of falling back to latest", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-continue-unknown-id-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-continue-unknown-id-"));
 		const sessionDir = path.join(cwd, "sessions");
 		const missingId = "019ea530-ffff-7000-8000-000000000000";
 		try {
@@ -202,7 +202,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 		});
 	});
 	it("rejects --fork with missing path without writing a session (#11491)", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-fork-missing-path-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-fork-missing-path-"));
 		const sessionDir = path.join(cwd, "sessions");
 		const missingPath = path.join(cwd, "ghost-zz9q.jsonl");
 		try {
@@ -220,7 +220,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 	});
 
 	it("forkFrom rejects a missing source without writing a session (#11491)", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-fork-missing-path-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-fork-missing-path-"));
 		const sessionDir = path.join(cwd, "sessions");
 		const missingPath = path.join(cwd, "ghost-zz9q.jsonl");
 		try {
@@ -236,7 +236,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 	});
 
 	it("forkFrom rejects a vanished source on the streaming path (#11491)", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-fork-missing-path-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-fork-missing-path-"));
 		const sessionDir = path.join(cwd, "sessions");
 		const missingPath = path.join(cwd, "ghost-zz9q.jsonl");
 		const storage = new FileSessionStorage();
@@ -258,7 +258,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 	});
 
 	it("rejects --fork <id> when resolved session vanished before forkFrom reads it (#11491)", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-fork-vanished-id-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-fork-vanished-id-"));
 		const sessionDir = path.join(cwd, "sessions");
 		const vanishedPath = path.join(cwd, "vanished.jsonl");
 		const forkId = "019ea530-0000-7000-0000-000000000000";
@@ -294,7 +294,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 	});
 
 	it("rejects --fork with ENOTDIR path without writing a session (#11491)", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-fork-enotdir-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-fork-enotdir-"));
 		const sessionDir = path.join(cwd, "sessions");
 		const regularFile = path.join(cwd, "file.txt");
 		await Bun.write(regularFile, "not a directory");
@@ -314,7 +314,7 @@ describe("createSessionManager — missing session (#2084)", () => {
 	});
 
 	it("propagates ENOTDIR on ordinary session loads when throwIfMissing is false (#11491)", async () => {
-		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-enotdir-ordinary-"));
+		const cwd = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-enotdir-ordinary-"));
 		const regularFile = path.join(cwd, "file.txt");
 		await Bun.write(regularFile, "not a directory");
 		const enotdirChild = path.join(regularFile, "child.jsonl");

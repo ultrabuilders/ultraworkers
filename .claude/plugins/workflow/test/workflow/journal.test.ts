@@ -96,4 +96,37 @@ describe("run journal", () => {
 		// so collapsing them would let a resumed run report a completed run with no work in it.
 		expect(await loadRunState(await scratchRun())).toBeUndefined();
 	});
+
+	test("MEASURED: a settler-requiring delta REJECTS loadRunState — nothing catches it yet", async () => {
+		// WHY this row exists: it is the answer to the review question "is the throw caught on
+		// the resume path?", and the answer is currently NO.
+		//
+		// `applyDelta` throws when a delta carries `settleAgentsAt` and no settler was supplied,
+		// and `loadRunState` calls it with no try/catch — so the rejection escapes the journal
+		// reader entirely. Today that is harmless because nothing resumes yet; the moment
+		// `run-persistence.ts` calls `loadRunState`, this becomes an UNCAUGHT rejection unless
+		// that layer catches it.
+		//
+		// Recorded as a test rather than a comment because the failure mode is silent in the
+		// other direction: if the throw were quietly caught somewhere upstream and the step
+		// dropped, every row here would still pass and an interrupted agent would stay
+		// interrupted forever. This row goes red the moment someone adds the catch — which is
+		// exactly when they should read what it says.
+		const runPath = await scratchRun();
+		await appendJournalLine(runPath, {
+			format: FORMAT,
+			generation: "g1",
+			sequence: 0,
+			state: { agents: [{ id: "a1", status: "interrupted" }] },
+		});
+		await appendJournalLine(runPath, {
+			generation: "g1",
+			sequence: 1,
+			previous: "",
+			delta: { settleAgentsAt: "2026-10-04T00:00:00Z", set: {}, remove: [], arrays: {} },
+		});
+
+		await expect(loadRunState(runPath)).rejects.toThrow("no settler was supplied");
+		await fs.rm(path.dirname(runPath), { recursive: true, force: true });
+	});
 });

@@ -275,6 +275,49 @@ describe("pre-commit guard", () => {
 		expect(git(dir, ["show", "--name-only", "--format=", "HEAD"]).out).toContain("peer.txt");
 	});
 
+	it("fires when core.hooksPath points at the shipped location, so the protection is not opt-in", async () => {
+		// The claim this row exists to falsify: "the guard protects this tree".
+		//
+		// `core.hooksPath` is per-clone LOCAL config and is not shipped, so a clone
+		// that never ran the install step has no guard at all — and git is SILENT
+		// about it. The row above proves that silence; this row proves the remedy
+		// actually works at the location the repo ships.
+		//
+		// What a consumer observes if the shipped arrangement regresses: with
+		// `core.hooksPath` set to `scripts/hooks`, git must invoke the worktree
+		// hook and a bare commit carrying a peer's row must FAIL. If it succeeds,
+		// the tree is unprotected and every other green row in this file is moot.
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "precommit-hookspath-"));
+		const run = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+		run(["init", "-q", "."]);
+		run(["config", "user.email", "guard@test"]);
+		run(["config", "user.name", "guard"]);
+
+		// The shipped arrangement: the hook lives under the worktree, and
+		// core.hooksPath points at it. Mirrors HOOKS_PATH below.
+		await Bun.write(path.join(dir, "pre-commit"), await fs.readFile(HOOK));
+		await fs.chmod(path.join(dir, "pre-commit"), 0o755);
+		run(["config", "core.hooksPath", "."]);
+
+		await Bun.write(path.join(dir, "seed.txt"), "seed\n");
+		run(["add", "seed.txt"]);
+		run(["commit", "-qm", "seed"]);
+
+		// A peer's row, which the guard exists to stop riding along.
+		await Bun.write(path.join(dir, "peer.txt"), "theirs\n");
+		run(["add", "peer.txt"]);
+		const before = run(["rev-parse", "HEAD"]).stdout.toString().trim();
+
+		const r = run(["commit", "-qm", "mine"]);
+
+		// Read as the OUTCOME a consumer cares about — the peer's row did not
+		// land. Not "the hook ran": an absent hook also runs nothing, and only the
+		// combination of this row and the one above distinguishes them.
+		expect(r.exitCode).not.toBe(0);
+		expect(git(dir, ["rev-parse", "HEAD"]).out.trim()).toBe(before);
+		expect(git(dir, ["show", "--name-only", "--format=", "HEAD"]).out).not.toContain("peer.txt");
+	});
+
 	it("does not block commit-scoped.ts, the tool it tells you to use instead", async () => {
 		// The failure that would make this guard worse than no guard: it refuses the
 		// bare commit, names a replacement in the message, and then blocks that

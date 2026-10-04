@@ -8,6 +8,7 @@ import {
 	PROJECT_AGENT_DIR_NAME,
 	getPluginsDir,
 	getProjectDir,
+	logger,
 	parseFrontmatter,
 	tryParseJson,
 } from "@oh-my-pi/pi-utils";
@@ -823,10 +824,31 @@ async function readExtensionModuleManifest(
 	const content = await readFile(packageJsonPath);
 	if (!content) return null;
 
-	const pkg = tryParseJson<{ omp?: ExtensionModuleManifest; pi?: ExtensionModuleManifest }>(content);
-	const manifest = pkg?.omp ?? pkg?.pi;
+	const pkg = tryParseJson<Record<string, unknown>>(content);
+	const manifest = (pkg?.omp ?? pkg?.pi) as ExtensionModuleManifest | undefined;
 	if (manifest && typeof manifest === "object") {
 		return manifest;
+	}
+	// A manifest filed under a key this loader does not read produces an extension
+	// that never loads and says nothing: no error, no warning, the subdirectory is
+	// just skipped. That is worth a warning only when the value actually has the
+	// shape of a manifest — an `extensions` array — so that the many ordinary
+	// package.json files under an extensions directory (name, version, main, …)
+	// stay silent. Naming the key that was found and the keys that are read is the
+	// whole fix: an author who filed it under the brand name learns the real key.
+	const unreadKeys = Object.keys(pkg ?? {}).filter(key => {
+		if (key === "omp" || key === "pi") return false;
+		const value = pkg?.[key];
+		return (
+			typeof value === "object" && value !== null && Array.isArray((value as { extensions?: unknown }).extensions)
+		);
+	});
+	if (unreadKeys.length > 0) {
+		logger.warn(
+			`${packageJsonPath}: ignoring extension manifest key(s) ${unreadKeys
+				.map(k => `"${k}"`)
+				.join(", ")}; only "omp" and "pi" are read, so nothing was loaded from this package.json`,
+		);
 	}
 	return null;
 }
@@ -837,7 +859,13 @@ async function readExtensionModuleManifest(
  * Discovery rules:
  * 1. Direct files: `extensions/*.ts` or `*.js` → load
  * 2. Subdirectory with index: `extensions/<ext>/index.ts` or `index.js` → load
- * 3. Subdirectory with package.json: `extensions/<ext>/package.json` with "ultraworkers"/"pi" field → load declared paths
+ * 3. Subdirectory with package.json: `extensions/<ext>/package.json` with an
+ *    `"omp"` or `"pi"` field → load declared paths
+ *
+ * "ultraworkers" is this project's brand, not a manifest key: it appears throughout
+ * this file in prose and as a plugin-root origin tag, and none of those are read
+ * from a package.json here. A manifest filed under it loads nothing, and is now
+ * warned about rather than skipped in silence (see {@link readExtensionModuleManifest}).
  *
  * No recursion beyond one level. Complex packages must use package.json manifest.
  * Uses native glob for fast filesystem scanning with gitignore support.

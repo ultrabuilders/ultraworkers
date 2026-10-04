@@ -43,6 +43,19 @@ describe("workflow project paths", () => {
 		expect(roundabout).toBe(direct);
 	});
 
+	test("a basename that sanitizes to nothing still yields a usable key", () => {
+		// WHY through the public API: the sanitizer is module-private, so the observable contract
+		// is what `workflowProjectKey` does with a name it cannot keep. `"!!!"` lowercases and
+		// collapses to `""` once the character class and the trim have run. Without the
+		// `|| "project"` fallback that empty slug becomes an empty path SEGMENT, and joining it
+		// into the projects directory resolves to the parent — putting one project's runs where
+		// every other project's live.
+		const key = workflowProjectKey(path.join("/tmp", "!!!"));
+
+		expect(key.startsWith("project-")).toBe(true);
+		expect(key).not.toBe("-");
+	});
+
 	test("run state nests under one root keyed by the project key", () => {
 		// WHY this row and not a string check on the home constant: a consumer reads these four
 		// paths to find a journal, a lease and a saved script, and what matters is that they

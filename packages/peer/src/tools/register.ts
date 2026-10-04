@@ -32,6 +32,7 @@
 
 import type { Database } from "bun:sqlite";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import type { InboundFenceRegistration } from "@oh-my-pi/pi-coding-agent/irc/inbound-fence";
 import type { InboxStore } from "../inbox/index";
 import type { PeerRosterEntry } from "./verbs";
 import { peerList, peerLock, peerRelease } from "./verbs";
@@ -57,6 +58,23 @@ export interface PeerToolDeps {
 		message: string;
 		notifyWhenIdle: boolean;
 	}) => Promise<{ readonly delivered: number; readonly receipts: readonly unknown[] }>;
+	/**
+	 * The trust fence, handed to the host at load.
+	 *
+	 * OPTIONAL because a host that does not have one is a real state rather than a
+	 * broken one: an installation without this extension has no inbound peer messages
+	 * to fence, and forcing a fence there would mean manufacturing a policy the user
+	 * never chose. What is NOT optional is that it arrives through this seam when it
+	 * exists — `crossSessionInbound` was a full settings enum read by nobody until
+	 * this was wired.
+	 *
+	 * Deliberately NOT derived from `crossSessionInbound` here. The setting is the
+	 * USER's decision and belongs to the host that owns settings; this package supplies
+	 * the fence that consults it, and translating between the two vocabularies here
+	 * would put a config read in the extension where a second copy can drift from the
+	 * first.
+	 */
+	readonly inboundFence?: InboundFenceRegistration;
 }
 
 function text(value: unknown): { content: [{ type: "text"; text: string }] } {
@@ -69,6 +87,18 @@ export function registerPeerTools(api: ExtensionAPI, deps: PeerToolDeps): void {
 	// It is not a namespace: destructuring `{ type }` yields undefined and every
 	// registerTool below throws "type is not a function".
 	const type = api.arktype;
+
+	// THE FENCE, installed here because this is the only side of the dependency edge
+	// that can. `@ultraworkers/peer` depends on `@oh-my-pi/pi-coding-agent`, so core
+	// cannot import `fenceInbound` without closing a cycle — which is why `api` grows
+	// a `registerPeerFence` surface rather than the bus reaching for the fence.
+	//
+	// Measured before this line existed: `IrcBus.global()` had `#fence = () =>
+	// undefined`, so every production send skipped the fence block, and
+	// `crossSessionInbound` was a settings enum with three options and zero readers.
+	if (deps.inboundFence !== undefined) {
+		api.registerPeerFence(deps.inboundFence);
+	}
 
 	// Schemas are hoisted to consts, not written inline in the object literal:
 	// `registerTool<TParams extends TSchema>` cannot infer `TParams` from an

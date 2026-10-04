@@ -31,6 +31,10 @@ interface Recorded {
 	readonly commands: string[];
 	readonly defs: Map<string, RecordedTool>;
 	readonly delivered: Array<{ to: string }>;
+	/** Fences handed to the host at registration, in order. */
+	readonly fences: unknown[];
+	/** Whether a fence was offered to the host at all. */
+	readonly fenceOffered: () => boolean;
 }
 
 /**
@@ -46,6 +50,8 @@ function recordSurface(): Recorded {
 	const commands: string[] = [];
 	const defs = new Map<string, RecordedTool>();
 	const delivered: Array<{ to: string }> = [];
+	const fences: unknown[] = [];
+	let fenceOffered = false;
 	const api = {
 		arktype: type,
 		registerTool: (def: RecordedTool) => {
@@ -53,6 +59,9 @@ function recordSurface(): Recorded {
 			defs.set(def.name, def);
 		},
 		registerCommand: (name: string) => void commands.push(name),
+		registerPeerFence: (registration: unknown) => {
+			fences.push(registration);
+		},
 	};
 
 	registerPeerTools(api as never, {
@@ -64,6 +73,7 @@ function recordSurface(): Recorded {
 			delivered.push({ to });
 			return { delivered: 1, receipts: [] };
 		},
+		inboundFence: FENCE_OFFERED,
 	});
 
 	registerPeerCommands(api as never, {
@@ -74,10 +84,75 @@ function recordSurface(): Recorded {
 		notify: () => {},
 	});
 
-	return { tools, commands, defs, delivered };
+	return { tools, commands, defs, delivered, fences, fenceOffered: () => fenceOffered };
+}
+
+/**
+ * A fence registration offered through `deps.inboundFence`.
+ *
+ * A distinguishable object rather than a bare function, so the row below asserts on
+ * IDENTITY: `registerPeerFence` handing over something else would pass a test that
+ * only checked "a fence was passed".
+ */
+const FENCE_OFFERED = { fence: () => ({ action: "accept" }) as const, context: { mode: "default" } };
+
+/** The same surface with no fence offered, for the "optional" row. */
+function recordSurfaceWithoutFence(): Recorded {
+	const tools: string[] = [];
+	const commands: string[] = [];
+	const defs = new Map<string, RecordedTool>();
+	const delivered: Array<{ to: string }> = [];
+	const fences: unknown[] = [];
+	const api = {
+		arktype: type,
+		registerTool: (def: RecordedTool) => {
+			tools.push(def.name);
+			defs.set(def.name, def);
+		},
+		registerCommand: (name: string) => void commands.push(name),
+		registerPeerFence: (registration: unknown) => {
+			fences.push(registration);
+		},
+	};
+	registerPeerTools(api as never, {
+		selfId: "BlueLake",
+		leaseDb: (() => undefined) as unknown as () => Database,
+		inbox: (() => undefined) as unknown as () => InboxStore,
+		roster: async () => [],
+		deliver: async ({ to }: { to: string }) => {
+			delivered.push({ to });
+			return { delivered: 1, receipts: [] };
+		},
+		// `inboundFence` deliberately absent.
+	});
+	return { tools, commands, defs, delivered, fences, fenceOffered: () => fences.length > 0 };
 }
 
 describe("the peer tool surface", () => {
+	it("hands the trust fence to the host at registration, by identity", () => {
+		// The row that closes `epic-jwsy.11`'s gap. Measured before this existed:
+		// `IrcBus.global()` had `#fence = () => undefined`, so every production send
+		// skipped the fence block, and `crossSessionInbound` was a settings enum with
+		// three options and **zero readers**. This package is the only side of the
+		// dependency edge that can install it — peer depends on coding-agent, never the
+		// reverse — so a registration here is the whole delivery mechanism.
+		//
+		// Identity, not just "something was passed": a host that substituted its own
+		// object would pass a count-based assertion.
+		const { fences } = recordSurface();
+		expect(fences).toHaveLength(1);
+		expect(fences[0]).toBe(FENCE_OFFERED);
+	});
+
+	it("registers no fence when none is offered, instead of inventing one", () => {
+		// The negative half, kept separate so a regression in one does not hide a
+		// regression in the other: a registration that fabricated a default fence would
+		// pass the row above. An installation without this extension has no inbound peer
+		// messages to fence, so a manufactured policy would be one the user never chose.
+		const { fences } = recordSurfaceWithoutFence();
+		expect(fences).toEqual([]);
+	});
+
 	it("registers exactly four verbs", () => {
 		// Mutation-checked both ways: adding a fifth fails this, and so does
 		// removing one — which is what makes it a statement about the whole surface

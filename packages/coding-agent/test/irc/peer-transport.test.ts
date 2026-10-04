@@ -229,6 +229,43 @@ describe("bus wiring", () => {
 		expect(receipt.outcome).not.toBe("injected");
 	});
 
+	test("a transport that throws rejects the send with its own error", async () => {
+		// WHY THIS ROW — and it is the only rejection assertion in test/irc/, which is
+		// why the directory could claim a tested seam while its error path went
+		// uncovered. A transport RETURNING `{outcome:"refused"}` is a delivery
+		// decision, and the roster hint is the right answer to it. A transport that
+		// THROWS is a bug in the transport, and `#deliverViaTransport`'s own docblock
+		// says why that must stay distinguishable: rewritten into a refusal it becomes
+		// "unknown agent — the one diagnosis the sender cannot act on", which is
+		// #87501's shape (success for a message nobody received) arriving by the back
+		// door. One line of `.catch(() => ({outcome:"refused", cause:"rejected"}))` on
+		// `transport.deliver(...)` turned this error into silence and passed 305 tests.
+		addPeerTransport(
+			transport({
+				id: "test",
+				deliver: async () => {
+					throw new Error("TRANSPORT BLEW UP");
+				},
+			}),
+		);
+
+		const { irc } = makeBus();
+
+		let caught: unknown;
+		try {
+			await irc.send({ from: "Main", to: "far-peer", body: "ping" });
+		} catch (err) {
+			caught = err;
+		}
+		// Rejected, not resolved: a resolved send here would be a silent success.
+		expect(caught).toBeInstanceOf(Error);
+		const message = caught instanceof Error ? caught.message : String(caught);
+		// The transport's own words survive, so whoever installed it can act on them.
+		expect(message).toBe("TRANSPORT BLEW UP");
+		// …and it was not rewritten into the diagnosis the sender cannot act on.
+		expect(message).not.toContain("Unknown agent");
+	});
+
 	test("registering a transport does not intercept an agent this bus owns", async () => {
 		// WHY THIS ROW — the precedence contract. Without it, any extension that
 		// registers a transport would silently take over delivery for LOCAL peers,

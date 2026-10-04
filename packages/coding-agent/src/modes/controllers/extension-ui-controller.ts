@@ -17,6 +17,7 @@ import type {
 	ExtensionUIDialogOptions,
 	ExtensionUISelectItem,
 	ExtensionUiComponent,
+	ExtensionSurfaceBand,
 	ExtensionSurfaceOptions,
 	ExtensionWidgetContent,
 	ExtensionWidgetOptions,
@@ -24,6 +25,7 @@ import type {
 	TerminalInputHandler,
 } from "../../extensibility/extensions";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
+import { extensionSurfaceRegistry } from "../../extensibility/extensions/surface-registry";
 import {
 	type AskDialogPromptValue,
 	AskDialogComponent,
@@ -119,9 +121,6 @@ interface ExtensionSurfaceEntry {
 	component: ExtensionUiComponent;
 }
 
-/** Which of the two page-level bands a surface lives in. */
-type ExtensionSurfaceBand = "header" | "footer";
-
 export class ExtensionUiController {
 	#extensionTerminalInputUnsubscribers = new Set<() => void>();
 	#composerShapeDisposers: Array<() => void> = [];
@@ -159,6 +158,22 @@ export class ExtensionUiController {
 	 * Initialize the hook system with TUI-based UI context.
 	 */
 	async initHooksAndCustomTools(): Promise<void> {
+		// Surfaces declared at LOAD time, mounted before a single hook runs.
+		//
+		// Drained here rather than on demand because that is the gap this closes:
+		// `ctx.ui.setHeader` is reachable only from a hook, so a panel meant to be on
+		// screen from the first frame had no earlier seam. Extension load finishes
+		// before this runs — extensions load in `main.ts`, this runs from
+		// `InteractiveMode.init` — so a drain here sees every declaration, and unlike
+		// a subscription it cannot miss one made between load and init.
+		//
+		// Mounted through `setExtensionSurface`, so a key two extensions share is
+		// settled by the collision policy that already governs it rather than by a
+		// second rule written here.
+		for (const surface of extensionSurfaceRegistry.list()) {
+			this.setExtensionSurface(surface.band, surface.factory, surface.options);
+		}
+
 		// Create and set hook & tool UI context
 		const uiContext: ExtensionUIContext = {
 			// The TUI itself: this context renders into the terminal.

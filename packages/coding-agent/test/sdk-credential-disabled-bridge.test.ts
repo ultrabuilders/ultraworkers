@@ -436,6 +436,7 @@ describe("createAgentSession credential_disabled subscription", () => {
 				path: "test://throwing-credential-disabled",
 				resolvedPath: "test://throwing-credential-disabled",
 				registeredProviders: [],
+				surfaces: [],
 				modes: [],
 				toolRegistrationListeners: new Set(),
 				handlers: new Map([

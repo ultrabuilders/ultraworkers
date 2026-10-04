@@ -274,6 +274,25 @@ export interface ExtensionSurfaceOptions {
 	owner?: string;
 }
 
+/** Which of the two page-level bands a surface lives in. */
+export type ExtensionSurfaceBand = "header" | "footer";
+
+/**
+ * One surface an extension declared at LOAD time, kept so unload can withdraw
+ * exactly what this extension declared.
+ *
+ * The same record shape {@link ExtensionUIContext.setHeader} takes, minus the
+ * `undefined` arm: a load-time declaration cannot withdraw itself, because the
+ * only way to withdraw a surface is to have a context, and a context exists
+ * only once a hook has run. Withdrawal is {@link ExtensionAPI.registerSurface}'s
+ * counterpart and happens at unload, by owner.
+ */
+export interface RegisteredExtensionSurface {
+	readonly band: ExtensionSurfaceBand;
+	readonly factory: ExtensionUiComponentFactory;
+	readonly options: ExtensionSurfaceOptions;
+}
+
 /** Options for `ExtensionUIContext.custom()` (overlay rendering of a custom component). */
 export interface ExtensionCustomOptions {
 	/** Render the component as an overlay over the transcript instead of replacing the editor area. */
@@ -2240,6 +2259,27 @@ export interface ExtensionAPI {
 	 */
 	registerHostRenderStrategy(strategy: HostRenderStrategy): void;
 
+	/**
+	 * Declare a component in the composer's header or footer band at LOAD time.
+	 *
+	 * `ctx.ui.setHeader` / `setFooter` already reach a band, and what they mount
+	 * outlives the hook that registered it — the controller owns the component,
+	 * not the context. What they cannot do is exist *before* an event fires:
+	 * `ExtensionAPI` exposes no `ui`, and a context is built per hook, so a
+	 * panel meant to be on screen from the first frame had no seam to declare
+	 * itself through. This is that seam.
+	 *
+	 * The component still reaches the screen through the same
+	 * `setExtensionSurface` path a hook uses, so collisions, owner-scoped
+	 * withdrawal and disposal keep the single implementation they already have.
+	 * This adds a place to *declare*, not a second way to mount.
+	 */
+	registerSurface(
+		band: ExtensionSurfaceBand,
+		factory: ExtensionUiComponentFactory,
+		options?: ExtensionSurfaceOptions,
+	): void;
+
 	// =========================================================================
 	// Actions
 	// =========================================================================
@@ -2853,6 +2893,8 @@ export interface Extension {
 	usageReporters: UsageReporterRegistration[];
 	/** Host render strategies, in registration order. First opinion wins. */
 	hostRenderStrategies: HostRenderStrategy[];
+	/** Bands declared at load time via {@link ExtensionAPI.registerSurface}, in registration order. */
+	surfaces: RegisteredExtensionSurface[];
 	copyTargetProviders: CopyTargetProvider[];
 	/** Diagnostics contributed to `ultraworkers plugin doctor`, in registration order. */
 	diagnostics: ExtensionDiagnostic[];

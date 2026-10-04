@@ -40,6 +40,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		path: name,
 		resolvedPath: name,
 		registeredProviders: [],
+		surfaces: [],
 		modes: [],
 		toolRegistrationListeners: new Set(),
 		handlers: new Map([

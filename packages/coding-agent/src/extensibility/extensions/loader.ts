@@ -75,6 +75,7 @@ import { getAllPluginExtensionPaths } from "../plugins/loader";
 
 import { createHandlerDisposer, resolvePath, withHostGuard } from "../utils";
 import { modeRegistry, type ModeDefinition } from "../../modes/mode-registry";
+import { extensionSurfaceRegistry } from "./surface-registry";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type {
 	AssistantThinkingRenderer,
@@ -90,6 +91,10 @@ import type {
 	PreparedExtension,
 	ProviderConfig,
 	RegisteredCommand,
+	RegisteredExtensionSurface,
+	ExtensionSurfaceBand,
+	ExtensionSurfaceOptions,
+	ExtensionUiComponentFactory,
 	SourceInfo,
 	ToolDefinition,
 	ToolInfo,
@@ -618,6 +623,35 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.hostRenderStrategies.push({ ...strategy, id });
 	}
 
+	registerSurface(
+		band: ExtensionSurfaceBand,
+		factory: ExtensionUiComponentFactory,
+		options?: ExtensionSurfaceOptions,
+	): void {
+		// Validated here for the same reason `registerHostRenderStrategy` validates:
+		// the registry is a module singleton, so a bad declaration that skipped its
+		// own check would otherwise be refused later with no extension named.
+		if (band !== "header" && band !== "footer") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: surface band must be "header" or "footer", got ${JSON.stringify(band)}`,
+			);
+		}
+		if (typeof factory !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: surface in the ${band} band must be a component factory, got ${typeof factory}`,
+			);
+		}
+		// `path`, not `resolvedPath`: the unload loop releases by `extension.path`,
+		// the same field `registerMode` hands the mode registry as its source.
+		const surface: RegisteredExtensionSurface = {
+			band,
+			factory,
+			options: { ...options, owner: this.extension.path },
+		};
+		this.extension.surfaces.push(surface);
+		extensionSurfaceRegistry.register(this.extension.path, surface);
+	}
+
 	registerCopyTargetProvider(provider: CopyTargetProvider): void {
 		const id = typeof provider.id === "string" ? provider.id.trim() : "";
 		// Re-validated here, not only in `registerCopyTargetProvider`: the registry
@@ -829,6 +863,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		toolNameResolvers: [] as ToolNameResolver[],
 		usageReporters: [] as UsageReporterRegistration[],
 		hostRenderStrategies: [] as HostRenderStrategy[],
+		surfaces: [] as RegisteredExtensionSurface[],
 		copyTargetProviders: [] as CopyTargetProvider[],
 		diagnostics: [] as ExtensionDiagnostic[],
 		composerShapes: new Map(),

@@ -129,6 +129,7 @@ import { unavailableFrameMessage, type FramelessGuard } from "./unavailable-ui";
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
 import { cfgToolsApproval } from "../../tools/settings";
 import { modeRegistry } from "../../modes/mode-registry";
+import { extensionSurfaceRegistry } from "./surface-registry";
 
 /** Combined result from all before_agent_start handlers */
 interface BeforeAgentStartCombinedResult {
@@ -653,6 +654,13 @@ export function clearExtensionBuckets(extension: Extension): void {
 	// narrowing calls under a name the extension no longer owns.
 	releaseToolEffects(extension.path);
 	extension.hostRenderStrategies.length = 0;
+	// Same residue, same reason. A surface declared at load lives in a process-wide
+	// registry, so clearing the array would leave the declaration in place: a
+	// session starting later would drain it and mount a band for an extension that
+	// no longer exists. Released by owner, never by index, because by unload time
+	// the record may belong to a reloaded copy of the same path.
+	extensionSurfaceRegistry.releaseOwnedBy(extension.path);
+	extension.surfaces.length = 0;
 	extension.copyTargetProviders.length = 0;
 	extension.toolRegistrationListeners.clear();
 }

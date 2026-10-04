@@ -15,10 +15,15 @@ import { getAgentDir, getPluginsDir, removeSyncWithRetries, setAgentDir, TempDir
  * fixture. Two things this file deliberately does NOT claim, because claiming them
  * would make it green while protecting nothing — the `epic-jwsy.12` shape.
  *
- * **It does not cover `workflow`.** `extensions/workflow.ts` does not exist, so
- * nothing here can assert that the workflow extension reached any seam. That is
- * Layer 2, and it waits for the file. A guard that claimed the epic's criterion
- * while asserting a different extension's behaviour would be a report, not a guard.
+ * **It does not cover the workflow engine, and the difference is a path, not a
+ * caveat.** An earlier version of this line said "`extensions/workflow.ts` does not
+ * exist, so nothing here can assert the workflow extension reached a seam" — true,
+ * and useless, because `extensions/workflow/` (45 files, tracked at `3a9ada4458`)
+ * DOES exist. A reader who saw "does not cover workflow" next to a live
+ * `extensions/workflow/` would reasonably conclude the gap was covered elsewhere. It
+ * is not: no gate runs that tree's tests. So the honest statement is the positive
+ * one — this guard loads ONE fixture, `outsider-extension`, and asserts about that
+ * extension only. Whatever else lives under `extensions/` is untouched by it.
  *
  * **It does not prove a panel mounts.** On the frameless context a real `setWidget`
  * THROWS (`runner.ts:540`; `types.ts:384` documents it), so mounting cannot be

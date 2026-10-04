@@ -13,7 +13,7 @@ import { writeArchive } from "@oh-my-pi/pi-utils/ar";
 import type { CrashRecord } from "./crash-log";
 
 export const BUG_REPORT_SCHEMA_VERSION = 1;
-export const BUG_REPORT_CUSTOM_ENTRY_TYPE = "omp.bug-report";
+export const BUG_REPORT_CUSTOM_ENTRY_TYPE = "ultraworkers.bug-report";
 
 /** One recorded assistant turn that failed, aborted, or carried diagnostics. */
 export interface BugReportAssistantEntry {
@@ -114,5 +114,5 @@ export function writeBugReportArchive(bundle: BugReportBundle, filePath: string)
 }
 
 export function bugReportArchiveFileName(id: string): string {
-	return `omp-bug-report-${id}.zip`;
+	return `ultraworkers-bug-report-${id}.zip`;
 }

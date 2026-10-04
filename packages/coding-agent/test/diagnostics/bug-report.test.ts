@@ -67,8 +67,8 @@ describe("bugReportFiles", () => {
 	});
 
 	test("names archives in this project's namespace", () => {
-		expect(bugReportArchiveFileName("abc")).toBe("omp-bug-report-abc.zip");
-		expect(BUG_REPORT_CUSTOM_ENTRY_TYPE).toBe("omp.bug-report");
+		expect(bugReportArchiveFileName("abc")).toBe("ultraworkers-bug-report-abc.zip");
+		expect(BUG_REPORT_CUSTOM_ENTRY_TYPE).toBe("ultraworkers.bug-report");
 	});
 });
 

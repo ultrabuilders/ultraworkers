@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { INBOUND_POLICIES } from "@ultraworkers/peer";
 import { CFG_PEER_CROSS_SESSION_INBOUND_VALUES, cfgPeerCrossSessionInbound } from "../src/peer/settings";
 import { orderedSettings } from "../src/config/all-settings";
 import { Settings } from "../src/config/settings";
@@ -34,6 +35,27 @@ describe("crossSessionInbound", () => {
 		expect(CFG_PEER_CROSS_SESSION_INBOUND_VALUES.slice()).toEqual(["accept", "hold", "refuse"]);
 	});
 
+	it("offers exactly what the fence accepts, so the two copies cannot drift apart", () => {
+		// THE ROW THAT MAKES THE LOCAL DECLARATION SAFE.
+		//
+		// `src/peer/settings.ts` declares these values itself rather than importing
+		// them, because `@ultraworkers/peer` depends on `@oh-my-pi/pi-coding-agent` and
+		// importing back would close that cycle. That reasoning is about the
+		// *dependency graph* — and it is correct — but it leaves two lists of the same
+		// three strings, and nothing in `src` can compare them.
+		//
+		// A test can: tests are not part of the package graph, so this file imports the
+		// real `INBOUND_POLICIES` while still exercising the coding-agent copy. If a
+		// fourth policy is added to the fence and not here, this row goes red naming
+		// the drift — instead of the fence accepting a value the settings layer cannot
+		// represent, which is the failure that would otherwise ship silently.
+		//
+		// This is a different claim from the row above, which pins the three literal
+		// names. That one says "these are the values"; this one says "and they are the
+		// fence's values". Together: renaming one side alone cannot pass.
+		expect(CFG_PEER_CROSS_SESSION_INBOUND_VALUES.slice()).toEqual([...INBOUND_POLICIES]);
+	});
+
 	it("rejects a value outside the vocabulary rather than falling back", () => {
 		// A typo must not silently become `accept`. Constructing a Settings with an
 		// override runs `assertWritable`, so the rejection happens at the call that
@@ -52,9 +74,9 @@ describe("crossSessionInbound", () => {
 		// at all, so it threw `TypeError: .set is not a function` and passed — green for
 		// the whole time the row named a validator it never reached. Asserting the
 		// message is what makes the row evidence about the fence.
-		expect(() =>
-			Settings.isolated({}).writeValue(cfgPeerCrossSessionInbound, "ask-me-later", "override"),
-		).toThrow(/accept, hold, refuse/);
+		expect(() => Settings.isolated({}).writeValue(cfgPeerCrossSessionInbound, "ask-me-later", "override")).toThrow(
+			/accept, hold, refuse/,
+		);
 	});
 
 	it("reaches the settings panel rather than only the lookup table", () => {

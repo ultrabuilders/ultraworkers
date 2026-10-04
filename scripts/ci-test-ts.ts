@@ -118,6 +118,15 @@ export const fastWorkspacePackages = [
 	// package directory rather than through that script, so the missing script was
 	// never the obstacle — the absence from this list was.
 	"packages/telemetry",
+	// The workflow plugin. Outside `packages/` on purpose — the epic's own structural guard
+	// (check-extension-core-diff) fails on any byte under `packages/`, so its tests cannot live
+	// there without the guard flagging its own test suite.
+	//
+	// Listed here because the alternative was worse: for its whole life these tests ran only
+	// when someone typed the path by hand, and `bun test` does not descend into dot-directories
+	// without an explicit `./` prefix. A suite nobody runs is a green gate that proves nothing,
+	// which is the `epic-jwsy.11` shape this repo has already shipped twice.
+	".claude/plugins/workflow",
 ];
 
 // These suites cover the native package, TUI/browser-ish behavior, local servers,

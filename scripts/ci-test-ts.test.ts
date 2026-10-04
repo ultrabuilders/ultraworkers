@@ -37,6 +37,7 @@ import {
  */
 describe("CI bucket coverage", () => {
 	const packagesDir = path.join(import.meta.dir, "..", "packages");
+	const repoRoot = path.join(import.meta.dir, "..");
 	const bucket = new Set([...fastWorkspacePackages, ...nativeAndIntegrationPackages]);
 	const localOnly = new Set(localOnlyWorkspacePackages);
 	/**
@@ -62,7 +63,15 @@ describe("CI bucket coverage", () => {
 	test("no bucket names a package that does not exist", () => {
 		// The other direction, and the one a "fix" for the row above fakes: adding an
 		// entry to make coverage look complete, for a directory that is not a package.
-		const bogus = [...bucket].filter(pkg => !fs.existsSync(path.join(packagesDir, path.basename(pkg), "test")));
+		//
+		// Resolved against the REPO ROOT, not `path.join(packagesDir, path.basename(pkg))`.
+		// Bucket entries are already repo-root-relative (`packages/omptype`), so basename-ing
+		// them into `packages/` was only ever correct by accident — and it silently broke the
+		// first non-`packages/` entry: `.claude/plugins/workflow` collapsed to
+		// `packages/workflow/test`, which does not exist, so the row went RED on a directory
+		// that is real and holds passing tests. A guard that punishes the truth is the same
+		// defect as one that hides it.
+		const bogus = [...bucket].filter(pkg => !fs.existsSync(path.join(repoRoot, pkg, "test")));
 		expect(bogus).toEqual([]);
 	});
 

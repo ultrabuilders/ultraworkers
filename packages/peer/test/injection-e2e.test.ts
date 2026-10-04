@@ -64,6 +64,75 @@ const cliEntry = path.join(repoRoot, "packages/coding-agent/src/cli.ts");
  * without an API key. So the CLI half is opt-in and says so loudly.
  */
 const enabled = process.env.PEER_E2E === "1";
+
+/**
+ * How long the sender gets to exit before its silence is itself the finding.
+ *
+ * Shorter than the row's own timeout on purpose: the diagnostics have to land while
+ * there is still time to assert on them, and a 180s suite timeout leaves no room for
+ * a second 180s wait. Well under the 180_000 the row declares, and generous enough
+ * for a real model round trip on a slow machine.
+ */
+const SENDER_EXIT_BUDGET_MS = 120_000;
+
+/**
+ * How long a boot diagnostic collects output before giving up.
+ *
+ * Short, because its only job is to catch a process that ALREADY failed: a child
+ * that has died has its stderr at EOF and returns immediately, so a short budget
+ * costs nothing in the healthy case and bounds the sick one.
+ */
+const BOOT_DIAGNOSTIC_BUDGET_MS = 2_000;
+
+/**
+ * Read a pipe that may already be closed.
+ *
+ * `Bun.spawn(..., { stderr: "pipe" })` gives a readable stream whether or not the
+ * child wrote anything, and a child that exited without writing leaves it at EOF
+ * rather than absent. So "is there stderr" is not a question the stream can answer
+ * on its own — the read has to tolerate both shapes, and it must never throw,
+ * because a harness that throws while collecting diagnostics replaces the real
+ * failure with its own.
+ */
+async function readIfOpen(stream: ReadableStream<Uint8Array> | null): Promise<string> {
+	if (stream === null) return "";
+	try {
+		return await Bun.readableStreamToText(stream);
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * Whatever a booted-or-died process said, without waiting for it to finish.
+ *
+ * The `race` is what makes this safe to call on a **live** process: reading its
+ * stderr outright would block until exit, which is the very thing being diagnosed.
+ * Whichever comes first wins — EOF once the child dies, or the deadline — and a
+ * reader that arrives first gets an empty string rather than a hang, because
+ * "still starting up" is a legitimate state here (the receiver is meant to be
+ * listening by now, but the boot is not instant).
+ */
+async function readBootFailure(proc: { stderr: ReadableStream<Uint8Array> | null }): Promise<string> {
+	if (proc.stderr === null) return "";
+	const reader = proc.stderr.getReader();
+	const chunks: string[] = [];
+	const deadline = Bun.sleep(BOOT_DIAGNOSTIC_BUDGET_MS).then(() => "timed-out" as const);
+	try {
+		for (;;) {
+			const step = await Promise.race([reader.read(), deadline]);
+			if (step === "timed-out") break;
+			if (step.done) break;
+			chunks.push(new TextDecoder().decode(step.value));
+		}
+	} catch {
+		// A pipe that errors mid-read has already told us what we need: it is not a
+		// healthy child. Swallowing here keeps the assertion the thing that reports.
+	} finally {
+		reader.releaseLock();
+	}
+	return chunks.join("");
+}
 const roots: string[] = [];
 const servers: net.Server[] = [];
 const procs: Bun.Subprocess[] = [];
@@ -276,12 +345,25 @@ describe("two CLI processes", () => {
 			// lands before anyone is listening.
 			await Bun.sleep(3000);
 
-			// Assert the receiver is still alive rather than assuming it. A process that
-			// died on boot leaves the same observable state as one that is listening —
-			// no transcript — so without this the run would report "no message found"
-			// and read as a delivery failure rather than a harness failure.
-			expect(b.exitCode).toBeNull();
-			expect(b.signalCode).toBeNull();
+			// The receiver's own boot, checked BEFORE anything is spawned as the sender.
+			//
+			// MEASURED, and it corrects a comment that used to sit here claiming the
+			// sender "never exits" without a credential: it exits in about **2 seconds**,
+			// printing to stderr —
+			//
+			//     No models available. Use /login or set an API key environment variable.
+			//
+			// So a bare `expect(b.exitCode).toBeNull()` is the line that fails, and it
+			// fails carrying **nothing** about why. That is the whole defect this row's
+			// diagnostics exist to close: the number that reports the failure and the
+			// evidence that explains it were in different places, and only the number was
+			// printed.
+			const receiverBoot = await readBootFailure(b);
+			expect({
+				receiverExited: b.exitCode,
+				receiverSignal: b.signalCode,
+				receiverStderr: receiverBoot.slice(-2000),
+			}).toMatchObject({ receiverExited: null, receiverSignal: null });
 
 			const a = Bun.spawn(["bun", cliEntry, "--mode", "json", "-p", "send a peer message to BlueLake"], {
 				cwd: repoRoot,
@@ -290,10 +372,44 @@ describe("two CLI processes", () => {
 				env: env(senderRoot, senderAgent),
 			});
 			procs.push(a);
-			await a.exited;
+			// Bounded, and the bound is load-bearing rather than hygiene. `a.exited` alone
+			// is not enough to reason about: a sender that hangs and a sender that exits
+			// are different failures, and only the second is diagnosed below.
+			const senderExit = await Promise.race([
+				a.exited,
+				Bun.sleep(SENDER_EXIT_BUDGET_MS).then(() => "still-running" as const),
+			]);
+			if (senderExit !== 0) {
+				// Assert with the pipes IN the message. Logging them instead would put the
+				// evidence in the console rather than in the failure output, where nobody
+				// reads it a day later.
+				expect({
+					reason: senderExit === "still-running" ? "sender did not exit" : `sender exited ${senderExit}`,
+					senderStderr: (await readIfOpen(a.stderr)).slice(-2000),
+					receiverStderr: (await readIfOpen(b.stderr)).slice(-2000),
+				}).toMatchObject({ reason: "sender exited 0" });
+			}
 
 			const sessionsDir = path.join(receiverAgent, "sessions");
 			const files = await fs.readdir(sessionsDir).catch(() => [] as string[]);
+			// The diagnosability half, and the reason the row can be trusted to have
+			// failed for the reason it claims. Without this a red run says only "no
+			// session directory" — and the two ways to get there (the receiver died on
+			// boot vs. the message was never delivered) are indistinguishable, which is
+			// exactly how a harness failure once read as a delivery failure.
+			//
+			// Read BOTH pipes, and attach them to the assertion rather than logging them:
+			// a message written to the console is not in the failure output, so it helps
+			// whoever is watching and helps nobody reading the result later.
+			const [senderErr, receiverErr] = await Promise.all([readIfOpen(a.stderr), readIfOpen(b.stderr)]);
+			expect({
+				sessionsDir,
+				receiverExited: b.exitCode,
+				receiverSignal: b.signalCode,
+				senderExited: a.exitCode,
+				senderStderr: senderErr.slice(-2000),
+				receiverStderr: receiverErr.slice(-2000),
+			}).toMatchObject({ receiverExited: null, senderExited: 0 });
 			expect(files.length).toBeGreaterThan(0);
 
 			// The part `files.length > 0` could not do: a session directory can exist

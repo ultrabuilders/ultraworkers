@@ -64,7 +64,7 @@ export default class Worktree extends Command {
 			description: "Print what would be removed without touching the filesystem (clear)",
 			default: false,
 		}),
-		json: Flags.boolean({ char: "j", description: "Emit machine-readable JSON", default: false }),
+		json: Flags.boolean({ char: "j", description: "Emit machine-readable JSON (list, clear, add)", default: false }),
 	};
 
 	static examples = [
@@ -98,6 +98,7 @@ export default class Worktree extends Command {
 					forceBranch: flags["force-branch"],
 					detach: flags.detach ?? false,
 					quiet: flags.quiet ?? false,
+					json: flags.json ?? false,
 				});
 			} catch (error) {
 				console.error(error instanceof Error ? error.message : String(error));

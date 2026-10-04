@@ -52,6 +52,21 @@ export interface WorktreeEntry {
 	unmanaged?: boolean;
 }
 
+/**
+ * What `add` created — returned, and emitted under `--json`, so a script learns
+ * the path it just asked for instead of parsing git's prose.
+ */
+export interface AddWorktreeResult {
+	/** Absolute path to the worktree that now exists. */
+	path: string;
+	/** The ref that was checked out. */
+	ref: string;
+	/** Short SHA of the commit now at HEAD. */
+	sha: string;
+	/** True when HEAD is detached rather than on a branch. */
+	detached: boolean;
+}
+
 export interface AddWorktreeOptions {
 	cwd?: string;
 	path: string;
@@ -60,6 +75,15 @@ export interface AddWorktreeOptions {
 	forceBranch?: string;
 	detach: boolean;
 	quiet: boolean;
+	/**
+	 * Emit the created worktree as JSON on stdout, and nothing else.
+	 *
+	 * The parser accepts `--json` for every action, so `worktree add --json` used to
+	 * parse and then print git prose: a script asking where its worktree landed had
+	 * nowhere to read the answer. `quiet` does not suppress this — an explicit
+	 * machine-readable request is the output, not decoration.
+	 */
+	json: boolean;
 }
 
 export interface ListWorktreesOptions {
@@ -107,7 +131,7 @@ export async function stopRetainedMount(dir: string): Promise<boolean> {
 	return false;
 }
 
-export async function addWorktree(options: AddWorktreeOptions): Promise<void> {
+export async function addWorktree(options: AddWorktreeOptions): Promise<AddWorktreeResult> {
 	if (options.branch && options.forceBranch) {
 		throw new Error("fatal: options '-b' and '-B' cannot be used together");
 	}
@@ -150,7 +174,7 @@ export async function addWorktree(options: AddWorktreeOptions): Promise<void> {
 	const commit = await repository.commitDetails(ref);
 	const shortSha = commit.sha.slice(0, 7);
 	const subject = commit.message.split("\n", 1)[0];
-	if (!options.quiet) {
+	if (!options.quiet && !options.json) {
 		const preparation = createdBranch
 			? `new branch '${createdBranch}'`
 			: detach
@@ -163,15 +187,23 @@ export async function addWorktree(options: AddWorktreeOptions): Promise<void> {
 		clone: cfgWorktreeClone.get(settings),
 		backend: parseIsolationBackend(cfgIsolationBackend.get(settings)),
 	});
-	if (!options.quiet) {
+	if (options.json) {
+		console.log(JSON.stringify({ path: worktreePath, ref, sha: shortSha, detached: detach }, null, 2));
+	} else if (!options.quiet) {
 		console.log(`HEAD is now at ${shortSha} ${subject}`);
 		if (result.clonedWith != null) {
 			console.log(`Cloned from ${repository.info().repoRoot} via ${formatIsolationBackend(result.clonedWith)}`);
 		}
+		// The path is the one fact `add` produces that the caller cannot derive:
+		// `../feature` is relative to the cwd the caller passed, not to wherever the
+		// worktree landed. Without this line a script has to re-run `list` to learn
+		// what it just made.
+		console.log(`Worktree ready at ${worktreePath}`);
 	}
 	if (result.cloneError) {
 		console.error(chalk.dim(`warning: worktree clone fell back to plain checkout: ${result.cloneError}`));
 	}
+	return { path: worktreePath, ref, sha: shortSha, detached: detach };
 }
 
 /**

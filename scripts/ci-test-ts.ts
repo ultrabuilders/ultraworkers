@@ -155,6 +155,30 @@ export const nativeAndIntegrationPackages = [
 	// ~148ms, client 27 pass / 0 fail in ~358ms.
 	"packages/server",
 	"packages/client",
+	// `packages/peer` is subprocess-bound for the same reason: three of its suites
+	// race REAL `bun` processes rather than mocking them, because the behaviour
+	// under test is a row-level race that one process cannot produce.
+	// `lease-store.test.ts` runs two children against one SQLite file to show only
+	// one wins the path; `inbox-crash.test.ts` kills a writer mid-append;
+	// `injection-e2e-premise.test.ts` boots the actual CLI. `bun:sqlite` plus real
+	// process boundaries is not the short pure-TS shape the fast bucket is for.
+	// Measured: 250 pass / 0 fail, ~8s.
+	//
+	// It was in NEITHER bucket, so `epic-jwsy`'s whole family — 15 beads, 12 of
+	// them closed — was typechecked by `check:ts` and never tested by the merge
+	// gate. That is precisely the failure `epic-jwsy.14` exists to prevent: the gate
+	// that makes the other beads measurable was not measuring these. A package's
+	// `check:types` running is not evidence its tests ran, and only the bucket list
+	// decides that.
+	"packages/peer",
+	// `packages/durable` was in neither bucket either — 31 test files, 526 pass,
+	// and no CI step ran any of it. Found by the bucket-coverage test added with
+	// `packages/peer` above, which is the argument for having that test: the second
+	// instance turned up the moment the guard could see the first.
+	//
+	// Here rather than the fast bucket because 2 of its 31 files spawn or serve, and
+	// the bucket rule is suite shape rather than what most files happen to do.
+	"packages/durable",
 ];
 
 // Packages the CI buckets deliberately skip but a local full run should still

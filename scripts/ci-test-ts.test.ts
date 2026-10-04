@@ -1,15 +1,78 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { ptree, TempDir } from "@oh-my-pi/pi-utils";
 import { PROBE_PREFIX } from "@oh-my-pi/pi-utils/probe";
 import {
 	chunkRunsTests,
 	countProbeEntries,
+	fastWorkspacePackages,
 	formatChunkManifest,
 	formatDiscardedProbeWarning,
+	localOnlyWorkspacePackages,
+	nativeAndIntegrationPackages,
 	selectAffected,
 	selectShard,
 } from "./ci-test-ts";
+
+/**
+ * Every TS package must be in exactly one CI bucket — `epic-jwsy.14`.
+ *
+ * THE FAILURE THIS EXISTS TO CATCH. `packages/peer` was in neither
+ * `fastWorkspacePackages` nor `nativeAndIntegrationPackages`, so its whole suite
+ * was typechecked by `check:ts` and **never run by the merge gate**. Fifteen beads
+ * of `epic-jwsy` were closed against a suite CI does not execute, which is the
+ * exact failure the gate exists to prevent: it is supposed to make the other beads
+ * measurable rather than believed.
+ *
+ * Nothing caught it because the bucket lists were themselves unasserted. A package
+ * can be added to the workspace and simply never appear in either list, and the
+ * only symptom is a silently shrinking test surface.
+ *
+ * The read is deliberately "does the directory exist", not "does it look like a
+ * package" — a bucket entry for a directory with no `test/` is a typo, and a
+ * `test/` directory with no bucket entry is the bug this catches. Both directions
+ * are asserted below rather than only the second, because the first is how a fix
+ * for the second gets faked.
+ */
+describe("CI bucket coverage", () => {
+	const packagesDir = path.join(import.meta.dir, "..", "packages");
+	const bucket = new Set([...fastWorkspacePackages, ...nativeAndIntegrationPackages]);
+	const localOnly = new Set(localOnlyWorkspacePackages);
+	/**
+	 * `coding-agent` is covered by a different mechanism, not by these lists: its
+	 * suite is partitioned per FILE into four buckets by `classifyCodingAgentTest`
+	 * and run as `ci:test:coding-agent:*`. Listing it here would be a false positive
+	 * on every run, and a permanently-red row is how a real row stops being read.
+	 */
+	const coveredElsewhere = new Set(["packages/coding-agent"]);
+	const accounted = new Set([...bucket, ...localOnly, ...coveredElsewhere]);
+
+	test("a package with tests is in a bucket", () => {
+		const uncovered = fs
+			.readdirSync(packagesDir, { withFileTypes: true })
+			.filter(entry => entry.isDirectory())
+			.map(entry => `packages/${entry.name}`)
+			.filter(pkg => fs.existsSync(path.join(packagesDir, path.basename(pkg), "test")))
+			.filter(pkg => !accounted.has(pkg));
+
+		expect(uncovered).toEqual([]);
+	});
+
+	test("no bucket names a package that does not exist", () => {
+		// The other direction, and the one a "fix" for the row above fakes: adding an
+		// entry to make coverage look complete, for a directory that is not a package.
+		const bogus = [...bucket].filter(pkg => !fs.existsSync(path.join(packagesDir, path.basename(pkg), "test")));
+		expect(bogus).toEqual([]);
+	});
+
+	test("no package is in two buckets", () => {
+		// Duplicated across the fast and integration lanes means the suite runs twice
+		// in CI while a reader counting coverage still sees every package accounted for.
+		const both = fastWorkspacePackages.filter(pkg => nativeAndIntegrationPackages.includes(pkg));
+		expect(both).toEqual([]);
+	});
+});
 
 describe("test runner watchdog", () => {
 	// Parent fake timers cannot drive the real watchdog inside the isolated runner process.

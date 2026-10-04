@@ -76,6 +76,36 @@ A `protocolVersion` that does not match is refused **at load**, and the refusal 
 to that one transport — logged, not thrown, because one extension built against another
 wire version must not take every other extension's seams down with it.
 
+## In core, and promised — with a limit that is part of the promise
+
+**The peer lease fence protects a row, not a file.** Stated here because this file's
+own rule is that core's guarantees are published by name, and a guarantee read one
+way by a reader is worse than a smaller one stated accurately.
+
+```
+agent A: lock("src/x.ts")  → token 7
+  …A descheduled an hour; its TTL expires…
+agent B: lock("src/x.ts")  → token 8, reaps A's row
+  …A wakes, still believing it holds the path…
+A: edit("src/x.ts")        ← lands in the tree. Nothing asks the lease store.
+```
+
+`edit`, `write`, `ast_edit` and `git` write straight to the filesystem; no write path
+consults `peer_leases`, so the `WHERE fence_token = ?` guard **never runs for a file**.
+The holder is refused in the database and successful on disk — a zombie writer.
+
+The store is not at fault and no test of the store can see this: it refuses correctly
+throughout. It answers a question nobody asks about the thing that matters. So the
+claim is kept executable rather than only written down —
+`packages/peer/test/lease-fence-does-not-protect-files.test.ts` asserts both halves in
+one row, because asserting only the database refusal passes on a store that is correct
+and useless.
+
+**Not in core, and deliberately so: a write-path seam that consults leases.** Building
+one is a new capability, which is the owner's call, not a repair. Until it exists, a
+peer lease is an advisory claim with a hard expiry — true, enforced, and not a lock on
+the bytes.
+
 ## Also in core, and deliberately so
 
 `./extensibility/*` publishes the whole directory, which includes the compatibility

@@ -44,6 +44,33 @@ is part of what keeps that surface at four.
 destroy work another agent is actively doing. The equivalent stays a human
 calling it on the mail server directly.
 
+## What the lease does *not* protect
+
+**The fence protects a row, not a file.** This is the most important limit in
+this README and it is stated here because the opposite claim is what a reader
+infers from everything above.
+
+```
+agent A: peer.lock("src/x.ts")  → token 7
+  …A is descheduled an hour; its TTL expires…
+agent B: peer.lock("src/x.ts")  → token 8, reaps A's row
+  …A wakes, still believing it holds the path…
+A: edit("src/x.ts")             ← lands in the tree. Nothing asks the lease store.
+```
+
+`edit`, `write`, `ast_edit` and `git` write straight to the filesystem. No write
+path consults `peer_leases`, so the `WHERE fence_token = ?` guard **never runs
+for a file**. A is a zombie writer: refused in the database, successful on disk.
+
+The store is not behaving badly — it refuses correctly, every time. It is
+answering a question nobody asks about the thing that actually matters. Asserting
+only the database half would pass on a store that is correct *and useless*, which
+is why `test/lease-fence-does-not-protect-files.test.ts` checks both halves in one
+row and names the disagreement as the claim.
+
+**Closing this needs a write-path seam, not a stronger lease.** Any fix belongs
+to whoever owns `edit`/`write`, and is a new capability rather than a repair here.
+
 ## Extending it
 
 Both seams are provider-shaped or fallback-shaped, copied from seams that already

@@ -72,6 +72,21 @@ export interface PeerToolDeps {
 		 * Present and `false` is the case that matters: the caller ASKED for a notice and
 		 * the transport dropped it. Without a way to say that, `peer.send` could only answer
 		 * `ok: true` to a promise nothing was going to keep — which is epic-m9wi.
+		 *
+		 * ## The obligation this places on a transport, stated so it is not a secret
+		 *
+		 * A transport that RECEIVES `notifyWhenIdle: true` and cannot arrange the notice
+		 * MUST return `false` here. Silence is a contract violation, not a third option:
+		 * absent is reserved for "the request never reached me", so the one case where the
+		 * caller is waiting for a promise nothing will keep is precisely the one this field
+		 * exists to report.
+		 *
+		 * The field stays optional anyway, deliberately. It is on a value a THIRD PARTY
+		 * returns: making it required would turn every already-shipped transport that does
+		 * not know about it into a `TypeError` on the send path — converting a silent
+		 * wait into a crash for every message, which is the worse trade. Optional-and-
+		 * documented keeps old transports working and makes the new obligation explicit,
+		 * where a required field would only have made it fatal.
 		 */
 		readonly notifyWhenIdleHonoured?: boolean;
 	}>;

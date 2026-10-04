@@ -23,6 +23,8 @@ reproduced below.
 | `src/types.ts`             | `src/display.ts:8` (`WorkflowAgentStatus`), `:10-32` (`WorkflowAgentSnapshot`), `:37-60` (`WorkflowSnapshot`), narrowed to the fields the counting paths read                                                                                 | 3.13.1 @ `3bea96c` |
 | `src/persistence/record-store.ts` | `src/run-record-store.ts:8-19` (`RunSummary`), `:22-40` (`runSummary`)                                                                                                                          | 3.13.1 @ `3bea96c` |
 | `src/tools/workflow-control.ts` | `src/workflow-control-tool.ts` in full (285 lines): `:16-42` (schema), `:78-150` (tool), `:152-182` (`normalizeInput`), `:184-229` (result/error/`allowedActions`), `:231-275` (`summarizeRun`, `countAgents`), `:277-285` (`formatRun`)       | 3.13.1 @ `3bea96c` |
+| `src/ui/format.ts`        | `src/display.ts:130` (`fmtTokenCount`), `:150-158` (`fmtTokenSegment`), `:161-164` (`fmtFull`), `:163` (`fmtCost`), `:167-179` (`createWorkflowSnapshot`), `:181-188` (`recomputeWorkflowSnapshot`), `:191-224` (`emptyFleetSummary`), `:222-236` (`backgroundStartNotice`), `:326-329` (per-agent token cell) | 3.13.1 @ `3bea96c` |
+| `src/ui/panel.ts`         | `src/display.ts:332-424` (`renderWorkflowLines`), `:426-444` (`renderWorkflowText`, `statusLine`, `statusIcon`), `:448-457` (`shorten`, `preview`), `:240-282` (`createWidgetWorkflowDisplay`) | 3.13.1 @ `3bea96c` |
 | `src/manager.ts`          | `src/workflow-manager.ts` (~600 of 2412): `:682-789` (`startInBackground`, incl. the persist-before-observe order and its release-and-delete failure path), `:798` (`runSync`), `:1726-1736` (`pause`), `:1747` (`attachCheckpointResponse`), `:554` (`listLiveRuns`), `:609` (`recoverStaleRuns`), `:1577` (`persistRun`), `:1600+` (`writeRunToDisk`) | 3.13.1 @ `3bea96c` |
 
 `src/engine/vm.ts`'s `DETERMINISM_PRELUDE` is byte-for-byte identical to the
@@ -56,6 +58,23 @@ does) and not as a plugin.
 3. **Registration is not here.** The reference calls `defineTool` and registers in one breath.
    This module RETURNS the definition; handing it to `api.registerTool` belongs to the extension
    entrypoint.
+
+## `src/ui/panel.ts` — the mount guard is per-surface, not one boolean
+
+`canMount(surface)` exists because `hasUI` reports whether DIALOGS round-trip, and that answer is
+`true` in RPC and in ACP-with-`elicitation.form` — where `custom()`, `setHeader` and `setFooter`
+nonetheless THROW on every call (`types.ts:328-345`). But `canMount` is scoped to exactly those
+three surfaces. `setWidget` is excluded because its answer depends on the content (RPC renders a
+string array and silently ignores a component factory) and `setStatus` because it never throws.
+
+So the rule is **not** "prefer `canMount`". It is: `canMount` for the surfaces that need a frame,
+`hasUI` for the ones that merely would not be seen. `canRegisterWidget` and `canMountCustom` are
+separate functions on purpose — collapsing them is the bug, and a test pins that they answer
+differently on the same context.
+
+`PanelUiContext` is declared structurally rather than imported from the host, for the same reason
+`WorkflowManagerLike` is: the module is testable without a host, and an out-of-core extension
+should not import core for four method signatures.
 
 ## `src/manager.ts` — the lifecycle, with execution behind a seam
 

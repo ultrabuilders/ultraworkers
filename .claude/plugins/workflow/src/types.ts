@@ -32,10 +32,16 @@ export interface WorkflowAgentSnapshot {
 	id: number;
 	label: string;
 	status: WorkflowAgentStatus;
+	/** The phase this agent belongs to; empty/absent renders under "Unphased". */
+	phase?: string;
 	/** Tokens used by this agent (a scalar estimate when the provider reports no usage). */
 	tokens?: number;
 	/** Per-agent token usage breakdown (fresh input+output vs cached), when known. */
 	tokenUsage?: Usage;
+	/** One-line result summary, shown only when the caller opts into previews. */
+	resultPreview?: string;
+	/** Sanitized failure message, when the agent ended in error. */
+	error?: string;
 }
 
 /**
@@ -48,6 +54,7 @@ export interface WorkflowAgentSnapshot {
  */
 export interface WorkflowSnapshot {
 	name: string;
+	description?: string;
 	/**
 	 * Phase titles, in order.
 	 *
@@ -57,7 +64,22 @@ export interface WorkflowSnapshot {
 	 */
 	phases?: string[];
 	currentPhase?: string;
+	/** Human-readable progress lines. Optional: the control tool never renders them. */
+	logs?: string[];
 	agents: WorkflowAgentSnapshot[];
+	/**
+	 * Derived counts, recomputed by `recomputeWorkflowSnapshot` rather than counted at each read.
+	 *
+	 * Optional because they are a CACHE, not a fact: a caller that hand-builds a snapshot has not
+	 * necessarily run the recompute, and a reader that trusted them would report 0 for a run with
+	 * agents in it. `ui/format.ts` counts from `agents` for that reason.
+	 */
+	agentCount?: number;
+	runningCount?: number;
+	doneCount?: number;
+	errorCount?: number;
+	durationMs?: number;
+	result?: unknown;
 	tokenUsage?: Usage & { cost?: number };
 	/** The durable checkpoint this run is suspended at, when it has one. */
 	checkpoint?: RunCheckpoint;

@@ -78,11 +78,20 @@ describe("the baseline gate's verdict is read off its own output", () => {
 });
 
 describe("an inadmissible verdict is refused", () => {
-	it("refuses a VOID that exited 0 — the && chain above reads it as a pass", () => {
-		// THE contract. `check:test-baseline` is the last link in `check:ts`'s `&&` chain,
-		// so exit 0 is what carries "no defect" upward. An abstention that exits 0 is
-		// therefore indistinguishable from a pass to every reader above it, and the gate
-		// would be reporting a number it does not have.
+	it("refuses a VOID that exited 0 — a reader cannot tell it from a pass", () => {
+		// THE contract, and the harm is SMALLER than an earlier version of this comment
+		// claimed. Measured: `check:test-baseline` is step 16 of 16 in `check:ts`'s `&&`
+		// chain, so nothing downstream is suppressed by a VOID — the chain simply ends.
+		//
+		// What exit 0 still costs is the READ-OUT. `check:ts` exits 0, the run is green,
+		// and the only evidence that no verdict was reached is prose in the middle of a
+		// log nobody re-reads. That is a weaker claim than "everything above it believes
+		// there is no defect" — it is "the artifact a person or a CI badge reads says
+		// pass, and it is wrong".
+		//
+		// Worth stating precisely because the earlier version overstated it, and a reviewer
+		// asking the right question is what caught it: if VOID cannot stop any later step,
+		// the case for exit 1 rests on the report, not on the chain.
 		const defects = judgeAdmissibility(report({ verdict: "void", exitCode: 0 }));
 		expect(defects.map(d => d.kind)).toEqual(["abstention-read-as-success"]);
 	});

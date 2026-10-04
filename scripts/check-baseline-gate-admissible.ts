@@ -21,9 +21,13 @@
  * VOID is the right verdict and it must stay. So this gate does NOT weaken it into
  * a pass. It asserts the two things that make VOID safe:
  *
- * 1. **VOID is reported as an abstention, not as success.** A gate that abstained and
- *    exited 0 would be read by `check:ts`'s `&&` chain as having passed. That is the
- *    failure this fails on.
+ * 1. **VOID is reported as an abstention, not as success.** Measured: this gate is step
+ *    16 of 16 in `check:ts`'s `&&` chain, so a VOID suppresses nothing downstream — the
+ *    chain simply ends. What exit 0 costs is the READ-OUT: `check:ts` goes green and the
+ *    badge says pass while no verdict was reached. That is the failure this fails on, and
+ *    it is a smaller claim than "the chain above believes there is no defect" — there is
+ *    nothing above it. A reviewer asking where the harm actually lands is what corrected
+ *    this from an earlier, overstated version.
  * 2. **A confirmed regression IS red.** The gate's whole purpose, and the one claim
  *    nobody can read off a green run.
  *
@@ -124,7 +128,7 @@ export interface AdmissibilityDefect {
  * Whether a baseline-gate run is admissible evidence for "the gate works".
  *
  * An abstention is admissible when it is loud and non-zero: the reader and the `&&`
- * chain both have to be able to tell it apart from a pass. A green run is admissible —
+ * read-out both have to be able to tell it apart from a pass. A green run is admissible —
  * but it is evidence the gate ran, NOT evidence it catches regressions, and this
  * function returns that distinction rather than letting a green imply both.
  */
@@ -148,8 +152,9 @@ export function judgeAdmissibility(report: GateReport): readonly AdmissibilityDe
 	switch (report.verdict) {
 		case "void":
 			// The defect this exists to catch: an abstention that exits 0 is silently a
-			// pass to every `&&` chain above it, which is how "the gate never went red"
-			// becomes "the gate is green".
+			// pass to whoever reads the result — the chain itself cannot be misled,
+			// because this gate is its last step. That is how "the gate never went red"
+			// becomes "the gate is green" in the artifact a person or badge reads.
 			if (report.exitCode === 0) {
 				defects.push({
 					kind: "abstention-read-as-success",
@@ -238,7 +243,7 @@ if (import.meta.main) {
 			`baseline-gate-admissible: ${defects.length} inadmissible verdict(s) from the baseline gate ` +
 				`(verdict=${report.verdict}, exit=${report.exitCode}):\n` +
 				`${defects.map(d => `  - [${d.kind}] ${d.detail}`).join("\n")}\n\n` +
-				"An abstention that exits 0 is read as a pass by every `&&` chain above it, and a\n" +
+				"An abstention that exits 0 is read as a pass by whoever reads the result, and a\n" +
 				"confirmed regression that exits 0 is a gate that cannot fail. Neither is admissible.\n",
 		);
 		process.exit(1);

@@ -381,7 +381,7 @@ Port `runGoalCompletionAuditor()` (`goal-auditor.ts:306-489`) with these substit
 | `createAgentSession` from `@earendil-works/pi-coding-agent` | `runStructuredSubagent` (`task/structured-subagent.ts`) | we are core, not an extension — we have the structured lane, the reference does not |
 | `SessionManager.inMemory` | inherited by the task lane | no equivalent knob |
 | `outputSchema` | set to the verdict shape | see 2.2 |
-| `tools: ["read","grep","find","ls","bash"]` | same list, via `blockedAgent` for everything else | copy exactly |
+| `tools: ["read","grep","find","ls","bash"]` | same list, set via `agent.tools` → `setActiveToolsByName` | copy exactly — **not** via `blockedAgent` |
 | `makeAuditorResourceLoader` | ⚠️ **does not exist here** — see below | the four flags return 0 hits |
 | `session.subscribe` progress | reuse the task lane's existing progress callback | do not re-implement a progress protocol |
 | `session.abort()` | the lane's `signal` | already wired |
@@ -619,7 +619,7 @@ the gate belongs behind the existing `goal` tool, not beside it.
 | Risk | Severity | Mitigation |
 |---|---|---|
 | Auditor rubber-stamps because it inherits the author's framing | High | empty resource loader + read-only tools; document cross-family as the stronger guarantee |
-| Auditor inherits the author's tools and completes its own goal | Critical | `blockedAgent` + `goal` excluded; **test it, do not comment it** |
+| Auditor inherits the author's tools and completes its own goal | Critical | `goal` excluded from `agent.tools` — `blockedAgent` does **not** do this; **test it, do not comment it** |
 | `bash` in the allowlist lets the auditor mutate the repo | Medium | mirror `extragoal`'s rule — any call outside the allowlist fails the round; consider a repo-write detector as a follow-up |
 | Gate rejects but goal closes anyway | Critical | every rejection row asserts the goal is still active |
 | Model config typo silently downgrades to the author's own family | Medium | port the provider-only refusal verbatim |

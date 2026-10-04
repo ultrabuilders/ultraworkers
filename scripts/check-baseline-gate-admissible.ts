@@ -56,6 +56,18 @@ export interface GateReport {
 	readonly confirmed: readonly string[];
 	/** Test names the gate reported as newly passing. */
 	readonly healed: readonly string[];
+	/**
+	 * The count the gate printed for the same class it listed rows under.
+	 *
+	 * Cross-checked against the row count on purpose. The gate announces
+	 * `Unconfirmed new failure(s) in this run: N` and then prints N `~` lines, so the two
+	 * are independent: if this module's row regex ever stops matching — a renamed marker, a
+	 * reformatted prefix, a test name containing the delimiter — the rows come back empty
+	 * while `declaredUnconfirmed` still reads N. Reporting `unconfirmed=0` then would be a
+	 * confident wrong number, which is the failure this whole file is about, one level down.
+	 * Disagreement is surfaced rather than resolved in either direction.
+	 */
+	readonly declaredUnconfirmed?: number;
 }
 
 /**
@@ -84,6 +96,8 @@ export function parseGateReport(stdout: string, exitCode: number): GateReport {
 	// name. New failures print `N NEW failure(s) not in the baseline`, which is the only
 	// outcome that must be red.
 	const newFailures = /baseline gate: \d+ NEW failure\(s\)/.test(output);
+	// The gate's own count of the same rows this module parses, so the two can disagree.
+	const declared = /Unconfirmed new failure\(s\) in this run: (\d+)/.exec(output);
 
 	let verdict: GateVerdict;
 	if (newFailures) verdict = "new-failures";
@@ -94,6 +108,7 @@ export function parseGateReport(stdout: string, exitCode: number): GateReport {
 	return {
 		verdict,
 		exitCode,
+		declaredUnconfirmed: declared === null ? undefined : Number(declared[1]),
 		unconfirmed: rowNames("~"),
 		confirmed: rowNames("+"),
 		healed: rowNames("-"),
@@ -101,7 +116,7 @@ export function parseGateReport(stdout: string, exitCode: number): GateReport {
 }
 
 export interface AdmissibilityDefect {
-	readonly kind: "abstention-read-as-success" | "regression-not-red" | "unparseable";
+	readonly kind: "abstention-read-as-success" | "regression-not-red" | "unparseable" | "row-count-disagrees";
 	readonly detail: string;
 }
 
@@ -115,6 +130,21 @@ export interface AdmissibilityDefect {
  */
 export function judgeAdmissibility(report: GateReport): readonly AdmissibilityDefect[] {
 	const defects: AdmissibilityDefect[] = [];
+
+	// The gate announced N and printed N rows. If this module sees a different N, its row
+	// parser is the thing that broke, so every count it reports below is unreliable — and a
+	// parser that quietly returns zero is how this file would vouch for a gate it has
+	// stopped reading. Checked before the verdict switch so a disagreement is reported even
+	// when the verdict itself is fine.
+	if (report.declaredUnconfirmed !== undefined && report.declaredUnconfirmed !== report.unconfirmed.length) {
+		defects.push({
+			kind: "row-count-disagrees",
+			detail:
+				`gate declared ${report.declaredUnconfirmed} unconfirmed failure(s) but ` +
+				`${report.unconfirmed.length} row(s) parsed — this parser has stopped reading the gate's output`,
+		});
+	}
+
 	switch (report.verdict) {
 		case "void":
 			// The defect this exists to catch: an abstention that exits 0 is silently a
@@ -175,11 +205,22 @@ function runBaselineGate(): GateReport {
  * Exported and separately tested because this string is the difference between "the gate ran"
  * and "the gate works", and the second claim is the one a green run cannot support. A caller
  * that renders it gets the distinction for free instead of having to remember it.
+ *
+ * One line per verdict rather than a green/non-green split: the earlier two-way version
+ * called a confirmed regression an "abstention", which is a different thing — the gate
+ * reached a verdict and it was the loud one. A reader told "abstention" stops looking.
  */
 export function verdictNote(report: GateReport): string {
-	return report.verdict === "green"
-		? "admissible as evidence it ran; NOT evidence it catches a regression (no injected defect in this run)"
-		: `admissible abstention (exit=${report.exitCode}) — reported loudly, distinguishable from a pass`;
+	switch (report.verdict) {
+		case "green":
+			return "admissible as evidence it ran; NOT evidence it catches a regression (no injected defect in this run)";
+		case "void":
+			return `admissible abstention (exit=${report.exitCode}) — reported loudly, distinguishable from a pass`;
+		case "new-failures":
+			return `admissible red (exit=${report.exitCode}) — ${report.confirmed.length} confirmed new failure(s), which is the gate working`;
+		default:
+			return `inadmissible (exit=${report.exitCode}) — no recognisable verdict`;
+	}
 }
 
 if (import.meta.main) {

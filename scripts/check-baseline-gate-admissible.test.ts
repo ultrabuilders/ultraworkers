@@ -29,6 +29,8 @@ const VOID_OUTPUT = [
 	"Unconfirmed new failure(s) in this run: 3",
 	"  ~ (not reproduced — a confirm run was skipped, so treat as load, not regression)",
 	"  ~ AgentSession bash session ownership > keeps a queued bash result",
+	"  ~ custom tool loader > resumes host stdin when a tool pauses it at import time",
+	"  ~ doctor exit code > exits 0 when every check it could run passed",
 ].join("\n");
 
 /** The gate's confirmed-regression shape: `N NEW failure(s)` plus `+` rows. */
@@ -45,8 +47,11 @@ describe("the baseline gate's verdict is read off its own output", () => {
 		// "Unconfirmed new failure(s) in this run: 3".
 		const parsed = parseGateReport(VOID_OUTPUT, 1);
 		expect(parsed.verdict).toBe("void");
-		expect(parsed.unconfirmed).toEqual(["AgentSession bash session ownership > keeps a queued bash result"]);
+		// The fixture's first `~` row is the gate's own parenthetical, not a failure, so it
+		// must not appear as a name — if it did, the count would be 4 and would disagree with
+		// the gate's declared 3.
 		expect(parsed.unconfirmed.some(name => name.startsWith("("))).toBe(false);
+		expect(parsed.unconfirmed[0]).toBe("AgentSession bash session ownership > keeps a queued bash result");
 	});
 
 	it("prefers new-failures over void when a run somehow printed both", () => {
@@ -57,10 +62,18 @@ describe("the baseline gate's verdict is read off its own output", () => {
 	});
 
 	it("treats a non-zero exit with no recognisable sentence as unparseable, not green", () => {
-		// A gate whose output shape changed is not a gate that passes. This is the direction
+		// A gate whose output changed shape is not a gate that passes. This is the direction
 		// that matters: defaulting to green would let a renamed verdict string silently
 		// disable the whole check.
 		expect(parseGateReport("something else entirely\n", 2).verdict).toBe("unknown");
+	});
+
+	it("reads the gate's own count so its row count can be checked against it", () => {
+		// The gate announces N and prints N rows. Capturing N separately is what makes a
+		// broken row parser visible instead of silently reporting zero.
+		const parsed = parseGateReport(VOID_OUTPUT, 1);
+		expect(parsed.declaredUnconfirmed).toBe(3);
+		expect(parsed.unconfirmed).toHaveLength(3);
 	});
 });
 
@@ -87,6 +100,38 @@ describe("an inadmissible verdict is refused", () => {
 		// A checker that skips what it cannot read is a checker whose coverage is unknown,
 		// which is the property this whole file exists to establish.
 		expect(judgeAdmissibility(report({ verdict: "unknown", exitCode: 1 })).map(d => d.kind)).toEqual(["unparseable"]);
+	});
+
+	it("refuses a report whose declared count and parsed rows disagree", () => {
+		// THE regression this guards, and it is the same shape as the bug this file exists
+		// for: a gate stops being read, the parser returns an empty list, and the falsifier
+		// prints `unconfirmed=0` with a straight face. The verdict here is a perfectly good
+		// VOID — so without this row the disagreement would never be looked at, and the
+		// counts this file prints would be confidently wrong for as long as the marker
+		// stayed renamed.
+		const drifted = report({ verdict: "void", exitCode: 1, declaredUnconfirmed: 3, unconfirmed: [] });
+		const defects = judgeAdmissibility(drifted);
+		expect(defects.map(d => d.kind)).toEqual(["row-count-disagrees"]);
+		expect(defects[0]?.detail).toContain("stopped reading");
+	});
+
+	it("accepts a report whose declared count matches its rows", () => {
+		// The control for the row above: same verdict, same exit, agreeing counts — which
+		// must stay admissible, or the check would fire on every healthy VOID run.
+		const agreeing = report({ verdict: "void", exitCode: 1, declaredUnconfirmed: 2, unconfirmed: ["a", "b"] });
+		expect(judgeAdmissibility(agreeing)).toEqual([]);
+	});
+
+	it("calls a confirmed regression a red, not an abstention", () => {
+		// The wording fix, asserted as behaviour because a reader who is told "abstention"
+		// stops looking. A confirmed regression is the gate REACHING a verdict, and the
+		// loud one; calling it an abstention understates the only run that proves the gate
+		// works. Distinct from green's "not evidence it catches", which is the opposite
+		// direction of caution.
+		const note = verdictNote(report({ verdict: "new-failures", exitCode: 1, confirmed: ["a"] }));
+		expect(note).toContain("admissible red");
+		expect(note).not.toContain("abstention");
+		expect(note).toContain("1 confirmed new failure");
 	});
 });
 

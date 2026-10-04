@@ -9,9 +9,12 @@ changing it is a breaking change for anyone already published against it. A list
 names things which do not exist is worse than no list, so every row here was opened and
 read before it was written down.
 
-Measured 2026-10-03 at HEAD `2f277d83b1`. Corrected 2026-10-04: the TUI row named a
-line that was not the function it claimed, and the "four of the five" conclusion below was
-wrong — `programme-acceptance-five-surfaces.test.ts` passes all five.
+Measured 2026-10-03 at HEAD `2f277d83b1`. Corrected twice more on 2026-10-04: the TUI
+row named a line that was not the function it claimed, the "four of the five" conclusion
+was wrong (`programme-acceptance-five-surfaces.test.ts` passes all five), and the row that
+replaced it claimed no top-level registrar exists when two do. The TUI section records
+all three errors, because a reader arriving at a corrected claim deserves to know how
+many wrong claims preceded it.
 
 Line numbers are deliberately absent from the rows below. A number is a claim about a
 revision, and this file outlives revisions; a path and a symbol name are the parts that
@@ -25,35 +28,54 @@ stay true. Where a line is given it is incidental, not load-bearing.
 | **Slash command** | `packages/coding-agent/src/extensibility/custom-commands/` | barrel `index.ts` re-exports `loader.ts`, `types.ts`; bundled commands under `bundled/` |
 | **Config key** | `packages/coding-agent/src/config/registry.ts`, consumed from `extensibility/settings.ts` | `register({ id, type, default })` — `settings.ts:6` imports it and re-exports the resulting `cfg*` settings |
 | **Lifecycle hook** | `packages/coding-agent/src/extensibility/hooks/` | barrel re-exports `loader.ts`, `runner.ts`, `tool-wrapper.ts`, `trust.ts`, `result-validation.ts` |
-| **TUI** | `extensibility/extensions/types.ts` (`ExtensionUIContext`) | `ctx.ui.setWidget(key, content, options)` — reached from a lifecycle hook's `ctx`. Reaches a panel; there is no **panel** registrar to declare one that outlives the hook |
+| **TUI** | `extensibility/extensions/types.ts` (`ExtensionUIContext`) | `ctx.ui.setHeader(factory, opts)` / `setFooter(factory, opts)` — mount a component into the composer's header or footer band. The **controller** owns it, so it outlives the hook that registered it. Reached from a lifecycle hook's `ctx`; `ExtensionAPI` exposes no `ui`, so there is no **load-time** registrar |
 
-## The TUI seam is reactive, and that is the whole of the limit
+## The TUI seam mounts a band that outlives its hook
 
-`ctx.ui.setWidget` (`types.ts:371`) is a real out-of-repo seam, and the acceptance test
-proves it: `programme-acceptance-five-surfaces.test.ts` mounts a panel from a hook's `ctx`
-and asserts the host rendered it. So an extension **can** put a panel on screen.
+`ctx.ui.setHeader` / `setFooter` take a **component factory**, and
+`ExtensionUiController.setExtensionSurface` keeps the product in `#extensionHeaders` /
+`#extensionFooters`, keyed by owner. The `ctx` is the factory's *argument*; it is not
+where the component lives. A band registered from a hook therefore stays mounted after
+that hook returns.
 
-What does not exist is a **panel registrar** — a way to declare a panel once, at load,
-independently of any event. Core does own top-level UI registrars: `registerMode` and
-`registerHostRenderStrategy` are both on `ExtensionAPI` and both implemented in
-`loader.ts`. Neither is about panels, and neither has a caller. What is missing is a
-registrar *of panels*, not a registrar.
+`test/extensions/header-footer-band.test.ts` is what makes that a measurement rather
+than a reading: one row installs a **second** ui context over the first — one with no
+`setHeader` at all — and asserts the band is still in the container. Asserting straight
+after registration cannot tell the two designs apart, because both pass.
 
-The distinction is lifetime, not reach: `setWidget` is reactive and lives inside the hook
-that ran, so a panel an extension wants to *keep* between events has nothing to hold it
-open with.
+**This section has been wrong twice, in opposite directions**, and both errors are worth
+recording because the file's own rule ("a list that names things which do not exist is
+worse than no list") is what caught them:
+
+- The first draft's TUI row named `loader.ts:599` — a line inside
+  `registerHostRenderStrategy` — and described `registerCopyTargetProvider` as "a copy
+  target, not a panel", then concluded the programme's test passed for *four* of five
+  surfaces. The row named the wrong line, and `programme-acceptance-five-surfaces.test.ts`
+  passes all five.
+- Correcting that produced a second false claim: that there was **no** top-level
+  registrar at all. `registerMode` and `registerHostRenderStrategy` both exist on
+  `ExtensionAPI` and are both implemented in `loader.ts`.
+- Correcting *that* produced the third: that a panel wanting to persist "has nothing to
+  hold it open with". False — `setHeader`/`setFooter` hold it open. The confusion was
+  between **reactive in time** (declared when an event fires) and **reactive in
+  lifetime** (dies with the hook). Only the first is true.
+
+What survives measurement is narrower and is the only part that is a gap:
+
+- **Reach** — yes. An out-of-repo extension gets a persistent, component-owning surface.
+- **Lifetime** — yes, it outlives the hook.
+- **Declaration time** — **no.** `ExtensionAPI` exposes no `ui`, and none of its
+  `register*` methods registers a surface. A panel that should exist *before any event
+  fires* has no seam to be declared through.
+
+So what is missing is a **load-time** registrar, not a panel registrar. That is a new
+capability, and AGENTS.md's scope discipline says not to open a milestone for one unless
+the owner asks. Naming the absence is what the core-list promise requires; the absence
+itself is the owner's call.
 
 The panels that ship are core-owned and mounted by import, not registration:
 `btw-controller.ts` imports `BtwPanelComponent` and `BtwHistoryPanel` directly, and
 `cleanse-command-controller.ts` imports `CleansePanelComponent`.
-
-Recorded rather than fixed on purpose. A panel registrar is a new capability, and
-AGENTS.md's scope discipline says not to open a milestone for one unless the owner asks.
-Naming the absence is what the core-list promise requires; the absence itself is the
-owner's call.
-
-Until one exists, the programme's test passes for **five of the five** surfaces — via the
-reactive seam — and what is missing is the *declarative* form, not the surface.
 
 ## The peer package's two seams — shipped
 

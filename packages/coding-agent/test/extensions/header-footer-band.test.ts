@@ -44,13 +44,14 @@ function createBandContext() {
 	const extensionFooterContainer = new Container();
 	const ui = { requestRender: vi.fn() };
 	let toolUIContext: ExtensionUIContext | undefined;
+	const setToolUIContext = (next: ExtensionUIContext) => {
+		toolUIContext = next;
+	};
 	const ctx = {
 		ui,
 		extensionHeaderContainer,
 		extensionFooterContainer,
-		setToolUIContext: (next: ExtensionUIContext) => {
-			toolUIContext = next;
-		},
+		setToolUIContext,
 		syncComposerShape: vi.fn(),
 		// No runner: `initHooksAndCustomTools` installs the ui context and then
 		// returns early, which is all this seam needs.
@@ -61,6 +62,7 @@ function createBandContext() {
 		extensionHeaderContainer,
 		extensionFooterContainer,
 		ui,
+		setToolUIContext,
 		toolUIContext: () => {
 			if (!toolUIContext) throw new Error("initHooksAndCustomTools did not install a ui context");
 			return toolUIContext;
@@ -81,6 +83,31 @@ describe("extension header/footer bands", () => {
 		const band = fakeComponent("status-band");
 
 		toolUIContext().setHeader(() => band, { owner: "ext:alpha" });
+
+		expect(extensionHeaderContainer.children).toContain(band);
+	});
+
+	it("keeps a band mounted when the ui context that registered it is gone", async () => {
+		// The row that settles which of two things is true, because they look
+		// identical from the outside until the context is taken away.
+		//
+		// `toolUIContext()` is rebuilt for every hook invocation. If the band lived in
+		// that context — or if anything cleared the band when a hook returned — an
+		// extension's panel would vanish the moment its hook ended, and every test
+		// that asserted immediately after registering would still pass. Only removing
+		// the registering context can tell the two apart, so that is what this row
+		// does: the replacement context has no `setHeader` at all, which is exactly
+		// the state a later invocation that never touches the band is in.
+		const { ctx, extensionHeaderContainer, setToolUIContext, toolUIContext } = createBandContext();
+		const controller = new ExtensionUiController(ctx);
+		await controller.initHooksAndCustomTools();
+		const band = fakeComponent("alpha-band");
+
+		toolUIContext().setHeader(() => band, { owner: "ext:alpha" });
+
+		// The invocation that asked for the panel is now unreachable — not withdrawn,
+		// simply gone, with nothing that could take the band back down.
+		setToolUIContext({ hasUI: false } as unknown as ExtensionUIContext);
 
 		expect(extensionHeaderContainer.children).toContain(band);
 	});

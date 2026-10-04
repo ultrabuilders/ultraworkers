@@ -232,6 +232,132 @@ describe("a peer socket transport, over a real socket", () => {
 	});
 });
 
+/**
+ * §18.7 row 3 — "the endpoint is never read from an envelope".
+ *
+ * ## Why this needed a test when the property already holds
+ *
+ * It holds structurally, and reading the code is enough to see it: `createPeerSocketTransport`
+ * computes `endpoint` once from `deps` (`send.ts:202`) and `sendFrame(endpoint, frame)` takes
+ * the address as a parameter *separate from* the frame. No function receives both an address
+ * and an envelope and reads one out of the other. So `body.to` is not "untrusted input that
+ * happens to be ignored" — it is not an input to addressing at all.
+ *
+ * That is exactly why it needs the test. "Holds by construction" is a statement about today's
+ * `deliver`, and the plausible edit — route by `target`, or map it through `peerEndpoint` —
+ * is a two-line change that no typecheck and no existing row would object to. All nine rows
+ * above bind ONE endpoint and deliver to ONE target, so a transport that read the address off
+ * the envelope would still pass every one of them.
+ *
+ * ## The property, stated so a mutation cannot satisfy it by accident
+ *
+ * The target is **data**; the address is **not**. Both halves are asserted, because either
+ * alone is satisfiable by a broken transport: a row proving only "the other endpoint got
+ * nothing" passes for a transport that discarded `to` outright, and a row proving only "`to`
+ * survived" passes for one that routes by it. Together they say the target crossed the wire
+ * as content AND the socket was chosen before the envelope existed.
+ *
+ * `from` is the other half of the plan's wording, and it is unreachable from the API rather
+ * than merely unchecked: `deliver(target, message)` takes no sender, so the only `from` that
+ * can be stamped is this session's. Asserted, because a `from` sourced from the body would be
+ * an attribution forgery and the type signature is the only thing currently preventing it.
+ */
+describe("the endpoint is derived, never read from the envelope", () => {
+	it("delivers to the derived socket even when the target is another project's address", async () => {
+		const home = await socketPair();
+		const elsewhere = await socketPair();
+		const homeFrames: unknown[] = [];
+		const elsewhereFrames: unknown[] = [];
+		const routedFrames: unknown[] = [];
+		const acking = (frames: unknown[]) => (value: unknown, socket: net.Socket) => {
+			frames.push(value);
+			if ((value as { kind?: string }).kind === "message") socket.write(encodeAck("ack"));
+		};
+
+		// A listener on the address a transport that ROUTES BY TARGET would reach, bound and
+		// acknowledging on purpose. A wrong implementation has to be able to DELIVER for this row
+		// to mean anything: pointed at a dead path it dies of "nothing was listening", which
+		// every delivery path dies of and which therefore says nothing about where the address
+		// came from. The first version of this row made exactly that mistake, and the mutation
+		// it chose killed all three rows — a fact about the mutation, not about the rows.
+		const routed = path.join(elsewhere.projectDir, "routed-by-target");
+		await serve(home.endpoint, acking(homeFrames));
+		await serve(elsewhere.endpoint, acking(elsewhereFrames));
+		await serve(routed, acking(routedFrames));
+
+		// The transport is bound to `home`. The target is a full socket path the sender does not
+		// own, which is the hostile reading of the field: if any part of the call is treated as
+		// an address, this is the string that would supply it.
+		const outcome = await transportFor({ projectDir: home.projectDir, runtimeDir: home.runtimeDir }).deliver(
+			routed,
+			"not for you",
+		);
+
+		// Delivered — to the socket this transport was BUILT with, so the hostile target changed
+		// nothing about where the bytes go.
+		expect(outcome).toEqual({ outcome: "persisted" });
+		const homeMessage = homeFrames.find(v => (v as { kind?: string }).kind === "message");
+		// `from` is deliberately NOT asserted here: attribution is the next row's subject, and
+		// a row that checked it too would die to the same mutation as that row, leaving neither
+		// able to say which half of the property had broken.
+		expect(homeMessage).toMatchObject({ kind: "message", body: { to: routed } });
+
+		// The target still crossed the wire verbatim. Without this the row would also pass for a
+		// transport that dropped `to` — a DIFFERENT defect, since the receiver filters on it.
+		expect((homeMessage as { body: { message: string } }).body.message).toBe("not for you");
+
+		// And neither the other project nor the address the target named heard anything, not
+		// even the `hello`. This is what the row exists for: the redirect did not happen.
+		expect(elsewhereFrames).toEqual([]);
+		expect(routedFrames).toEqual([]);
+	});
+
+	it("stamps its own id, so no field in the call can attribute a message to someone else", async () => {
+		// The plan's "forged `from`". `deliver` accepts no sender, so the frame's `from` is
+		// `deps.selfId` by construction — asserted because the type signature is the ONLY thing
+		// currently stopping a `from` read out of the body, and a signature is not a defence that
+		// survives someone widening the parameter list.
+		const { projectDir, endpoint, runtimeDir } = await socketPair();
+		const received: unknown[] = [];
+		await serve(endpoint, (value, socket) => {
+			received.push(value);
+			if ((value as { kind?: string }).kind === "message") socket.write(encodeAck("ack"));
+		});
+
+		await transportFor({ projectDir, runtimeDir, selfId: "ActualSelf" }).deliver("BlueLake", "trust me");
+
+		const message = received.find(v => (v as { kind?: string }).kind === "message");
+		expect(message).toMatchObject({ from: "ActualSelf" });
+		// `from` appears once, at the top level, and nowhere the receiver could mistake it.
+		expect(message).not.toMatchObject({ body: { from: expect.anything() } });
+	});
+
+	it("puts no address on the wire, so there is nothing for a receiver to honour", async () => {
+		// The forward-looking half. The rows above prove today's `deliver` ignores the envelope
+		// when choosing a socket; this proves there is nothing in the envelope that a FUTURE
+		// receiver could start honouring. Adding an endpoint field "for debugging" is a small,
+		// well-intentioned change that converts this transport's one honest guarantee into a
+		// suggestion, so the absence is pinned as a wire contract.
+		//
+		// Asserted as the exact key set, not `not.toHaveProperty`: the framing IS a protocol
+		// with a peer on the other end, so its shape is exactly the kind of exact-bytes contract
+		// worth stating in full.
+		const { projectDir, endpoint, runtimeDir } = await socketPair();
+		const received: unknown[] = [];
+		await serve(endpoint, (value, socket) => {
+			received.push(value);
+			if ((value as { kind?: string }).kind === "message") socket.write(encodeAck("ack"));
+		});
+
+		await transportFor({ projectDir, runtimeDir }).deliver("BlueLake", "where does this go?");
+
+		const message = received.find(v => (v as { kind?: string }).kind === "message") as Record<string, unknown>;
+		expect(Object.keys(message).sort()).toEqual(["body", "from", "kind"]);
+		// Nor nested under the body, which is where a debugging field would actually go.
+		expect(Object.keys(message.body as Record<string, unknown>).sort()).toEqual(["message", "to"]);
+	});
+});
+
 /** Frame an arbitrary value the way the receiver would send it. */
 function encodeFrame(value: unknown): Buffer {
 	const payload = Buffer.from(JSON.stringify(value), "utf8");

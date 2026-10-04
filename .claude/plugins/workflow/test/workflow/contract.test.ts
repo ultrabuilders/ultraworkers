@@ -221,4 +221,25 @@ describe("workflow vm capability wiring", () => {
 			expect(seen).toEqual(["experimentalThing"]);
 		});
 	});
+
+	test("an owner capability's own error reaches the caller unwrapped", () => {
+		// WHY identity and not a message: the bead asks that a throwing capability's error
+		// "surface, not [be] wrapped". Matching on a message would pass just as happily against
+		// an engine that rewrapped it in a WorkflowError and copied the text across — which is
+		// the exact change that would break an owner who catches their own error type to retry.
+		// `toBe` is the only assertion that distinguishes the two.
+		//
+		// This is also the row that keeps the contract honest in the other direction: the stub
+		// path above throws a *named* WorkflowError on purpose, so "it threw something" is not
+		// evidence of anything on its own — only the identity is.
+		const boom = new Error("capability exploded");
+		return expect(
+			runWorkflowScript({ name: "wiring", description: "d" }, `return parallel();`, {
+				...completeImplementations(),
+				parallel: () => {
+					throw boom;
+				},
+			} as never),
+		).rejects.toBe(boom);
+	});
 });

@@ -83,7 +83,7 @@ import type {
 	TransportOutcome,
 } from "@oh-my-pi/pi-coding-agent/irc/peer-transport";
 import { PEER_TRANSPORT_PROTOCOL_VERSION } from "@oh-my-pi/pi-coding-agent/irc/peer-transport";
-import { encodeFrame, decodeFrames, isFrameOfKind, type PeerFrame } from "./framing";
+import { encodeFrame, decodeFrames, extendChain, isFrameOfKind, type PeerFrame } from "./framing";
 import { peerEndpoint } from "./endpoint";
 
 /**
@@ -212,15 +212,23 @@ export function createPeerSocketTransport(deps: PeerSocketTransportDeps): PeerTr
 			// throws `"peer endpoint in use"` when the endpoint is already held, so a project has
 			// at most ONE listener and it must fan out itself. A per-target endpoint would need
 			// `target` in `peerEndpoint`, and no such key exists.
+			// The chain is what lets the receiver's loop bound tell "this came back to me" from
+			// "this went deep", so a relayed message carries the hop it arrived with.
+			//
+			// `extendChain` builds it — NOT a second copy of the append. It has to stay the one
+			// implementation: a receiver comparing against tokens it recognises as its own is
+			// reading this exact sequence, and a fork here could order it differently.
+			//
+			// The field is omitted rather than sent empty when there is no token of ours, because
+			// "direct" and "passed through an unnamed hop" must not be the same wire value —
+			// `extendChain` returns `[]` for the nameless case, and the caller decides that an
+			// empty chain is not a chain at all.
+			const relayChain = extendChain(deps.chain, deps.ownToken ?? "");
 			const frame: PeerFrame = {
 				kind: "message",
 				from: deps.selfId,
 				body: { to: target, message },
-				// The chain is what lets the receiver's loop bound tell "this came back to me"
-				// from "this went deep", so a relayed message carries the hop it arrived with.
-				...(deps.ownToken !== undefined && deps.ownToken !== ""
-					? { chain: [...(deps.chain ?? []), deps.ownToken] }
-					: {}),
+				...(deps.ownToken !== undefined && deps.ownToken !== "" ? { chain: relayChain } : {}),
 			};
 			try {
 				await sendFrame(endpoint, frame);

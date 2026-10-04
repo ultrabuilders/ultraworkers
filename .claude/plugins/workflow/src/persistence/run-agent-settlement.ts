@@ -23,6 +23,7 @@
  */
 import { WorkflowErrorCode } from "../errors";
 import type { PersistedAgentState } from "./run-persistence";
+import type { AgentSettler } from "../engine/journal-delta";
 
 export const INTERRUPTED_AGENT_CAUSE = { error: "interrupted", errorCode: WorkflowErrorCode.WORKFLOW_ABORTED };
 
@@ -49,3 +50,28 @@ export function settleInterruptedPersistedAgents(
 				},
 	);
 }
+
+/**
+ * The settler, in the shape `applyDelta` asks for.
+ *
+ * ## Why an adapter exists at all
+ *
+ * The reference does not need one: its `applyDelta` sits in the same package as the settler and
+ * calls `settleInterruptedPersistedAgents(agents, INTERRUPTED_AGENT_CAUSE, settleAgentsAt)`
+ * directly. Ours splits the algebra (`engine/journal-delta.ts`) from the record
+ * (`persistence/`), so the settler is INJECTED — that indirection is the one behavioural
+ * deviation `journal-delta.ts` documents, and it exists only so the algebra can ship before the
+ * record does.
+ *
+ * ## Why the `cause` argument is ignored
+ *
+ * Because it is constant. The reference's own `applyDelta` passes `INTERRUPTED_AGENT_CAUSE` at
+ * its single call site — a delta carrying `settleAgentsAt` means "these agents were in flight
+ * when something stopped", never anything else. The other cause, a terminal run's, is applied
+ * by `settleNonTerminalPersistedAgents`, which does not go through the journal at all. So the
+ * parameter is accepted to keep the injected signature honest about what a settler is, and the
+ * value is not branched on: branching here would imply a second cause exists on this path, and
+ * it does not.
+ */
+export const journalAgentSettler: AgentSettler = (agents, _cause, atIso) =>
+	settleInterruptedPersistedAgents(agents as PersistedAgentState[], INTERRUPTED_AGENT_CAUSE, atIso);

@@ -13,6 +13,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { FORMAT, cellsOf, deltaOf } from "../../src/engine/journal-delta";
 import { appendJournalLine, journalPathFor, loadRunState } from "../../src/engine/journal";
+import { WorkflowErrorCode } from "../../src/errors";
+import { journalAgentSettler } from "../../src/persistence/run-agent-settlement";
 
 async function scratchRun(): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "wf-journal-"));
@@ -127,6 +129,47 @@ describe("run journal", () => {
 		});
 
 		await expect(loadRunState(runPath)).rejects.toThrow("no settler was supplied");
+		await fs.rm(path.dirname(runPath), { recursive: true, force: true });
+	});
+
+	test("the same delta replays to a SETTLED state once the settler is supplied", async () => {
+		// WHY this is the mirror of the row above, and why it is not redundant: that row proves
+		// the refusal is loud without a settler; this proves the refusal is not a dead end. A
+		// journal carrying `settleAgentsAt` is WRITABLE today and, until the settler existed, only
+		// readable by a build that threw — so nothing could ever finish replaying one. This row
+		// exercises the path that makes the marker worth writing at all.
+		//
+		// The assertion is on the replayed STATE, not on "it did not throw": the observable
+		// consequence of a settler is that an interrupted agent reaches a terminal status, and a
+		// settler that returned the input unchanged would pass a not-throwing check forever.
+		const runPath = await scratchRun();
+		await appendJournalLine(runPath, {
+			format: FORMAT,
+			generation: "g1",
+			sequence: 0,
+			state: { agents: [{ id: "a1", label: "a1", prompt: "p", status: "running" }] },
+		});
+		await appendJournalLine(runPath, {
+			generation: "g1",
+			sequence: 1,
+			previous: "",
+			delta: { settleAgentsAt: "2026-10-04T00:00:00Z", set: {}, remove: [], arrays: {} },
+		});
+
+		const state = (await loadRunState(runPath, journalAgentSettler)) as { agents: Record<string, unknown>[] };
+
+		expect(state.agents).toEqual([
+			{
+				id: "a1",
+				label: "a1",
+				prompt: "p",
+				status: "skipped",
+				error: "interrupted",
+				errorCode: WorkflowErrorCode.WORKFLOW_ABORTED,
+				recoverable: false,
+				endedAt: "2026-10-04T00:00:00Z",
+			},
+		]);
 		await fs.rm(path.dirname(runPath), { recursive: true, force: true });
 	});
 });

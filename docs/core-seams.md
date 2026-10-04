@@ -25,7 +25,7 @@ stay true. Where a line is given it is incidental, not load-bearing.
 | **Slash command** | `packages/coding-agent/src/extensibility/custom-commands/` | barrel `index.ts` re-exports `loader.ts`, `types.ts`; bundled commands under `bundled/` |
 | **Config key** | `packages/coding-agent/src/config/registry.ts`, consumed from `extensibility/settings.ts` | `register({ id, type, default })` — `settings.ts:6` imports it and re-exports the resulting `cfg*` settings |
 | **Lifecycle hook** | `packages/coding-agent/src/extensibility/hooks/` | barrel re-exports `loader.ts`, `runner.ts`, `tool-wrapper.ts`, `trust.ts`, `result-validation.ts` |
-| **TUI** | `extensibility/extensions/types.ts` (`ExtensionUIContext`) | `ctx.ui.setWidget(key, content, options)` — reached from a lifecycle hook's `ctx`, **not** from a top-level registrar |
+| **TUI** | `extensibility/extensions/types.ts` (`ExtensionUIContext`) | `ctx.ui.setWidget(key, content, options)` — reached from a lifecycle hook's `ctx`. Reaches a panel; there is no **panel** registrar to declare one that outlives the hook |
 
 ## The TUI seam is reactive, and that is the whole of the limit
 
@@ -33,18 +33,21 @@ stay true. Where a line is given it is incidental, not load-bearing.
 proves it: `programme-acceptance-five-surfaces.test.ts` mounts a panel from a hook's `ctx`
 and asserts the host rendered it. So an extension **can** put a panel on screen.
 
-What does not exist is a **top-level registrar** — a way to declare a panel once, at load,
-independently of any event. The two differ in lifetime, not in reach: `setWidget` is
-reactive and lives inside the hook that ran, so a panel an extension wants to *keep*
-between events has nothing to hold it open with.
+What does not exist is a **panel registrar** — a way to declare a panel once, at load,
+independently of any event. Core does own top-level UI registrars: `registerMode` and
+`registerHostRenderStrategy` are both on `ExtensionAPI` and both implemented in
+`loader.ts`. Neither is about panels, and neither has a caller. What is missing is a
+registrar *of panels*, not a registrar.
+
+The distinction is lifetime, not reach: `setWidget` is reactive and lives inside the hook
+that ran, so a panel an extension wants to *keep* between events has nothing to hold it
+open with.
 
 The panels that ship are core-owned and mounted by import, not registration:
 `btw-controller.ts` imports `BtwPanelComponent` and `BtwHistoryPanel` directly, and
-`cleanse-command-controller.ts` imports `CleansePanelComponent`. `registerMode`
-(`loader.ts:434`) is declared and implemented but has **no caller** — so the registry an
-extension would extend exists, and nothing has ever been put in it.
+`cleanse-command-controller.ts` imports `CleansePanelComponent`.
 
-Recorded rather than fixed on purpose. A top-level registrar is a new capability, and
+Recorded rather than fixed on purpose. A panel registrar is a new capability, and
 AGENTS.md's scope discipline says not to open a milestone for one unless the owner asks.
 Naming the absence is what the core-list promise requires; the absence itself is the
 owner's call.

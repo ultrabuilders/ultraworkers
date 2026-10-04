@@ -10,31 +10,24 @@
  * per-directory state. Project-scoped state is still isolated by a stable cwd-derived
  * namespace.
  *
- * ## Why `legacyRunsDir`/`legacySavedDir` keep the `.pi` spelling
+ * ## The constants moved to ../config — the fold this file's docblock promised
  *
- * That is deliberate and is not an oversight. They name where the PREVIOUS version wrote,
- * which is what a migration reads from — pointing them at today's directory would make the
- * migration look for files where the new version already put them and find its own output.
- * They are the only two strings in this file that still say `.pi`.
+ * The three path constants were declared here with a note that they would "fold back into an
+ * import" when the config surface landed. That has happened, so they are imported now and this
+ * file holds only the layout maths. The dependency runs config -> paths and never back: `config`
+ * owns `WORKFLOW_HOME_RELATIVE_DIR`, so importing the other two here cannot form a cycle.
  *
- * ## Why the two constants are declared here rather than imported
- *
- * The reference reads `WORKFLOW_RUNS_DIR`/`WORKFLOW_SAVED_DIR` from `./config.js`. That module
- * is not part of this phase's cut (it carries the whole run configuration surface), so the two
- * values are declared locally with the reference's own values, renamed for consistency. When
- * the config surface lands, these two lines are what fold back into an import — they are the
- * only coupling this file has to the rest of the reference.
+ * `WORKFLOW_RUNS_DIR` / `WORKFLOW_SAVED_DIR` keep their `.pi` spelling on purpose — they name
+ * where the PREVIOUS version wrote, which is what a migration reads from. Repointing them at
+ * today's directory would make a migration look for files the new version already put them in,
+ * and find its own output.
  */
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { WORKFLOW_HOME_RELATIVE_DIR, WORKFLOW_RUNS_DIR, WORKFLOW_SAVED_DIR } from "../config";
 
-/** New state lives here, relative to the user's home. */
-export const WORKFLOW_HOME_RELATIVE_DIR = ".ultraworkers/workflows";
-
-/** The pre-rename per-project locations, kept only so a migration can find them. */
-const WORKFLOW_RUNS_DIR = ".pi/workflows/runs";
-const WORKFLOW_SAVED_DIR = ".pi/workflows/saved";
+export { WORKFLOW_HOME_RELATIVE_DIR };
 
 export const WORKFLOW_PROJECTS_SUBDIR = "projects";
 

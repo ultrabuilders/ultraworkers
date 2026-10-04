@@ -95,7 +95,17 @@ const overrides = new Map<string, PeerTransport>();
 const lockBackends = new Map<string, PeerLockBackend>();
 let builtinTransport: PeerTransport | undefined;
 
-/** Install the built-in transport. Called once by the runtime, never by an extension. */
+/**
+ * Install the built-in transport — the one used when no override matches.
+ *
+ * Installed by whoever owns the transport's lifetime. **Core installs none**: the built-in is
+ * absent until a host or extension installs it, and {@link resolvePeerTransport} returns
+ * undefined until then — which {@link deliverPeerMessage} turns into `refused/no-route`. That
+ * empty registry is the contract, not a gap: a peer transport is a limb, and this program's
+ * test is that an extension written outside this repo registers one without a line of core
+ * changing. Extensions register through {@link addPeerTransport}, which is the path they are
+ * meant to use; this exists for a host that has one to install.
+ */
 export function setBuiltinPeerTransport(transport: PeerTransport): void {
 	builtinTransport = transport;
 }

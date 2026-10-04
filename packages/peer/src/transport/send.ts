@@ -16,10 +16,21 @@
  * the socket in `finish()` and hands back a string. It asks whether an endpoint is held; it
  * never writes a byte. Reading one line proved the opposite of what the line is inside.
  *
- * So the directory had a **server** and a **probe**, and no client. `deliverPeerMessage`
- * (`irc/peer-transport.ts:155`) resolves a transport, finds none installed, and returns
- * `refused/no-route` — which is why `IrcBus.#deliverViaTransport` had nothing to hand off
- * even though the wiring above it is complete.
+ * So the directory had a **server** and a **probe**, and no client.
+ *
+ * ## Two things are missing, and this file is only one of them
+ *
+ * 1. **The client** — supplied here.
+ * 2. **An installer** — *not* supplied here, and deliberately so. `deliverPeerMessage`
+ *    (`irc/peer-transport.ts:155`) resolves a transport, finds none installed, and returns
+ *    `refused/no-route`. Core not installing one is the **contract**, not a hole: this
+ *    program's test is that an extension written outside the repo registers a transport
+ *    without a line of core changing, so an empty registry is the correct starting state.
+ *    See `setBuiltinPeerTransport`'s docblock in `irc/peer-transport.ts`.
+ *
+ * ⇒ Until someone calls `setBuiltinPeerTransport` or `addPeerTransport`, this file is a
+ * **built part, not a running feature**. That is deliberate; it is not wired and does not
+ * claim to be.
  *
  * ## There are TWO transport registries, and this one is not the bus's
  *
@@ -72,7 +83,8 @@ import type {
 	TransportOutcome,
 } from "@oh-my-pi/pi-coding-agent/irc/peer-transport";
 import { PEER_TRANSPORT_PROTOCOL_VERSION } from "@oh-my-pi/pi-coding-agent/irc/peer-transport";
-import { encodeFrame, decodeFrames, isFrameOfKind, peerEndpoint, type PeerFrame } from "./index";
+import { encodeFrame, decodeFrames, isFrameOfKind, type PeerFrame } from "./framing";
+import { peerEndpoint } from "./endpoint";
 
 /**
  * How long a connect+send+ack may take before the sender is told it failed.
@@ -156,10 +168,16 @@ async function sendFrame(endpoint: string, frame: PeerFrame): Promise<void> {
 			socket.write(encodeFrame({ kind: "hello", from: frame.from }));
 			socket.write(encodeFrame(frame));
 		});
-		// Any inbound frame ends the exchange. Decoded with the project's own decoder rather
-		// than searched as text: a substring test for `"ack"` matches a message BODY that
-		// happens to contain it, which would report an unacknowledged send as delivered —
-		// the exact §15.1 shape this transport exists to avoid.
+		// Only an `ack` settles the exchange; every other frame is ignored and the wait
+		// continues. A peer that answers the `hello` handshake with a `hello` or a `notice`
+		// of its own before acknowledging is behaving correctly, and failing the send on
+		// the first unexpected frame would report a delivered message as lost. The timeout
+		// is what bounds a peer that never acknowledges at all.
+		//
+		// Decoded with the project's own decoder rather than searched as text: a substring
+		// test for `"ack"` matches a message BODY that happens to contain it, which would
+		// report an unacknowledged send as delivered — the §15.1 shape this transport
+		// exists to avoid.
 		let buffered: Buffer = Buffer.alloc(0);
 		socket.on("data", chunk => {
 			buffered = Buffer.concat([buffered, chunk as Buffer]);
@@ -168,8 +186,6 @@ async function sendFrame(endpoint: string, frame: PeerFrame): Promise<void> {
 			for (const frame of frames) {
 				if (!frame.ok) continue;
 				if (isFrameOfKind(frame.value, "ack")) finish(undefined);
-				else finish(new PeerSendError("no-route", "peer replied with a frame that is not an ack"));
-				return;
 			}
 		});
 	});
@@ -189,6 +205,13 @@ export function createPeerSocketTransport(deps: PeerSocketTransportDeps): PeerTr
 		protocolVersion: PEER_TRANSPORT_PROTOCOL_VERSION,
 		capabilities: CAPABILITIES,
 		async deliver(target: string, message: string): Promise<TransportOutcome> {
+			// `target` does NOT route. The endpoint is `peerEndpoint(projectDir, runtimeDir)`
+			// — `runtimeDir` is `getDaemonRuntimeDir(projectDir)`, one hashed directory per
+			// project — so every target in a project shares one socket and `to` travels as body
+			// metadata for the receiver to filter on. That is forced, not chosen: `listenOnEndpoint`
+			// throws `"peer endpoint in use"` when the endpoint is already held, so a project has
+			// at most ONE listener and it must fan out itself. A per-target endpoint would need
+			// `target` in `peerEndpoint`, and no such key exists.
 			const frame: PeerFrame = {
 				kind: "message",
 				from: deps.selfId,

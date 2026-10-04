@@ -15,10 +15,12 @@ import type { PeerTransport } from "@oh-my-pi/pi-coding-agent/irc/peer-transport
  * connect handshake, the acknowledgement wait, and the fact that an unacknowledged write
  * reports `refused` rather than `persisted`.
  *
- * The last row is the one that matters. Claude Code §15.1 returned `success: true` for a
- * message that was never received, and because every send reported success no fallback could
- * fire — so "what does this return when the far side never answers" is the contract, not a
- * detail.
+ * Two rows carry the contract. Claude Code §15.1 returned `success: true` for a message that
+ * was never received, and because every send reported success no fallback could fire — so
+ * "what does this return when the far side never answers" matters. The mirror matters just as
+ * much: a peer that DOES answer, with its own handshake frames before the ack, must still
+ * come back `persisted`. Failing on the first unexpected reply turns a delivered message into
+ * a reported loss, which is the same defect pointing the other way.
  */
 
 const roots: string[] = [];
@@ -136,17 +138,48 @@ describe("a peer socket transport, over a real socket", () => {
 	);
 
 	it(
-		"refuses when the far side answers with something that is not an acknowledgement",
+		"refuses when the far side answers and then never acknowledges",
 		async () => {
-			// The row the silent-peer case cannot catch. A peer that REPLIES — with a notice, an
-			// error frame, or a message body containing the text `"ack"` — produces a data chunk, so
-			// a client that treated "bytes arrived" as "delivered" would report `persisted` here
-			// while the message was never acknowledged. Only the decoded frame's `kind` settles it.
+			// The mirror of the row below, and the one that catches "any byte arriving is delivery".
+			//
+			// Kept as a separate row because the two fail in OPPOSITE directions, so neither
+			// subsumes the other: settling on the first reply passes this row only by never
+			// settling at all until the timeout, and ignoring everything until an ack passes it
+			// correctly. A client that conflated "bytes arrived" with "acknowledged" would
+			// report `persisted` here for a message the peer explicitly never confirmed.
 			const { projectDir, endpoint, runtimeDir } = await socketPair();
-			await serve(endpoint, (_value, socket) => socket.write(encodeFrame({ kind: "notice", from: "BlueLake" })));
+			// Answers the handshake, then never acknowledges.
+			await serve(endpoint, (_value, socket) => socket.write(encodeFrame({ kind: "hello", from: "BlueLake" })));
 
 			const outcome = await transportFor({ projectDir, runtimeDir }).deliver("BlueLake", "did you get this?");
 			expect(outcome).toMatchObject({ outcome: "refused", cause: "no-route" });
+		},
+		PEER_SEND_TIMEOUT_MS + 5_000,
+	);
+
+	it(
+		"persists when the far side answers something else first and then acknowledges",
+		async () => {
+			// The row that separates "waited for an ack" from "settled on the first reply".
+			//
+			// A peer answering the `hello` handshake before acknowledging is behaving correctly, and
+			// a client that failed the send on the first non-ack frame would report a delivered
+			// message as lost — the §15.1 shape, one layer deeper: the message DID arrive, and the
+			// sender says it did not. So the exchange must ignore everything until the ack.
+			//
+			// The frames here are chosen to break the three wrong implementations at once: a `hello`
+			// matching the sender's own handshake, a `notice` that is not an ack kind, and a message
+			// body containing the literal text `"ack"` — which a substring test would match.
+			const { projectDir, endpoint, runtimeDir } = await socketPair();
+			await serve(endpoint, (value, socket) => {
+				if ((value as { kind?: string }).kind !== "message") return;
+				socket.write(encodeFrame({ kind: "hello", from: "BlueLake" }));
+				socket.write(encodeFrame({ kind: "notice", from: "BlueLake", body: { text: 'said "ack"' } }));
+				socket.write(encodeAck("ack"));
+			});
+
+			const outcome = await transportFor({ projectDir, runtimeDir }).deliver("BlueLake", "did you get this?");
+			expect(outcome).toEqual({ outcome: "persisted" });
 		},
 		PEER_SEND_TIMEOUT_MS + 5_000,
 	);

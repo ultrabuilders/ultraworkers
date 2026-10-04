@@ -58,12 +58,14 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+import { settings } from "@oh-my-pi/pi-coding-agent";
+import { cfgPeerCrossSessionInbound } from "@oh-my-pi/pi-coding-agent/peer/settings";
 import type { Database } from "bun:sqlite";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getAgentDir, logger } from "@oh-my-pi/pi-utils";
 
-import { fenceInbound, checkHopChain, SENDER_MODES, type SenderMode } from "../src/fence/index";
+import { fenceInbound, checkHopChain, SENDER_MODES, type InboundPolicy, type SenderMode } from "../src/fence/index";
 import { InboxStore } from "../src/inbox/store";
 import { openLeaseStore } from "../src/lease/store";
 import { allocateName, nameKey, openNameStore, claimName, resolveName } from "../src/identity/index";
@@ -292,12 +294,20 @@ function toSenderMode(raw: string | undefined): SenderMode | undefined {
  * change. What is true here is narrower: `ExtensionContext` exposes no `settings` field,
  * so reading it means importing the singleton rather than being handed one.
  *
- * Until that import is written, `policy` stays unset, and that is the honest state the
- * fence is built for: an absent `crossSessionInbound` is the user's absence rather than
- * consent, and `fenceInbound` resolves unset by comparing the two sessions' permission
- * classes (`fence/index.ts:118`) instead of choosing for them.
+ * Both halves are now written: the imports above, and `policy` is read from the user's
+ * setting rather than left unset. The setting carries `default: undefined`, so a user who
+ * never chose still gets `undefined` — their absence rather than consent — and `fenceInbound`
+ * resolves unset by comparing the two sessions' permission classes
+ * (`fence/index.ts:118`) instead of choosing for them.
  *
- * So this registers the half the extension can know on its own — its own tokens.
+ * `policySource` is deliberately still absent. The handle can report provenance
+ * (`Setting.provenance(scope)`), but that vocabulary is `SettingProvenance` —
+ * `env | runtime | overlay | project | global | default` — a *settings layer*, whereas the
+ * fence's `policySource` is `user | managed | repo | flag`, which is *who decided*. Only
+ * `global` → `user` and `project` → `repo` pair obviously; mapping the rest would be a
+ * guess about a decision this package does not own. The field is optional and nothing in
+ * `fenceInbound` branches on it to reach a decision, so it stays absent rather than filled
+ * with a plausible-looking wrong answer.
  *
  * The previous version of this file read `ctx.policy`, typed the context as
  * `ExtensionContext & { readonly policy?: string }`, and cast the read with
@@ -312,13 +322,18 @@ function toSenderMode(raw: string | undefined): SenderMode | undefined {
  * itself needs to change hands.
  */
 function fenceContext(ownTokens: ReadonlySet<string>): {
+	readonly policy?: InboundPolicy;
 	readonly mode: "default";
 	readonly ownTokens: ReadonlySet<string>;
 } {
 	// `default`, not the session's `ctx.mode`: that is `ExtensionMode` (`"tui"` and
 	// friends), a different vocabulary from the fence's `SenderMode`, and it describes
 	// the host's rendering mode rather than this sender's permission class.
-	return { mode: "default", ownTokens };
+	return {
+		policy: cfgPeerCrossSessionInbound.get(settings),
+		mode: "default",
+		ownTokens,
+	};
 }
 
 // Referenced so the transport constants this entry must honour stay imported at the

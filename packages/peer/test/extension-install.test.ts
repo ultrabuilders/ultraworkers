@@ -7,6 +7,7 @@ import {
 	extensionSettingOwner,
 } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { unregisterOwned } from "@oh-my-pi/pi-coding-agent/config/registry";
+import { Settings } from "@oh-my-pi/pi-coding-agent";
 import { getAgentDir, logger, removeSyncWithRetries, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 
 /**
@@ -30,17 +31,18 @@ import { getAgentDir, logger, removeSyncWithRetries, setAgentDir, TempDir } from
  * that never fires `session_start`, leaves the tool table **empty** — and it is the one
  * thing a direct read of `registerPeerTools`'s source could never catch.
  *
- * ## What is deliberately NOT asserted here
+ * ## What is asserted here, and what is not
  *
- * That the `crossSessionInbound` setting reaches the fence. It cannot, and no assertion
- * here should imply otherwise: an extension is handed no route to host settings
- * (`ExtensionContext` has no settings field, the setting descriptor
- * `cfgPeerCrossSessionInbound` is in `src/peer/settings.ts` and is not exported from any
- * public subpath, and the registry's `lookupSetting` is not public either). Closing that
- * needs a core change. The fence's own wiring — that a registered fence is consulted
- * before delivery — is covered where it lives, in
- * `coding-agent/test/irc/inbound-fence-wiring.test.ts`, which can import the core module
- * this package cannot.
+ * That the `crossSessionInbound` setting reaches the fence — asserted end to end, from a
+ * settings value this suite writes, through the real extension, to the registration it
+ * hands the host. It reaches because the host's export map carries a `./*` wildcard, so
+ * `@oh-my-pi/pi-coding-agent/peer/settings` resolves from outside the package. An earlier
+ * version of this file asserted the opposite, on the reading that no route existed; the
+ * check that produced that reading was filtering the exports map for a key containing
+ * `peer`, which cannot match a key that is `*`.
+ *
+ * NOT asserted here: that a registered fence is consulted before delivery. That belongs to
+ * the bus, and is covered in `coding-agent/test/irc/inbound-fence-wiring.test.ts`.
  *
  * Asserting the parameter *shape* instead would be the mistake worth avoiding: it
  * protects a type rather than a behaviour, and it is exactly the assertion that let an
@@ -92,7 +94,7 @@ describe("packages/peer installed as an extension", () => {
 		for (const handler of handlers) await handler({}, { cwd });
 	}
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		projectDir = TempDir.createSync("@ultraworkers-peer-ext-");
 		tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "uw-peer-home-"));
 		for (const key of xdgVars) {
@@ -102,6 +104,28 @@ describe("packages/peer installed as an extension", () => {
 		spyOn(os, "homedir").mockReturnValue(tempHome);
 		setAgentDir(path.join(tempHome, ".omp", "agent"));
 	});
+
+	/**
+	 * Give the `settings` singleton a live value, for the handler to read.
+	 *
+	 * Called AFTER discovery, not in `beforeEach`, and the ordering is load-bearing:
+	 * initialising Settings first makes `discoverAndLoadExtensions` return **zero**
+	 * extensions with an empty `errors` array — a silent omission that reads exactly like
+	 * "the extension is not installed". Measured both ways; `getAgentDir()` is
+	 * unaffected by init, so it is not the agent dir moving. Since the extension reads
+	 * settings when `session_start` fires and not before, discovering first and
+	 * initialising second satisfies the read without perturbing the discovery walk.
+	 *
+	 * `inMemory` plus the temp agentDir keep this off the developer's real config.
+	 */
+	async function initSettings(policy: "accept" | "hold" | "refuse"): Promise<void> {
+		await Settings.init({
+			cwd: projectDir.path(),
+			agentDir: path.join(tempHome, ".omp", "agent"),
+			inMemory: true,
+			overrides: { crossSessionInbound: policy },
+		});
+	}
 
 	afterEach(() => {
 		for (const owner of settingsOwners.splice(0)) unregisterOwned(owner);
@@ -145,10 +169,39 @@ describe("packages/peer installed as an extension", () => {
 
 		const startHooks = extension.handlers.get("session_start") ?? [];
 		expect(startHooks.length).toBeGreaterThan(0);
+		await initSettings("refuse");
 		await fireSessionStart(startHooks, projectDir.path());
 
 		for (const name of PEER_TOOLS) expect([...extension.tools.keys()]).toContain(name);
 		for (const name of PEER_COMMANDS) expect(extension.commands.has(name)).toBe(true);
+	});
+
+	it("carries the user's crossSessionInbound choice into the fence it registers", async () => {
+		// The bead's actual goal, end to end: a value the user set in settings reaches
+		// the inbound fence. Asserted on the collected registration rather than on the
+		// installed one, because `registerPeerFence` only *collects* — the runner
+		// installs it (`loader.ts:348`) — so reading `extension.peerFences` proves the
+		// value arrived without writing to the process-wide fence registry and leaking
+		// a fence into every later suite.
+		//
+		// `beforeEach` initialises Settings with `crossSessionInbound: "refuse"`, so this
+		// fails if the read is dropped, if it reads the wrong descriptor, or if it
+		// silently yields `undefined` — the last of which is what an earlier version
+		// did on every single call, behind a green typecheck.
+		installInto(getAgentDir());
+		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
+
+		const result = await loadInstalled(projectDir.path());
+		const extension = result.extensions.find(ext => ext.path.includes(`${path.sep}peer${path.sep}`));
+		if (!extension) throw new Error("peer extension did not load");
+
+		await initSettings("refuse");
+		await fireSessionStart(extension.handlers.get("session_start") ?? [], projectDir.path());
+
+		expect(extension.peerFences.length).toBe(1);
+		expect(extension.peerFences[0].context?.policy).toBe("refuse");
+		// Still the extension's own half: the tokens are what core cannot supply.
+		expect(extension.peerFences[0].context?.ownTokens).toBeDefined();
 	});
 
 	it("runs the registration once, not again on a reconnect", async () => {
@@ -166,6 +219,7 @@ describe("packages/peer installed as an extension", () => {
 		if (!extension) throw new Error("peer extension did not load");
 
 		const startHooks = extension.handlers.get("session_start") ?? [];
+		await initSettings("refuse");
 		const loaded = spyOn(logger, "info");
 		await fireSessionStart(startHooks, projectDir.path());
 		await fireSessionStart(startHooks, projectDir.path());

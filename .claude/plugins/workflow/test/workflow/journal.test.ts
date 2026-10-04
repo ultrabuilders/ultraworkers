@@ -12,8 +12,8 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { FORMAT, cellsOf, deltaOf } from "../../src/engine/journal-delta";
-import { appendJournalLine, journalPathFor, loadRunState } from "../../src/engine/journal";
 import { WorkflowErrorCode } from "../../src/errors";
+import { appendJournalLine, journalPathFor, loadRunState } from "../../src/engine/journal";
 import { journalAgentSettler } from "../../src/persistence/run-agent-settlement";
 
 async function scratchRun(): Promise<string> {
@@ -89,6 +89,30 @@ describe("run journal", () => {
 		await appendJournalLine(runPath, { format: FORMAT, generation: "g1", sequence: 1, state: { b: 2 } });
 
 		await expect(loadRunState(runPath)).rejects.toThrow("is corrupt at line 2");
+		await fs.rm(path.dirname(runPath), { recursive: true, force: true });
+	});
+
+	test("a journal in a FOREIGN format is refused by name, not read as 'never started'", async () => {
+		// WHY this is a distinct outcome and not a torn line: a torn line is a crash artefact, and
+		// dropping it costs one redone event. A foreign-format line is a journal written by a
+		// different engine version, and for a single-line journal the torn-line path returns
+		// `undefined` — "this run never started". Measured before the fix: exactly that. The run
+		// is not lost, it is INVISIBLE, and resume restarts it having re-spent every token it
+		// already paid for. So the version must be named in the error, which is also what tells a
+		// user which build wrote the file they are looking at.
+		const runPath = await scratchRun();
+		await fs.appendFile(
+			journalPathFor(runPath),
+			`${JSON.stringify({ format: "pi-workflow-run-v2", generation: "g1", sequence: 0, state: { status: "running" } })}\n`,
+		);
+
+		// The discriminant, not the wording: a later reword of the sentence must not turn this
+		// check into a silent pass.
+		await expect(loadRunState(runPath)).rejects.toMatchObject({
+			name: "WorkflowError",
+			code: WorkflowErrorCode.PERSISTENCE_ERROR,
+			details: { found: "pi-workflow-run-v2", expected: FORMAT },
+		});
 		await fs.rm(path.dirname(runPath), { recursive: true, force: true });
 	});
 

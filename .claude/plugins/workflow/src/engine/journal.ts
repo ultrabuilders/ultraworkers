@@ -27,7 +27,8 @@
  * resumes from the middle is how a run loses state without anyone being told.
  */
 import * as fs from "node:fs/promises";
-import { type Entry, type Head, type JournalState, applyDelta, isHead } from "./journal-delta";
+import { WorkflowError, WorkflowErrorCode } from "../errors";
+import { type Entry, type Head, FORMAT, type JournalState, applyDelta, isHead } from "./journal-delta";
 
 export type AgentSettler = (agents: unknown[], cause: string, atIso: string) => unknown[];
 
@@ -43,20 +44,37 @@ export async function appendJournalLine(runPath: string, line: Head | Entry): Pr
 }
 
 function parseLine(raw: string): Head | Entry | undefined {
+	let value: unknown;
 	try {
-		const value: unknown = JSON.parse(raw);
-		if (!value || typeof value !== "object") return undefined;
-		if (isHead(value)) return value;
-		const candidate = value as Entry;
-		// A DELTA is only a delta if it carries the fields a delta is replayed with. Without
-		// this, a truncated line that still parses as an object would replay as "no changes",
-		// which is the same as saying the event did nothing.
-		if (typeof candidate.generation !== "string" || typeof candidate.sequence !== "number") return undefined;
-		if (!candidate.delta || typeof candidate.delta !== "object") return undefined;
-		return candidate;
+		value = JSON.parse(raw);
 	} catch {
 		return undefined;
 	}
+	if (!value || typeof value !== "object") return undefined;
+	if (isHead(value)) return value;
+
+	// A line that parses, is an object, and carries a FOREIGN `format` is not a torn write — it
+	// is a journal written by a different version of this engine. Without this it falls through
+	// to the DELTA shape check, fails it, and is reported as a torn final line, which for a
+	// single-line journal means `loadRunState` returns `undefined`: "this run never started".
+	// The run is not lost, it is INVISIBLE, and resume starts it over having spent every token
+	// it already paid for. A version we cannot read must be named, not skipped.
+	const format = (value as { format?: unknown }).format;
+	if (typeof format === "string" && format !== FORMAT) {
+		throw new WorkflowError(
+			`workflow journal ${format} is not this build's format (${FORMAT}); refusing to replay it`,
+			WorkflowErrorCode.PERSISTENCE_ERROR,
+			{ details: { found: format, expected: FORMAT } },
+		);
+	}
+
+	const candidate = value as Entry;
+	// A DELTA is only a delta if it carries the fields a delta is replayed with. Without
+	// this, a truncated line that still parses as an object would replay as "no changes",
+	// which is the same as saying the event did nothing.
+	if (typeof candidate.generation !== "string" || typeof candidate.sequence !== "number") return undefined;
+	if (!candidate.delta || typeof candidate.delta !== "object") return undefined;
+	return candidate;
 }
 
 /**

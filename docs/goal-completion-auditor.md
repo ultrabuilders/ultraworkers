@@ -627,7 +627,110 @@ the gate belongs behind the existing `goal` tool, not beside it.
 | Ledger append failure blocks a legitimate completion | Low | mirror the reference's tolerant append on the approved path |
 | `pause` becomes the new silent `drop` | High | Phase 4.2 guard + budget; both need rows |
 | Shared-tree file collisions | Medium | `check_file_reservation_conflicts` before writing; `stage-lines.ts` where a peer edits the same file |
-| `check:ts` already red at `omp-plugins.ts:340,346` | — | not ours (commit `8bd324301c`); ignore exactly those two lines, everything else must be green |
+| A pre-existing gate red is mistaken for ours | Medium | see "Đo trạng thái cổng" below — record the **file + error code**, never a line count |
+
+---
+
+## Đo trạng thái cổng (đọc trước khi sửa)
+
+**Mốc đo: 2026-10-04, branch `feat/beads-sweep-2026-09-30`. Cây dùng chung — phải đo lại
+ngay trước lúc chạy, không dùng số dưới đây làm số thay thế.**
+
+| Cổng | rc | Nguyên nhân đo được | Của ai |
+|---|---|---|---|
+| `check:types` | **0** | — | sạch |
+| `check:census` | 0 | — | sạch |
+| `check:await-import` | 0 | — | sạch |
+| `check:entry-graphs` | 0 | — | sạch |
+| `check:invariants` | 1 | `extensions/workflow/package.json` — `dependencies.zod` là `^4.0.0`, cổng đòi exact | commit `3a9ada4458`, không phải epic này |
+| `check:tools` | 1 | oxfmt trên `src/goals/auditor/{contract,prompt}.ts` + `test/goals/auditor-{prompt,verdict}.test.ts` | peer `df` đang viết, **sau** commit `3ed65ae6cd` (11:27 so với 11:26) |
+
+### Đính chính một claim đã truyền sai
+
+Bản đầu của tài liệu này ghi: *"`check:ts` đang RED tại `omp-plugins.ts:340,346` — bỏ qua
+đúng 2 dòng đó"*. **Đo lại thì `check:types` exit 0, không có lỗi nào.** Dòng 336-350 của
+`packages/coding-agent/src/discovery/omp-plugins.ts` là code `if` hợp lệ. Con số đó được
+relay hai lần mà không tự đo — đừng relay nó.
+
+### Vì sao "bỏ qua đúng 2 dòng" là cách sai
+
+Một exclusion ghim theo **số** không hỏng khi con số đúng — nó hỏng khi site thứ ba xuất
+hiện, và **lúc đó nó im lặng**. `check:types` có thể đỏ vì `package.json` của người khác, và
+"2 dòng" vẫn khớp một cách ngẫu nhiên.
+
+Hai cách đúng, dùng cách sau:
+
+1. **Lọc theo file + mã lỗi.** Cho phép một danh sách *allow* explicit:
+   `{ file: "extensions/workflow/package.json", code: "pinned-deps" }`. Site mới **không
+   khớp** allow ⇒ gate fail ⇒ thấy ngay.
+2. **Không allow gì cả.** Đo lại ở thời điểm chạy, ghi kèm timestamp. Rẻ hơn, và trung thực
+   hơn khi cây đang chạy: số ở trên chỉ đúng tại mốc đã ghi.
+
+Bất biến phải giữ: **số site được bỏ qua bằng số site được liệt kê tường minh.** Một danh sách
+rỗng thì con số phải là 0.
+
+---
+
+## Ngân sách sau một lần reject (đo, không phỏng đoán)
+
+Reviewer nêu: *một gate reject rồi đốt luôn ngân sách là gate tự sát ở lần thử hai, chỉ còn
+một động tác — báo cáo thành công sai.* Nguyên tắc đó đúng. Nhưng **hình thức** phải đo trước,
+vì "ngân sách lượt" **không tồn tại** ở đây:
+
+```
+grep -rn "maxTurns|turnBudget|turn_limit|max_turns|turnCount" packages/coding-agent/src/goals/
+  → 0 hit
+```
+
+Không có turn counter. Chỉ có **token budget** (`goal.tokenBudget`) và **wall clock**
+(`timeUsedSeconds`). Nên "đốt ngân sách lượt" không phải cơ chế có thật — cơ chế có thật là
+đây, và nó tệ hơn, vì nó **âm thầm**:
+
+**Phát hiện 1 — `resumeGoal` hồi sinh cả `budget-limited`.** `runtime.ts:420-434`:
+
+```ts
+if (state.goal.status === "complete") throw new Error("Goal is already complete.");
+state.goal.status = "active";      // ← không có guard "paused"
+state.enabled = true;
+```
+
+Chỉ `complete` bị chặn. `budget-limited` và `paused` đều đi qua. Đây **không phải hố của epic
+này** — nó có sẵn, và nó là điều kiện tiên quyết cho hố dưới đây.
+
+**Phát hiện 2 — sau `resume`, ngân sách đã cạn không bị kiểm tra lại cho tới lần flush kế
+tiếp.** `#markActiveAccounting` (`runtime.ts:182-190`) chỉ đặt `lastAccountedAt` và
+`baselineUsage`; nó không so `tokensUsed` với `tokenBudget`. Chỉ `#flushUsageLocked`
+(`:335-341`) mới flip, và chỉ khi `tokenDelta > 0`:
+
+```ts
+const flippedToBudgetLimited =
+  state.goal.tokenBudget !== undefined &&
+  state.goal.tokensUsed >= state.goal.tokenBudget &&
+  state.goal.status === "active";
+```
+
+Nghĩa là sau `resume`, agent có **trọn một lượt** ở trạng thái `active` với budget đã cạn.
+Không phải vô hạn — nhưng là miễn phí, và agent **không được báo cho biết**.
+
+**Vì sao điều này là tự sát ở đâm bị đo lại.** Nếu `tokensUsed >= tokenBudget` thì
+`status === "budget-limited"`, mà `isAccountingStatus` (`:115`) tính cả `budget-limited` ⇒
+accounting vẫn chạy ⇒ `tokensUsed` tiếp tục tăng ⇒ lượt miễn phí kéo dài, và mọi lần gọi
+`op:"complete"` tiếp theo đều có thể đi qua gate với một auditor đã nghe context của chính
+nó. Đây là lý do `epic-rdjp` nói "mọi rejection row để goal OPEN" **chưa đủ**: `OPEN` phải
+kèm nghĩa là **thử lại được mà không bị phạt vĩnh viễn**.
+
+**Hệ quả cho Phase 3 — bắt buộc, không phải tuỳ chọn:**
+
+| Hệ quả | Bắt buộc |
+|---|---|
+| Auditor bị từ chối ⇒ goal `active`, `enabled=true`, accounting **tiếp tục** | có |
+| Ngân sách cạn trong lúc reject ⇒ báo lý do, **không** âm thầm cho một lượt miễn phí | có |
+| `onBudgetMutated` tăng budget ⇒ `budget-limited` → `active` (đã có, `:300-303`) | giữ nguyên |
+| Không thêm **turn budget** mới chỉ để chặn việc này | có — nó là feature, không phải fix |
+
+Cách sửa nhỏ nhất, nằm ở Phase 3: khi auditor reject mà `tokensUsed >= tokenBudget`, trả
+lỗi có cấu trúc nói rõ **"ngân sách đã cạn, hãy `onBudgetMutated` tăng ngân sách hoặc
+`dropGoal`"** — thay vì để lượt miễn phí đó chạy. Đây là một row, không phải một phase.
 
 ---
 

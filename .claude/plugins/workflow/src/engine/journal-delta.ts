@@ -22,6 +22,14 @@
  * delta that needs one with no settler supplied THROWS rather than dropping the step. The
  * real settler arrives with the run-state bead.
  *
+ * The refusal is a typed {@link WorkflowError} carrying `PERSISTENCE_ERROR`, not a bare
+ * `Error`, and the discriminant is the load-bearing part rather than the class. The layer
+ * that eventually catches this will be written against the code, because a catcher that
+ * matches the message is a catcher that breaks silently the first time someone rewords the
+ * sentence for readability — and it breaks at exactly the moment the persistence layer is
+ * needed. `details.settleAgentsAt` carries the timestamp so the message can be rebuilt where
+ * no settler is available, which is the whole value of refusing rather than skipping.
+ *
  * ## Why `Object.defineProperty` and not assignment
  *
  * Copied verbatim, and load-bearing rather than stylistic: `JSON.parse` of a payload
@@ -29,6 +37,7 @@
  * prototype write. Defining the property explicitly keeps the key an own data property.
  */
 import { createHash } from "node:crypto";
+import { WorkflowError, WorkflowErrorCode } from "../errors";
 
 /** On-disk marker. Renamed per the bead: the reference's `pi-workflow-run-v2`. */
 export const FORMAT = "ultraworkers-workflow-run-v1";
@@ -169,8 +178,10 @@ export type AgentSettler = (agents: unknown[], cause: string, atIso: string) => 
 export function applyDelta(state: PersistedRunState, delta: Delta, settleAgents?: AgentSettler): void {
 	if (delta.settleAgentsAt) {
 		if (!settleAgents) {
-			throw new Error(
+			throw new WorkflowError(
 				`delta settles agents at ${delta.settleAgentsAt} but no settler was supplied; dropping it would leave an interrupted agent interrupted forever`,
+				WorkflowErrorCode.PERSISTENCE_ERROR,
+				{ details: { settleAgentsAt: delta.settleAgentsAt } },
 			);
 		}
 		state.agents = settleAgents(Array.isArray(state.agents) ? state.agents : [], "interrupted", delta.settleAgentsAt);

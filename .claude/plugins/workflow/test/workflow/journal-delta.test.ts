@@ -16,6 +16,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { type PersistedRunState, applyDelta, cellsOf, deltaOf } from "../../src/engine/journal-delta";
+import { WorkflowErrorCode } from "../../src/errors";
 
 /** The algebra, applied the way the journal does: cells -> delta -> replay. */
 function rebase(before: PersistedRunState, after: PersistedRunState): PersistedRunState {
@@ -88,6 +89,33 @@ describe("journal delta", () => {
 			agents.map(agent => ({ ...(agent as object), status: "failed" })),
 		);
 		expect(settled.agents).toEqual([{ id: "a1", status: "failed" }]);
+	});
+
+	test("the refusal carries a code a catcher can match, not just a sentence", () => {
+		// WHY a row separate from the one above: that row buys the THROW, this one buys the
+		// DISCRIMINANT, and they fail independently. Reverting the error to a bare `Error` leaves
+		// every assertion above still green — while the persistence layer, when it arrives, has
+		// nothing stable to match on.
+		//
+		// The failure defended against is silent by construction: a catcher written against the
+		// message keeps working right up until someone rewords the sentence for readability, and
+		// then it stops working with no type error and no failing test anywhere. So this asserts
+		// the code, and not the wording, because the code is the part meant to be relied on.
+		const state: PersistedRunState = { agents: [{ id: "a1", status: "interrupted" }] };
+		const settleAgentsAt = "2026-10-04T00:00:00Z";
+
+		let thrown: unknown;
+		try {
+			applyDelta(state, { settleAgentsAt, set: {}, remove: [], arrays: {} });
+		} catch (err) {
+			thrown = err;
+		}
+
+		expect(thrown).toBeInstanceOf(Error);
+		expect((thrown as { code?: unknown }).code).toBe(WorkflowErrorCode.PERSISTENCE_ERROR);
+		// The timestamp is what lets a caller rebuild the message where no settler exists — the
+		// entire value of refusing instead of skipping the step.
+		expect((thrown as { details?: { settleAgentsAt?: unknown } }).details?.settleAgentsAt).toBe(settleAgentsAt);
 	});
 
 	test("an out-of-range array index is refused rather than clamped", () => {

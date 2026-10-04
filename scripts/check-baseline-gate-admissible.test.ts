@@ -22,9 +22,11 @@ function report(overrides: Partial<GateReport> = {}): GateReport {
 
 /** The gate's VOID shape: the banner plus its unconfirmed rows under `~`. */
 const VOID_OUTPUT = [
-	"grp-c baseline gate: VOID — the tree changed while this gate measured it.",
-	"  HEAD at start: 11fdfe3e5ddb0e363d525dff652ac652adf5d1ac",
-	"  HEAD at end:   1b48fe990f866b392c8440981b74d117bbe71ec8",
+	"grp-c baseline gate: VOID — the suite corpus changed while this gate measured it.",
+	"  HEAD at start:    11fdfe3e5ddb0e363d525dff652ac652adf5d1ac",
+	"  HEAD at end:      1b48fe990f866b392c8440981b74d117bbe71ec8",
+	"  corpus at start:  4f2a9c1e8b7d6053",
+	"  corpus at end:    91ce37ab04f5d268",
 	"",
 	"Unconfirmed new failure(s) in this run: 3",
 	"  ~ (not reproduced — a confirm run was skipped, so treat as load, not regression)",
@@ -74,6 +76,32 @@ describe("the baseline gate's verdict is read off its own output", () => {
 		const parsed = parseGateReport(VOID_OUTPUT, 1);
 		expect(parsed.declaredUnconfirmed).toBe(3);
 		expect(parsed.unconfirmed).toHaveLength(3);
+	});
+
+	it("still classifies VOID when the gate quotes corpus lines the old banner never had", () => {
+		// The verdict predicate widened: the gate now decides on a corpus fingerprint and
+		// prints two extra `at start:`/`at end:` pairs. The admissibility gate matches on the
+		// banner, so a reworded banner must not make VOID unreadable — a reader that fell
+		// back to "unknown" here would treat an abstention as an unparseable pass, which is
+		// the one outcome this whole file exists to prevent.
+		//
+		// Pinned to the new wording deliberately: this row goes red if the banner is
+		// reworded again without updating the matcher, which is the failure that would
+		// silently stop this gate from ever seeing a VOID.
+		const widened = [
+			"grp-c baseline gate: VOID — the suite corpus changed while this gate measured it.",
+			"  corpus at start:  deadbeefdeadbeef",
+			"  corpus at end:    feedfacefeedface",
+		].join("\n");
+		const parsed = parseGateReport(widened, 1);
+		expect(parsed.verdict).toBe("void");
+		// The two fingerprint lines are the gate's evidence, not test names. Counting them
+		// would inflate `unconfirmed` to 2 against a gate that announced no failures at all.
+		expect(parsed.unconfirmed).toHaveLength(0);
+		// And it must not invent a count the gate never printed. `undefined` is the honest
+		// value for "the gate announced nothing"; a defaulted 0 would read as a measured
+		// zero, which is the "measured-red looks like measured-clean" confusion again.
+		expect(parsed.declaredUnconfirmed).toBeUndefined();
 	});
 });
 

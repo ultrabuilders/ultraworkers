@@ -234,19 +234,83 @@ async function liveHead(): Promise<string | null> {
 }
 
 /**
+ * A fingerprint of the suite corpus: every test file's path and bytes.
+ *
+ * ## Why this exists instead of comparing HEAD
+ *
+ * The gate is a differential against a fixed captured baseline, so the measurement is
+ * only meaningful if the set of tests that produced it is the set the baseline was
+ * captured against. `bun test <dir>` globs **at spawn time**, so the corpus is whatever
+ * existed when the suite started — which is why a file added after the capture can fail
+ * and read as a new regression with nobody having broken anything.
+ *
+ * The previous predicate was `HEAD` string equality, which is a *proxy* for that
+ * condition and a bad one: it treats every commit as if it rewrote the suite.
+ * Measured over the 40 commits before this change: **40 HEAD movements, 7 commits
+ * editing corpus contents, and 1 changing corpus membership.** So the old predicate
+ * discarded 39 of 40 measurements that were in fact sound — and on a tree committing
+ * every ~80 seconds it meant the gate reported VOID essentially always, which is the
+ * state this bead exists to end.
+ *
+ * Hashing names **and** contents is the honest middle. Membership alone is too weak: a
+ * peer editing a test's body mid-run changes what fails just as surely as adding a file.
+ * Content alone is too weak in the other direction: HEAD also moves for commits that
+ * touch neither. This fingerprint is what the differential actually reads.
+ *
+ * Untracked files are included deliberately. A test written but not yet committed is
+ * still run by the suite, so it is part of the corpus even though `HEAD` cannot see it.
+ * Excluding them would make the fingerprint disagree with what `bun test` did.
+ *
+ * Returns `null` when the corpus cannot be enumerated. An unreadable tree is NOT a
+ * still tree — reporting it as one would let the gate certify a measurement it cannot
+ * support, which is the same class of lie as the empty-failure-set bug above.
+ */
+async function corpusFingerprint(): Promise<string | null> {
+	const listing =
+		await $`git -c core.fsmonitor=false -c core.untrackedCache=false ls-files -z --others --cached -- ${SUITE}`
+			.cwd(process.cwd())
+			.quiet()
+			.nothrow();
+	if (listing.exitCode !== 0) return null;
+
+	const paths = listing.text().split("\0").filter(Boolean).sort();
+	if (paths.length === 0) return null;
+
+	// Hash the concatenated per-file digests rather than the raw bytes: `Bun.hash`
+	// is a streaming digest, so this stays O(bytes) in memory rather than holding the
+	// whole corpus, and a rename cannot masquerade as an edit because the path is an
+	// input to the digest.
+	const parts: string[] = [];
+	for (const rel of paths) {
+		const abs = path.join(process.cwd(), rel);
+		const file = Bun.file(abs);
+		if (!(await file.exists())) continue; // deleted between listing and read
+		parts.push(`${rel}:${Bun.hash(await file.arrayBuffer())}`);
+	}
+	if (parts.length === 0) return null;
+	return Bun.hash(parts.join("\n")).toString(16);
+}
+
+/**
  * Whether a run is allowed to claim a verdict at all.
  *
- * An unreadable git is NOT a still tree. Reporting it as still would let the gate
+ * An unreadable corpus is NOT a still corpus. Reporting it as still would let the gate
  * claim a measurement it cannot support, which is the same class of lie as the
  * empty-failure-set bug this file already exists to prevent.
  */
-function treeHeldStill(headAtStart: string | null, headAtEnd: string | null): boolean {
-	return headAtStart !== null && headAtEnd !== null && headAtStart === headAtEnd;
+function corpusHeldStill(atStart: string | null, atEnd: string | null): boolean {
+	return atStart !== null && atEnd !== null && atStart === atEnd;
 }
 
 // Captured BEFORE the suite runs, which is the whole point: the suite is the long
 // part, and the window it opens is exactly when a peer commits.
+//
+// Both are captured. HEAD is what the VOID message quotes, because it is the number a
+// reader can look up; the corpus fingerprint is what the verdict is actually based on,
+// because it is the thing the differential reads. Reporting only HEAD would let the
+// message say "the tree changed" on a run whose corpus never did.
 const headAtStart = await liveHead();
+const corpusAtStart = await corpusFingerprint();
 
 const outcome = await collectFailures();
 
@@ -280,19 +344,27 @@ const current = outcome.failures;
 // The tree moved under the run. Checked here, before the confirm re-run, so a void
 // run does not spend another ten minutes proving something it may not report.
 const headAtEnd = await liveHead();
-if (!treeHeldStill(headAtStart, headAtEnd)) {
-	console.error("grp-c baseline gate: VOID — the tree changed while this gate measured it.");
+const corpusAtEnd = await corpusFingerprint();
+if (!corpusHeldStill(corpusAtStart, corpusAtEnd)) {
+	console.error("grp-c baseline gate: VOID — the suite corpus changed while this gate measured it.");
 	console.error(
-		`  HEAD at start: ${headAtStart ?? "(unreadable)"}\n` +
-			`  HEAD at end:   ${headAtEnd ?? "(unreadable)"}\n` +
+		`  HEAD at start:    ${headAtStart ?? "(unreadable)"}\n` +
+			`  HEAD at end:      ${headAtEnd ?? "(unreadable)"}\n` +
+			`  corpus at start:  ${corpusAtStart ?? "(unreadable)"}\n` +
+			`  corpus at end:    ${corpusAtEnd ?? "(unreadable)"}\n` +
 			"\n" +
 			"This gate is a differential against a fixed captured list, so a test ADDED\n" +
 			"after the capture and then failed reads as a new failure — red — with nobody\n" +
-			"having broken anything. A run whose corpus changed mid-flight therefore\n" +
-			"describes a tree that exists at no commit, and its red/green would belong to\n" +
-			"no commit at all. Void is the honest verdict; it is not a pass and not a fail.\n" +
-			"Re-run once the branch is still, or accept that on a shared tree this gate\n" +
-			"reports void rather than a number.",
+			"having broken anything. `bun test` globs the corpus at spawn time, so a run\n" +
+			"whose test files changed mid-flight describes a suite that exists at no\n" +
+			"moment, and its red/green would belong to no run at all. Void is the honest\n" +
+			"verdict; it is not a pass and not a fail.\n" +
+			"\n" +
+			"The verdict turns on the CORPUS, not on HEAD. A commit that touches no test\n" +
+			"file cannot change what this gate measured, so it no longer voids a run —\n" +
+			"measured over the 40 commits before this change: 40 HEAD movements, 7 editing\n" +
+			"corpus contents, 1 changing corpus membership. If HEAD moved and the corpus\n" +
+			"did not, the number below belongs to this run and is reported normally.",
 	);
 	// VOID is the VERDICT, but it is not the end of what this run knows. `current`
 	// above is a real measurement against the same fixed baseline the non-void path

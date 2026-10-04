@@ -25,6 +25,12 @@ import type { PeerTransport, TransportOutcome } from "../../src/irc/peer-transpo
 afterEach(() => {
 	removePeerTransport("test");
 	removePeerTransport("builtin");
+	// The ownership rows below register under their own ids. The seam's registry is
+	// module-level and outlives a single row, so an id that is not unregistered here
+	// decides the NEXT row's answer — the first version of the ownership row left
+	// `ext-A` registered and turned three unrelated rows red.
+	removePeerTransport("ext-A");
+	removePeerTransport("ext-B");
 });
 
 function transport(over: Partial<PeerTransport> & Pick<PeerTransport, "id">): PeerTransport {
@@ -46,6 +52,41 @@ describe("registration", () => {
 		);
 		// And nothing was installed by the failed attempt.
 		expect(resolvePeerTransport()).toBeUndefined();
+	});
+
+	test("the first-registered id keeps the process on reload, and serves the NEW transport", () => {
+		// WHY THIS ROW — the contract, and why nothing else holds it.
+		//
+		// `resolvePeerTransport` takes `overrides.values().next().value`: the FIRST
+		// registration owns the process, and a later distinct id does not displace it.
+		// That is deliberate — a peer has one bus, and an extension reloading under its
+		// own id must keep the slot it already won rather than lose it to whoever
+		// registered second.
+		//
+		// The half that is easy to lose is the object. `Map.set` on an existing key
+		// REPLACES the value while KEEPING the original insertion position, so a
+		// re-registration lands in the same slot with a different transport — the new
+		// code serves, under the old id's priority. That is the whole point of a
+		// reload, and it is a consequence of `Map` semantics rather than of any line
+		// anyone wrote, so nothing in the suite defended it: a refactor swapping
+		// `.next().value` for "iterate and take the last" would keep every other row
+		// green (single-registration rows still pass; an all-unregistered registry
+		// still resolves to `undefined`) while silently INVERTING reload.
+		//
+		// Identity, not id: comparing `?.id` would pass even if the resolver kept
+		// serving the stale object, which is the actual regression.
+		addPeerTransport(transport({ id: "ext-A" }));
+		addPeerTransport(transport({ id: "ext-B" }));
+
+		// The control. Without it, a resolver that returned the LAST entry would
+		// satisfy the assertion below and this row would prove nothing.
+		expect(resolvePeerTransport()?.id).toBe("ext-A");
+
+		const reloaded = transport({ id: "ext-A" });
+		addPeerTransport(reloaded);
+
+		expect(resolvePeerTransport()?.id).toBe("ext-A");
+		expect(resolvePeerTransport()).toBe(reloaded);
 	});
 
 	test("unregistering an override restores the built-in", async () => {

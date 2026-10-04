@@ -18,7 +18,61 @@ import { getDbBusyTimeoutMs } from "@oh-my-pi/pi-utils";
  */
 
 /** Schema version. Bumping this is the migration entry point — see {@link migrate}. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
+
+/**
+ * How two spellings of one path are compared.
+ *
+ * `fold` is right where the FILESYSTEM cannot tell them apart (NTFS); `exact` is
+ * right where it can (POSIX). Picking the wrong one is a bug in both directions,
+ * which is why this is a named value rather than a boolean.
+ */
+export type PathCaseMode = "fold" | "exact";
+
+/**
+ * The case rule this platform needs.
+ *
+ * NTFS is case-insensitive by default, so `C:\Repo\src` and `c:\repo\SRC` name
+ * ONE file — and two exclusive leases on them are two owners of one thing.
+ * Measured before this existed, on the store as it stood:
+ *
+ * ```
+ * acquireLease(C:\Repo\src, exclusive)  → GRANTED
+ * acquireLease(c:\repo\SRC, exclusive)  → GRANTED      ← same file, on NTFS
+ * ```
+ *
+ * POSIX filesystems are case-sensitive: `/repo/A` and `/repo/a` are two files,
+ * so folding there would REFUSE a second lease on a genuinely different path —
+ * a bug this function's own absence was not causing, but whose fix would.
+ * macOS is undecidable from the path string alone (APFS ships case-insensitive
+ * by default but can be formatted case-sensitive), so it is treated as
+ * case-sensitive: that errs toward granting the lease the caller asked for,
+ * rather than silently refusing legitimate work.
+ */
+function defaultLeasePathCaseMode(): PathCaseMode {
+	return process.platform === "win32" ? "fold" : "exact";
+}
+
+/**
+ * The form of `pattern` that is stored and compared.
+ *
+ * Normalising at the WRITE boundary, once, is what keeps `acquireLease`,
+ * `findConflicts`, `listLeases` and `listLeaseHistory` in agreement. Doing it
+ * per comparison instead would need every call site to apply the same rule, and
+ * one that forgot would not fail loudly — it would simply stop seeing a lease.
+ *
+ * `mode` is a parameter so the RULE is testable on any platform. Which mode a
+ * platform actually selects is {@link defaultLeasePathCaseMode}, a single line
+ * over `process.platform` mirroring `peerEndpoint`'s existing branch — and that
+ * branch, unlike this function, cannot be exercised off Windows.
+ *
+ * `toLowerCase` rather than `toLocaleLowerCase`: a path has no locale, and the
+ * locale-sensitive form turns `I` into a dotless `ı` under a Turkish locale,
+ * which would make the key depend on the environment rather than the path.
+ */
+export function leasePathKey(pattern: string, mode: PathCaseMode = defaultLeasePathCaseMode()): string {
+	return mode === "fold" ? pattern.toLowerCase() : pattern;
+}
 
 /**
  * Ceiling on how long ONE lease may live, however often it is renewed.
@@ -270,6 +324,29 @@ function migrate(db: Database): void {
 			 WHERE idempotency IS NOT NULL AND released_ts IS NULL`,
 		);
 
+		// v3 → v4: rows inherited from an older build carry whatever spelling their
+		// writer used, so on a case-insensitive filesystem they would not match a
+		// newly-normalised acquire — two leases on one file, which is the defect
+		// `leasePathKey` exists to remove, reappearing only on upgraded databases.
+		//
+		// Rewritten through JS rather than SQL `lower()`: SQLite folds ASCII only,
+		// so a non-ASCII path would be keyed one way here and another way in
+		// `leasePathKey` — and the two halves of the same comparison would
+		// disagree, which is the failure this migration is meant to end.
+		//
+		// On `exact` platforms there is nothing to rewrite, and the loop is skipped
+		// rather than run over every row to produce identical values.
+		if (defaultLeasePathCaseMode() === "fold") {
+			const inherited = db
+				.query<{ id: number; path_pattern: string }, []>("SELECT id, path_pattern FROM peer_leases")
+				.all();
+			for (const row of inherited) {
+				const key = leasePathKey(row.path_pattern);
+				if (key === row.path_pattern) continue;
+				db.run("UPDATE peer_leases SET path_pattern = ? WHERE id = ?", [key, row.id]);
+			}
+		}
+
 		db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 	})();
 }
@@ -361,6 +438,10 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 	const now = options.now ?? Date.now();
 	const ttl = Math.min(options.ttlMs ?? DEFAULT_TTL_MS, MAX_TTL_MS);
 	const exclusive = options.exclusive ?? true;
+	// One normalisation, applied once: every comparison below — the idempotency
+	// match and its mismatch twin, the conflict probe, and the INSERT — must agree
+	// on the form the row is stored in, or the store stops seeing its own leases.
+	const pathKey = leasePathKey(options.pathPattern);
 	// The order reap → probe → insert is the contract, and asserting the outcome
 	// does not establish it: reaping after the probe would still let every
 	// assertion below pass, because an expired lease is filtered out of the probe
@@ -397,7 +478,7 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 					`SELECT ${SELECT_COLUMNS} FROM peer_leases
 					 WHERE idempotency = ? AND owner = ? AND path_pattern = ? AND released_ts IS NULL`,
 				)
-				.get(options.idempotency, options.owner, options.pathPattern);
+				.get(options.idempotency, options.owner, pathKey);
 			if (prior) {
 				db.run("COMMIT");
 				return { ok: true, lease: toLease(prior) };
@@ -411,7 +492,7 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 					`SELECT ${SELECT_COLUMNS} FROM peer_leases
 					 WHERE idempotency = ? AND owner = ? AND released_ts IS NULL AND path_pattern <> ?`,
 				)
-				.get(options.idempotency, options.owner, options.pathPattern);
+				.get(options.idempotency, options.owner, pathKey);
 			if (mismatched) {
 				db.run("ROLLBACK");
 				return { ok: false, conflicts: [toLease(mismatched)] };
@@ -419,7 +500,7 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 		}
 
 		trace?.("probe");
-		const conflicts = findConflicts(db, options.pathPattern, exclusive, now);
+		const conflicts = findConflicts(db, pathKey, exclusive, now);
 		if (conflicts.length > 0) {
 			db.run("ROLLBACK");
 			return { ok: false, conflicts };
@@ -437,15 +518,7 @@ export function acquireLease(db: Database, options: AcquireOptions): AcquireResu
 			`INSERT INTO peer_leases
 			   (owner, idempotency, path_pattern, exclusive, fence_token, expires_ts, released_ts, acquired_ts)
 			 VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
-			[
-				options.owner,
-				options.idempotency ?? null,
-				options.pathPattern,
-				exclusive ? 1 : 0,
-				fenceToken,
-				now + ttl,
-				now,
-			],
+			[options.owner, options.idempotency ?? null, pathKey, exclusive ? 1 : 0, fenceToken, now + ttl, now],
 		);
 		const row = db
 			.query<Record<string, unknown>, [string, number]>(
@@ -606,8 +679,11 @@ export function reapExpiredLeases(db: Database, now: number = Date.now()): numbe
  * it just took.
  */
 export function listLeases(db: Database, pathPattern?: string, now: number = Date.now()): Lease[] {
+	// Same key the row was stored under: filtering on the caller's raw spelling
+	// would silently return nothing for a live lease on a case-insensitive path.
+	const pathKey = pathPattern === undefined ? undefined : leasePathKey(pathPattern);
 	const rows =
-		pathPattern === undefined
+		pathKey === undefined
 			? db.query<Record<string, unknown>, []>(`SELECT ${SELECT_COLUMNS} FROM peer_leases ORDER BY id`).all()
 			: db
 					.query<Record<string, unknown>, [string, number]>(
@@ -615,7 +691,7 @@ export function listLeases(db: Database, pathPattern?: string, now: number = Dat
 				 WHERE path_pattern = ? AND released_ts IS NULL AND expires_ts > ?
 				 ORDER BY id`,
 					)
-					.all(pathPattern, now);
+					.all(pathKey, now);
 	return rows.map(toLease);
 }
 
@@ -627,13 +703,14 @@ export function listLeases(db: Database, pathPattern?: string, now: number = Dat
  * opposite defaults and a flag makes the wrong one the easy call.
  */
 export function listLeaseHistory(db: Database, pathPattern?: string): Lease[] {
+	const pathKey = pathPattern === undefined ? undefined : leasePathKey(pathPattern);
 	const rows =
-		pathPattern === undefined
+		pathKey === undefined
 			? db.query<Record<string, unknown>, []>(`SELECT ${SELECT_COLUMNS} FROM peer_leases ORDER BY id`).all()
 			: db
 					.query<Record<string, unknown>, [string]>(
 						`SELECT ${SELECT_COLUMNS} FROM peer_leases WHERE path_pattern = ? ORDER BY id`,
 					)
-					.all(pathPattern);
+					.all(pathKey);
 	return rows.map(toLease);
 }

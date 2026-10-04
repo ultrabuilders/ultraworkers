@@ -46,10 +46,15 @@ describe("lease store", () => {
 		expect(pragmaValue(db, "busy_timeout")).toBe(getDbBusyTimeoutMs());
 		expect(String(pragmaValue(db, "journal_mode")).toLowerCase()).toBe("wal");
 		expect(pragmaValue(db, "synchronous")).toBe(1); // NORMAL
-		// 3 since `epic-jwsy.5` narrowed the idempotency index to live rows.
-		// Asserting the number keeps a migration that fails to bump the version
-		// visible: the older-build guard reads this same pragma.
-		expect(pragmaValue(db, "user_version")).toBe(3);
+		// 3 narrowed the idempotency index to live rows; 4 added the lease path key
+		// (`leasePathKey`), whose v3 backfill only runs on a store whose version is
+		// still 3 — so a bump that never reached this pragma would silently skip it.
+		//
+		// Asserting the NUMBER, not `SCHEMA_VERSION`, is deliberate: a literal forces
+		// whoever bumps the schema to come here and say what the new version is for.
+		// Comparing against the constant would pass on a bump that added no migration
+		// at all, which is the case this row exists to make visible.
+		expect(pragmaValue(db, "user_version")).toBe(4);
 		db.close();
 	});
 

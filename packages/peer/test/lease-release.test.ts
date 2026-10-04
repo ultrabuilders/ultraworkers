@@ -194,7 +194,10 @@ describe("schema migration", () => {
 		legacy.close();
 
 		const db = openLeaseStore(file);
-		expect(pragmaValue(db, "user_version")).toBe(3);
+		// A literal, for the reason in `lease-store.test.ts`: an inherited file must
+		// reach the version THIS build understands, and a migration that returned
+		// early would leave it at 1 — which the older-build guard would then reject.
+		expect(pragmaValue(db, "user_version")).toBe(4);
 
 		const inherited = listLeaseHistory(db, "a.txt");
 		expect(inherited).toHaveLength(1);

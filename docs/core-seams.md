@@ -9,12 +9,13 @@ changing it is a breaking change for anyone already published against it. A list
 names things which do not exist is worse than no list, so every row here was opened and
 read before it was written down.
 
-Measured 2026-10-03 at HEAD `2f277d83b1`. Corrected twice more on 2026-10-04: the TUI
+Measured 2026-10-03 at HEAD `2f277d83b1`. Corrected three times on 2026-10-04 — the TUI
 row named a line that was not the function it claimed, the "four of the five" conclusion
-was wrong (`programme-acceptance-five-surfaces.test.ts` passes all five), and the row that
-replaced it claimed no top-level registrar exists when two do. The TUI section records
-all three errors, because a reader arriving at a corrected claim deserves to know how
-many wrong claims preceded it.
+was wrong (`programme-acceptance-five-surfaces.test.ts` passes all five), the row that
+replaced it claimed no top-level registrar exists when two do, and the row after that
+denied a panel could persist without measuring whether it could. The TUI section records
+each error, because a reader arriving at a corrected claim deserves to know how many
+wrong claims preceded it. Re-measured at `e5da38df0` for the load-time row.
 
 Line numbers are deliberately absent from the rows below. A number is a claim about a
 revision, and this file outlives revisions; a path and a symbol name are the parts that
@@ -22,56 +23,64 @@ stay true. Where a line is given it is incidental, not load-bearing.
 
 ## What core guarantees
 
-| Surface | Where the seam lives | Entry an extension reaches |
-| --- | --- | --- |
-| **Tool** | `packages/coding-agent/src/extensibility/custom-tools/` | barrel `index.ts` re-exports `loader.ts`, `types.ts`, `wrapper.ts` |
-| **Slash command** | `packages/coding-agent/src/extensibility/custom-commands/` | barrel `index.ts` re-exports `loader.ts`, `types.ts`; bundled commands under `bundled/` |
-| **Config key** | `packages/coding-agent/src/config/registry.ts`, consumed from `extensibility/settings.ts` | `register({ id, type, default })` — `settings.ts:6` imports it and re-exports the resulting `cfg*` settings |
-| **Lifecycle hook** | `packages/coding-agent/src/extensibility/hooks/` | barrel re-exports `loader.ts`, `runner.ts`, `tool-wrapper.ts`, `trust.ts`, `result-validation.ts` |
-| **TUI** | `extensibility/extensions/types.ts` (`ExtensionUIContext`) | `ctx.ui.setHeader(factory, opts)` / `setFooter(factory, opts)` — mount a component into the composer's header or footer band. The **controller** owns it, so it outlives the hook that registered it. Reached from a lifecycle hook's `ctx`; `ExtensionAPI` exposes no `ui`, so there is no **load-time** registrar |
+| Surface            | Where the seam lives                                                                                       | Entry an extension reaches                                                                                                                                                                                                                                                               |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tool**           | `packages/coding-agent/src/extensibility/custom-tools/`                                                    | barrel `index.ts` re-exports `loader.ts`, `types.ts`, `wrapper.ts`                                                                                                                                                                                                                       |
+| **Slash command**  | `packages/coding-agent/src/extensibility/custom-commands/`                                                 | barrel `index.ts` re-exports `loader.ts`, `types.ts`; bundled commands under `bundled/`                                                                                                                                                                                                  |
+| **Config key**     | `packages/coding-agent/src/config/registry.ts`, consumed from `extensibility/settings.ts`                  | `register({ id, type, default })` — `settings.ts:6` imports it and re-exports the resulting `cfg*` settings                                                                                                                                                                              |
+| **Lifecycle hook** | `packages/coding-agent/src/extensibility/hooks/`                                                           | barrel re-exports `loader.ts`, `runner.ts`, `tool-wrapper.ts`, `trust.ts`, `result-validation.ts`                                                                                                                                                                                        |
+| **TUI**            | `extensibility/extensions/surface-registry.ts` (`registerSurface`), `extensions/types.ts` (`ExtensionAPI`) | `pi.registerSurface(band, factory, opts?)` — declare a header or footer band at **load** time, before any hook runs. The reactive twin is `ctx.ui.setHeader` / `setFooter`, reached from a lifecycle hook's `ctx`; the controller owns the component either way, so it outlives the hook |
 
-## The TUI seam mounts a band that outlives its hook
+## The TUI seam: one surface policy, two ways to reach it
 
-`ctx.ui.setHeader` / `setFooter` take a **component factory**, and
-`ExtensionUiController.setExtensionSurface` keeps the product in `#extensionHeaders` /
-`#extensionFooters`, keyed by owner. The `ctx` is the factory's *argument*; it is not
-where the component lives. A band registered from a hook therefore stays mounted after
-that hook returns.
+A component reaches the composer's header or footer band by **one** method,
+`ExtensionUiController.setExtensionSurface`, from two directions:
 
-`test/extensions/header-footer-band.test.ts` is what makes that a measurement rather
-than a reading: one row installs a **second** ui context over the first — one with no
-`setHeader` at all — and asserts the band is still in the container. Asserting straight
-after registration cannot tell the two designs apart, because both pass.
+- **At load** — `pi.registerSurface(band, factory, options?)` on `ExtensionAPI`,
+  implemented in `loader.ts`. The declaration goes to `extensionSurfaceRegistry`,
+  a process-global keyed by owner, and `ExtensionUiController` drains it at the
+  head of `initHooksAndCustomTools()`.
+- **From a lifecycle hook** — `ctx.ui.setHeader(factory, opts)` / `setFooter`,
+  which reach the same method directly.
 
-**This section has been wrong twice, in opposite directions**, and both errors are worth
-recording because the file's own rule ("a list that names things which do not exist is
-worse than no list") is what caught them:
+Both land in the same place, so **collision, withdrawal and disposal have exactly
+one implementation**: a key two extensions share keeps both (the second is
+suffixed, a warning names both), and withdrawal is scoped by owner rather than by
+key. The registry is deliberately keyed by **owner**, not by `key` — `key` is a
+label two extensions may share, and keying the registry by it would refuse the
+second one at load with no warning and no band, which is the silent loss the
+collision policy exists to prevent.
+
+Ordering is measured, not assumed: extensions load in `main.ts` before
+`InteractiveMode.init` runs `initHooksAndCustomTools`, so a one-shot drain sees
+every declaration. A subscription could miss one made in between.
+
+`test/extensions/load-time-surface.test.ts` proves the load-time half
+end-to-end — a real `.ts` module written to `os.tmpdir()`, reached only through
+`loadExtensions`, importing nothing from this repo. Removing the drain reds its
+mount rows; removing `registerSurface` from the API object reds the two
+end-to-end rows, which is what makes them a claim about the seam rather than
+about the registry.
+
+**This section was wrong three times before it was right**, and the errors are
+recorded because the file's own rule is what caught them:
 
 - The first draft's TUI row named `loader.ts:599` — a line inside
-  `registerHostRenderStrategy` — and described `registerCopyTargetProvider` as "a copy
-  target, not a panel", then concluded the programme's test passed for *four* of five
-  surfaces. The row named the wrong line, and `programme-acceptance-five-surfaces.test.ts`
-  passes all five.
+  `registerHostRenderStrategy` — described `registerCopyTargetProvider` as "a copy
+  target, not a panel", and concluded the programme's test passed for _four_ of
+  five surfaces. The row named the wrong line, and
+  `programme-acceptance-five-surfaces.test.ts` passes all five.
 - Correcting that produced a second false claim: that there was **no** top-level
   registrar at all. `registerMode` and `registerHostRenderStrategy` both exist on
   `ExtensionAPI` and are both implemented in `loader.ts`.
-- Correcting *that* produced the third: that a panel wanting to persist "has nothing to
-  hold it open with". False — `setHeader`/`setFooter` hold it open. The confusion was
-  between **reactive in time** (declared when an event fires) and **reactive in
-  lifetime** (dies with the hook). Only the first is true.
-
-What survives measurement is narrower and is the only part that is a gap:
-
-- **Reach** — yes. An out-of-repo extension gets a persistent, component-owning surface.
-- **Lifetime** — yes, it outlives the hook.
-- **Declaration time** — **no.** `ExtensionAPI` exposes no `ui`, and none of its
-  `register*` methods registers a surface. A panel that should exist *before any event
-  fires* has no seam to be declared through.
-
-So what is missing is a **load-time** registrar, not a panel registrar. That is a new
-capability, and AGENTS.md's scope discipline says not to open a milestone for one unless
-the owner asks. Naming the absence is what the core-list promise requires; the absence
-itself is the owner's call.
+- Correcting _that_ produced the third: that a panel wanting to persist "has
+  nothing to hold it open with". False — `setHeader`/`setFooter` hold it open. The
+  confusion was between **reactive in time** (declared when an event fires) and
+  **reactive in lifetime** (dies with the hook). Only the first was true, and I
+  used it to deny the second without measuring the second.
+- What survived all three corrections was a real but smaller gap: a panel had no
+  way to be declared **before any event fired**, because `ExtensionAPI` exposed no
+  `ui`. `registerSurface` closes exactly that, and nothing more.
 
 The panels that ship are core-owned and mounted by import, not registration:
 `btw-controller.ts` imports `BtwPanelComponent` and `BtwHistoryPanel` directly, and
@@ -81,10 +90,10 @@ The panels that ship are core-owned and mounted by import, not registration:
 
 Both now exist, so per this file's own rule they are rows and not a note.
 
-| Surface | Where the seam lives | Entry an extension reaches |
-| --- | --- | --- |
-| **Peer transport** | `packages/coding-agent/src/irc/peer-transport.ts` | `registerPeerTransport(impl)` / `unregisterPeerTransport(id)` on `ExtensionAPI` (`extensions/types.ts:1707`, `:1710`); registry `addPeerTransport` (`peer-transport.ts:112`) |
-| **Peer lock backend** | same file | `registerPeerLockBackend(impl)` on `ExtensionAPI`; registry `addPeerLockBackend` (`peer-transport.ts:134`) |
+| Surface               | Where the seam lives                              | Entry an extension reaches                                                                                                                                                   |
+| --------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Peer transport**    | `packages/coding-agent/src/irc/peer-transport.ts` | `registerPeerTransport(impl)` / `unregisterPeerTransport(id)` on `ExtensionAPI` (`extensions/types.ts:1707`, `:1710`); registry `addPeerTransport` (`peer-transport.ts:112`) |
+| **Peer lock backend** | same file                                         | `registerPeerLockBackend(impl)` on `ExtensionAPI`; registry `addPeerLockBackend` (`peer-transport.ts:134`)                                                                   |
 
 Measured 2026-10-04 at HEAD `801b020431`. Proven by
 `packages/coding-agent/test/irc/peer-transport-extension.test.ts`, which writes an
@@ -103,11 +112,11 @@ registers both — core unedited.
 **`PeerTransport.capabilities` is a contract, not documentation.** It exists because
 §15.1 found Claude Code's worst bug (`#87501`): `success: true` for a message that was
 never received. Three Windows bugs share that shape, and the reporter's conclusion was
-*"because every send reports success, no fallback can trigger."* A replaceable transport
+_"because every send reports success, no fallback can trigger."_ A replaceable transport
 makes that easier to write, so `deliverPeerMessage` checks the declaration against the
 outcome **after** the transport returns: an `injected` outcome from a transport declaring
 `injects: false` still yields `refused`, and `unreadUnavailableReason()` makes
-`list --unread` say *why* it is empty rather than returning an array that reads as
+`list --unread` say _why_ it is empty rather than returning an array that reads as
 "no peer has written to you".
 
 A `protocolVersion` that does not match is refused **at load**, and the refusal is scoped

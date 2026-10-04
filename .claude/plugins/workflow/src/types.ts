@@ -48,9 +48,19 @@ export interface WorkflowAgentSnapshot {
  */
 export interface WorkflowSnapshot {
 	name: string;
+	/**
+	 * Phase titles, in order.
+	 *
+	 * Optional rather than required as in the reference (`:42`), because this type is also what
+	 * a caller hands the control tool as a live view, and a caller reporting a run's status has
+	 * no reason to restate its phase list. The manager always sets it; readers must not assume.
+	 */
+	phases?: string[];
 	currentPhase?: string;
 	agents: WorkflowAgentSnapshot[];
 	tokenUsage?: Usage & { cost?: number };
+	/** The durable checkpoint this run is suspended at, when it has one. */
+	checkpoint?: RunCheckpoint;
 }
 
 /**
@@ -64,4 +74,12 @@ export interface RunCheckpoint {
 	checkpointId: string;
 	kind?: string;
 	status?: string;
+	/**
+	 * The controller's answer, once one is attached.
+	 *
+	 * `unknown` because the question is authored by the workflow script: a run may checkpoint on
+	 * "which of these three deploy targets?" and answer with anything JSON-shaped. Narrowing it
+	 * here would be a claim the checkpoint's own author has not made.
+	 */
+	response?: unknown;
 }

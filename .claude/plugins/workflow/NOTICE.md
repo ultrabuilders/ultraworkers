@@ -23,6 +23,7 @@ reproduced below.
 | `src/types.ts`             | `src/display.ts:8` (`WorkflowAgentStatus`), `:10-32` (`WorkflowAgentSnapshot`), `:37-60` (`WorkflowSnapshot`), narrowed to the fields the counting paths read                                                                                 | 3.13.1 @ `3bea96c` |
 | `src/persistence/record-store.ts` | `src/run-record-store.ts:8-19` (`RunSummary`), `:22-40` (`runSummary`)                                                                                                                          | 3.13.1 @ `3bea96c` |
 | `src/tools/workflow-control.ts` | `src/workflow-control-tool.ts` in full (285 lines): `:16-42` (schema), `:78-150` (tool), `:152-182` (`normalizeInput`), `:184-229` (result/error/`allowedActions`), `:231-275` (`summarizeRun`, `countAgents`), `:277-285` (`formatRun`)       | 3.13.1 @ `3bea96c` |
+| `src/manager.ts`          | `src/workflow-manager.ts` (~600 of 2412): `:682-789` (`startInBackground`, incl. the persist-before-observe order and its release-and-delete failure path), `:798` (`runSync`), `:1726-1736` (`pause`), `:1747` (`attachCheckpointResponse`), `:554` (`listLiveRuns`), `:609` (`recoverStaleRuns`), `:1577` (`persistRun`), `:1600+` (`writeRunToDisk`) | 3.13.1 @ `3bea96c` |
 
 `src/engine/vm.ts`'s `DETERMINISM_PRELUDE` is byte-for-byte identical to the
 reference's, verified by comparing the 16 array elements.
@@ -55,6 +56,23 @@ does) and not as a plugin.
 3. **Registration is not here.** The reference calls `defineTool` and registers in one breath.
    This module RETURNS the definition; handing it to `api.registerTool` belongs to the extension
    entrypoint.
+
+## `src/manager.ts` — the lifecycle, with execution behind a seam
+
+`executeRun`'s body (the VM, the agent bridge, the eleven progress events) is **not** copied; it is
+an injected `deps.execute`. That is a real cut, not a simplification: `startInBackground`'s
+ORDERING is the property this bead exists to get right, and an ordering cannot be tested against a
+1,500-line executor any more cheaply than against an injected one. The default REJECTS rather than
+returning a completed result, so an unwired manager fails loudly instead of reporting runs that
+never ran.
+
+`schedulePersist` (`:1524`) is copied in shape but deferred: its only caller is `executeRun`'s
+progress handler, so shipping it now would be an unreachable private method. `persistRun` — the
+write path the lifecycle actually reaches — is here.
+
+Storage is the injected `WorkflowPersistence` interface rather than `persistence/lease.ts` and the
+journal directly, for the same reason: the ordering is the property, and the ordering is only
+observable when storage is substitutable.
 
 ---
 

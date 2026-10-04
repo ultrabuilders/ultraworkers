@@ -297,8 +297,7 @@ describe("rules column", () => {
 		// This is also the only coverage `keep-ref-shape` had: the rule was emitted and
 		// never asserted, so it was a guard nobody had proven able to fire.
 		const root = await tree(FILES);
-		const prose =
-			"This is not a keep ref, it is a whole justification paragraph that happens to be non-empty.";
+		const prose = "This is not a keep ref, it is a whole justification paragraph that happens to be non-empty.";
 		const violations = await checkPre(root, [row_("src/a.ts", 1, "keep-wire", "why", prose)]);
 		expect(violations.map(v => v.rule)).toContain("keep-ref-shape");
 		// The rule is about SHAPE, so it must not fire on a legitimate single token —
@@ -591,9 +590,7 @@ describe("rule tally", () => {
 		// would otherwise be tallied like any other, and the tally is exactly what a
 		// reader trusts to name every distinct problem — so a renamed rule would hide
 		// inside the summary, and the ratchet's ceiling is computed from those counts.
-		expect(() => tallyByRule([v("stale-row", "x"), v("renamed-by-mistake", "y")])).toThrow(
-			/not in RULES/,
-		);
+		expect(() => tallyByRule([v("stale-row", "x"), v("renamed-by-mistake", "y")])).toThrow(/not in RULES/);
 		// And the vocabulary is not decorative: every rule it names must be one this
 		// gate can actually produce, or the guard above rejects the gate's own output.
 		for (const rule of RULES) expect([...tallyByRule([v(rule, "x")])]).toEqual([[rule, 1]]);

@@ -180,9 +180,7 @@ const FOCUSED_VIEW_COMMAND_LIST = Object.keys(FOCUSED_VIEW_COMMANDS)
 function looksLikePastedShellPrompt(code: string): boolean {
 	const firstLine = code.split("\n", 1)[0]?.trimStart() ?? "";
 	return (
-		SHELL_PROMPT_COMMAND_RE.test(firstLine) ||
-		SHELL_PROMPT_OPERATOR_RE.test(firstLine) ||
-		STATUS_LINE_RE.test(code)
+		SHELL_PROMPT_COMMAND_RE.test(firstLine) || SHELL_PROMPT_OPERATOR_RE.test(firstLine) || STATUS_LINE_RE.test(code)
 	);
 }
 

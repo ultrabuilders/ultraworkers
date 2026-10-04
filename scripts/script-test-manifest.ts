@@ -129,6 +129,12 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// verdict string, and its live run shells out to the gate it is checking.
 	{ file: "check-baseline-gate-admissible.test.ts", reason: "" },
 	{ file: "census-host-guard-producers.test.ts", reason: "" },
+	// Layer 1 of the extension-seam guard (`epic-dynamic-workflows-259n.1`): an extension may
+	// not cost a line of core. Registered because its falsifier row is the whole point — the
+	// bead requires proving the guard can FAIL, and a test that proves a gate can fail is
+	// worthless if nothing runs it. Runs against real temp repositories, since the property
+	// is what `git diff <base>...HEAD` reports for a tree, which a stub would not cover.
+	{ file: "check-extension-core-diff.test.ts", reason: "" },
 	// The subdirectory tests. `onDiskTestFiles` read only the top level, so every
 	// file below was on disk, classified by nobody, and executed by nothing — the
 	// same defect `TEST_EXTENSIONS` was widened for in 1814e9fbad, along the

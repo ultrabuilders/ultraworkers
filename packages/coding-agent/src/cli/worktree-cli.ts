@@ -28,7 +28,7 @@ import { formatIsolationBackend, parseIsolationBackend } from "../task/worktree"
 
 import { cfgIsolationBackend, cfgWorktreeClone } from "../task/settings";
 
-type WorktreeKind = "pr-checkout" | "task-isolation" | "empty" | "stray";
+type WorktreeKind = "pr-checkout" | "task-isolation" | "empty" | "stray" | "unmanaged";
 
 const TASK_ISOLATION_MOUNT_DIRS = ["m", "merged"] as const;
 
@@ -43,6 +43,13 @@ export interface WorktreeEntry {
 	branch?: string;
 	/** When set, the entry is unhealthy and `ultraworkers worktree clear` will remove it. */
 	orphanReason?: string;
+	/**
+	 * Git tracks this worktree but it lives outside {@link getWorktreesDir}, so the
+	 * managed-root scan cannot classify it and `clear` will not touch it. Reported by
+	 * `list` because a garbage collector that cannot see most of the garbage reports
+	 * a clean sweep.
+	 */
+	unmanaged?: boolean;
 }
 
 export interface AddWorktreeOptions {
@@ -57,6 +64,8 @@ export interface AddWorktreeOptions {
 
 export interface ListWorktreesOptions {
 	json: boolean;
+	/** Repository to report against. Defaults to the process cwd. */
+	cwd?: string;
 }
 
 export interface ClearWorktreesOptions {
@@ -65,6 +74,8 @@ export interface ClearWorktreesOptions {
 	/** Print what would be removed without touching the filesystem. */
 	dryRun: boolean;
 	json: boolean;
+	/** Repository to report against. Defaults to the process cwd. */
+	cwd?: string;
 }
 /**
  * Run native teardown on a retained workspace before recursive removal.
@@ -163,8 +174,72 @@ export async function addWorktree(options: AddWorktreeOptions): Promise<void> {
 	}
 }
 
+/**
+ * Worktrees git tracks that the managed-root scan cannot see.
+ *
+ * {@link scanWorktrees} enumerates {@link getWorktreesDir}, so a worktree created
+ * anywhere else — `git worktree add` by hand, a task runner, an older install — is
+ * invisible to `list` and unreachable by `clear`. On this repository that was 14 of 15,
+ * and six of the fifteen were dead registrations the collector could not touch.
+ *
+ * The repository's own root is excluded: it is the main worktree, not a stray, and
+ * listing it would report the directory you are standing in as something to clean up.
+ */
+/**
+ * Compare paths the way the filesystem sees them.
+ *
+ * Git reports realpaths; a managed scan reports whatever `getWorktreesDir()` spelled,
+ * and on macOS those differ for anything under `/var` (`/private/var`). Comparing the
+ * raw strings makes an identical directory look like two, which would double-report
+ * every managed worktree on that platform.
+ */
+async function canonical(p: string): Promise<string> {
+	try {
+		return await fs.realpath(p);
+	} catch {
+		return path.resolve(p);
+	}
+}
+
+async function listUnmanagedWorktrees(known: readonly WorktreeEntry[], cwd: string): Promise<WorktreeEntry[]> {
+	const repo = vcs.git(cwd);
+	if (!repo) return [];
+	let tracked: Awaited<ReturnType<typeof repo.worktrees>>;
+	try {
+		tracked = await repo.worktrees();
+	} catch {
+		// No repository, or git refused. The managed scan is still the truth about what
+		// is on disk; reporting "git knows of nothing" here would be its own kind of lie.
+		return [];
+	}
+	const seen = new Set(await Promise.all(known.map(e => canonical(e.path))));
+	const repoRoot = await canonical(repo.info().repoRoot);
+	const out: WorktreeEntry[] = [];
+	for (const entry of tracked) {
+		const resolved = path.resolve(entry.path);
+		const canonicalPath = await canonical(resolved);
+		if (canonicalPath === repoRoot || seen.has(canonicalPath)) continue;
+		const present = await fs
+			.stat(resolved)
+			.then(s => s.isDirectory())
+			.catch(() => false);
+		out.push({
+			path: resolved,
+			kind: "unmanaged",
+			unmanaged: true,
+			...(entry.branch ? { branch: entry.branch.replace(/^refs\/heads\//, "") } : {}),
+			// A registration whose directory is gone is exactly what `git worktree prune`
+			// exists to clear. The managed `clear` cannot reach it, so reporting it as
+			// merely-present would understate the mess.
+			...(present ? {} : { orphanReason: "directory is gone; git still holds the registration" }),
+		});
+	}
+	return out;
+}
+
 export async function listWorktrees(options: ListWorktreesOptions): Promise<void> {
-	const entries = await scanWorktrees();
+	const managed = await scanWorktrees();
+	const entries = [...managed, ...(await listUnmanagedWorktrees(managed, options.cwd ?? process.cwd()))];
 	if (options.json) {
 		console.log(JSON.stringify(entries, null, 2));
 		return;
@@ -188,25 +263,39 @@ export async function listWorktrees(options: ListWorktreesOptions): Promise<void
 
 export async function clearWorktrees(options: ClearWorktreesOptions): Promise<{ removed: number; failed: number }> {
 	const entries = await scanWorktrees();
+	// "all" means all of the managed root, which is not all of git. Saying so is the
+	// difference between a collector that reports a clean sweep and one that reports
+	// what it actually covered.
+	const unreachable = await listUnmanagedWorktrees(entries, options.cwd ?? process.cwd());
+	const unreachableNote =
+		unreachable.length > 0
+			? chalk.yellow(
+					`${unreachable.length} worktree(s) git tracks live outside ${getWorktreesDir()} and were not touched — run \`git worktree prune\` for the dead ones`,
+				)
+			: undefined;
 	const targets = options.all ? entries : entries.filter(entry => entry.orphanReason !== undefined);
 
 	if (targets.length === 0) {
 		if (options.json) {
-			console.log(JSON.stringify({ removed: 0, kept: entries.length }));
+			console.log(JSON.stringify({ removed: 0, kept: entries.length, unreachable: unreachable.length }));
 		} else {
 			console.log(chalk.dim(options.all ? "No worktrees to remove." : "No orphaned worktrees to remove."));
+			if (unreachableNote) console.log(unreachableNote);
 		}
 		return { removed: 0, failed: 0 };
 	}
 
 	if (options.dryRun) {
 		if (options.json) {
-			console.log(JSON.stringify({ wouldRemove: targets.map(t => t.path) }, null, 2));
+			console.log(
+				JSON.stringify({ wouldRemove: targets.map(t => t.path), unreachable: unreachable.length }, null, 2),
+			);
 		} else {
 			for (const target of targets) {
 				console.log(`${chalk.yellow("would remove")}  ${target.path}`);
 			}
 			console.log(chalk.dim(`\n${targets.length} dir${targets.length === 1 ? "" : "s"} would be removed.`));
+			if (unreachableNote) console.log(unreachableNote);
 		}
 		return { removed: 0, failed: 0 };
 	}
@@ -248,7 +337,7 @@ export async function clearWorktrees(options: ClearWorktreesOptions): Promise<{ 
 	const failed = results.length - succeeded;
 
 	if (options.json) {
-		console.log(JSON.stringify({ removed: succeeded, failed, results }, null, 2));
+		console.log(JSON.stringify({ removed: succeeded, failed, results, unreachable: unreachable.length }, null, 2));
 		return { removed: succeeded, failed };
 	}
 
@@ -261,6 +350,7 @@ export async function clearWorktrees(options: ClearWorktreesOptions): Promise<{ 
 		}
 	}
 	console.log(chalk.dim(`\n${succeeded} removed${failed > 0 ? ` · ${chalk.red(`${failed} failed`)}` : ""}`));
+	if (unreachableNote) console.log(unreachableNote);
 	return { removed: succeeded, failed };
 }
 
@@ -414,6 +504,8 @@ function formatEntryDetail(entry: WorktreeEntry): string {
 		parts.push("task-isolation sandbox");
 	} else if (entry.kind === "empty") {
 		parts.push("legacy project shell");
+	} else if (entry.kind === "unmanaged") {
+		parts.push("outside the managed worktrees root");
 	} else {
 		parts.push("unrecognized contents");
 	}

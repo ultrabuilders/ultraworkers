@@ -556,20 +556,20 @@ describe("listClaudePluginRoots", () => {
 	});
 
 	test("loads ultraworkers user skills without opting into foreign Claude skills", async () => {
-		const ompPluginPath = path.join(tempDir, "plugins", "omp-owned");
+		const ompPluginPath = path.join(tempDir, "plugins", "ultraworkers-owned");
 		const claudePluginPath = path.join(tempDir, "plugins", "claude-owned");
 		const ompRegistryPath = path.join(tempDir, ".omp", "plugins", "installed_plugins.json");
 		const claudeRegistryPath = path.join(tempDir, ".claude", "plugins", "installed_plugins.json");
 		await Promise.all([
-			fs.mkdir(path.join(ompPluginPath, "skills", "omp-demo"), { recursive: true }),
+			fs.mkdir(path.join(ompPluginPath, "skills", "ultraworkers-demo"), { recursive: true }),
 			fs.mkdir(path.join(claudePluginPath, "skills", "claude-demo"), { recursive: true }),
 			fs.mkdir(path.dirname(ompRegistryPath), { recursive: true }),
 			fs.mkdir(path.dirname(claudeRegistryPath), { recursive: true }),
 		]);
 		await Promise.all([
 			fs.writeFile(
-				path.join(ompPluginPath, "skills", "omp-demo", "SKILL.md"),
-				"---\nname: omp-demo\ndescription: ultraworkers skill\n---\nBody\n",
+				path.join(ompPluginPath, "skills", "ultraworkers-demo", "SKILL.md"),
+				"---\nname: ultraworkers-demo\ndescription: ultraworkers skill\n---\nBody\n",
 			),
 			fs.writeFile(
 				path.join(claudePluginPath, "skills", "claude-demo", "SKILL.md"),
@@ -580,7 +580,7 @@ describe("listClaudePluginRoots", () => {
 				JSON.stringify({
 					version: 2,
 					plugins: {
-						"omp-owned@market": [{ scope: "user", installPath: ompPluginPath, version: "1.0.0" }],
+						"ultraworkers-owned@market": [{ scope: "user", installPath: ompPluginPath, version: "1.0.0" }],
 					},
 				}),
 			),
@@ -597,29 +597,29 @@ describe("listClaudePluginRoots", () => {
 
 		const result = await loadCapability<Skill>("skills", { cwd: tempDir });
 
-		expect(result.all.find(skill => skill.name === "omp-demo")?._source.provider).toBe("claude-plugins");
+		expect(result.all.find(skill => skill.name === "ultraworkers-demo")?._source.provider).toBe("claude-plugins");
 		expect(result.all.find(skill => skill.name === "claude-demo")).toBeUndefined();
 	});
 
-	test("loadSkills surfaces omp-installed plugin skills without enabling the Claude source", async () => {
+	test("loadSkills surfaces ultraworkers-installed plugin skills without enabling the Claude source", async () => {
 		// Regression (#10743): #10666 fixed allowedRoots() to keep user-scope roots
 		// with origin !== "claude", but isSourceEnabled() in extensibility/skills.ts
 		// re-dropped them via isUserSourceEnabled("claude-plugins"). The origin now
 		// rides SourceMeta, so the foreign gate applies only to claude-origin roots.
-		const ompPluginPath = path.join(tempDir, "plugins", "omp-owned");
+		const ompPluginPath = path.join(tempDir, "plugins", "ultraworkers-owned");
 		const claudePluginPath = path.join(tempDir, "plugins", "claude-owned");
 		const ompRegistryPath = path.join(tempDir, ".omp", "plugins", "installed_plugins.json");
 		const claudeRegistryPath = path.join(tempDir, ".claude", "plugins", "installed_plugins.json");
 		await Promise.all([
-			fs.mkdir(path.join(ompPluginPath, "skills", "omp-demo"), { recursive: true }),
+			fs.mkdir(path.join(ompPluginPath, "skills", "ultraworkers-demo"), { recursive: true }),
 			fs.mkdir(path.join(claudePluginPath, "skills", "claude-demo"), { recursive: true }),
 			fs.mkdir(path.dirname(ompRegistryPath), { recursive: true }),
 			fs.mkdir(path.dirname(claudeRegistryPath), { recursive: true }),
 		]);
 		await Promise.all([
 			fs.writeFile(
-				path.join(ompPluginPath, "skills", "omp-demo", "SKILL.md"),
-				"---\nname: omp-demo\ndescription: ultraworkers skill\n---\nBody\n",
+				path.join(ompPluginPath, "skills", "ultraworkers-demo", "SKILL.md"),
+				"---\nname: ultraworkers-demo\ndescription: ultraworkers skill\n---\nBody\n",
 			),
 			fs.writeFile(
 				path.join(claudePluginPath, "skills", "claude-demo", "SKILL.md"),
@@ -630,7 +630,7 @@ describe("listClaudePluginRoots", () => {
 				JSON.stringify({
 					version: 2,
 					plugins: {
-						"omp-owned@market": [{ scope: "user", installPath: ompPluginPath, version: "1.0.0" }],
+						"ultraworkers-owned@market": [{ scope: "user", installPath: ompPluginPath, version: "1.0.0" }],
 					},
 				}),
 			),
@@ -646,27 +646,27 @@ describe("listClaudePluginRoots", () => {
 		]);
 
 		// enabledProviders unset (beforeEach disables the claude-plugins/claude
-		// user sources): the omp-origin skill must still load; the claude-origin
+		// user sources): the ultraworkers-origin skill must still load; the claude-origin
 		// one must stay opt-in.
 		const { skills } = await loadSkills({ cwd: tempDir });
 
-		expect(skills.map(s => s.name)).toContain("omp-demo");
+		expect(skills.map(s => s.name)).toContain("ultraworkers-demo");
 		expect(skills.map(s => s.name)).not.toContain("claude-demo");
 	});
 
-	test("dashboard marks omp-origin plugin capabilities active without enabling the Claude source (#12776)", async () => {
+	test("dashboard marks ultraworkers-origin plugin capabilities active without enabling the Claude source (#12776)", async () => {
 		// Regression (#12776): the loader exempts ~/.omp/plugins marketplace roots
 		// (origin !== "claude") from the foreign user opt-in gate, but the
 		// /extensions dashboard's resolveState re-dropped them as "user-opt-in".
-		// The omp-origin skill AND rule must render active; the claude-origin skill
+		// The ultraworkers-origin skill AND rule must render active; the claude-origin skill
 		// must stay opt-in disabled. The rule proves origin now rides the
 		// non-skill _source built by loadFilesFromDir, not just skills.
-		const ompPluginPath = path.join(tempDir, "plugins", "omp-owned");
+		const ompPluginPath = path.join(tempDir, "plugins", "ultraworkers-owned");
 		const claudePluginPath = path.join(tempDir, "plugins", "claude-owned");
 		const ompRegistryPath = path.join(tempDir, ".omp", "plugins", "installed_plugins.json");
 		const claudeRegistryPath = path.join(tempDir, ".claude", "plugins", "installed_plugins.json");
 		await Promise.all([
-			fs.mkdir(path.join(ompPluginPath, "skills", "omp-demo"), { recursive: true }),
+			fs.mkdir(path.join(ompPluginPath, "skills", "ultraworkers-demo"), { recursive: true }),
 			fs.mkdir(path.join(ompPluginPath, "rules"), { recursive: true }),
 			fs.mkdir(path.join(claudePluginPath, "skills", "claude-demo"), { recursive: true }),
 			fs.mkdir(path.dirname(ompRegistryPath), { recursive: true }),
@@ -674,11 +674,11 @@ describe("listClaudePluginRoots", () => {
 		]);
 		await Promise.all([
 			fs.writeFile(
-				path.join(ompPluginPath, "skills", "omp-demo", "SKILL.md"),
-				"---\nname: omp-demo\ndescription: ultraworkers skill\n---\nBody\n",
+				path.join(ompPluginPath, "skills", "ultraworkers-demo", "SKILL.md"),
+				"---\nname: ultraworkers-demo\ndescription: ultraworkers skill\n---\nBody\n",
 			),
 			fs.writeFile(
-				path.join(ompPluginPath, "rules", "omp-rule.md"),
+				path.join(ompPluginPath, "rules", "ultraworkers-rule.md"),
 				"---\ndescription: ultraworkers rule\n---\nBody\n",
 			),
 			fs.writeFile(
@@ -690,7 +690,7 @@ describe("listClaudePluginRoots", () => {
 				JSON.stringify({
 					version: 2,
 					plugins: {
-						"omp-owned@market": [{ scope: "user", installPath: ompPluginPath, version: "1.0.0" }],
+						"ultraworkers-owned@market": [{ scope: "user", installPath: ompPluginPath, version: "1.0.0" }],
 					},
 				}),
 			),
@@ -706,8 +706,8 @@ describe("listClaudePluginRoots", () => {
 		]);
 
 		const extensions = await loadAllExtensions(tempDir);
-		const ompSkill = extensions.find(e => e.id === "skill:omp-demo");
-		const ompRule = extensions.find(e => e.id === "rule:omp-rule");
+		const ompSkill = extensions.find(e => e.id === "skill:ultraworkers-demo");
+		const ompRule = extensions.find(e => e.id === "rule:ultraworkers-rule");
 		const claudeSkill = extensions.find(e => e.id === "skill:claude-demo");
 
 		expect(ompSkill?.state).toBe("active");

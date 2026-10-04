@@ -27,7 +27,7 @@
  * resumes from the middle is how a run loses state without anyone being told.
  */
 import * as fs from "node:fs/promises";
-import { type Entry, type Head, type PersistedRunState, applyDelta, isHead } from "./journal-delta";
+import { type Entry, type Head, type JournalState, applyDelta, isHead } from "./journal-delta";
 
 export type AgentSettler = (agents: unknown[], cause: string, atIso: string) => unknown[];
 
@@ -66,10 +66,7 @@ function parseLine(raw: string): Head | Entry | undefined {
  * line is for), a DELTA is applied on top. Returns `undefined` when the file does not exist —
  * a run with no journal yet is not an error, it is a run that has not started.
  */
-export async function loadRunState(
-	runPath: string,
-	settleAgents?: AgentSettler,
-): Promise<PersistedRunState | undefined> {
+export async function loadRunState(runPath: string, settleAgents?: AgentSettler): Promise<JournalState | undefined> {
 	let text: string;
 	try {
 		text = await fs.readFile(journalPathFor(runPath), "utf8");
@@ -79,7 +76,7 @@ export async function loadRunState(
 	}
 
 	const lines = text.split("\n");
-	const state: PersistedRunState = {};
+	const state: JournalState = {};
 	let applied = 0;
 	let torn = false;
 

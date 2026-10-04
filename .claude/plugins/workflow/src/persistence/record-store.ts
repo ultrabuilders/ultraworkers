@@ -19,14 +19,14 @@
  * go stale, because a state that changed is a different object. Keying it by runId instead would
  * be the bug this shape avoids.
  */
-import type { PersistedRunState } from "../engine/journal-delta";
+import type { JournalState } from "../engine/journal-delta";
 import type { RunCheckpoint } from "../types";
 import { type TokenFigures, type Usage, aggregateAgentUsage } from "../usage";
 
 /**
  * The persisted agent fields this summary counts over.
  *
- * A structural read of `PersistedRunState["agents"]`, which is `unknown[]` — the journal stores
+ * A structural read of `JournalState["agents"]`, which is `unknown[]` — the journal stores
  * whatever the run wrote. Every field is optional because a half-written agent (the crash case
  * this file exists for) can be missing any of them.
  */
@@ -58,10 +58,10 @@ export interface RunSummary {
 	usage: TokenFigures;
 }
 
-const summaries = new WeakMap<PersistedRunState, RunSummary>();
+const summaries = new WeakMap<JournalState, RunSummary>();
 
 /** Narrow the persisted agent list to the records this summary can count. */
-function agentRecords(state: PersistedRunState): PersistedAgentRecord[] {
+function agentRecords(state: JournalState): PersistedAgentRecord[] {
 	if (!Array.isArray(state.agents)) return [];
 	return state.agents.filter((agent): agent is PersistedAgentRecord => !!agent && typeof agent === "object");
 }
@@ -74,7 +74,7 @@ function agentRecords(state: PersistedRunState): PersistedAgentRecord[] {
  * and dropping it here means one malformed entry costs one agent's count rather than the whole
  * summary.
  */
-export function runSummary(state: PersistedRunState): RunSummary {
+export function runSummary(state: JournalState): RunSummary {
 	const cached = summaries.get(state);
 	if (cached) return cached;
 	const agents = agentRecords(state);

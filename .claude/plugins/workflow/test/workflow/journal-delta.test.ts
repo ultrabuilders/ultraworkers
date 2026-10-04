@@ -15,11 +15,11 @@
  * must be loud rather than dropped.
  */
 import { describe, expect, test } from "bun:test";
-import { type PersistedRunState, applyDelta, cellsOf, deltaOf } from "../../src/engine/journal-delta";
+import { type JournalState, applyDelta, cellsOf, deltaOf } from "../../src/engine/journal-delta";
 import { WorkflowErrorCode } from "../../src/errors";
 
 /** The algebra, applied the way the journal does: cells -> delta -> replay. */
-function rebase(before: PersistedRunState, after: PersistedRunState): PersistedRunState {
+function rebase(before: JournalState, after: JournalState): JournalState {
 	const state = structuredClone(before);
 	applyDelta(state, deltaOf(cellsOf(before), cellsOf(after)));
 	return state;
@@ -33,13 +33,13 @@ describe("journal delta", () => {
 		// which patches keys rather than replacing), and `retries` is DROPPED so the `remove`
 		// path runs. A round trip that passes while one of them is broken means resume would
 		// silently lose exactly that part of a run.
-		const before: PersistedRunState = {
+		const before: JournalState = {
 			status: "running",
 			agents: [{ id: "a1" }],
 			budget: { total: 10, spent: 4 },
 			retries: 1,
 		};
-		const after: PersistedRunState = {
+		const after: JournalState = {
 			status: "done",
 			agents: [{ id: "a1" }, { id: "a2" }],
 			budget: { total: 10, spent: 7 },
@@ -54,7 +54,7 @@ describe("journal delta", () => {
 		// every reader would see a write where there was none, which is exactly the signal a
 		// journal is supposed to carry. A key explicitly set to `undefined` counts as absent:
 		// it is the same state, not a transition to null.
-		const state: PersistedRunState = { status: "running", dropped: "x" };
+		const state: JournalState = { status: "running", dropped: "x" };
 		const delta = deltaOf(cellsOf(state), cellsOf({ status: "running", dropped: undefined }));
 
 		expect(delta.remove).toEqual(["dropped"]);
@@ -78,7 +78,7 @@ describe("journal delta", () => {
 		// an interrupted agent should be settled at a known instant. Dropping it because the
 		// settler has not landed yet would leave that agent interrupted forever, with nothing
 		// in any log saying so. A loud failure is recoverable; a silently dropped step is not.
-		const state: PersistedRunState = { agents: [{ id: "a1", status: "interrupted" }] };
+		const state: JournalState = { agents: [{ id: "a1", status: "interrupted" }] };
 
 		expect(() =>
 			applyDelta(state, { settleAgentsAt: "2026-10-04T00:00:00Z", set: {}, remove: [], arrays: {} }),
@@ -101,7 +101,7 @@ describe("journal delta", () => {
 		// message keeps working right up until someone rewords the sentence for readability, and
 		// then it stops working with no type error and no failing test anywhere. So this asserts
 		// the code, and not the wording, because the code is the part meant to be relied on.
-		const state: PersistedRunState = { agents: [{ id: "a1", status: "interrupted" }] };
+		const state: JournalState = { agents: [{ id: "a1", status: "interrupted" }] };
 		const settleAgentsAt = "2026-10-04T00:00:00Z";
 
 		let thrown: unknown;
@@ -122,7 +122,7 @@ describe("journal delta", () => {
 		// WHY refuse: a journal is read back on a machine we do not control, and a bad index
 		// means the file is not the file we wrote. Clamping would extend the array to a length
 		// the writer never recorded, and resume would carry a state no run ever had.
-		const state: PersistedRunState = { agents: [1] };
+		const state: JournalState = { agents: [1] };
 
 		expect(() =>
 			applyDelta(state, { set: {}, remove: [], arrays: { agents: { length: 1, set: [[5, "ghost"]] } } }),

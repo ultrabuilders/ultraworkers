@@ -46,8 +46,18 @@ export const FORMAT = "ultraworkers-workflow-run-v1";
 export const MAX_CACHE_ENTRIES = 8;
 export const MAX_CACHE_BYTES = 16 * 1024 * 1024;
 
-/** A run state: flat, with arrays and plain objects as the only nested shapes. */
-export type PersistedRunState = Record<string, unknown>;
+/**
+ * A run state: flat, with arrays and plain objects as the only nested shapes.
+ *
+ * NAMED `JournalState`, not `PersistedRunState`, and that is load-bearing. The reference
+ * deliberately leaves this layer **unnamed** — its `run-record-store.ts` writes
+ * `applyDelta(state: Record<string, unknown>, …)` inline — because the name
+ * `PersistedRunState` belongs to the rich on-disk record in `run-persistence.ts`. Porting this
+ * half first and naming it after the other half produced two same-named types with different
+ * shapes, which compiles fine and misbehaves the moment a file imports the wrong one. The
+ * reference avoids that by keeping only the RICH layer named; so does this tree.
+ */
+export type JournalState = Record<string, unknown>;
 
 /**
  * One leaf value, pre-stringified. An array stays a `string[]` (diffed by index); a plain
@@ -83,7 +93,7 @@ export interface Head {
 	format: typeof FORMAT;
 	generation: string;
 	sequence: number;
-	state: PersistedRunState;
+	state: JournalState;
 }
 
 export function isHead(value: unknown): value is Head {
@@ -105,7 +115,7 @@ export function digest(line: string): string {
  * scalar to `JSON.stringify`, so treating it as a Map would compare its serialized form
  * against per-key json and never match.
  */
-export function cellsOf(state: PersistedRunState): Cells {
+export function cellsOf(state: JournalState): Cells {
 	const cells: Cells = new Map();
 	for (const [key, value] of Object.entries(state)) {
 		if (value === undefined) continue;
@@ -175,7 +185,7 @@ export type AgentSettler = (agents: unknown[], cause: string, atIso: string) => 
  * then object patches, then arrays. A removal before a set would resurrect a deleted key via
  * the set; an array patch before its removal would write into an array that is about to go.
  */
-export function applyDelta(state: PersistedRunState, delta: Delta, settleAgents?: AgentSettler): void {
+export function applyDelta(state: JournalState, delta: Delta, settleAgents?: AgentSettler): void {
 	if (delta.settleAgentsAt) {
 		if (!settleAgents) {
 			throw new WorkflowError(

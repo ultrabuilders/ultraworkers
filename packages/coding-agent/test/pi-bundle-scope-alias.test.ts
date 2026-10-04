@@ -45,7 +45,6 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
-	__buildLegacyPiPackageRootOverrides,
 	__legacyPiBundledPackageNames,
 	__remapLegacyPiSpecifierForTests,
 } from "../src/extensibility/plugins/legacy-pi-compat";
@@ -68,28 +67,6 @@ async function findManifests(): Promise<string[]> {
 
 async function readManifest(relativePath: string): Promise<PackageManifest> {
 	return (await Bun.file(path.join(REPO_ROOT, relativePath)).json()) as PackageManifest;
-}
-
-function scopeOf(packageName: string): string {
-	return packageName.slice(0, packageName.indexOf("/") + 1);
-}
-
-/**
- * The scope the shim actually serves, read off its own canonical specifiers.
- *
- * `CANONICAL_PI_SCOPE` is module-private, but every key this builder emits is
- * the canonical scope joined to a package basename — so the keys carry the
- * constant without the test restating it. Non-bundled mode emits the three
- * compat roots and nothing else, which is enough to read the scope off.
- */
-function canonicalScopeFromShim(): string {
-	const specifiers = Object.keys(__buildLegacyPiPackageRootOverrides(false));
-	if (specifiers.length === 0) throw new Error("shim produced no canonical specifiers");
-	const scopes = new Set(specifiers.map(specifier => scopeOf(specifier)));
-	if (scopes.size !== 1) {
-		throw new Error(`shim serves more than one scope: ${[...scopes].sort().join(", ")}`);
-	}
-	return [...scopes][0]!;
 }
 
 describe("canonical pi scope vs declared package names", () => {
@@ -120,10 +97,9 @@ describe("canonical pi scope vs declared package names", () => {
 	});
 
 	test("every package the shim rewrites is reachable to the shim", async () => {
-		const canonical = canonicalScopeFromShim();
 		const bundled = new Set(__legacyPiBundledPackageNames());
 		const escaped: string[] = [];
-		const mislanded: string[] = [];
+		const unresolvable: string[] = [];
 
 		for (const relativePath of await findManifests()) {
 			const { name } = await readManifest(relativePath);
@@ -133,11 +109,25 @@ describe("canonical pi scope vs declared package names", () => {
 			// filter declines is invisible to the rewrite, and that is the whole
 			// defect this row exists to catch.
 			const rewritten = __remapLegacyPiSpecifierForTests(name!);
-			if (rewritten === null) escaped.push(`${name!} (${relativePath})`);
-			else if (scopeOf(rewritten) !== canonical) mislanded.push(`${name!} → ${rewritten}`);
+			if (rewritten === null) {
+				escaped.push(`${name!} (${relativePath})`);
+				continue;
+			}
+			// …and the rewritten specifier has to resolve to a real file. ONE
+			// canonical scope is not the contract: `chord` publishes as
+			// `@ultraworkers/chord` while the `pi-*` packages stay under
+			// `@oh-my-pi`. Asserting a single scope is exactly what let `chord`
+			// rewrite to `@oh-my-pi/chord`, which no install can resolve — the
+			// rewrite inspected correct, the gate agreed, and the import still
+			// failed with the *original* specifier in the message.
+			try {
+				Bun.resolveSync(rewritten, import.meta.dir);
+			} catch {
+				unresolvable.push(`${name!} → ${rewritten}`);
+			}
 		}
 
 		expect(escaped).toEqual([]);
-		expect(mislanded).toEqual([]);
+		expect(unresolvable).toEqual([]);
 	});
 });

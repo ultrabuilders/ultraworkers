@@ -823,6 +823,23 @@ const PI_PACKAGE_NAMES = [
 const PI_SCOPE_ALTERNATION = PI_SCOPE_ALIASES.join("|");
 const PI_PACKAGE_ALTERNATION = PI_PACKAGE_NAMES.join("|");
 
+/**
+ * Bundled packages whose published scope is not {@link CANONICAL_PI_SCOPE}.
+ *
+ * `chord` moved out of the `@oh-my-pi` farm and publishes as
+ * `@ultraworkers/chord` — there is no `@oh-my-pi/chord` on disk. Rewriting every
+ * bundled basename onto one scope therefore produced a specifier no install can
+ * resolve, and the failure surfaced as the *original* import failing
+ * (`Cannot find package '@earendil-works/chord'`), which reads like the filter
+ * missed rather than like a scope that does not exist.
+ *
+ * The default stays {@link CANONICAL_PI_SCOPE}; only a package that genuinely
+ * moved is listed here. A name in this map is a claim that the published scope
+ * differs, so adding one needs the package to resolve under the new scope —
+ * an entry that is merely aspirational breaks that one package and nothing else.
+ */
+const PI_PACKAGE_SCOPE_OVERRIDES: ReadonlyMap<string, string> = new Map([["chord", "@ultraworkers"]]);
+
 // Upstream `@mariozechner/*` packages exposed a few subpaths at the package
 // root that we relocated under a different folder. Each entry rewrites
 // `<pkg>/<from>` → `<pkg>/<to>` after the scope has been canonicalised, so
@@ -1081,7 +1098,15 @@ function remapLegacyPiSpecifier(specifier: string): string | null {
 	}
 	const rest = specifier.slice(slashIdx + 1);
 	const remappedSubpath = remapLegacyPiSubpath(rest);
-	return `${CANONICAL_PI_SCOPE}/${remappedSubpath}`;
+	// The scope is per package, not global: `chord` publishes under
+	// `@ultraworkers` while the `pi-*` packages stay under `@oh-my-pi`. See
+	// PI_PACKAGE_SCOPE_OVERRIDES for why a single scope cannot express both.
+	// Split on the FIRST slash: the override key is the bare package name, so
+	// `chord/delta` must look up `chord`, not `chord/`.
+	const packageSlash = remappedSubpath.indexOf("/");
+	const packageRoot = packageSlash === -1 ? remappedSubpath : remappedSubpath.slice(0, packageSlash);
+	const scope = PI_PACKAGE_SCOPE_OVERRIDES.get(packageRoot) ?? CANONICAL_PI_SCOPE;
+	return `${scope}/${remappedSubpath}`;
 }
 
 /**

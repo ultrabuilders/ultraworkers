@@ -146,13 +146,23 @@ describe("the programme's criterion: extension commits carry no core diff", () =
 
 	it("keeps every acknowledged violation real — an entry that no longer applies is a stale exemption", async () => {
 		// Without this, deleting a commit's core half would leave its exemption behind and
-		// the list would rot into a permanent suppression. This row goes RED when an
-		// exemption stops describing anything, which is the signal to remove it.
+		// the list would rot into a permanent suppression.
+		//
+		// AGED OUT IS NOT STALE. `collectOffences()` only yields commits still inside the
+		// `-20` window, so an exemption whose commit has scrolled past is ABSENT from that
+		// map — which the first draft read as "no longer touches packages/". Measured: that
+		// message fired on `3ed65ae6c`, which still touches
+		// `packages/coding-agent/test/goals/completion-falsifiers.test.ts` and is merely the
+		// 22nd commit back. Acting on the message deletes a TRUE exemption, and the offence
+		// it covered would resurface unacknowledged the moment the window widened.
+		//
+		// So the commit is asked about directly, which is the only way to tell the two apart:
+		// `git show` does not care whether the commit is in any window.
 		const offences = new Map((await collectOffences()).map(o => [o.sha, o.paths]));
 		const stale: string[] = [];
 		for (const [sha, paths] of KNOWN_VIOLATIONS) {
-			const actual = offences.get(sha);
-			if (!actual) {
+			const actual = offences.get(sha) ?? (await packagesPathsIn(sha));
+			if (actual.length === 0) {
 				stale.push(`${sha.slice(0, 9)}: no longer touches packages/ — drop the exemption`);
 			} else if (JSON.stringify(actual) !== JSON.stringify(paths)) {
 				stale.push(`${sha.slice(0, 9)}: paths changed — ${JSON.stringify(actual)}`);

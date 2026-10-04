@@ -47,6 +47,15 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// in neither RUN nor EXCLUDED, so `test:scripts` ran nothing of it and refused
 	// to run at all.
 	{ file: "hooks/pre-commit.test.ts", reason: "" },
+	// Step 2 of the same bead, and the half that does not travel with a clone: the guard
+	// above is committed and inert until `core.hooksPath` points at it, and git resolves
+	// hooks from that key rather than from the tree. This file builds a throwaway clone
+	// per row and asserts the OUTCOME — a bare commit is refused and HEAD does not move —
+	// because asserting the config key would pass with the hook file missing, 100644, or
+	// pointing at the wrong directory, which are the three ways this has already failed.
+	// Unregistered since cf01402e9d, so `check:script-tests` refused to run at all; the
+	// rows pass sandboxed (5/5, all git confined to `mkdtemp` clones).
+	{ file: "install-git-hooks.test.ts", reason: "" },
 	{ file: "ci-failure-extract.test.ts", reason: "" },
 	{ file: "ci-release-build-binaries.test.ts", reason: "" },
 	{ file: "ci-release-checksums.test.ts", reason: "" },

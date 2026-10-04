@@ -41,6 +41,8 @@ interface Harness {
 	bridge: IrcBridge;
 	steers: SteerCall[];
 	appended: CustomMessage[];
+	/** Records the bridge handed to `agent.appendMessage` — how a peer body reaches CONTEXT. */
+	appendedToAgent: AgentMessage[];
 	woken: AgentMessage[];
 }
 
@@ -51,9 +53,10 @@ interface Harness {
  * in this file that could open a real user turn, and a host that merely counted records
  * would never see it.
  */
-function makeBridge(options: { streaming?: boolean } = {}): Harness {
+function makeBridge(options: { streaming?: boolean; planMode?: boolean } = {}): Harness {
 	const steers: SteerCall[] = [];
 	const appended: CustomMessage[] = [];
+	const appendedToAgent: AgentMessage[] = [];
 	const woken: AgentMessage[] = [];
 	// IDLE by default, and that is the useful default here: a streaming recipient
 	// parks the record in the bridge's internal interrupt queue, which no public
@@ -66,6 +69,15 @@ function makeBridge(options: { streaming?: boolean } = {}): Harness {
 		agent: {
 			steer: (call: SteerCall) => {
 				steers.push(call);
+			},
+			// The other way a peer body enters, on the plan-mode branch
+			// (`irc-bridge.ts:279`). Present from the start rather than added when a row
+			// first needs it: `planModeEnabled` is `false` throughout this file, so
+			// nothing here reaches that line, and a fake missing this method fails with
+			// `appendMessage is not a function` — an error pointing at the fake rather
+			// than at the harness gap that caused it.
+			appendMessage: (message: AgentMessage) => {
+				appendedToAgent.push(message);
 			},
 		} as unknown as Agent,
 		sessionManager: {
@@ -81,14 +93,14 @@ function makeBridge(options: { streaming?: boolean } = {}): Harness {
 		},
 		isDisposed: () => false,
 		isStreaming: () => streaming,
-		planModeEnabled: () => false,
+		planModeEnabled: () => options.planMode ?? false,
 		emitSessionEvent: async () => {},
 		wakeForIrc: (records: AgentMessage[]) => {
 			woken.push(...records);
 		},
 	} as unknown as IrcBridgeHost;
 
-	return { bridge: new IrcBridge(host), steers, appended, woken };
+	return { bridge: new IrcBridge(host), steers, appended, appendedToAgent, woken };
 }
 
 function message(overrides: Partial<IrcMessage> = {}): IrcMessage {
@@ -117,6 +129,28 @@ describe("a peer message cannot open a user turn", () => {
 		expect(record.role).toBe("custom");
 		expect(record.customType).toBe("irc:incoming");
 		expect(record.attribution).toBe("agent");
+	});
+
+	it("keeps the plan-mode branch — the one that writes inline — off the user-turn path", async () => {
+		// THE THIRD DELIVERY PATH, and the only one this file did not reach. `deliver`
+		// has three exits: a streaming recipient parks the record or steers a parent, an
+		// idle recipient hands it to `wakeForIrc`, and a PLAN-MODE recipient appends it
+		// inline — `agent.appendMessage(record)` at `irc-bridge.ts:279`, immediately
+		// followed by the transcript entry. The rows above covered the first two.
+		//
+		// This one matters because inline is where a peer body enters the live context
+		// with nothing left to schedule: no wake to inspect it, no queue to drain. If the
+		// gate were dropped there, the body would be in the model's input on the very next
+		// request. Asserted on what reached CONTEXT (`appendedToAgent`), which is a
+		// different channel from the transcript entry the other rows read — so this
+		// cannot pass on the transcript alone being correct.
+		const h = makeBridge({ planMode: true });
+
+		await h.bridge.deliver(message());
+
+		expect(h.appendedToAgent).toHaveLength(1);
+		expect(h.appendedToAgent[0]!.role).toBe("custom");
+		expect((h.appendedToAgent[0] as CustomMessage).attribution).toBe("agent");
 	});
 
 	it("keeps a parent steer on role:user pinned to agent attribution", async () => {

@@ -84,12 +84,14 @@ describe("installing the shared-tree guard", () => {
 		const r = Bun.spawnSync(["git", "commit", "-qm", "mine"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
 
 		expect(r.exitCode).toBe(0);
-		expect(Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir, stdout: "pipe" }).stdout.toString().trim()).not.toBe(
-			head,
-		);
 		expect(
-			Bun.spawnSync(["git", "show", "--name-only", "--format=", "HEAD"], { cwd: dir, stdout: "pipe" })
-				.stdout.toString(),
+			Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: dir, stdout: "pipe" }).stdout.toString().trim(),
+		).not.toBe(head);
+		expect(
+			Bun.spawnSync(["git", "show", "--name-only", "--format=", "HEAD"], {
+				cwd: dir,
+				stdout: "pipe",
+			}).stdout.toString(),
 		).toContain("peer.txt");
 	});
 

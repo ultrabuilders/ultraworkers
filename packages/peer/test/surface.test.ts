@@ -51,7 +51,6 @@ function recordSurface(): Recorded {
 	const defs = new Map<string, RecordedTool>();
 	const delivered: Array<{ to: string }> = [];
 	const fences: unknown[] = [];
-	let fenceOffered = false;
 	const api = {
 		arktype: type,
 		registerTool: (def: RecordedTool) => {
@@ -84,7 +83,11 @@ function recordSurface(): Recorded {
 		notify: () => {},
 	});
 
-	return { tools, commands, defs, delivered, fences, fenceOffered: () => fenceOffered };
+	// Derived from `fences`, not from a flag. A `let fenceOffered = false` that
+	// nothing ever assigned reported "no fence" from the one recorder that DID
+	// receive one — a helper that answers the opposite of the truth about its
+	// own input, which is worse than a missing helper.
+	return { tools, commands, defs, delivered, fences, fenceOffered: () => fences.length > 0 };
 }
 
 /**

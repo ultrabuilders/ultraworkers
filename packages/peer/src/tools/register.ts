@@ -50,8 +50,10 @@ export interface PeerToolDeps {
 	/**
 	 * Hand a message to the transport.
 	 *
-	 * A seam rather than a call into core: crossing the process boundary is
-	 * `epic-jwsy.10`, and until it lands this is whatever the host wires in.
+	 * A seam rather than a call into core. The host installs an implementation via
+	 * `ExtensionAPI.registerPeerTransport` (`extensibility/extensions/types.ts`), which
+	 * reaches `addPeerTransport` in the coding-agent's irc layer; until one is installed,
+	 * this is whatever the host wires in.
 	 */
 	readonly deliver: (params: {
 		to: string;

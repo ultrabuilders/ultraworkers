@@ -46,6 +46,7 @@ import {
 import type { EditMode } from "@oh-my-pi/pi-tui/tools/edit";
 import type { AgentSessionEvent } from "./agent-session-events";
 import type { ResetRecoveryResult } from "./codex-auto-reset";
+import type { BranchTransitionOptions } from "./bash-runner";
 import type {
 	InitialRetryFallbackState,
 	UsageFallbackConfirmation,
@@ -262,7 +263,7 @@ export interface TurnRecoveryHost {
 		},
 	): Promise<RecoveryCompactionResult>;
 	shakeForRequestBodyReadTimeout(generation: number): Promise<boolean>;
-	withBashBranchTransition<T>(operation: () => T): T;
+	withBashBranchTransition<T>(operation: () => T, options?: BranchTransitionOptions): T;
 }
 
 /** Construction-time retry state restored from model selection. */
@@ -1236,13 +1237,21 @@ export class TurnRecovery {
 
 		if (!branchEntry) return;
 		const targetParentId = prunePrompt ? parentEntry.parentId : branchEntry.parentId;
-		this.#host.withBashBranchTransition(() => {
-			if (targetParentId === null) {
-				this.#host.sessionManager.resetLeaf();
-			} else {
-				this.#host.sessionManager.branch(targetParentId);
-			}
-		});
+		// `anchorEntryId` is `branchEntry.id`, NOT `getLeafId()`. A turn writes a durable
+		// `phase: "ended"` marker at `turn_end`, so by the time an accepted terminal empty
+		// stop reaches here the leaf is that marker while the assistant entry being
+		// discarded sits beneath it. Anchoring at the leaf parents in-flight bash to the
+		// marker, orphaning the result from the message it belongs with.
+		this.#host.withBashBranchTransition(
+			() => {
+				if (targetParentId === null) {
+					this.#host.sessionManager.resetLeaf();
+				} else {
+					this.#host.sessionManager.branch(targetParentId);
+				}
+			},
+			{ anchorEntryId: branchEntry.id },
+		);
 		this.#host.sessionManager.appendCustomEntry("accepted-terminal-empty-stop");
 	}
 

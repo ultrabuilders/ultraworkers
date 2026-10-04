@@ -1869,7 +1869,7 @@ export class AgentSession implements SettingsScope {
 			runAutoCompaction: (reason, willRetry, deferred, allowDefer, options) =>
 				this.#maintenance.runAutoCompaction(reason, willRetry, deferred, allowDefer, options),
 			shakeForRequestBodyReadTimeout: generation => this.#maintenance.shakeForRequestBodyReadTimeout(generation),
-			withBashBranchTransition: operation => this.#bash.withBranchTransition(operation),
+			withBashBranchTransition: (operation, options) => this.#bash.withBranchTransition(operation, options),
 		};
 		this.#fallbackChainValidationDeferred = config.deferRetryFallbackValidation === true;
 		this.#recovery = new TurnRecovery(recoveryHost, {

@@ -1120,3 +1120,64 @@ describe("the coverage stale-row's silence used to hide", () => {
 		);
 	});
 });
+
+describe("guard falsifier lane (epic-jwsy.14)", () => {
+	const TOKEN = `const n = "omp";\n`;
+
+	/** Every rule this battery proved it can drive to fire. */
+	async function triggered(): Promise<Set<string>> {
+		const seen = new Set<string>();
+		const collect = (vs: readonly { rule: string }[]) => vs.forEach(v => seen.add(v.rule));
+
+		// Per-row reviewability. Each row is otherwise valid, so the rule that fires is
+		// the one the row is built to trip — an unrelated rule firing first would hide it.
+		const perRow = await tree({ "src/a.ts": TOKEN });
+		const prose = "This is a whole justification paragraph rather than a name.";
+		for (const row of [
+			row_("src/a.ts", 1, "keep-wire", ""), // empty-reason
+			row_("src/a.ts", 1, "keep-wire", "why", "N3", "2026-10-02.3"), // rules-drift
+			row_("src/a.ts", 1, "keep-wire", "why"), // missing-keep-refs
+			row_("src/a.ts", 1, "keep-wire", "why", "W999"), // dangling-keep-ref
+			row_("src/a.ts", 1, "keep-wire", "why", prose), // keep-ref-shape
+		]) {
+			collect(await checkPre(perRow, [row]));
+		}
+
+		// A file carrying a pinned hit that no row accounts for.
+		const uncovered = await tree({ "src/a.ts": TOKEN, "src/b.ts": TOKEN });
+		collect(await checkPre(uncovered, [row_("src/a.ts", 1, "rename", "why")]));
+
+		// A row whose file is gone.
+		const gone = await tree({ "src/a.ts": TOKEN });
+		collect(await checkPre(gone, [row_("src/gone.ts", 1, "keep-path", "why")]));
+
+		// A literal class declaring a count the file does not hold.
+		const literal = await tree({ "src/a.ts": `const d = ".omp";\n` });
+		collect(await checkPre(literal, [row_("src/a.ts", 5, "keep-path", "why")]));
+
+		// Pinned rows whose sum misses the file.
+		const pinned = await tree({ "src/a.ts": TOKEN });
+		collect(await checkPre(pinned, [row_("src/a.ts", 7, "rename", "why")]));
+
+		// checkPost: a keep row that shrank, and a rename row that still owes.
+		const post = await tree({ "src/a.ts": TOKEN });
+		collect(await checkPost(post, [row_("src/a.ts", 3, "keep-wire", "why", "N3")]));
+		collect(await checkPost(post, [row_("src/a.ts", 1, "rename", "why")]));
+
+		await Bun.$`rm -rf ${perRow} ${uncovered} ${gone} ${literal} ${pinned} ${post}`.quiet();
+		return seen;
+	}
+
+	it("drives every rule in RULES to fire, so none of them is unfalsifiable", async () => {
+		// `epic-jwsy.14`: a guard nobody has watched go red is a guard whose green means
+		// nothing. Measured on this tree: the corpus itself drives exactly ONE of the
+		// eleven rules, so ten of them could break without the gate ever noticing. This
+		// lane is what makes "the gate is green" a statement about behaviour.
+		//
+		// Fixtures, not a grep over the source: asserting that a rule NAME appears in a
+		// file would pass on a rule that can no longer fire and fail on a rule spelled
+		// slightly differently. Every rule below is driven by running the gate.
+		const seen = await triggered();
+		expect(RULES.filter(rule => !seen.has(rule))).toEqual([]);
+	});
+});

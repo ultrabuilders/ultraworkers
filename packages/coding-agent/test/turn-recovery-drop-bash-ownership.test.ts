@@ -1,24 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import type { BashRunnerHost } from "@oh-my-pi/pi-coding-agent/session/bash-runner";
 import { BashRunner } from "@oh-my-pi/pi-coding-agent/session/bash-runner";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { TurnRecovery } from "@oh-my-pi/pi-coding-agent/session/turn-recovery";
-import type { BashRunnerHost } from "@oh-my-pi/pi-coding-agent/session/bash-runner";
-import type { TurnRecoveryHost } from "@oh-my-pi/pi-coding-agent/session/turn-recovery";
+import { TurnRecovery, type TurnRecoveryHost } from "@oh-my-pi/pi-coding-agent/session/turn-recovery";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { createAssistantMessage } from "./helpers/agent-session-setup";
 
 /**
- * `#dropPersistedAssistantTurn` reparents the branch AWAY from the assistant
- * entry it is dropping. When a bash result is still owned by the session target
- * at that moment, the transition has to know WHICH entry the rewrite displaces —
- * by then `getLeafId()` is the `turn_end` marker written after the assistant
- * message, so the result would be filed under the marker instead of the turn it
- * belongs to.
+ * `#dropPersistedAssistantTurn` reparents the branch AWAY from the assistant entry
+ * it is dropping. When a bash result is still owned by the session target at that
+ * moment, the transition has to know WHICH entry the rewrite displaces — by then
+ * `getLeafId()` is the `turn_end` marker written after the assistant message, so
+ * the result would be filed under the marker instead of the turn it belongs to.
  *
  * `compaction-speculation.test.ts` stubs this method on its host mock and never
- * calls through it, so nothing else in the suite exercises this path. This file
- * wires a real `BashRunner` into a real `SessionManager` so the assertion is on
- * the resulting transcript, not on the option being forwarded.
+ * calls through it, so nothing else in the suite exercises this path. These rows
+ * wire a real `BashRunner` into a real `SessionManager`, so the assertion is on
+ * the resulting transcript rather than on the anchor option being forwarded.
+ *
+ * Production locates the entry two ways — by the persisted entry id the session
+ * stamps onto the message, or failing that by matching the message itself. Both
+ * are covered, because a fallback nobody checks is not a fallback that works.
  */
 
 const bashResult = {
@@ -32,6 +34,11 @@ const bashResult = {
 	outputBytes: 15,
 };
 
+const command = "dropped-turn-command";
+
+/** How the host answers "which persisted entry is this message?" */
+type PersistedIdLookup = (ids: { assistantEntryId: string; turnMarkerId: string }) => string | undefined;
+
 describe("dropPersistedAssistantTurn bash ownership", () => {
 	let tempDir: TempDir;
 
@@ -43,15 +50,15 @@ describe("dropPersistedAssistantTurn bash ownership", () => {
 		tempDir.removeSync();
 	});
 
-	it("parents a still-owned bash result to the dropped assistant entry, not the turn marker", async () => {
+	async function runDrop(lookup: PersistedIdLookup) {
 		const sessionManager = SessionManager.inMemory(tempDir.path());
 		sessionManager.appendMessage({ role: "user", content: "run a command" } as never);
 		const assistantMessage = createAssistantMessage("the turn being dropped");
 		const assistantEntryId = sessionManager.appendMessage(assistantMessage);
 		// The turn marker lands after the assistant message, so from here on
 		// getLeafId() answers "the marker" — never the entry being dropped.
-		sessionManager.appendTurnEntry({ turnIndex: 0, phase: "ended" });
-		expect(sessionManager.getLeafId()).not.toBe(assistantEntryId);
+		const turnMarkerId = sessionManager.appendTurnEntry({ turnIndex: 0, phase: "ended" });
+		expect(sessionManager.getLeafId()).toBe(turnMarkerId);
 
 		const bashHost: BashRunnerHost = {
 			agent: { appendMessage: () => {} } as never,
@@ -63,13 +70,13 @@ describe("dropPersistedAssistantTurn bash ownership", () => {
 		const bash = new BashRunner(bashHost);
 		// Streaming keeps the reference alive instead of releasing it, so the
 		// upcoming transition has a live owner to hand a destination to.
-		bash.recordBashResult("dropped-turn-command", bashResult);
+		bash.recordBashResult(command, bashResult);
 		expect(bash.hasPendingMessages).toBe(true);
 
 		const host = {
 			agent: { state: { messages: [] }, replaceMessages: () => {} } as never,
 			sessionManager,
-			persistedAssistantEntryId: () => undefined,
+			persistedAssistantEntryId: () => lookup({ assistantEntryId, turnMarkerId }),
 			isStreaming: () => true,
 			waitForSessionMessagePersistence: async () => {},
 			withBashBranchTransition: <T>(operation: () => T, options?: { anchorEntryId?: string }): T =>
@@ -77,8 +84,7 @@ describe("dropPersistedAssistantTurn bash ownership", () => {
 		} as unknown as TurnRecoveryHost;
 
 		const recovery = new TurnRecovery(host, { deferFallbackChainValidation: true });
-		const droppedId = await recovery.dropPersistedAssistantTurn(assistantMessage);
-		expect(droppedId).toBe(assistantEntryId);
+		expect(await recovery.dropPersistedAssistantTurn(assistantMessage)).toBe(assistantEntryId);
 
 		await bash.flushPending();
 
@@ -88,23 +94,43 @@ describe("dropPersistedAssistantTurn bash ownership", () => {
 				entry =>
 					entry.type === "message" &&
 					entry.message.role === "bashExecution" &&
-					(entry.message as { command?: string }).command === "dropped-turn-command",
+					(entry.message as { command?: string }).command === command,
 			);
 		expect(bashEntry).toBeDefined();
-		expect(bashEntry?.parentId).toBe(assistantEntryId);
 
-		// The dropped turn is off the live branch; the result must not rejoin it.
-		expect(
-			sessionManager
-				.getBranch()
-				.some(
-					entry =>
-						entry.type === "message" &&
-						entry.message.role === "bashExecution" &&
-						(entry.message as { command?: string }).command === "dropped-turn-command",
-				),
-		).toBe(false);
+		return {
+			sessionManager,
+			assistantEntryId,
+			bashEntryId: bashEntry?.parentId,
+			// The dropped turn left the live branch, so the result must not rejoin it.
+			resultOnLiveBranch: sessionManager.getBranch().some(entry => entry.id === bashEntry?.id),
+		};
+	}
 
+	it("parents the result to the dropped entry when the persisted id resolves it", async () => {
+		const { sessionManager, assistantEntryId, bashEntryId, resultOnLiveBranch } = await runDrop(
+			({ assistantEntryId: id }) => id,
+		);
+		expect(bashEntryId).toBe(assistantEntryId);
+		expect(resultOnLiveBranch).toBe(false);
+		await sessionManager.close();
+	});
+
+	it("falls back to the message match when no persisted id was stamped", async () => {
+		const { sessionManager, assistantEntryId, bashEntryId, resultOnLiveBranch } = await runDrop(() => undefined);
+		expect(bashEntryId).toBe(assistantEntryId);
+		expect(resultOnLiveBranch).toBe(false);
+		await sessionManager.close();
+	});
+
+	it("falls back to the message match when the stamped id is stale", async () => {
+		// A persisted id that no longer names an assistant message must not anchor the
+		// rewrite to the wrong entry; the message match is the safety net.
+		const { sessionManager, assistantEntryId, bashEntryId, resultOnLiveBranch } = await runDrop(
+			({ turnMarkerId }) => turnMarkerId,
+		);
+		expect(bashEntryId).toBe(assistantEntryId);
+		expect(resultOnLiveBranch).toBe(false);
 		await sessionManager.close();
 	});
 });

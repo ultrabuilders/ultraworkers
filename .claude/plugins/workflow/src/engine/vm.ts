@@ -146,6 +146,13 @@ function notWiredImplementations(): WorkflowRuntimeImplementations {
  * For the declared globals — functions and small frozen stubs — that is the intended trade,
  * and it is the reason this lives here rather than in `assembleRuntimeBindings`: the contract
  * assembles bindings, and deciding what a realm may observe is this module's job.
+ *
+ * WHAT THIS DOES NOT CLAIM. It closes the `.constructor` ROUTE. It does not make this a data
+ * filter, and a copy is still a copy of the DATA: an owner that hands in
+ * `{ env: { SECRET } }` has handed the script `env.SECRET`, read directly, with no escape and
+ * no trick. Nothing here redacts, because whether a capability may carry data at all is the
+ * owner's call, not this module's — so do not read "the realm no longer leaks" as "the realm
+ * sees less than it was given". See `epic-tx1e`.
  */
 const REALM_GLOBALS_SOURCE = `(hostGlobals) => {
   const wrap = (value) => {

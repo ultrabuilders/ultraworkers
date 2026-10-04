@@ -1084,6 +1084,29 @@ function remapLegacyPiSpecifier(specifier: string): string | null {
 	return `${CANONICAL_PI_SCOPE}/${remappedSubpath}`;
 }
 
+/**
+ * The basenames the shim rewrites, so a gate can ask "is this manifest one of
+ * ours?" without restating the list. A restated list agrees with a wrong
+ * constant by construction, which is the trap the scope gate exists to avoid.
+ */
+export function __legacyPiBundledPackageNames(): readonly string[] {
+	return PI_PACKAGE_NAMES;
+}
+
+/**
+ * The shim's own answer to "would you rewrite this specifier?", or `null` when
+ * it would not.
+ *
+ * A bundled package whose declared name answers `null` here is invisible to the
+ * rewrite, so a plugin importing it falls through to the plugin's own
+ * `node_modules` and the host runs two copies of the module — the
+ * double-instance failure `issue-6449-legacy-pi-cjs-double-instance.test.ts`
+ * exists to prevent, arriving by another door.
+ */
+export function __remapLegacyPiSpecifierForTests(specifier: string): string | null {
+	return remapLegacyPiSpecifier(specifier);
+}
+
 function getResolvedSpecifier(specifier: string): string {
 	const cached = resolvedSpecifierFallbacks.get(specifier);
 	if (cached) {

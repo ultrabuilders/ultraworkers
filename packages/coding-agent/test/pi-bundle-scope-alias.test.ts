@@ -1,5 +1,16 @@
 /**
- * Every bundled package must declare the one scope the shim serves.
+ * Every package the shim rewrites must be reachable to the shim.
+ *
+ * **One scope is the wrong contract, and holding it turned this gate red over a
+ * correct tree.** The shim accepts four (`PI_SCOPE_ALIASES`: `ultraworkers`,
+ * `oh-my-pi`, `mariozechner`, `earendil-works`) because the scope rename
+ * (`epic-d6w5`) can only move the *unpublished* packages: twelve are already on
+ * npm at a fixed version and cannot be renamed without a breaking major. Two
+ * scopes is the intended resting state, and the shim's own docblock says so —
+ * `chord` ships as `@ultraworkers/chord` on purpose. The row below asks the
+ * question that actually predicts the double instance: *would the shim rewrite
+ * this manifest?* A package it declines is the defect; a package it accepts
+ * under a second scope is not.
  *
  * `legacy-pi-compat.ts` builds virtual specifiers from `CANONICAL_PI_SCOPE` to
  * hand a plugin its dependencies out of the host bundle. A virtual specifier is
@@ -33,7 +44,11 @@
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { __buildLegacyPiPackageRootOverrides } from "../src/extensibility/plugins/legacy-pi-compat";
+import {
+	__buildLegacyPiPackageRootOverrides,
+	__legacyPiBundledPackageNames,
+	__remapLegacyPiSpecifierForTests,
+} from "../src/extensibility/plugins/legacy-pi-compat";
 
 const REPO_ROOT = path.join(import.meta.dir, "..", "..", "..");
 const PACKAGES_DIR = path.join(REPO_ROOT, "packages");
@@ -104,22 +119,25 @@ describe("canonical pi scope vs declared package names", () => {
 		expect(unscoped).toEqual([]);
 	});
 
-	test("every bundled package shares the scope the shim serves", async () => {
-		const byScope = new Map<string, string[]>();
+	test("every package the shim rewrites is reachable to the shim", async () => {
+		const canonical = canonicalScopeFromShim();
+		const bundled = new Set(__legacyPiBundledPackageNames());
+		const escaped: string[] = [];
+		const mislanded: string[] = [];
+
 		for (const relativePath of await findManifests()) {
 			const { name } = await readManifest(relativePath);
-			const scope = scopeOf(name!);
-			byScope.set(scope, [...(byScope.get(scope) ?? []), relativePath]);
+			if (!bundled.has(name!.slice(name!.indexOf("/") + 1))) continue;
+
+			// The shim's own predicate, not a scope restated here: a manifest the
+			// filter declines is invisible to the rewrite, and that is the whole
+			// defect this row exists to catch.
+			const rewritten = __remapLegacyPiSpecifierForTests(name!);
+			if (rewritten === null) escaped.push(`${name!} (${relativePath})`);
+			else if (scopeOf(rewritten) !== canonical) mislanded.push(`${name!} → ${rewritten}`);
 		}
 
-		// Grouped by scope and sorted on both sides: a rename failure then names
-		// which packages moved, rather than only that something did. Comparing
-		// declaration order against sorted order would fail on a green tree,
-		// which teaches the reader to ignore this row.
-		const observed = [...byScope.entries()]
-			.map(([scope, members]) => ({ scope, members: members.sort() }))
-			.sort((left, right) => left.scope.localeCompare(right.scope));
-
-		expect(observed).toEqual([{ scope: canonicalScopeFromShim(), members: (await findManifests()).sort() }]);
+		expect(escaped).toEqual([]);
+		expect(mislanded).toEqual([]);
 	});
 });

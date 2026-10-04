@@ -180,17 +180,27 @@ export default function peerExtension(api: ExtensionAPI): void {
 			leaseDb: () => leaseDb,
 			inbox: () => inbox,
 			roster: async () => {
-				// STUB, and honestly so: no presence registry is wired yet, so an empty
+				// STUB, and honestly so: no presence registry is wired, so an empty
 				// roster is the answer rather than a fabricated one. `peer.list` renders
 				// "No peer sessions are registered." against it, which is correct — this
-				// process genuinely cannot enumerate its peers. `epic-jwsy.10` replaces it.
+				// process genuinely cannot enumerate its peers.
 				return [];
 			},
 			deliver: async () => {
-				// STUB, for the same reason and with the same honesty. Cross-process
-				// delivery is `epic-jwsy.10`; until a transport is registered there is no
-				// route, and reporting zero delivered is the contract — a fabricated
-				// success here would be the one lie a delivery path can tell.
+				// STUB, for the same reason and with the same honesty. No transport is
+				// registered in production, so there is no route; reporting zero
+				// delivered is the contract — a fabricated success here would be the one
+				// lie a delivery path can tell.
+				//
+				// This comment used to name `epic-jwsy.10` as the bead that would replace
+				// both stubs. That bead is CLOSED, and it did not: it delivered the SEAM
+				// (`registerPeerTransport` is implemented at loader.ts:341, and
+				// `createPeerSocketTransport` exists at peer/src/transport/send.ts:201)
+				// but nothing in production CALLS either. Measured: zero production
+				// callers of `registerPeerTransport(`, zero of `createPeerSocketTransport`;
+				// both appear only in tests. So the seam is reachable from a test and
+				// from nowhere else — the `epic-jwsy.11` shape, where a registered
+				// capability reads as delivered because nothing was ever asked to deliver.
 				return { delivered: 0, receipts: [] };
 			},
 		};
@@ -384,8 +394,10 @@ function fenceContext(ownTokens: ReadonlySet<string>): {
 }
 
 // Referenced so the transport constants this entry must honour stay imported at the
-// point that installs a transport. `epic-jwsy.10` adds `registerPeerTransport` here;
-// the version constant is the value it will have to declare, and importing it now
-// means the entry cannot be written against a stale number later.
+// point that installs a transport. `registerPeerTransport` is on the API and
+// implemented (loader.ts:341) — what is missing is a caller: nothing in production
+// registers a transport, so this entry cannot yet install one. The version constant is
+// the value such a transport will have to declare, and importing it now means the entry
+// cannot be written against a stale number later.
 export const PEER_PROTOCOL_VERSION = PEER_TRANSPORT_PROTOCOL_VERSION;
 export { checkHopChain };

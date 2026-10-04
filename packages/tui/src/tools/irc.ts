@@ -3,6 +3,31 @@
 /** Maximum live peer rows embedded in child prompts. */
 export const DEFAULT_PEER_ROSTER_LIMIT = 32;
 
+/**
+ * Who a message came from, recorded on the message itself.
+ *
+ * DECLARED HERE AND NOT IMPORTED, and the duplication is deliberate.
+ * `@ultraworkers/peer` exports an identical `PeerOrigin`, but it already depends
+ * on this package's consumer, so importing it from `pi-tui` — or reaching back
+ * for it from `pi-agent` — would close a cycle. The same reasoning is written out
+ * at `packages/coding-agent/src/peer/settings.ts`, where `INBOUND_POLICIES` is
+ * likewise declared rather than imported. Two structurally identical cases, one
+ * convention.
+ *
+ * `kind` is the field that carries the meaning, and `"user"` is load-bearing:
+ * without it "peer" would assert nothing. Absence is the *user* case, so a
+ * message written before this field existed still reads correctly rather than
+ * becoming unclassifiable.
+ */
+export interface IrcOrigin {
+	/** `"peer"` for a message from another session; `"user"` for the operator. */
+	readonly kind: "peer" | "user";
+	/** The sending peer, when known. */
+	readonly from?: string;
+	/** The sender's session label, when it supplied one. */
+	readonly session?: string;
+}
+
 /** Serializable peer message retained in coordination result snapshots. */
 export interface IrcMessage {
 	id: string;
@@ -21,6 +46,15 @@ export interface IrcMessage {
 	 * ping-pong forever.
 	 */
 	wakeRelay?: boolean;
+	/**
+	 * Provenance, carried on the message rather than beside it.
+	 *
+	 * On the message because the drain path rebuilds a fresh `IrcMessage` from a
+	 * persisted record: a field stored alongside the message is a field the rebuild
+	 * has to remember to copy, and one it will not until something fails. Missing
+	 * means "user", which is why `kind` defaults rather than being required.
+	 */
+	origin?: IrcOrigin;
 }
 
 /** Delivery outcome for one peer recipient. */

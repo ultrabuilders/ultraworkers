@@ -1,6 +1,6 @@
 import type { Agent, AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { prompt } from "@oh-my-pi/pi-utils";
-import { type IrcMessage } from "@oh-my-pi/pi-tui/tools/irc";
+import { type IrcMessage, type IrcOrigin } from "@oh-my-pi/pi-tui/tools/irc";
 import parentIrcSteerTemplate from "../prompts/steering/parent-irc.md" with { type: "text" };
 import ircIncomingTemplate from "../prompts/system/irc-incoming.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
@@ -17,6 +17,36 @@ export interface IrcBridgeHost {
 	planModeEnabled(): boolean;
 	emitSessionEvent(event: AgentSessionEvent): Promise<void>;
 	wakeForIrc(records: AgentMessage[]): void;
+}
+
+/**
+ * Provenance as read back off a persisted `details` blob.
+ *
+ * `details` is `unknown` and its writer is a previous version of this file, so
+ * every field is checked rather than asserted. The rule is **asymmetric**, and
+ * the asymmetry is the design: `kind` is the field the reader's decision turns on,
+ * so an absent or unrecognised `kind` yields `undefined` and the record falls back
+ * to reading as the user. `from` and `session` are metadata, and a malformed one
+ * is **dropped rather than fatal**.
+ *
+ * Dropping a whole origin because `from` came back as a number would turn a peer
+ * message into a user instruction — the one escalation this provenance exists to
+ * prevent — so the lenient direction is the only safe one to be lenient in. The
+ * strict-looking alternative (any bad field discards everything) fails toward
+ * privilege, which is the direction that matters.
+ */
+function readPersistedOrigin(details: object): IrcOrigin | undefined {
+	const raw = Reflect.get(details, "origin");
+	if (!raw || typeof raw !== "object") return undefined;
+	const kind = Reflect.get(raw, "kind");
+	if (kind !== "peer" && kind !== "user") return undefined;
+	const from = Reflect.get(raw, "from");
+	const session = Reflect.get(raw, "session");
+	return {
+		kind,
+		...(typeof from === "string" ? { from } : {}),
+		...(typeof session === "string" ? { session } : {}),
+	};
 }
 
 /** Owns incoming IRC queues and the session's non-interrupting aside queue. */
@@ -144,6 +174,11 @@ export class IrcBridge {
 				const from = Reflect.get(details, "from");
 				const body = Reflect.get(details, "message");
 				const replyTo = Reflect.get(details, "replyTo");
+				// Read from `details`, not from `record.origin`. The record may have
+				// crossed a persistence boundary that kept only `details` — and a
+				// drain that cannot find provenance here must not invent the
+				// absence, because absence means "user".
+				const origin = readPersistedOrigin(details);
 				if (typeof id !== "string" || typeof from !== "string" || typeof body !== "string") {
 					queue.remaining.push(record);
 					continue;
@@ -163,6 +198,12 @@ export class IrcBridge {
 					body,
 					ts: record.timestamp,
 					...(typeof replyTo === "string" ? { replyTo } : {}),
+					// THE row that matters for this rebuild: a drained peer message
+					// that loses its origin does not merely lose a field — it reads
+					// back as a user instruction, because absence is the user case.
+					// Every message still arrives, which is why the obvious drain test
+					// passes while this is broken.
+					...(origin ? { origin } : {}),
 				});
 			}
 		}
@@ -180,6 +221,10 @@ export class IrcBridge {
 		// back to the sender (task executor `relayWakeTurnOutput`); the main
 		// agent and mid-turn asides have no such relay.
 		const relayOnStop = !streaming && !planModeIdle && msg.to !== MAIN_AGENT_ID && msg.wakeRelay !== true;
+		// Resolved once, then written to both places below. A sender may assert an
+		// origin; a message with none is still a peer message, because this method is
+		// only ever reached from the peer bus.
+		const origin: IrcOrigin = msg.origin ?? { kind: "peer", from: msg.from };
 		const record: CustomMessage = {
 			role: "custom",
 			customType: "irc:incoming",
@@ -191,12 +236,25 @@ export class IrcBridge {
 				relayOnStop,
 			}),
 			display: true,
+			// Provenance is set HERE, on the record, and not left to whoever reads
+			// it later. The reader's question is "may I treat this as the user's own
+			// request?" — a message whose origin is absent reads as a user
+			// instruction, so an unmarked peer message is not a degraded record, it
+			// is an unauthorised one. See `CustomMessage.origin`.
+			origin: origin,
 			details: {
 				id: msg.id,
 				from: msg.from,
 				message: msg.body,
 				...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
 				...(msg.wakeRelay ? { wakeRelay: true } : {}),
+				// Duplicated into `details`, and it MUST be the resolved origin
+				// rather than `msg.origin`. A message arriving over the wire carries
+				// no `origin` — the sender did not set one — so copying `msg.origin`
+				// conditionally writes nothing here, and the drain below then rebuilds
+				// a peer message that reads as a user instruction. That bug was
+				// written, shipped to this test, and caught by the drain row below.
+				origin,
 			},
 			attribution: "agent",
 			timestamp: msg.ts,

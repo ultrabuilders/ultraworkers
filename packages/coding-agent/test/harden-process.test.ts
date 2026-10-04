@@ -194,7 +194,7 @@ describe("harden-before-title ordering", () => {
 	].join("\n");
 
 	it("renames the process only after the loader variables are already gone", async () => {
-		const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "omp-harden-order-")), "order.txt");
+		const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-harden-order-")), "order.txt");
 		try {
 			const child = Bun.spawn([process.execPath, "-e", PROBE], {
 				env: { ...process.env, PI_COMPILED: "true", ORDER_OUT: outFile },

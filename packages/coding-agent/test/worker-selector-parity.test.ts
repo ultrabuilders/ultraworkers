@@ -39,11 +39,12 @@ import { JS_EVAL_PROCESS_ARG } from "../src/eval/js/context-manager";
  * Every selector the CLI can dispatch *that lives outside `cli.ts` itself*.
  * Kept as one list so a newly added worker has to be added here too.
  *
- * Three are deliberately absent: `stats_sync`, `tab` and `js_eval`. Those stay
- * module-private in `cli.ts` because exporting them would drag a native addon
- * and the whole worker runtime into every ordinary `launch` — the regression
- * `process-entry-import.test.ts` exists to catch. So this list covers 13 of the
- * 16 dispatchable selectors, and the other three are checked only by
+ * Three are deliberately absent from this list: `stats_sync`, `tab` and
+ * `js_eval`. They are exported from their own worker modules, but `cli.ts`
+ * re-declares them locally (`cli.ts:216-223`) to keep the native addon and
+ * worker runtime out of an ordinary `launch` — the regression
+ * `process-entry-import.test.ts` exists to catch. So parity here is 13 of the 16
+ * dispatchable selectors, and these three are checked only by
  * `isWorkerHostSelector` agreeing with the prefix they are built from.
  *
  * The gap is worth stating rather than papering over: `stats_sync` is the

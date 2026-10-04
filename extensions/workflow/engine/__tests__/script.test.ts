@@ -65,6 +65,22 @@ test('Math.random() in script throws non-determinism error', async () => {
   )
 })
 
+// PORT DEVIATION (added, not upstream): the guard above only proves `random` is
+// intercepted. Nothing proved the REST of Math survives the sandbox Proxy, so the
+// pair of them left the whole arithmetic surface untested — measured: making
+// `sandboxMath` return `undefined` for every property except `random` leaves this
+// file at 18 pass / 0 fail. A workflow could not add two numbers and no row noticed.
+//
+// This is the "matches more" direction the two `Date` rows already carry (they
+// assert both that the call throws AND that `new Date(arg)` still works); Math had
+// only the "throws" half.
+test('deterministic Math still works in the sandbox', async () => {
+  const { execute } = parseScript(
+    `return Math.max(3, 7) + Math.floor(1.9)`,
+  )
+  expect(await execute(stubHooks, {}, { total: null })).toBe(8)
+})
+
 test('no-arg new Date() throws, but new Date(arg) is allowed', async () => {
   const bad = parseScript(`return new Date()`)
   await expect(bad.execute(stubHooks, {}, { total: null })).rejects.toThrow(

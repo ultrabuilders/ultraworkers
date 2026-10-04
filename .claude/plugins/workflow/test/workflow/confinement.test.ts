@@ -33,6 +33,71 @@ async function probe(body: string): Promise<unknown> {
 	return runWorkflowScript(META, body);
 }
 
+/**
+ * The full 18-global set the contract requires; only `agent` is a real capability.
+ *
+ * Module scope, NOT inside a `describe`: the `tx1e` block below needs the same set, and a
+ * helper scoped to one block is `ReferenceError` in the other. That failure is invisible
+ * at `0 fail` — the second `describe` simply never runs — so a suite can report green
+ * while asserting nothing at all.
+ */
+/** The full 18-global set the contract requires; only `agent` is a real capability. */
+function implementationsWithHostAgent(): Parameters<typeof runWorkflowScript>[2] {
+	const unwired = (name: string) => () => {
+		throw new Error(`${name} not wired`);
+	};
+	return {
+		// A plain host arrow function — the shape every real capability will have.
+		agent: () => "capability-result",
+		parallel: unwired("parallel"),
+		pipeline: unwired("pipeline"),
+		workflow: unwired("workflow"),
+		verify: unwired("verify"),
+		judgePanel: unwired("judgePanel"),
+		loopUntilDry: unwired("loopUntilDry"),
+		completenessCheck: unwired("completenessCheck"),
+		retry: unwired("retry"),
+		gate: unwired("gate"),
+		checkpoint: unwired("checkpoint"),
+		log: unwired("log"),
+		phase: unwired("phase"),
+		cwd: process.cwd(),
+		process: Object.freeze({ cwd: () => process.cwd() }),
+		args: undefined,
+		budget: Object.freeze({ total: 0, spent: () => 0, remaining: () => 0 }),
+		console: Object.freeze({
+			log: unwired("log"),
+			info: unwired("info"),
+			warn: unwired("warn"),
+			error: unwired("error"),
+		}),
+	} as never;
+}
+
+const IMPLS = implementationsWithHostAgent();
+
+/**
+ * Runs against the REAL capability set above, never the `probe` default. `probe` passes
+ * no `implementations`, so its `agent` is `notWiredImplementations`' host stub — a
+ * different object with a different `.constructor`, and one that reports the realm's
+ * inert `process`. Every row in this block must go through here: a row that silently
+ * falls back to the stub measures the harness rather than the escape.
+ */
+function runWithRealCapability(body: string): Promise<unknown> {
+	return runWorkflowScript(META, body, IMPLS);
+}
+
+/**
+ * Runs a body and reports whether a HOST value came back, as `"leaked"` or `"closed"`.
+ *
+ * Deliberately NOT a bare value assertion. `reachThrough` was written when the escape
+ * was believed real, and it stays because a bare `typeof value` is the shape that
+ * produced the false finding: it answers for whatever the expression evaluates to, so a
+ * body that fails to run at all — the missing-`return` case — reads exactly like a
+ * successful leak. Naming the two outcomes makes "the script never ran" and "the script
+ * ran and reached the host" different answers.
+ */
+
 describe("the workflow realm does not leak the host's constructors", () => {
 	it("resolves Object/Function from the realm, so a constructor reached by a script is not the host's", async () => {
 		// The identity test, and the only row here that could distinguish "confined" from
@@ -132,62 +197,6 @@ describe("the workflow realm does not leak the host's constructors", () => {
  * `Function` is ever displaced, by any means.
  */
 describe("epic-vm7y — a supplied capability does not hand the script the host Function", () => {
-	/** The full 18-global set the contract requires; only `agent` is a real capability. */
-	function implementationsWithHostAgent(): Parameters<typeof runWorkflowScript>[2] {
-		const unwired = (name: string) => () => {
-			throw new Error(`${name} not wired`);
-		};
-		return {
-			// A plain host arrow function — the shape every real capability will have.
-			agent: () => "capability-result",
-			parallel: unwired("parallel"),
-			pipeline: unwired("pipeline"),
-			workflow: unwired("workflow"),
-			verify: unwired("verify"),
-			judgePanel: unwired("judgePanel"),
-			loopUntilDry: unwired("loopUntilDry"),
-			completenessCheck: unwired("completenessCheck"),
-			retry: unwired("retry"),
-			gate: unwired("gate"),
-			checkpoint: unwired("checkpoint"),
-			log: unwired("log"),
-			phase: unwired("phase"),
-			cwd: process.cwd(),
-			process: Object.freeze({ cwd: () => process.cwd() }),
-			args: undefined,
-			budget: Object.freeze({ total: 0, spent: () => 0, remaining: () => 0 }),
-			console: Object.freeze({
-				log: unwired("log"),
-				info: unwired("info"),
-				warn: unwired("warn"),
-				error: unwired("error"),
-			}),
-		} as never;
-	}
-
-	const IMPLS = implementationsWithHostAgent();
-
-	/**
-	 * Runs against the REAL capability set above, never the `probe` default. `probe` passes
-	 * no `implementations`, so its `agent` is `notWiredImplementations`' host stub — a
-	 * different object with a different `.constructor`, and one that reports the realm's
-	 * inert `process`. Every row in this block must go through here: a row that silently
-	 * falls back to the stub measures the harness rather than the escape.
-	 */
-	function runWithRealCapability(body: string): Promise<unknown> {
-		return runWorkflowScript(META, body, IMPLS);
-	}
-
-	/**
-	 * Runs a body and reports whether a HOST value came back, as `"leaked"` or `"closed"`.
-	 *
-	 * Deliberately NOT a bare value assertion. `reachThrough` was written when the escape
-	 * was believed real, and it stays because a bare `typeof value` is the shape that
-	 * produced the false finding: it answers for whatever the expression evaluates to, so a
-	 * body that fails to run at all — the missing-`return` case — reads exactly like a
-	 * successful leak. Naming the two outcomes makes "the script never ran" and "the script
-	 * ran and reached the host" different answers.
-	 */
 	async function reachThrough(body: string): Promise<"leaked" | "closed"> {
 		try {
 			return (await runWorkflowScript(META, body, IMPLS)) === undefined ? "closed" : "leaked";
@@ -273,5 +282,69 @@ describe("epic-vm7y — a supplied capability does not hand the script the host 
 		// rather than a message keeps it working for any future implementation, where the
 		// capability is wired for real and no longer throws.
 		expect(await runWithRealCapability(`return agent("x");`)).toBe("capability-result");
+	});
+});
+
+/**
+ * epic-tx1e — a capability's DATA crosses into the realm. This is a DIFFERENT defect from
+ * `epic-vm7y` above, and conflating them is the mistake this header exists to prevent.
+ *
+ *   epic-vm7y: ESCAPE. A script walked `.constructor` to reach the host `Function` and ran
+ *               the real `Math.random`. Closed — `REALM_GLOBALS_SOURCE` gives every injected
+ *               global a realm-local stand-in, so `.constructor` lands on a realm intrinsic.
+ *
+ *   epic-tx1e: HAND-OVER. The owner passes `process: { env: {...} }` and `wrap()` COPIES that
+ *               object into the realm, values and all. Nothing escapes; the data was granted.
+ *               Measured: `process.env.SECRET` reads back the host value.
+ *
+ * The second is not a sandbox escape and must never be written up as one — there is no bypass
+ * to patch, because the script reads a property it was legitimately handed. It is a question
+ * of what a capability may CARRY, and that is the owner's call: filter the object, or accept it
+ * and say so where a script author will read it.
+ *
+ * These rows are RED, and that is the honest state — the behaviour is real and nothing has
+ * decided it yet. The value is that "already measured" and "nobody has looked" stop being the
+ * same state: the next reader gets a row red for a stated reason rather than a comment nobody
+ * reads.
+ *
+ * HOW TO READ THE RED. They assert the SHAPE the realm observes, never a `typeof` computed
+ * inside the script: `runWorkflowScript` awaits `runInContext(...)`, so a script-side `typeof`
+ * sees a Promise where the value arriving at the caller sees the resolved one.
+ */
+describe("epic-tx1e — what a supplied capability may carry into the realm", () => {
+	const SECRET = { SECRET: "HOST-SECRET" };
+	const IMPLS_WITH_DATA = {
+		...(implementationsWithHostAgent() as Record<string, unknown>),
+		// The exposure condition, and it is the OWNER's choice: a real capability whose
+		// payload happens to hold host data. `notWiredImplementations` injects
+		// `Object.freeze({ cwd })` with no `env`, so nothing is exposed by the default set —
+		// which is why these rows state the exposure condition instead of implying it.
+		process: { env: SECRET, cwd: () => process.cwd() },
+	} as never;
+
+	const observe = (body: string): Promise<unknown> => runWorkflowScript(META, body, IMPLS_WITH_DATA);
+
+	it("does not copy a host object's own keys into the realm, so a payload cannot be read", async () => {
+		// THE row. `wrap()` recurses over `Object.keys` and copies each value, so an
+		// owner-supplied `env` arrives whole. Asserting the observed key set is what separates
+		// "the realm sees only what it needs" from "the realm sees the payload" — a boolean or
+		// a `typeof` would be satisfied by any object that merely lacks the property,
+		// including a wrong one.
+		expect(await observe(`return Object.keys(process).sort().join(",");`)).toBe("cwd");
+	});
+
+	it("does not make a host payload's values reachable by property path", async () => {
+		// The same defect from the value side. The row above names it by shape, this one by
+		// consequence: a key set can be narrowed by renaming while a nested object still
+		// arrives, so these are not the same assertion.
+		expect(await observe(`return process.env.SECRET;`)).toBeUndefined();
+	});
+
+	it("keeps the realm's own globals working, so the rows above are about data and not breakage", async () => {
+		// The direction that keeps this honest. A fix that removed `process` wholesale to make
+		// the two rows above green would take `process.cwd` with it and turn this row red —
+		// so a fix satisfying all three narrows the payload rather than deleting the global.
+		// Without it, the obvious fix is indistinguishable from the defect.
+		expect(await observe(`return typeof process.cwd;`)).toBe("function");
 	});
 });

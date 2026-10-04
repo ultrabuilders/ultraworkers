@@ -61,8 +61,8 @@ export function transcriptFilename(agent: string): string {
 }
 
 /** Container-side mount points for `--install source` (must match omp_local.py defaults). */
-const SOURCE_SRC_MOUNT = "/opt/omp/src";
-const SOURCE_BIN_MOUNT = "/opt/omp/bin";
+const SOURCE_SRC_MOUNT = "/opt/ultraworkers/src";
+const SOURCE_BIN_MOUNT = "/opt/ultraworkers/bin";
 
 /** Host address containers see on Apple Container's vmnet (bridge) network. */
 const VMNET_HOST_IP = "192.168.64.1";

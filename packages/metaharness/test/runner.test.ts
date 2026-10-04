@@ -75,8 +75,8 @@ describe("install modes", () => {
 			nodeModules: ["node_modules"],
 		});
 		expect(env.ULTRAWORKERS_BENCH_INSTALL).toBe("source");
-		expect(env.ULTRAWORKERS_BENCH_SOURCE_DIR).toBe("/opt/omp/src");
-		expect(env.ULTRAWORKERS_BENCH_SOURCE_BUN).toBe("/opt/omp/bin/bun");
+		expect(env.ULTRAWORKERS_BENCH_SOURCE_DIR).toBe("/opt/ultraworkers/src");
+		expect(env.ULTRAWORKERS_BENCH_SOURCE_BUN).toBe("/opt/ultraworkers/bin/bun");
 		expect(env.ULTRAWORKERS_BENCH_SOURCE_ARCH).toBe("arm64");
 	});
 

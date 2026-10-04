@@ -18,7 +18,7 @@ bun run serve --port 4700
    next trial with no rebuild. A cached linux `node_modules` tree (built once
    per lockfile change inside `oven/bun`, stored in `<jobs-dir>/_bench/_deps/`)
    shadows the host's darwin one, and a linux `bun` binary is mounted at
-   `/opt/omp/bin` — so trial setup needs zero outbound network. Alternatives:
+   `/opt/ultraworkers/bin` — so trial setup needs zero outbound network. Alternatives:
    `--install local` (pack a tarball per run) or `--binary` (prebuilt
    `dist/ultraworkers-linux-*` self-contained binaries).
 2. **Auth never enters containers.** A generated `models.yml` routes provider

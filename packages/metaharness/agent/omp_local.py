@@ -250,8 +250,8 @@ class OmpLocal(BaseInstalledAgent):
         # the in-container ultraworkers run, JSON-encoded in ULTRAWORKERS_BENCH_FORWARD_ENV.
         self._forward_env = self._parse_forward_env()
         # Source-mount paths (defaults must match the runner's compose overlay).
-        self._source_dir = _env("ULTRAWORKERS_BENCH_SOURCE_DIR", "/opt/omp/src")
-        self._source_bun = _env("ULTRAWORKERS_BENCH_SOURCE_BUN", "/opt/omp/bin/bun")
+        self._source_dir = _env("ULTRAWORKERS_BENCH_SOURCE_DIR", "/opt/ultraworkers/src")
+        self._source_bun = _env("ULTRAWORKERS_BENCH_SOURCE_BUN", "/opt/ultraworkers/bin/bun")
         self._source_arch = _env("ULTRAWORKERS_BENCH_SOURCE_ARCH")
         # Resolved during install(); reused by version + run commands.
         self._home = "/root"

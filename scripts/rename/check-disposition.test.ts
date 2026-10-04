@@ -285,6 +285,28 @@ describe("rules column", () => {
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
 
+	it("reports a prose paragraph sitting in the keep_refs column", async () => {
+		// The arm that made the rule necessary. `missing-keep-refs` only proves the cell
+		// is non-empty and `dangling-keep-ref` only proves a plan owner resolves — and a
+		// paragraph satisfies BOTH, because prose is non-empty and `planNodeOf` returns
+		// null for it, the one answer that silences each. Found in the wild at
+		// `disposition.tsv:474`, where a whole justification sat in the ref column and no
+		// rule could reach it.
+		//
+		// This is also the only coverage `keep-ref-shape` had: the rule was emitted and
+		// never asserted, so it was a guard nobody had proven able to fire.
+		const root = await tree(FILES);
+		const prose =
+			"This is not a keep ref, it is a whole justification paragraph that happens to be non-empty.";
+		const violations = await checkPre(root, [row_("src/a.ts", 1, "keep-wire", "why", prose)]);
+		expect(violations.map(v => v.rule)).toContain("keep-ref-shape");
+		// The rule is about SHAPE, so it must not fire on a legitimate single token —
+		// `N3` resolves and carries no whitespace. A rule that only ever fires would
+		// pass this test while rejecting every real row in the table.
+		expect(violations.map(v => v.rule)).not.toContain("missing-keep-refs");
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
 	it("reports a row measured under a rule version this build no longer runs", async () => {
 		// The red arm, and the whole reason the column exists: a row's `hits` is a
 		// claim produced by a rule, and nothing else recorded which one. Measured

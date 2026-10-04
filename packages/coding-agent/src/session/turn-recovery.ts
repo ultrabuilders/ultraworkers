@@ -1286,13 +1286,16 @@ export class TurnRecovery {
 		if (!branchEntry) {
 			return undefined;
 		}
-		this.#host.withBashBranchTransition(() => {
-			if (branchEntry.parentId === null) {
-				this.#host.sessionManager.resetLeaf();
-			} else {
-				this.#host.sessionManager.branch(branchEntry.parentId);
-			}
-		});
+		this.#host.withBashBranchTransition(
+			() => {
+				if (branchEntry.parentId === null) {
+					this.#host.sessionManager.resetLeaf();
+				} else {
+					this.#host.sessionManager.branch(branchEntry.parentId);
+				}
+			},
+			{ anchorEntryId: branchEntry.id },
+		);
 		return branchEntry.id;
 	}
 

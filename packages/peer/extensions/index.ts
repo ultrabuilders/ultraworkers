@@ -195,6 +195,28 @@ export default function peerExtension(api: ExtensionAPI): void {
 			},
 		};
 
+		// Built once and HELD, because the host reads it per send via a spread
+		// (`resolveInboundFenceContext()` is called from `#deliver`), so mutating this
+		// object changes what the next message sees. Passing `fenceContext(ownTokens)`
+		// inline would evaluate it once here and freeze the answer for the life of the
+		// process, so a user changing `crossSessionInbound` mid-session would keep getting
+		// the decision they gave before the change.
+		const fenceCtx = fenceContext(ownTokens);
+
+		// Keep the live policy live. Re-registering instead would push a second entry onto
+		// `extension.peerFences` on every reload, which the runner installs in order
+		// (`runner.ts:1336`) — the newest would win, but the array and its disposers would
+		// grow without bound. Mutating in place is the seam the host documents for exactly
+		// this: "Mutating the INSTALLED context in place still works, because the spread
+		// reads it on every call."
+		api.onAfterConfigReload(() => {
+			const policy = cfgPeerCrossSessionInbound.get(settings);
+			if (policy !== undefined) fenceCtx.policy = policy;
+			// Absent stays absent: `'policy' in context` is asserted by this package's own
+			// test, so an unset decision must delete the key rather than store undefined.
+			else delete fenceCtx.policy;
+		});
+
 		registerPeerTools(api, {
 			...deps,
 			inboundFence: {
@@ -218,7 +240,7 @@ export default function peerExtension(api: ExtensionAPI): void {
 					if (decision.action === "accept") return { action: "accept" };
 					return { action: decision.action, reason: decision.reason };
 				},
-				context: fenceContext(ownTokens),
+				context: fenceCtx,
 			},
 		});
 
@@ -320,9 +342,26 @@ function toSenderMode(raw: string | undefined): SenderMode | undefined {
  * and it is not the cheapest: the two imports above reach the same value with no core edit at
  * all. Prefer the import; take the host seam only if it turns out something about the value
  * itself needs to change hands.
+ *
+ * ## PRECONDITION: the host must have run `Settings.init()`
+ *
+ * `settings` is a **Proxy** that throws `Settings not initialized` on any read before
+ * `Settings.init()` (`config/settings.ts:3982`). This function reads it, so it inherits
+ * that precondition. Worth stating because the failure is badly shaped: an uninitialised
+ * host does not report a settings error, it reports **no extension at all** —
+ * `discoverAndLoadExtensions` returns zero extensions with an **empty `errors` array**,
+ * which is indistinguishable from never having been installed. Measured both orders:
+ *
+ * ```
+ * init BEFORE discover -> extensions: []   errors: []     <- silently nothing
+ * discover BEFORE init -> extensions: [ .../peer/extensions/index.ts ]
+ * ```
+ *
+ * (`getAgentDir()` is unchanged by `init`, so this is not the agent dir moving.) If you
+ * reorder initialisation and the extension vanishes with no error, this is why.
  */
 function fenceContext(ownTokens: ReadonlySet<string>): {
-	readonly policy?: InboundPolicy;
+	policy?: InboundPolicy;
 	readonly mode: "default";
 	readonly ownTokens: ReadonlySet<string>;
 } {

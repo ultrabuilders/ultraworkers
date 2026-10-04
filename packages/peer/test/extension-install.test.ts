@@ -8,6 +8,7 @@ import {
 } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { unregisterOwned } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent";
+import { notifyConfigReloadApplied } from "@oh-my-pi/pi-coding-agent/config/reload-observer";
 import { resetSettingsForTest } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { getAgentDir, logger, removeSyncWithRetries, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 
@@ -64,6 +65,17 @@ describe("packages/peer installed as an extension", () => {
 	const xdgVars = ["XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"] as const;
 	const originalXdg = new Map<string, string | undefined>();
 	const settingsOwners: string[] = [];
+	/**
+	 * Loaded extensions, drained in `afterEach`.
+	 *
+	 * `onAfterConfigReload` registers into a MODULE-GLOBAL handler set in
+	 * `config/reload-observer.ts` that nothing scopes to a test, so an undisposed
+	 * handler outlives its case and is still invoked by any later
+	 * `notifyConfigReloadApplied` -- holding a closed-over context from a test that has
+	 * already torn down. The loader keeps the disposer at `configReloadDisposers`, so
+	 * the leak is closable; not closing it is a choice, not a limitation.
+	 */
+	const loadedExtensions: { configReloadDisposers?: Array<() => void> }[] = [];
 
 	/**
 	 * Copy the whole package into `<agentDir>/extensions/peer/`.
@@ -86,7 +98,10 @@ describe("packages/peer installed as an extension", () => {
 
 	async function loadInstalled(cwd: string) {
 		const result = await discoverAndLoadExtensions([], cwd);
-		for (const extension of result.extensions) settingsOwners.push(extensionSettingOwner(extension));
+		for (const extension of result.extensions) {
+			settingsOwners.push(extensionSettingOwner(extension));
+			loadedExtensions.push(extension);
+		}
 		return result;
 	}
 
@@ -141,6 +156,9 @@ describe("packages/peer installed as an extension", () => {
 	}
 
 	afterEach(() => {
+		for (const extension of loadedExtensions.splice(0)) {
+			for (const dispose of extension.configReloadDisposers ?? []) dispose();
+		}
 		for (const owner of settingsOwners.splice(0)) unregisterOwned(owner);
 		projectDir.removeSync();
 		spyOn(os, "homedir").mockRestore();
@@ -251,6 +269,44 @@ describe("packages/peer installed as an extension", () => {
 		expect("policy" in (context ?? {})).toBe(false);
 		// The tokens still register — absence of a POLICY is not absence of the fence.
 		expect(extension.peerFences[0].context?.ownTokens).toBeDefined();
+	});
+
+	it("re-reads the policy on config reload instead of freezing it at load", async () => {
+		// Reviewer finding, and it was right. `context: fenceContext(ownTokens)` is an
+		// argument evaluated ONCE at registration, so a user changing
+		// `crossSessionInbound` mid-session kept getting the decision they had given
+		// before the change -- while the commit that added the read called it "the user's
+		// decision". Inbound policy decides whether a message from another session is
+		// admitted at all, so a stale one is not a cosmetic staleness.
+		//
+		// The fix mutates the INSTALLED context in place, which the host documents as
+		// sufficient because `resolveInboundFenceContext()` spreads it per send. The
+		// assertion that matters is IDENTITY: the same object, still one registration.
+		// Re-registering would also produce an updated policy, so only identity plus the
+		// fence count distinguishes the two designs -- and `extension.peerFences` growing
+		// on every reload is the leak that design would introduce.
+		installInto(getAgentDir());
+		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
+
+		const result = await loadInstalled(projectDir.path());
+		const extension = result.extensions.find(ext => ext.path.includes(`${path.sep}peer${path.sep}`));
+		if (!extension) throw new Error("peer extension did not load");
+
+		await initSettings("refuse");
+		await fireSessionStart(extension.handlers.get("session_start") ?? [], projectDir.path());
+
+		const registered = extension.peerFences[0].context as Record<string, unknown> | undefined;
+		expect(registered?.policy).toBe("refuse");
+		const fencesAtRegistration = extension.peerFences.length;
+
+		// The user changes their mind, and the host applies the reload.
+		await initSettings("hold");
+		await notifyConfigReloadApplied({ sources: ["test"] });
+
+		expect((extension.peerFences[0].context as Record<string, unknown>).policy).toBe("hold");
+		// Same object, not a replacement -- and no second registration.
+		expect(extension.peerFences[0].context).toBe(registered);
+		expect(extension.peerFences.length).toBe(fencesAtRegistration);
 	});
 
 	it("runs the registration once, not again on a reconnect", async () => {

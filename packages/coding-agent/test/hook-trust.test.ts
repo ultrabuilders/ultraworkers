@@ -29,11 +29,32 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { getConfigRootDir, setAgentDir } from "@oh-my-pi/pi-utils";
 import { approveHookOnDisk } from "./helpers/approve-hook";
 
 const temps: string[] = [];
 
+// `approveHookOnDisk` calls `setAgentDir(agentDir)` so its own discovery agrees with the
+// child process these tests assert against. That is process-wide: `setAgentDir` writes
+// `process.env.PI_CODING_AGENT_DIR` (dirs.ts:728), so without this teardown every LATER
+// test in the same bun process inherits a temp agent dir that no longer exists.
+//
+// Measured, not inferred: with this file in a batch, `doctor/doctor-exit-code.test.ts`
+// failed `exits 0 when every check it could run passed` — its healthy fixture reported
+// `plugins_directory: Found at ~/.omp/plugins` (the developer's real one) and exit 1,
+// while the same row passes alone. `DirResolver` takes the `agentDirOverride` branch and
+// ignores `XDG_DATA_HOME` entirely, so the fixture's isolation silently stopped working.
+const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+
 afterEach(async () => {
+	// Restore BEFORE removing the dirs: while the override is still live the resolver
+	// points into a temp tree this loop is about to delete.
+	if (originalAgentDir) {
+		setAgentDir(originalAgentDir);
+	} else {
+		setAgentDir(path.join(getConfigRootDir(), "agent"));
+		delete process.env.PI_CODING_AGENT_DIR;
+	}
 	for (const dir of temps.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 

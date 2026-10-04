@@ -480,4 +480,77 @@ describe("R0 GRP-C baseline gate: the run must belong to one commit", () => {
 		// It must not reach the verdict the run has no standing to make.
 		expect(result.stdout).not.toContain("grp-c baseline gate: green");
 	}, 60_000);
+
+	test("a void run still reports what it measured, so 'unmeasurable' and 'measured, N new' differ", async () => {
+		// WHY THIS ROW — the failure mode a reader hits without it.
+		//
+		// VOID is the right verdict on a tree that moves. But the run HAD already
+		// measured: `current` is populated before the tree-still check, and the void
+		// branch used to discard it and exit. So a caller reading only the gate's
+		// output saw the identical "VOID" for two states that demand opposite
+		// responses:
+		//
+		//   - an idle tree, where VOID means "re-run when quiet" (benign), and
+		//   - a tree where a peer just landed two failing tests, where VOID is
+		//     hiding a regression the reader must act on now.
+		//
+		// Nothing in the output distinguished them, which is what makes "accept VOID
+		// as a valid outcome" unsafe as a policy: it silently merges "could not
+		// measure" into "nothing to see".
+		//
+		// WHAT THIS ASSERTS — that the count survives the abstention. It does NOT
+		// assert the gate became lenient: exit is still 1 and no verdict is claimed,
+		// because the corpus changed. The count is labelled unconfirmed precisely
+		// because the confirm re-run is skipped on this path.
+		using dir = TempDir.createSync("uw-grp-c-baseline-void-count-");
+		await Bun.write(
+			path.join(dir.absolute(), "failing.test.ts"),
+			'import { test, expect } from "bun:test";\ntest("a brand new regression", () => { expect(1).toBe(2); });\n',
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		const gitBin = await installGitShim(dir.absolute(), ["1".repeat(40), "2".repeat(40)]);
+		const result = await runGateWith(dir.absolute(), gate, gitBin);
+
+		// Still VOID, still non-zero: the abstention is unchanged, and this row is
+		// what stops a future edit from trading the verdict away to get the count.
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("VOID");
+		expect(result.stdout).not.toContain("grp-c baseline gate: green");
+
+		// The measurement that the void branch used to throw away.
+		expect(result.stderr).toContain("Unconfirmed new failure(s) in this run: 1");
+		// Named, so a reader can go look at WHICH test rather than only how many.
+		expect(result.stderr).toContain("a brand new regression");
+		// Labelled unconfirmed — a count presented as confirmed would be a
+		// regression verdict this run has no standing to deliver.
+		expect(result.stderr).toContain("not reproduced");
+	}, 60_000);
+
+	test("a void run over a clean suite reports zero, so an idle tree is still distinguishable", async () => {
+		// The control for the row above, and the reason the count is worth printing.
+		// Without it, "N new" could be satisfied by a gate that always prints the
+		// suite's failure count regardless of what the baseline says — and the row
+		// above would pass while measuring nothing about the baseline at all.
+		//
+		// Here the suite is clean AND the baseline is the shipped empty one, so the
+		// correct report is 0. A gate that reported the raw failure count, or that
+		// reported every baseline entry as new, would say something else.
+		using dir = TempDir.createSync("uw-grp-c-baseline-void-clean-");
+		await Bun.write(
+			path.join(dir.absolute(), "clean.test.ts"),
+			'import { test, expect } from "bun:test";\ntest("passes", () => { expect(1).toBe(1); });\n',
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		const gitBin = await installGitShim(dir.absolute(), ["1".repeat(40), "2".repeat(40)]);
+		const result = await runGateWith(dir.absolute(), gate, gitBin);
+
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("VOID");
+		expect(result.stderr).toContain("Unconfirmed new failure(s) in this run: 0");
+		// Zero is a real result, so no per-test lines are printed — and, more to the
+		// point, no failure is invented to fill the section.
+		expect(result.stderr).not.toContain("~ passes");
+	}, 60_000);
 });

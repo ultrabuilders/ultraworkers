@@ -294,6 +294,30 @@ if (!treeHeldStill(headAtStart, headAtEnd)) {
 			"Re-run once the branch is still, or accept that on a shared tree this gate\n" +
 			"reports void rather than a number.",
 	);
+	// VOID is the VERDICT, but it is not the end of what this run knows. `current`
+	// above is a real measurement against the same fixed baseline the non-void path
+	// uses, and discarding it wholesale is what makes "accept VOID" an unsafe policy:
+	// a caller told only "void" cannot tell an idle tree from one where a peer just
+	// landed six failing tests, and must therefore treat them identically.
+	//
+	// So report the count alongside the abstention. This does NOT convert VOID into a
+	// pass — `fail()` below still exits non-zero, and the gate still declines to
+	// certify a red/green. It draws one line that the data already supports: "could
+	// not measure" and "measured, and found N new" are different states, and only
+	// the first is a blank.
+	//
+	// The count is explicitly NOT confirmed (that needs the second run below, which
+	// this path deliberately skips), so it is labelled as unconfirmed rather than
+	// presented as a regression count.
+	const voidKnown = new Set(baseline.failures);
+	const voidAdded = [...current].filter(name => !voidKnown.has(name)).sort();
+	console.error(
+		`\nUnconfirmed new failure(s) in this run: ${voidAdded.length}` +
+			(voidAdded.length > 0
+				? "\n  ~ (not reproduced — a confirm run was skipped, so treat as load, not regression)"
+				: ""),
+	);
+	for (const name of voidAdded) console.error(`  ~ ${name}`);
 	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
 }
 

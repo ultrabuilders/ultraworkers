@@ -467,6 +467,38 @@ Copy that check and its comment's reasoning.
 
 ## Phase 3 — Completion gate
 
+### 3.0 Falsifier first — already done, and it is red on purpose
+
+The gate is the only part of this plan that can be built to look finished while proving
+nothing. A `completion-gate.test.ts` written *after* the gate reads green on the day it
+lands and stays green forever, because a test that asserts the gate approves a completed
+goal passes just as well when the gate approves everything. So the falsifier is written
+first, and it is red until the gate exists:
+
+`packages/coding-agent/test/goals/completion-falsifiers.test.ts` — two rows, both red at
+`3ed65ae6c`:
+
+1. a rubber-stamped `<approved/>` does not close an unfinished goal;
+2. a missing / malformed / throwing verdict fails closed.
+
+Both go red with `Expected: not "complete"`, through the real `completeGoalFromTool()` with
+no stubs — the goal closes today because `runtime.ts:488` sets `status = "complete"`
+without consulting any verdict. **That is the finding, not a broken harness**, and the
+distinction is why the rows build a real host and hold the state outside the runtime: the
+first draft threw from the `GoalRuntime` constructor instead, which is red for a reason
+that has nothing to do with the gate.
+
+**Do not record this pair as mutation-verified.** There is no gate to mutate yet, so the
+red is a *constant*, not a signal — mutating an always-true branch changes nothing. Red
+becomes meaningful only once Phase 3 lands; re-run the ablation then (make the gate
+approve unconditionally, both rows must go green). Until then, "red for the right reason"
+is the whole claim.
+
+Note also that row 2 deliberately keeps its three failure shapes as one row with three
+inputs rather than three rows: a loop over them reports one failure for three distinct
+causes, and a mutation breaking only the throw path would be indistinguishable from one
+breaking all three.
+
 ### 3.1 `auditor/policy.ts`
 
 `validateGoalCompletion({ goal, runningGoalId })` — port from `goal-policy.ts`. Ours needs

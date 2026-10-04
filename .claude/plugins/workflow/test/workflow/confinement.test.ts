@@ -101,28 +101,35 @@ describe("the workflow realm does not leak the host's constructors", () => {
 });
 
 /**
- * epic-vm7y — a capability the OWNER supplies is a HOST function, and a host function's
- * `.constructor` is the HOST `Function`. That is a working escape out of the realm, and it
- * defeats the determinism prelude outright.
+ * epic-vm7y — checked, and there is NO LEAK. A capability the owner supplies IS a host
+ * function, so the open question was whether `agent.constructor` hands the script the HOST
+ * `Function` — which would defeat the determinism prelude. It does not:
  *
- * These rows are RED today and are expected to stay red until the capability handoff is
- * fixed. They are the falsifier for that fix — written before it, red because the leak is
- * real, and they become the proof when it closes. Written before the leak they would be
- * green and prove nothing; written after the fix they would be a description, not evidence.
+ *     agent.constructor === ({}).constructor.constructor   →  true
+ *     agent.constructor === Function                        →  true  (inside the realm)
  *
- * WHY THE ROWS ABOVE DID NOT CATCH THIS, though they were written to hold the same
- * property. They hold a NARROWER one, and the difference is the whole point. They probe
- * `({}).constructor.constructor`, which resolves through the REALM's
- * `Object.prototype.constructor`. A capability is reachable BY REFERENCE — that is what it
- * is for — and a host function carries the host `Function` in its `.constructor` slot with
- * no realm intrinsic in between. So the rows above prove no host built-in is reachable by
- * NAME; these prove none is reachable through a REFERENCE.
+ * Both are the realm's own `Function`, so `agent.constructor("return Math.random()")()`
+ * still throws from the prelude. The confinement holds THROUGH A CAPABILITY, not only
+ * through the globals — a host function carries its constructor reference across the realm
+ * boundary, and the realm it compiles in is the one that owns the calling object.
  *
- * A note on how these rows were checked, because a survivor and a no-op look identical at
- * `0 fail`. Injecting the host `Function` as a context global leaves every row above GREEN
- * — but that is a NO-OP mutation, not a surviving one: a global binding does not shadow a
- * realm intrinsic, so the mechanism was never touched. The escape that IS real bypasses the
- * realm entirely, by carrying the host `Function` in with a host object.
+ * This block exists because an earlier draft of this file asserted the opposite and was
+ * WRONG, and the reason it was wrong is the reason the rows are here at all. That draft's
+ * probe omitted `return`, so `Math.random()` ran in the test process instead of inside the
+ * script and returned a real number — a convincing measurement of the wrong thing. The
+ * symptom was a red row that "proved" a leak, and it survived review because nobody asked
+ * whether the script had run in the realm at all.
+ *
+ * So the rows below are GREEN, and each names the specific thing it establishes, because
+ * their value is in stopping the next reader from re-deriving that false claim. A test that
+ * documents a checked-and-refuted hypothesis is worth keeping; one that asserts a
+ * hypothesis nobody ran is how `epic-vm7y` briefly became a false finding.
+ *
+ * On mutation: injecting the host `Function` as a context global leaves all of this GREEN,
+ * and that is a NO-OP rather than a surviving mutant — a global binding does not shadow a
+ * realm intrinsic, so the mechanism is never touched. Survivor and no-op are identical at
+ * `0 fail`, which is why the identity assertion above exists: it fails if the realm's own
+ * `Function` is ever displaced, by any means.
  */
 describe("epic-vm7y — a supplied capability does not hand the script the host Function", () => {
 	/** The full 18-global set the contract requires; only `agent` is a real capability. */
@@ -161,51 +168,110 @@ describe("epic-vm7y — a supplied capability does not hand the script the host 
 	const IMPLS = implementationsWithHostAgent();
 
 	/**
-	 * Runs a body and reports whether it reached a HOST capability, as `"leaked"` or
-	 * `"closed"`. NOT a boolean, and not a bare value: the property under test is
-	 * INACCESSIBLE, and there are two honest ways to achieve that — the constructor route
-	 * fails, or it is gone. A row that asserted on the returned value could only see the
-	 * first, so a fix that made `agent.constructor` throw would satisfy the intent and
-	 * still read red. Measured: rebinding each capability with `constructor` shadowed made
-	 * the route throw `TypeError: agent.constructor is not a function` — the escape WAS
-	 * closed — while a value-asserting row stayed red. That is a row that punishes the fix.
+	 * Runs against the REAL capability set above, never the `probe` default. `probe` passes
+	 * no `implementations`, so its `agent` is `notWiredImplementations`' host stub — a
+	 * different object with a different `.constructor`, and one that reports the realm's
+	 * inert `process`. Every row in this block must go through here: a row that silently
+	 * falls back to the stub measures the harness rather than the escape.
+	 */
+	function runWithRealCapability(body: string): Promise<unknown> {
+		return runWorkflowScript(META, body, IMPLS);
+	}
+
+	/**
+	 * Runs a body and reports whether a HOST value came back, as `"leaked"` or `"closed"`.
 	 *
-	 * `"closed"` for a throw is not a way of making red go away by catching everything: a
-	 * script-internal failure is the mechanism working. The alternative — asserting on a
-	 * value — is what forced the contortion.
+	 * Deliberately NOT a bare value assertion. `reachThrough` was written when the escape
+	 * was believed real, and it stays because a bare `typeof value` is the shape that
+	 * produced the false finding: it answers for whatever the expression evaluates to, so a
+	 * body that fails to run at all — the missing-`return` case — reads exactly like a
+	 * successful leak. Naming the two outcomes makes "the script never ran" and "the script
+	 * ran and reached the host" different answers.
 	 */
 	async function reachThrough(body: string): Promise<"leaked" | "closed"> {
 		try {
 			return (await runWorkflowScript(META, body, IMPLS)) === undefined ? "closed" : "leaked";
 		} catch {
-			// The route did not produce a host value, because the route did not exist.
+			// The route produced no host value. Here that is the PRELUDE refusing, which is
+			// the confinement working — not a swallowed failure.
 			return "closed";
 		}
 	}
 
-	it("does not yield a constructor that can run the host's Math.random, so a resume reproduces", async () => {
-		// THE row. DETERMINISM_PRELUDE exists so a re-run reproduces the values in the
-		// journal; a script that reaches the real `Math.random` through its own capability
-		// produces numbers the cached run can never match, and every guarantee built on the
-		// journal describes a run that cannot happen. `parse.ts`'s DETERMINISM_BLOCKLIST
-		// cannot catch this — it matches source text, and this path is built at runtime.
-		expect(await reachThrough(`return agent.constructor("return Math.random()")();`)).toBe("closed");
+	it("resolves a capability's constructor to the realm's own Function, not the host's", async () => {
+		// THE row for this block, and the assertion the earlier draft lacked. A host
+		// function's `.constructor` is the question; this answers it directly instead of
+		// inferring it from a side effect. Both comparisons are the realm's own Function:
+		// `({}).constructor.constructor` is the realm intrinsic, and `Function` inside the
+		// script is the same object. If the realm's Function were ever displaced by the
+		// host's — by an injected binding, or by a capability that carried one — this fails.
+		const identity = await runWithRealCapability(
+			`return [agent.constructor === ({}).constructor.constructor, agent.constructor === Function,
+				agent.constructor.name].join("|");`,
+		);
+		expect(identity).toBe("true|true|Function");
 	});
 
-	it("does not yield a constructor that can read the host clock, which is what a journal records", async () => {
-		// `Date.now()` is the other half of the prelude, and the more dangerous half in
-		// practice: a random number is visibly wrong when a resume diverges, a plausible
-		// timestamp is not. A SEPARATE row from the random one because it is a different
-		// capability — a fix could neuter one and not the other — but the same route.
-		expect(await reachThrough(`return agent.constructor("return Date.now()")();`)).toBe("closed");
+	it("keeps the determinism prelude holding through a capability's constructor", async () => {
+		// What the identity row buys: the prelude still refuses after the walk. `Math.random`
+		// and `Date.now` are the two names the prelude neuters, so they are the two that
+		// would come back first if the escape were real. `parse.ts`'s DETERMINISM_BLOCKLIST
+		// cannot see this route — it matches source text, and this is built at runtime.
+		//
+		// Asserted as the prelude's own message, not as a generic throw: "threw something"
+		// would also be satisfied by a `TypeError` from a route that no longer exists, which
+		// is the failure mode this file already had once.
+		expect(
+			await runWithRealCapability(`try { agent.constructor("return Math.random()")(); return "called"; }
+				catch (e) { return e.message; }`),
+		).toContain("Math.random() is unavailable in a workflow");
+		expect(
+			await runWithRealCapability(`try { agent.constructor("return Date.now()")(); return "called"; }
+				catch (e) { return e.message; }`),
+		).toContain("Date.now() is unavailable in a workflow");
 	});
 
-	it("does not yield a constructor that can read the host environment, so secrets stay in the realm", async () => {
+	it("returns the realm's own process through the route, so the environment stays unreachable", async () => {
 		// `process.env` is the sharpest of the three. The realm's own `process` is a frozen
 		// two-key stub precisely so a script cannot read secrets; reaching the HOST's
-		// through the capability defeats that. Asked as "does this route hand back the host
-		// process at all", because a realm `process` with no `env` and a host one are
-		// indistinguishable to any assertion made after the route returns.
-		expect(await reachThrough(`return agent.constructor("return process")();`)).toBe("closed");
+		// through the capability would defeat that.
+		//
+		// GREEN, and the green is the finding rather than a gap in coverage. Measured
+		// against a real owner capability: the route returns the realm's OWN injected stub
+		// — `p === process` is true inside the script, keys are exactly `cwd`, and `env`,
+		// `exit` and `kill` are absent. A `constructor` reached through a host function
+		// compiles in the realm that owns the calling object, not the realm that received
+		// it, so `process` resolves to the realm binding. The leak is NOT here.
+		//
+		// An earlier draft of this file claimed `process.env` was reachable and used that
+		// as a red row. It was not: that reading came from a probe that mixed routes, and
+		// `typeof` on a never-populated value answers for a different expression than the
+		// one asserted. The rows that ARE red are `Math.random` and `Date.now` above,
+		// because those names are resolved by the escaping constructor and not by the
+		// realm's globals. Kept as a green row deliberately — it is what stops the next
+		// reader from re-deriving the same wrong claim from the same bad probe.
+		//
+		// Runs against `IMPLS`, not the `probe` default: `probe` passes no
+		// `implementations`, so its `agent` is a host stub rather than a supplied
+		// capability. For THIS row the two agree, but for the rows above they do not, and
+		// a block that mixes them measures whichever helper each row happened to call.
+		const viaCapability = `agent.constructor("return process")()`;
+		expect(await runWithRealCapability(`return ${viaCapability} === process;`)).toBe(true);
+		expect(await runWithRealCapability(`return Object.keys(${viaCapability}).sort().join(",");`)).toBe("cwd");
+		expect(await runWithRealCapability(`return typeof ${viaCapability}.env;`)).toBe("undefined");
+		expect(await runWithRealCapability(`return typeof ${viaCapability}.exit;`)).toBe("undefined");
+		expect(await runWithRealCapability(`return typeof ${viaCapability}.kill;`)).toBe("undefined");
+	});
+
+	it("still routes a call through the capability to the owner's implementation", async () => {
+		// The other direction, and the reason the previous rows are not "just delete the
+		// globals". A fix that made `.constructor` unreachable by making the capability
+		// unreachable would turn every one of the three rows above green and break the
+		// engine. This row holds the seam open: the call crosses back out to the owner's
+		// function, and the OWNER's own return value is the observable proof — a
+		// realm-local stub would answer with something else. Asserting the returned value
+		// rather than a message keeps it working for any future implementation, where the
+		// capability is wired for real and no longer throws.
+		expect(await runWithRealCapability(`return agent("x");`)).toBe("capability-result");
 	});
 });

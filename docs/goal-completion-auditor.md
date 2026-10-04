@@ -650,7 +650,7 @@ the gate belongs behind the existing `goal` tool, not beside it.
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Auditor rubber-stamps because it inherits the author's framing | High | empty resource loader + read-only tools; document cross-family as the stronger guarantee |
+| Auditor rubber-stamps because it inherits the author's framing | High | empty resource loader + read-only tools. **Cross-family is NOT the fix** — see "Đo đo lại: cross-family" below |
 | Auditor inherits the author's tools and completes its own goal | Critical | `goal` excluded from `agent.tools` — `blockedAgent` does **not** do this; **test it, do not comment it** |
 | `bash` in the allowlist lets the auditor mutate the repo | Medium | mirror `extragoal`'s rule — any call outside the allowlist fails the round; consider a repo-write detector as a follow-up |
 | Gate rejects but goal closes anyway | Critical | every rejection row asserts the goal is still active |
@@ -702,6 +702,35 @@ Bất biến phải giữ: **số site được bỏ qua bằng số site đư�
 rỗng thì con số phải là 0.
 
 ---
+
+## Đo đo lại: cross-family **không** phải câu trả lời (nghiên cứu 107 agent, 2026-10-04)
+
+Bản đầu của tài liệu này ghi cross-family là "bảo đảm mạnh hơn". **Nghiên cứu nói ngược**, và
+đây là kết quả từ nguồn sơ cấp, không phải suy đoán:
+
+> "Neither design enforces cross-model-family provenance, and the evidence is silent **because
+> it was searched for**, not because anyone declared against it — so cross-family is available in
+> both but **recommended by neither**."
+
+⇒ Đừng viết cross-family vào plan như một khuyến nghị. Nó là **một lựa chọn có sẵn, không ai
+khuyến nghị**, và sự im lặng bằng chứng ở đây là do đã tìm mà không thấy — không phải do có
+người đã cân nhắc rồi bác bỏ. Hai việc khác nhau.
+
+### Cái nghiên cứu đã đo được, đáng dùng hơn
+
+| Phát hiện | Ý nghĩa cho ta |
+|---|---|
+| Cổng của ultragoal nằm ở **`ultragoal-guard.ts:250` `validateCompletionReceipt`**, gọi từ `:194`/`:241`/`:413` — **không** nằm trong `completeGoalFromTool` | cổng ở **module riêng**, không nhét vào runtime — ta đặt ở handler tool, cùng nguyên tắc |
+| Độ tươi quyết định bằng **content hash**, không đồng hồ — **đã tự đo**: `ultragoal-receipt-freshness.ts` dài 561 dòng; `grep -cE 'ttl\|expiresAt\|expiry\|maxAge\|olderThan\|ageMs\|receiptAge'` = **0**, còn control `grep -c stale` = **20** (grep chạy đúng) | ta không có stale path; đừng tự thêm TTL |
+| Nguồn yếu **sống** của ultragoal: reconcile state dựa trên **allowlist lệnh thủ công**, và một lệnh thêm 3 tháng trước **đã lách** nó (từ research, **chưa tự đo**) | đây là lý do **không** dùng allowlist làm tiêu chí — xem mục cổng ở trên |
+| `pi-goal-x` chạy auditor trên **chính model của người dùng**; provenance trail ghi **ý định đã cấu hình**, không phải kết quả đã resolve | đừng gọi là cross-family nếu chưa resolve; phải đọc model **đã resolve** |
+| Cơ chế give-up của ultragoal: `DEFAULT_ULTRAGOAL_NUDGE_BUDGET = 10` tại `ultragoal-runtime.ts:430` — **đã tự đo** | con số cụ thể, không phải "chặn vô hạn". Mẫu cho `epic-i8o7` |
+
+⚠️ **Sửa mô tả của chính tôi về `skipAuditor`.** Tôi từng ghi nó là "settings flag". Đo lại:
+`goal-completion.ts:132` đọc `auditTarget.skipAuditor`, và `goal-drafting.ts:394` gán nó từ
+`confirmation.auditorEnabled === false` rồi `replaceGoal({ … skipAuditor })`. Nghĩa là nó là
+**trạng thái persist trên chính goal**, đặt lúc tạo — không phải cờ settings. Lý do loại vẫn
+đúng, và giờ đúng hơn: nó đi theo goal nên một goal đã tạo mang bypass của nó.
 
 ## Ngân sách sau một lần reject (đo, không phỏng đoán)
 

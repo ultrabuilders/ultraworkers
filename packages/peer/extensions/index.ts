@@ -269,31 +269,47 @@ function toSenderMode(raw: string | undefined): SenderMode | undefined {
 /**
  * The receiver context this extension registers.
  *
- * ## What is deliberately absent, and why it is not a bug in this file
+ * ## What is absent from this file, and what is NOT
  *
- * There is no `policy` here, and there is no way for this package to put one there.
- * Core resolves the user's `crossSessionInbound` choice by reading its own settings
- * (`peer/settings.ts:51`, `cfgPeerCrossSessionInbound.get(session.settings)`), and an
- * extension is handed **no route to those settings**: `ExtensionContext` exposes no
- * settings field, `api.pi` re-exports the `settings` singleton but not the setting
- * descriptor, and the registry that would look the descriptor up by id
- * (`lookupSetting`) is not exported from any public subpath. `registerSetting` mints a
- * setting the *extension* owns; it cannot read one core owns.
+ * There is no `policy` here, and nothing in THIS FILE supplies one.
  *
- * So this registers the half the extension can know — its own tokens — and leaves
- * `policy` unset. That is the honest state and the fence is built for it: an absent
- * `crossSessionInbound` is the user's absence rather than consent, and `fenceInbound`
- * resolves unset by comparing the two sessions' permission classes
- * (`fence/index.ts:118`) instead of choosing for them.
+ * MEASURED, and the previous version of this comment got half of it wrong: it claimed an
+ * extension had "no route" to the `crossSessionInbound` descriptor because `api.pi`
+ * re-exports `settings` but not the descriptor. The route exists — the package's export
+ * map carries a `./*` wildcard, so `@oh-my-pi/pi-coding-agent/peer/settings` resolves to
+ * `./src/peer/settings.ts` and exports `cfgPeerCrossSessionInbound`, whose descriptor has
+ * `.get(scope)`. Verified by importing the module, not by reading the export map:
+ *
+ * ```
+ * $ bun -e 'const m = await import("@oh-my-pi/pi-coding-agent/peer/settings"); …'
+ * RESOLVED. keys: CFG_PEER_CROSS_SESSION_INBOUND_VALUES, cfgPeerCrossSessionInbound
+ * cfgPeerCrossSessionInbound id: crossSessionInbound
+ * ```
+ *
+ * So `import { settings } from "@oh-my-pi/pi-coding-agent"` (exported at `index.ts:18`)
+ * plus that descriptor would reach the user's choice WITHOUT a line of core changing —
+ * which is the programme's own test, so closing this gap is an extension's job, not a core
+ * change. What is true here is narrower: `ExtensionContext` exposes no `settings` field,
+ * so reading it means importing the singleton rather than being handed one.
+ *
+ * Until that import is written, `policy` stays unset, and that is the honest state the
+ * fence is built for: an absent `crossSessionInbound` is the user's absence rather than
+ * consent, and `fenceInbound` resolves unset by comparing the two sessions' permission
+ * classes (`fence/index.ts:118`) instead of choosing for them.
+ *
+ * So this registers the half the extension can know on its own — its own tokens.
  *
  * The previous version of this file read `ctx.policy`, typed the context as
  * `ExtensionContext & { readonly policy?: string }`, and cast the read with
  * `as never`. An intersection with an *optional* field adds no runtime field, so the
  * read was `undefined` on every call — and the cast is what stopped the compiler from
  * saying so. It typechecked green while the setting it claimed to carry never arrived.
- * Closing the gap properly needs a host change (a settings seam on `ExtensionContext`,
- * or a `policy` supplied to the fence at call time), which is a core edit and not this
- * entry point's to make.
+ *
+ * A host change (a settings seam on `ExtensionContext`, or a `policy` passed to the fence at
+ * call time) is one way to close that, and was the previous claim here. It is not the only way,
+ * and it is not the cheapest: the two imports above reach the same value with no core edit at
+ * all. Prefer the import; take the host seam only if it turns out something about the value
+ * itself needs to change hands.
  */
 function fenceContext(ownTokens: ReadonlySet<string>): {
 	readonly mode: "default";

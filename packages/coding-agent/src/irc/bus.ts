@@ -276,10 +276,39 @@ export class IrcBus {
 			}
 			if (decision.action === "hold") {
 				// Held is a refusal to ACT, not to receive. Buffering is the whole
-				// point of `hold` — the message stays visible for review — so this
-				// enqueues and reports `failed`, matching how a buffered hand-off
-				// already reports at the catch below. The reason is what distinguishes
-				// a hold from a plain failure to a reader.
+				// point of `hold` — so this enqueues and reports `failed`, matching how
+				// a buffered hand-off already reports at the catch below. The reason is
+				// what distinguishes a hold from a plain failure to a reader.
+				//
+				// WHAT THIS IS NOT, stated because the previous version of this comment
+				// claimed the opposite — it promised the message "stays visible for
+				// review", and no review surface exists.
+				//
+				// Two facts, both measured:
+				//
+				// 1. **No hold review surface.** The message stays in the recipient's OWN
+				//    mailbox, and every drain path — `wait()` at :443, `take()` at :527 —
+				//    reads it WITHOUT consulting the fence. So the recipient agent reads
+				//    a held message on its next `wait` like any other. `hold` changes the
+				//    handoff path and the reported outcome; it does not change
+				//    reachability, and it never did.
+				// 2. **A held message is indistinguishable from a failed hand-off.** This
+				//    branch and the catch below both call `#enqueue`, which pushes a bare
+				//    `IrcMessage` into `#mailboxes: Map<string, IrcMessage[]>`. No field
+				//    records that a hold happened and no parameter distinguishes the two
+				//    callers, so after entry the two are the same value in the same place.
+				//    Same `unreadCount`, same `take`, same render.
+				//
+				// So the gap is not that `hold` fails to block — blocking is what `hold`
+				// means, per `peer/settings.ts:46` ("refuses to act but keeps the message
+				// visible"). The gap is that a decision the USER made is unobservable, and
+				// its result is mixed into a path shared with errors: someone who chose
+				// `hold` gets back exactly what they get when a hand-off fails.
+				//
+				// Making it observable means a MARKER on the mailbox entry
+				// (`IrcMessage[]` → `{message, held?: {reason, at}}[]`) plus a surface that
+				// reads it — deliberately NOT a redefinition of `hold`. Adding a check at
+				// the read path cannot work: by then the data is already merged.
 				this.#enqueue(message);
 				return { to: message.to, outcome: "failed", error: decision.reason };
 			}

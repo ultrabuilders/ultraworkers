@@ -128,11 +128,25 @@ export function buildInboundFenceContext(sources: {
 	readonly mode: NonNullable<IrcFenceContext["mode"]>;
 	/** The value this build could not parse, when a settings layer carried one. */
 	readonly invalid?: { readonly source: string; readonly value: unknown };
+	/**
+	 * What the TRANSPORT said about the sender, passed straight through.
+	 *
+	 * Carried on the context rather than read from a global because it is per-message: a
+	 * chain and a sender's asserted mode describe THIS hop, not the session. Nothing here
+	 * interprets them — `#deliver` forwards them to the fence, and `fenceInbound` owns the
+	 * rules — so this function's only job is to not drop them.
+	 */
+	readonly sender?: IrcFenceContext["sender"];
 }): IrcFenceContext {
 	const context: IrcFenceContext = {
 		policy: sources.policy as IrcFenceContext["policy"],
 		policySource: sources.policySource,
 		mode: sources.mode,
+		// Spread only when present, so an absent sender leaves `context.sender` undefined
+		// rather than `{}` — and `#deliver` reads it as `context.sender?.chain`, where an
+		// empty object and an absent one behave the same today and would not if the read
+		// ever became `'chain' in context.sender`.
+		...(sources.sender !== undefined ? { sender: sources.sender } : {}),
 	};
 	if (sources.invalid !== undefined) {
 		// Fail CLOSED, and say why. An unparseable value must not fall through to the

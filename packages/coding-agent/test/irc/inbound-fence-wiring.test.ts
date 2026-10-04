@@ -185,6 +185,49 @@ describe("the fence is handed the receiver's own state, not a default", () => {
 		expect(seen.receiver?.policySource).toBe("managed");
 	});
 
+	it("passes the transport's sender facts to the fence, chain included", async () => {
+		// The hop-chain path, up to the point the transport stops. `#deliver` reads
+		// `context.sender?.chain` and hands it to `fenceInbound`, which is where
+		// `hop-loop` and `hop-runaway` are decided — so a context builder that dropped
+		// `sender` would leave both bounds unreachable while every other row here stayed
+		// green.
+		//
+		// Not the whole of `epic-7us6`: nothing in production fills `sender` yet, because
+		// the transport is not connected to the bus. What this row proves is the narrower
+		// half that CAN be true today — the value reaches the fence if anything supplies it
+		// — so the remaining gap is exactly one hop upstream and no longer two.
+		const seen: Parameters<typeof recordingFence>[1] = {};
+		const chain = ["AmberFox", "SilverRidge"];
+		disposers.push(
+			addInboundFence({
+				fence: recordingFence("hold", seen),
+				context: buildInboundFenceContext({ mode: "default", sender: { chain, fromMode: "plan" } }),
+			}),
+		);
+		await IrcBus.global().send({ from: MAIN_AGENT_ID, to: "peer-a", body: "relayed" });
+
+		expect(seen.message?.chain).toEqual(chain);
+		expect(seen.message?.fromMode).toBe("plan");
+	});
+
+	it("leaves sender absent when none was supplied, rather than defaulting it", async () => {
+		// The negative half. An empty `sender: {}` would satisfy the row above for a direct
+		// message and read as "the transport said nothing", which is the same wire value as
+		// "nothing said anything" — the distinction `fenceInbound`'s own docblock relies on
+		// when it treats an absent `fromMode` as "unattested".
+		const seen: Parameters<typeof recordingFence>[1] = {};
+		disposers.push(
+			addInboundFence({
+				fence: recordingFence("hold", seen),
+				context: buildInboundFenceContext({ mode: "default" }),
+			}),
+		);
+		await IrcBus.global().send({ from: MAIN_AGENT_ID, to: "peer-a", body: "direct" });
+
+		expect(seen.message?.chain).toBeUndefined();
+		expect(seen.message?.fromMode).toBeUndefined();
+	});
+
 	it("re-reads the context per send, so a settings change takes effect at once", async () => {
 		// A bus that captured the context at construction would need a restart to honour
 		// a setting change. `IrcFenceContext.fence` is mutable by design (bus.ts:101-112)

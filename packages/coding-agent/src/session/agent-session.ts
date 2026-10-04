@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { scheduler } from "node:timers/promises";
+import { PEER_INCOMING_MESSAGE_TYPE } from "@oh-my-pi/pi-wire";
 import { isPromise } from "node:util/types";
 
 import {
@@ -1396,7 +1397,7 @@ export class AgentSession implements SettingsScope {
 			const wake: AgentMessage[] = [];
 			const fold: AgentMessage[] = [];
 			for (const record of records) {
-				if (record.role === "custom" && record.customType === "irc:incoming") wake.push(record);
+				if (record.role === "custom" && record.customType === PEER_INCOMING_MESSAGE_TYPE) wake.push(record);
 				else fold.push(record);
 			}
 			this.#foldStrandedIrcAsidesIntoContext(fold);

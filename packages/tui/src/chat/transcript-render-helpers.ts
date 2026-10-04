@@ -9,7 +9,7 @@ import { type Component } from "../tui";
 import { formatBytes, formatDuration } from "@oh-my-pi/pi-utils";
 import type { JobSnapshot } from "../tools/wait";
 import type { DaemonSnapshot } from "../tools/daemon";
-import { type CustomMessage, type FileMentionMessage, resolveAbortLabel, shouldRenderAbortReason } from "./messages";
+import { type CustomMessage, type FileMentionMessage, PEER_INCOMING_MESSAGE_TYPE, resolveAbortLabel, shouldRenderAbortReason } from "./messages";
 import { createIrcMessageCard } from "../tools/wait";
 import { formatArtifactErrorNotice, type OutputMeta } from "../tools/output-meta";
 import { replaceTabs, TRUNCATE_LENGTHS, truncateToWidth } from "../render/render-utils";
@@ -128,7 +128,7 @@ export function buildIrcMessageCard(message: CustomOrHookMessage, getExpanded: (
 		}>
 	).details;
 	const kind =
-		message.customType === "irc:incoming"
+		message.customType === PEER_INCOMING_MESSAGE_TYPE
 			? ("incoming" as const)
 			: message.customType === "irc:autoreply"
 				? ("autoreply" as const)

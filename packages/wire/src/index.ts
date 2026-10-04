@@ -169,6 +169,56 @@ export type SessionEntry =
 /** customType of collab guest prompts injected on the host. */
 export const COLLAB_PROMPT_MESSAGE_TYPE = "collab-prompt";
 
+/**
+ * customType of a message that arrived from another session.
+ *
+ * This is the FIRST of the three bracketing layers `epic-jwsy.11` names, and the
+ * one the bead calls the easiest to get wrong: *"Gate là `customType`, KHÔNG phải
+ * `attribution`."* The distinction is load-bearing rather than stylistic —
+ * `attribution` answers who is billed, while `customType` decides which code path
+ * a record takes, so a peer message marked here never reaches the path that opens
+ * a user turn.
+ *
+ * **The values are unchanged; only the names are new.** Every one of these is
+ * already persisted in session transcripts, so renaming the *strings* would orphan
+ * all of them. What was missing is the names: the four literals appeared 21 times
+ * across three packages with no single definition, which is the shape a rename
+ * silently forks — one copy changes, the others keep matching records the gate no
+ * longer recognises.
+ *
+ * Lives here because both the producer (`coding-agent`) and the consumers
+ * (`coding-agent`, `pi-tui`) already depend on `@oh-my-pi/pi-wire`, and it sits
+ * beside {@link COLLAB_PROMPT_MESSAGE_TYPE}, the same kind of marker.
+ */
+export const PEER_INCOMING_MESSAGE_TYPE = "irc:incoming";
+/** customType of an automatically delivered reply attributed to a peer session. */
+export const PEER_AUTOREPLY_MESSAGE_TYPE = "irc:autoreply";
+/** customType of a relay hop, carrying another session's output onward. */
+export const PEER_RELAY_MESSAGE_TYPE = "irc:relay";
+/** customType of a message injected into the shared work pool. */
+export const PEER_WORKPOOL_MESSAGE_TYPE = "irc:workpool";
+
+/**
+ * Every customType that marks a record as having arrived from a peer session.
+ *
+ * Membership here is what "a peer message" means at the type level, and it is the
+ * check the bead's gate turns on: a record whose `customType` is in this set never
+ * reaches the path that opens a user turn. Exported as data rather than as a
+ * predicate because the call sites were `||` chains over the literals, and a chain
+ * that has to be edited in five places is a chain that eventually misses one.
+ */
+export const PEER_MESSAGE_TYPES: readonly string[] = [
+	PEER_INCOMING_MESSAGE_TYPE,
+	PEER_AUTOREPLY_MESSAGE_TYPE,
+	PEER_RELAY_MESSAGE_TYPE,
+	PEER_WORKPOOL_MESSAGE_TYPE,
+];
+
+/** Whether `customType` marks a record that arrived from another session. */
+export function isPeerMessageType(customType: string | undefined): boolean {
+	return customType !== undefined && PEER_MESSAGE_TYPES.includes(customType);
+}
+
 /** `details` shape of `custom_message` entries with `customType === "collab-prompt"`. */
 export interface CollabPromptDetails {
 	from?: string;

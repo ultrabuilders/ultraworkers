@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent, Usage } from "@oh-my-pi/pi-ai";
 import { getStreamingPartialJson } from "@oh-my-pi/pi-ai/utils/block-symbols";
+import { PEER_INCOMING_MESSAGE_TYPE } from "@oh-my-pi/pi-wire";
 import { type Component, Spacer, Text } from "@oh-my-pi/pi-tui";
 import { customEntryInsertionPoints, mountCustomEntry } from "./mount-custom-entry";
 import { StatusNotice } from "@oh-my-pi/pi-tui/chrome/status-notice";
@@ -349,7 +350,7 @@ export class UiHelpers {
 						break;
 					}
 					if (
-						message.customType === "irc:incoming" ||
+						message.customType === PEER_INCOMING_MESSAGE_TYPE ||
 						message.customType === "irc:autoreply" ||
 						message.customType === "irc:relay" ||
 						message.customType === "irc:workpool"

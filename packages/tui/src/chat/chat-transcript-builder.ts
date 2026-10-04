@@ -15,7 +15,7 @@ import type { AgentMessage, AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { Usage } from "@oh-my-pi/pi-ai";
 import { type Component, type ExtensionTUISurface } from "../tui";
 import type { AdvisorMessageDetails } from "./messages";
-import { COLLAB_PROMPT_MESSAGE_TYPE, type CollabPromptDetails } from "./messages";
+import { COLLAB_PROMPT_MESSAGE_TYPE, PEER_INCOMING_MESSAGE_TYPE, type CollabPromptDetails } from "./messages";
 import { chatTranscriptDisplayPreferences as displayPreferences } from "./display-preferences";
 import type { MessageRenderer } from "./extension-types";
 import { LAUNCH_COMPLETION_MESSAGE_TYPE } from "./messages";
@@ -588,7 +588,7 @@ export class ChatTranscriptBuilder {
 			return;
 		}
 		if (
-			message.customType === "irc:incoming" ||
+			message.customType === PEER_INCOMING_MESSAGE_TYPE ||
 			message.customType === "irc:autoreply" ||
 			message.customType === "irc:relay" ||
 			message.customType === "irc:workpool"

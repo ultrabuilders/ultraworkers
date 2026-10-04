@@ -9,7 +9,7 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage } from "@oh-my-pi/pi-ai";
 import { escapeXmlText } from "@oh-my-pi/pi-utils";
-import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
+import { INTENT_FIELD, PEER_INCOMING_MESSAGE_TYPE } from "@oh-my-pi/pi-wire";
 import type {
 	BashExecutionMessage,
 	BranchSummaryMessage,
@@ -398,7 +398,7 @@ function customOneLiner(msg: CustomMessage | HookMessage): string {
 	const details = (msg.details ?? {}) as Record<string, unknown>;
 	const str = (key: string): string => (typeof details[key] === "string" ? (details[key] as string) : "");
 	switch (msg.customType) {
-		case "irc:incoming":
+		case PEER_INCOMING_MESSAGE_TYPE:
 			return `[irc] ${str("from") || "?"} → me: ${oneLine(str("message"))}`;
 		case "irc:relay":
 			return `[irc] ${str("from") || "?"} → ${str("to") || "?"}: ${oneLine(str("body"))}`;

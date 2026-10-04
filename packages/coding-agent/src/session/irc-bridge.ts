@@ -1,5 +1,6 @@
 import type { Agent, AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { prompt } from "@oh-my-pi/pi-utils";
+import { PEER_INCOMING_MESSAGE_TYPE } from "@oh-my-pi/pi-wire";
 import { type IrcMessage, type IrcOrigin } from "@oh-my-pi/pi-tui/tools/irc";
 import parentIrcSteerTemplate from "../prompts/steering/parent-irc.md" with { type: "text" };
 import ircIncomingTemplate from "../prompts/system/irc-incoming.md" with { type: "text" };
@@ -161,7 +162,7 @@ export class IrcBridge {
 					queue.remaining.push(record);
 					continue;
 				}
-				if (record.customType !== "irc:incoming") {
+				if (record.customType !== PEER_INCOMING_MESSAGE_TYPE) {
 					queue.remaining.push(record);
 					continue;
 				}
@@ -227,7 +228,7 @@ export class IrcBridge {
 		const origin: IrcOrigin = msg.origin ?? { kind: "peer", from: msg.from };
 		const record: CustomMessage = {
 			role: "custom",
-			customType: "irc:incoming",
+			customType: PEER_INCOMING_MESSAGE_TYPE,
 			content: prompt.render(ircIncomingTemplate, {
 				from: msg.from,
 				message: msg.body,

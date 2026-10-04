@@ -1,9 +1,9 @@
 {
-	"capturedAt": "2026-10-03",
+	"capturedAt": "2026-10-04",
 	"definition": "distinct files outside the module directory importing it or anything beneath it",
-	"packageFileCount": 7281,
+	"packageFileCount": 7354,
 	"modules": {
-		"config": 169,
+		"config": 170,
 		"tools": 124,
 		"utils": 112,
 		"session": 86,
@@ -25,8 +25,8 @@
 		"launch": 18,
 		"lsp": 14,
 		"plan-mode": 13,
+		"irc": 12,
 		"export": 11,
-		"irc": 11,
 		"secrets": 11,
 		"slash-commands": 11,
 		"tts": 11,
@@ -68,6 +68,7 @@
 		"exa": 1,
 		"if-bench": 1,
 		"markit": 1,
+		"peer": 1,
 		"speculation": 1,
 		"cli-commands.ts": 0,
 		"cli-process-entry.ts": 0,
@@ -87,5 +88,5 @@
 		"telemetry-settings.ts": 0,
 		"workspace-tree.ts": 0
 	},
-	"contentHash": "15961214932850443586"
+	"contentHash": "5073834895072429433"
 }

@@ -39,8 +39,10 @@ import {
 } from "@oh-my-pi/pi-coding-agent/session/acp-permission-gate";
 import { IrcBridge, type IrcBridgeHost } from "@oh-my-pi/pi-coding-agent/session/irc-bridge";
 import { type IrcMessage } from "@oh-my-pi/pi-tui/tools/irc";
-import type { Agent } from "@oh-my-pi/pi-agent-core";
-import type { AgentMessage, CustomMessage } from "@oh-my-pi/pi-coding-agent/session/messages";
+// `AgentMessage` is the runtime's own type, re-exported by agent-session — NOT by
+// `session/messages`, which only imports it. `check:ts` step 15 caught that import.
+import type { Agent, AgentMessage } from "@oh-my-pi/pi-agent-core";
+import type { CustomMessage } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { TempDir } from "@oh-my-pi/pi-utils";
 
 let tempDir: TempDir;

@@ -20,7 +20,8 @@ Subagents today push results into context **on every turn**. A workflow holds th
 and context receives only the final result. That is why `/ultracode` is still a badge rather than a
 real fan-out run.
 
-**This repo has no workflow concept at all** — blank slate, not a refactor:
+**This repo had no workflow concept at all** — blank slate, not a refactor. Measured before the
+implementation landed:
 
 ```
 $ grep -rni workflow packages/coding-agent/src
@@ -28,6 +29,13 @@ $ grep -rni workflow packages/coding-agent/src
 $ find packages -type d -name "*workflow*"
   → (empty)
 ```
+
+⚠️ **Re-run both before citing them as current.** The `find` half is still accurate today — the
+destination `packages/coding-agent/src/workflows/` does not exist yet and the move has not landed.
+The `grep` half is **already stale**: it returns **141** hits, not the handful quoted, because the
+word "workflow" is common in CI and commit machinery
+(`src/commit/agentic/validation.ts`, `src/cleanse/checkers.ts`, …) — none of them the concept.
+Treat the numbers above as the historical baseline that justified building rather than refactoring.
 
 ### Reference sources
 
@@ -45,13 +53,34 @@ line 1802.
 
 ## Architectural decision
 
-**An out-of-repo extension. No new package. No core changes.**
+**Built into the package: `packages/coding-agent/src/workflows/`.**
 
-AGENTS.md sets exactly one criterion: *"an extension written **outside this repo** installs and
-registers a tool + slash command + config key + lifecycle hook + TUI panel without changing a
-single line of core"*.
+> Superseded 2026-10-04 by the owner. The previous decision — build it as an out-of-repo extension
+> under `.claude/plugins/workflow/` — is **withdrawn**. Verbatim, on `epic-dynamic-workflows-259n`:
+>
+> > "check ultraworkers-b9 hiện tại peer đang hiểu nhầm nên implement vào `.claude` đó là sai
+> > **trong khi chúng ta đang build in logic implement ở package mà**"
+>
+> Recorded in the ledger at commit `2f7b1d5fa6`, so it can be checked rather than taken on trust:
+>
+> ```bash
+> $ grep -c "QUYẾT ĐỊNH CỦA OWNER" .beads/issues.jsonl   # → 2
+> ```
 
-All five seams already exist, measured at `packages/coding-agent/src/extensibility/extensions/types.ts`:
+**Why the old placement could not load — measured, not asserted.** The extension loader reads
+`providers: ["native"]` (`loader.ts:1108`), which resolves the source to `claude`
+(`builtin.ts:44` `SOURCE_PATHS.native`), and `discoverExtensionModulePaths` scans only
+**`<configDir>/extensions`** (`builtin.ts:491`). `.claude/plugins/workflow/` is **not in any scan
+root**, so it never loaded at all. That is why the destination is `src/workflows/` rather than a
+judgment about where extensions belong.
+
+**History is preserved by `git mv`, not by rewriting files.** A file moved with `git mv` keeps
+its history; the same file written afresh does not.
+
+### What the seam table still establishes
+
+The five seams AGENTS.md names all exist, measured at
+`packages/coding-agent/src/extensibility/extensions/types.ts`:
 
 | Needed | Verbatim | Line |
 |---|---|---|
@@ -64,9 +93,34 @@ All five seams already exist, measured at `packages/coding-agent/src/extensibili
 ⚠️ **Do not grep for `registerHook`** — it does not exist, `0` hits. The real name is `on(...)`.
 Measuring by a guessed name returns zero; measuring by the real name returns the seam.
 
-**This is not an aesthetic choice — it is how you prove the seam exists.** Shipping into core and
-then declaring victory proves nothing. That is the same failure as `epic-jwsy.11`: a correct
-fence, a correct test, zero production callers.
+### What changed, and what did not
+
+The old section argued that shipping into core "proves nothing". **That argument was correct about
+the out-of-repo tree and has been overruled for this epic** — the tree it described did not load,
+so it could not demonstrate anything either way. The boundary that survives is narrower and still
+fenceable:
+
+> **259n's implementation may touch `packages/coding-agent/src/workflows/`. What is forbidden is
+> touching anything outside it.**
+
+This retires the earlier "zero core diff" criterion (`d5579c400`), which rested on the withdrawn
+decision. `core-diff.test.ts` keeps its rows but must watch the **destination** tree once the move
+lands; a fence guarding a path that no longer exists is a dead fence.
+
+### Route into the builtin registry — only if later forced
+
+Three places must change **together**:
+
+| Location | Content |
+|---|---|
+| `tools/builtin-names.ts:1` | add the name to `BUILTIN_TOOL_NAMES`; `:34` derives `BuiltinToolName` from it |
+| `tools/index.ts:570` | entry in `BUILTIN_TOOLS` |
+| `tools/tool-admission.ts:99` | `ADMISSION_RULES` is `satisfies Record<BuiltinToolName \| HiddenToolName, ToolAdmissionRule>` ⇒ **a missing rule is a compile error** |
+
+`tool-admission.ts:179` (`?? true`) is where *unknown names are admitted* — the slot for
+runtime-registered tools, so `registerBuiltinTool` (`:642`) needs no rule.
+
+⚠️ **Re-measure before relying on these line numbers** — the tree has many agents on it.
 
 ### Route into core — only if later forced
 
@@ -179,47 +233,45 @@ Each row: *requirement* → *evidence in the reference repo* → *our target fil
 
 ## Target file tree
 
-```
-.tmp/ref/pi-dynamic-workflows/src/          →    .claude/plugins/workflow/src/
-├── workflow.ts                              →    engine/parse.ts
-│                                                 engine/vm.ts
-│                                                 engine/helpers.ts
-│                                                 engine/routing.ts
-├── workflow-capability-contract.ts          →    engine/contract.ts
-├── errors.ts                                →    errors.ts
-├── agent.ts                                 →    agent-bridge.ts
-├── agent-usage.ts                           →    usage.ts
-├── agent-history.ts                         →    history.ts
-├── shared-store.ts                          →    store.ts
-├── structured-output.ts                     →    structured-output.ts
-├── model-routing.ts / model-spec.ts         →    engine/routing.ts
-├── run-persistence.ts                       →    persistence/lease.ts
-├── run-record-store.ts                      →    persistence/record-store.ts
-├── fs-persistence.ts                        →    persistence/fs.ts
-├── workflow-paths.ts                        →    persistence/paths.ts
-├── config.ts                                →    config.ts
-├── logger.ts                                →    logger.ts
-├── workflow-manager.ts                      →    manager.ts
-├── workflow-ui.ts                           →    ui/navigator.ts
-│                                                 ui/keymap.ts
-│                                                 ui/layout.ts
-├── task-panel.ts                            →    ui/panel.ts
-├── display.ts                               →    ui/format.ts
-├── workflow-tool.ts                         →    tools/workflow.ts
-├── workflow-control-tool.ts                 →    tools/workflow-control.ts
-├── builtin-commands.ts / workflow-commands  →    commands/index.ts
-├── effort-command.ts                        →    commands/ultracode.ts
-├── workflow-editor.ts                       →    arming.ts
-├── workflow-saved.ts / builtin-workflows    →    workflows/registry.ts
-├── workflow-settings.ts                     →    settings.ts
-├── adversarial-review.ts                    →    workflows/adversarial-review.js
-├── pi-extension.ts                          →    extensions/workflow.ts
+The implementation lives at **`packages/coding-agent/src/workflows/`**. It is moved with `git mv`,
+so this is a relocation of the tree below, not a rewrite of it.
 
-skills/workflow-authoring/                   →    skills/workflow-authoring/
-test/                                        →    test/
+```
+.claude/plugins/workflow/src/   →   packages/coding-agent/src/workflows/
+├── engine/parse.ts                    engine/journal.ts
+│                                     engine/journal-delta.ts
+│                                     engine/contract.ts
+│                                     engine/paths.ts
+│                                     engine/vm.ts
+├── errors.ts                          status.ts
+├── types.ts                           config.ts
+├── manager.ts
+├── agent-bridge.ts                    agent-runner.ts
+├── agent-usage.ts                     agent-history.ts
+├── usage.ts
+├── persistence/lease.ts               persistence/record-store.ts
+│                                     persistence/resume-journal.ts
+│                                     persistence/run-persistence.ts
+│                                     persistence/run-agent-settlement.ts
+├── tools/workflow-control.ts
+└── ui/panel.ts                        ui/format.ts
+                                      ui/keymap.ts
+                                      ui/layout.ts
 ```
 
-**No file lands in `packages/`.** That is the condition that makes this plan correct.
+Reference-repo provenance for the files above is in `NOTICE.md`, moved alongside them.
+
+⚠️ **The plan this tree was first drawn from named files that were never built** —
+`engine/routing.ts`, `engine/helpers.ts`, `commands/`, `settings.ts`, `workflows/registry.ts`,
+`structured-output.ts`, `persistence/fs.ts`, and `logger.ts` appear in the original mapping and do
+not exist. Treat a target name in that table as a *proposal*, never as a fact about the tree;
+`find .claude/plugins/workflow/src -name '*.ts'` is the measurement.
+
+Tests live beside them at `packages/coding-agent/test/workflows/`.
+
+**Files may land in `packages/coding-agent/src/workflows/` — that is now the destination.** The
+withdrawn rule was "no file lands in `packages/`"; it is replaced by the narrower boundary above:
+implementation may touch that directory and nothing outside it.
 
 ---
 
@@ -795,10 +847,13 @@ A phase is done only when **its verification column is green** *and* the followi
 | 5 | `checkpointId` + `status` throws; errors return structured and are **not** thrown at the model | 6 |
 | 6 | all three tiers traverse with esc; pasted text never triggers a destructive binding | 7 |
 | 7 | after `consent.json` is written it does not ask again; a different fingerprint does ask | — |
-| 8 | **`git diff <base>...HEAD -- packages/` is empty** | — |
+| 8 | **implementation touches `packages/coding-agent/src/workflows/` and nothing outside it** | — |
 
-⚠️ Phase 8 is the **only** condition that proves this plan correct. The other seven can all be green
-with the extension in the wrong place.
+⚠️ Row 8 was `git diff <base>...HEAD -- packages/` is empty. That criterion is **withdrawn**
+(`d5579c400`): it rested on the out-of-repo placement, which the owner overruled on 2026-10-04.
+The replacement is narrower and still fenceable — the implementation may touch the destination
+directory, and touching anything outside it is the violation. A row that names a withdrawn rule is
+worse than no row: it reports green for a condition nobody intends to hold.
 
 ---
 
@@ -818,10 +873,18 @@ with the extension in the wrong place.
 
 ## Verification
 
+⚠️ **The `test/workflow/*.test.ts` paths below are relative to the workflow project root, not the
+repo root.** From the repo root they must be prefixed — today
+`.claude/plugins/workflow/test/workflow/`, and after the move
+`packages/coding-agent/test/workflows/`. Run them from the project directory and the bare paths
+work; run them from the repo root and every one silently matches no file, which `bun` reports as a
+filter miss rather than an error. That is a green-looking shell and a red-looking suite.
+
 ```bash
 # 1. Seam test — the only question AGENTS.md asks.
-#    Pass = git diff <base>...HEAD -- packages/ is empty.
-bun test test/extensions/workflow-seam.test.ts
+#    Red until the entrypoint exists (commit 93d292395c) — a green row here that reaches
+#    nothing is the epic-jwsy.11 shape, so the red is the honest state until then.
+bun test ./test/extensions/workflow-seam.test.ts
 
 # 2. Determinism + sandbox
 bun test test/workflow/determinism.test.ts   # Math.random, Date.now, Date(), new Date() all throw
@@ -857,8 +920,13 @@ bun test test/workflow/consent.test.ts      # asks once, asks again for a differ
                                            # does NOT ask again for the same fingerprint
 ```
 
-**The evidence must be:** an extension written **outside the repo** registering a tool + command +
-setting + hook + panel, running a real workflow, with `git diff -- packages/` **empty**.
+**The evidence must be:** the workflow implementation at
+`packages/coding-agent/src/workflows/` registering a tool + command + setting + hook + panel, and
+running a real workflow, with its diff **contained to that directory** — nothing outside it.
+
+*(This was "an extension written outside the repo … with `git diff -- packages/` empty". The
+out-of-repo form is withdrawn with the placement it depended on; the tree it named did not load.
+See [Architectural decision](#architectural-decision).)*
 
 ---
 

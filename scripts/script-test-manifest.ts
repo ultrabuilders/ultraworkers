@@ -112,6 +112,13 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// the pattern cannot see means the counts are not quotable, and the census
 	// reports that row while still exiting 0.
 	{ file: "check-census-self-blindness.test.ts", reason: "" },
+	// Guards the baseline gate's admissibility rather than its arithmetic, which is the
+	// same split as the row above: that gate abstains (VOID) when HEAD moves mid-measure,
+	// and it is the last link in `check:ts`'s `&&` chain — so an abstention that exited 0
+	// would be read as a pass by everything above it, and a confirmed regression that
+	// exited 0 would be a gate that cannot fail. Needs no credentials: it parses a
+	// verdict string, and its live run shells out to the gate it is checking.
+	{ file: "check-baseline-gate-admissible.test.ts", reason: "" },
 	{ file: "census-host-guard-producers.test.ts", reason: "" },
 	// The subdirectory tests. `onDiskTestFiles` read only the top level, so every
 	// file below was on disk, classified by nobody, and executed by nothing — the

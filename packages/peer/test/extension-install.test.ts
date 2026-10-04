@@ -8,6 +8,7 @@ import {
 } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { unregisterOwned } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent";
+import { resetSettingsForTest } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { getAgentDir, logger, removeSyncWithRetries, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 
 /**
@@ -117,13 +118,25 @@ describe("packages/peer installed as an extension", () => {
 	 * initialising second satisfies the read without perturbing the discovery walk.
 	 *
 	 * `inMemory` plus the temp agentDir keep this off the developer's real config.
+	 *
+	 * `policy` is `undefined` for the "user never chose" row, and then NO override is passed
+	 * at all. That has to go through this same helper rather than a second `Settings.init`
+	 * call, because `init` is a SINGLETON — `settings.ts:739` returns the existing
+	 * `globalInstancePromise` without constructing anything. A second call with different
+	 * options is a silent no-op, so an unset row written as its own init would inherit the
+	 * PREVIOUS row's `"refuse"` and pass for the wrong reason.
 	 */
-	async function initSettings(policy: "accept" | "hold" | "refuse"): Promise<void> {
+	async function initSettings(policy?: "accept" | "hold" | "refuse"): Promise<void> {
+		// `init` is a singleton (settings.ts:739) — the second call in a file returns the
+		// FIRST call's instance and ignores its options entirely. Without this reset the
+		// unset row reads whatever the previous row installed, which is how it passed for
+		// the wrong reason before.
+		resetSettingsForTest();
 		await Settings.init({
 			cwd: projectDir.path(),
 			agentDir: path.join(tempHome, ".omp", "agent"),
 			inMemory: true,
-			overrides: { crossSessionInbound: policy },
+			...(policy === undefined ? {} : { overrides: { crossSessionInbound: policy } }),
 		});
 	}
 
@@ -185,9 +198,11 @@ describe("packages/peer installed as an extension", () => {
 		// a fence into every later suite.
 		//
 		// `beforeEach` initialises Settings with `crossSessionInbound: "refuse"`, so this
-		// fails if the read is dropped, if it reads the wrong descriptor, or if it
-		// silently yields `undefined` — the last of which is what an earlier version
-		// did on every single call, behind a green typecheck.
+		// fails if the read is dropped or if it reads the wrong descriptor.
+		//
+		// It does NOT cover the unset case — a row asserting a CHOSEN value cannot tell
+		// `undefined` from `"accept"`. The mutation `?? "accept"` survives this row by
+		// construction; the next row is what kills it.
 		installInto(getAgentDir());
 		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
 
@@ -201,6 +216,40 @@ describe("packages/peer installed as an extension", () => {
 		expect(extension.peerFences.length).toBe(1);
 		expect(extension.peerFences[0].context?.policy).toBe("refuse");
 		// Still the extension's own half: the tokens are what core cannot supply.
+		expect(extension.peerFences[0].context?.ownTokens).toBeDefined();
+	});
+
+	it("reports an unset crossSessionInbound as absent, not as consent", async () => {
+		// The row that separates "the user chose nothing" from "the user accepted everything".
+		//
+		// `crossSessionInbound` is registered with `default: undefined` ON PURPOSE —
+		// `peer/settings.ts` gives the enum no default so a fourth state exists. Coerce it
+		// to `"accept"` and a user who never opened the settings panel gets inbound peer
+		// messages accepted, which is the fail-open direction: everything else in this fence
+		// is built so an absent value falls through to the permission-class comparison
+		// (`fence/index.ts:118`) instead of choosing for the user.
+		//
+		// Asserted with `toBeUndefined`, not `not.toBe("refuse")`: a substitute assertion
+		// would pass under `?? "accept"` and that is exactly the mutation this exists to
+		// kill. Also asserted on `in` — `policy` must be ABSENT, not `undefined`-valued,
+		// because `buildInboundFenceContext` spreads `sender` conditionally for the same
+		// reason and an explicit `undefined` reads differently to `'policy' in context`.
+		installInto(getAgentDir());
+		fs.mkdirSync(path.join(projectDir.path(), ".omp"), { recursive: true });
+
+		const result = await loadInstalled(projectDir.path());
+		const extension = result.extensions.find(ext => ext.path.includes(`${path.sep}peer${path.sep}`));
+		if (!extension) throw new Error("peer extension did not load");
+
+		// A settings object that never mentions the key: the user's absence.
+		await initSettings(undefined);
+		await fireSessionStart(extension.handlers.get("session_start") ?? [], projectDir.path());
+
+		const context = extension.peerFences[0].context as Record<string, unknown> | undefined;
+		expect(context).toBeDefined();
+		expect(context?.policy).toBeUndefined();
+		expect("policy" in (context ?? {})).toBe(false);
+		// The tokens still register — absence of a POLICY is not absence of the fence.
 		expect(extension.peerFences[0].context?.ownTokens).toBeDefined();
 	});
 

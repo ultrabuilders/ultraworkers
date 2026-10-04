@@ -329,8 +329,16 @@ function fenceContext(ownTokens: ReadonlySet<string>): {
 	// `default`, not the session's `ctx.mode`: that is `ExtensionMode` (`"tui"` and
 	// friends), a different vocabulary from the fence's `SenderMode`, and it describes
 	// the host's rendering mode rather than this sender's permission class.
+	//
+	// `policy` is spread conditionally, so an unset choice leaves the key ABSENT rather
+	// than present-and-`undefined`. The bus cannot tell those apart — it reads
+	// `context.policy` either way — but `'policy' in context` can, and
+	// `buildInboundFenceContext` already sets that precedent by spreading `sender` only
+	// when there is one. An absent choice and an explicit `undefined` are the same
+	// decision here, so the object should not claim to distinguish them.
+	const policy = cfgPeerCrossSessionInbound.get(settings);
 	return {
-		policy: cfgPeerCrossSessionInbound.get(settings),
+		...(policy !== undefined ? { policy } : {}),
 		mode: "default",
 		ownTokens,
 	};

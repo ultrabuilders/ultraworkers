@@ -9,9 +9,13 @@ changing it is a breaking change for anyone already published against it. A list
 names things which do not exist is worse than no list, so every row here was opened and
 read before it was written down.
 
-Measured 2026-10-03 at HEAD `2f277d83b1`. Re-verified 2026-10-04 at HEAD `340db8c24f`:
-all five rows still resolve at the paths and line numbers given, so only the stamp
-moved.
+Measured 2026-10-03 at HEAD `2f277d83b1`. Corrected 2026-10-04 at HEAD `6f87a78be7`:
+the TUI row named a line that was not the function it claimed, and the "four of the five"
+conclusion below was wrong — the acceptance test passes all five.
+
+Line numbers are deliberately absent from the rows below. A number is a claim about a
+revision, and this file outlives revisions; a path and a symbol name are the parts that
+stay true. Where a line is given it is incidental, not load-bearing.
 
 ## What core guarantees
 
@@ -21,23 +25,32 @@ moved.
 | **Slash command** | `packages/coding-agent/src/extensibility/custom-commands/` | barrel `index.ts` re-exports `loader.ts`, `types.ts`; bundled commands under `bundled/` |
 | **Config key** | `packages/coding-agent/src/config/registry.ts`, consumed from `extensibility/settings.ts` | `register({ id, type, default })` — `settings.ts:6` imports it and re-exports the resulting `cfg*` settings |
 | **Lifecycle hook** | `packages/coding-agent/src/extensibility/hooks/` | barrel re-exports `loader.ts`, `runner.ts`, `tool-wrapper.ts`, `trust.ts`, `result-validation.ts` |
-| **TUI** | `extensions/loader.ts:599` | `registerCopyTargetProvider(provider)` — **registers a copy target, not a panel** |
+| **TUI** | `extensibility/extensions/types.ts` (`ExtensionUIContext`) | `ctx.ui.setWidget(key, content, options)` — reached from a lifecycle hook's `ctx`, **not** from a top-level registrar |
 
-## The one that is not there
+## The TUI seam is reactive, and that is the whole of the limit
 
-**There is no TUI panel registrar.** Panels exist as a concept — `overlays/btw-panel.ts`,
-`overlays/cleanse-panel.ts`, `overlays/btw-history-panel.ts` — but nothing an out-of-repo
-extension can call to add one.
+`ctx.ui.setWidget` (`types.ts:371`) is a real out-of-repo seam, and the acceptance test
+proves it: `programme-acceptance-five-surfaces.test.ts` mounts a panel from a hook's `ctx`
+and asserts the host rendered it. So an extension **can** put a panel on screen.
 
-The only extension-callable TUI seam is `registerCopyTargetProvider`. An extension can
-therefore participate in the UI, and cannot yet extend it with a panel of its own.
+What does not exist is a **top-level registrar** — a way to declare a panel once, at load,
+independently of any event. The two differ in lifetime, not in reach: `setWidget` is
+reactive and lives inside the hook that ran, so a panel an extension wants to *keep*
+between events has nothing to hold it open with.
 
-This is recorded rather than fixed on purpose. Building a panel registrar is a new
-capability, and AGENTS.md's scope discipline says not to open a milestone for one unless
-the owner asks. Naming the absence is what the core-list promise requires; the absence
-itself is the owner's call.
+The panels that ship are core-owned and mounted by import, not registration:
+`btw-controller.ts` imports `BtwPanelComponent` and `BtwHistoryPanel` directly, and
+`cleanse-command-controller.ts` imports `CleansePanelComponent`. `registerMode`
+(`loader.ts:434`) is declared and implemented but has **no caller** — so the registry an
+extension would extend exists, and nothing has ever been put in it.
 
-Until one exists, the programme's test passes for **four of the five** surfaces.
+Recorded rather than fixed on purpose. A top-level registrar is a new capability, and
+AGENTS.md's scope discipline says not to open a milestone for one unless the owner asks.
+Naming the absence is what the core-list promise requires; the absence itself is the
+owner's call.
+
+Until one exists, the programme's test passes for **five of the five** surfaces — via the
+reactive seam — and what is missing is the *declarative* form, not the surface.
 
 ## The peer package's two seams — shipped
 

@@ -59,7 +59,22 @@ export interface PeerToolDeps {
 		to: string;
 		message: string;
 		notifyWhenIdle: boolean;
-	}) => Promise<{ readonly delivered: number; readonly receipts: readonly unknown[] }>;
+	}) => Promise<{
+		readonly delivered: number;
+		readonly receipts: readonly unknown[];
+		/**
+		 * Whether a requested `notifyWhenIdle` was actually arranged.
+		 *
+		 * OPTIONAL, and absent means "not requested" — a transport that never sees the
+		 * request has nothing to report, and requiring it would break every implementation
+		 * that does not care about idle notices.
+		 *
+		 * Present and `false` is the case that matters: the caller ASKED for a notice and
+		 * the transport dropped it. Without a way to say that, `peer.send` could only answer
+		 * `ok: true` to a promise nothing was going to keep — which is epic-m9wi.
+		 */
+		readonly notifyWhenIdleHonoured?: boolean;
+	}>;
 	/**
 	 * The trust fence, handed to the host at load.
 	 *
@@ -136,11 +151,26 @@ export function registerPeerTools(api: ExtensionAPI, deps: PeerToolDeps): void {
 			if (!to) return text({ ok: false, error: "A recipient is required." });
 			if (to === deps.selfId) return text({ ok: false, error: "Cannot send a message to yourself." });
 			if (!params.message.trim()) return text({ ok: false, error: "A non-empty message is required." });
+			const requested = params.notify_when_idle === true;
 			const result = await deps.deliver({
 				to,
 				message: params.message,
-				notifyWhenIdle: params.notify_when_idle === true,
+				notifyWhenIdle: requested,
 			});
+			// A dropped notice is a failed promise, and `ok: true` would be a lie the agent
+			// cannot act on: it asked to be told when the recipient went idle, was told
+			// "ok", and will never be told anything. The message still went out, so the
+			// delivery fields are reported either way — what changes is the verdict on the
+			// request, which is what the caller actually asked about.
+			if (requested && result.notifyWhenIdleHonoured === false) {
+				return text({
+					ok: false,
+					to,
+					...result,
+					error:
+						"The message was not delivered to anyone yet, and no idle notice was arranged: no transport is registered. Nothing will notify you when the recipient goes idle.",
+				});
+			}
 			return text({ ok: true, to, ...result });
 		},
 	});

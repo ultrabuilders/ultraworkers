@@ -186,7 +186,7 @@ export default function peerExtension(api: ExtensionAPI): void {
 				// process genuinely cannot enumerate its peers.
 				return [];
 			},
-			deliver: async () => {
+			deliver: async ({ notifyWhenIdle }: { notifyWhenIdle: boolean }) => {
 				// STUB, for the same reason and with the same honesty. No transport is
 				// registered in production, so there is no route; reporting zero
 				// delivered is the contract — a fabricated success here would be the one
@@ -201,7 +201,17 @@ export default function peerExtension(api: ExtensionAPI): void {
 				// both appear only in tests. So the seam is reachable from a test and
 				// from nowhere else — the `epic-jwsy.11` shape, where a registered
 				// capability reads as delivered because nothing was ever asked to deliver.
-				return { delivered: 0, receipts: [] };
+				//
+				// `notifyWhenIdleHonoured: false` is the honest half. With no transport there
+				// is nobody who could notice the recipient going idle, so the answer is
+				// `false` — and reporting it lets `peer.send` refuse a request it cannot keep
+				// rather than answer `ok: true` to a promise nothing was going to honour
+				// (epic-m9wi). Reported only when asked for, so an ordinary send is unchanged.
+				return {
+					delivered: 0,
+					receipts: [],
+					...(notifyWhenIdle ? { notifyWhenIdleHonoured: false } : {}),
+				};
 			},
 		};
 

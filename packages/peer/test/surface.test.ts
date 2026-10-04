@@ -45,7 +45,13 @@ interface Recorded {
  * on the first `registerTool`. Supplying the real module is what makes this
  * exercise the same path a host does rather than a look-alike.
  */
-function recordSurface(): Recorded {
+function recordSurface(
+	deliverOverride?: (params: { to: string; message: string; notifyWhenIdle: boolean }) => Promise<{
+		delivered: number;
+		receipts: readonly unknown[];
+		notifyWhenIdleHonoured?: boolean;
+	}>,
+): Recorded {
 	const tools: string[] = [];
 	const commands: string[] = [];
 	const defs = new Map<string, RecordedTool>();
@@ -73,6 +79,7 @@ function recordSurface(): Recorded {
 			return { delivered: 1, receipts: [] };
 		},
 		inboundFence: FENCE_OFFERED,
+		...(deliverOverride ? { deliver: deliverOverride } : {}),
 	});
 
 	registerPeerCommands(api as never, {
@@ -187,6 +194,68 @@ describe("the peer tool surface", () => {
 		expect(JSON.stringify(result)).not.toContain("unknown");
 		// And nothing was handed to the wire.
 		expect(delivered).toEqual([]);
+	});
+
+
+/**
+ * The parsed payload of a tool result.
+ *
+ * A tool result is an envelope whose `content[0].text` is pretty-printed JSON, so
+ * asserting on `JSON.stringify(result)` means asserting on that formatter's spacing.
+ * Parsing instead keeps these rows about the verdict, not about how it is rendered.
+ */
+async function resultOf(
+	defs: Map<string, RecordedTool>,
+	params: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+	const raw = await defs.get("peer.send")?.execute("id", params);
+	const envelope = raw as { content: Array<{ text: string }> };
+	return JSON.parse(envelope.content[0]!.text) as Record<string, unknown>;
+}
+
+	it("refuses a send whose idle notice was dropped, instead of answering ok to a promise", async () => {
+		// epic-m9wi. `notify_when_idle` is a PUBLIC parameter, and its own description
+		// promises "one notice when the recipient next goes idle". Before this, a transport
+		// that dropped the request had no way to say so, so the tool answered `ok: true` and
+		// the agent waited forever for a notice nothing had arranged.
+		//
+		// Both directions, because either one alone is satisfiable by a tool that always
+		// refuses: a row asserting only the refusal passes even if `ok: true` is gone
+		// entirely, and one asserting only success passes even if the refusal is gone.
+		const dropped = recordSurface(async () => ({
+			delivered: 0,
+			receipts: [],
+			notifyWhenIdleHonoured: false,
+		}));
+		const refused = await resultOf(dropped.defs, { to: "StormyOx", message: "hi", notify_when_idle: true });
+		expect(refused.ok).toBe(false);
+		// The reason must name what did NOT happen, or the agent cannot tell a dropped
+		// notice from a failed send and will retry the wrong thing.
+		expect(String(refused.error)).toContain("idle");
+
+		const kept = recordSurface(async () => ({
+			delivered: 1,
+			receipts: [],
+			notifyWhenIdleHonoured: true,
+		}));
+		const honoured = await resultOf(kept.defs, { to: "StormyOx", message: "hi", notify_when_idle: true });
+		expect(honoured.ok).toBe(true);
+	});
+
+	it("leaves an ordinary send alone, since it asked for no notice", async () => {
+		// The regression this defends: the refusal firing on every send. A transport that
+		// reports nothing (the field absent) is saying "not requested", not "dropped" —
+		// and a send with no `notify_when_idle` must stay `ok: true` either way.
+		const { defs } = recordSurface();
+		expect((await resultOf(defs, { to: "StormyOx", message: "hi" })).ok).toBe(true);
+
+		// And a transport that drops notices still succeeds for a send that did not ask.
+		const dropped = recordSurface(async () => ({
+			delivered: 1,
+			receipts: [],
+			notifyWhenIdleHonoured: false,
+		}));
+		expect((await resultOf(dropped.defs, { to: "StormyOx", message: "hi" })).ok).toBe(true);
 	});
 
 	it("offers no way to force-release another agent's claim", () => {

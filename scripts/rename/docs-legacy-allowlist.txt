@@ -92,6 +92,14 @@ docs/extension-trust-model.md	11
 docs/extensions.md	1
 # plugin manifest key read from package.json
 docs/gemini-manifest-extensions.md	2
+# Quoted path of a file that EXISTS, not a legacy brand string. Both occurrences are
+# `packages/coding-agent/src/discovery/omp-plugins.ts` (:682, :684), cited in the
+# section "Đính chính một claim đã truyền sai" as the file whose L336-350 `if` blocks
+# disprove a relayed `check:ts` failure count. Measured: that file is on disk (15 KB),
+# so the token is part of a CURRENT filename. Rewriting it in the doc would make the
+# doc cite a path that does not exist, and the retraction would lose its evidence.
+# Pinned at the gate's own count (2), so a 3rd occurrence reds.
+docs/goal-completion-auditor.md	2
 # on-disk config dir name
 docs/hooks.md	7
 # on-disk config dir name
@@ -236,8 +244,6 @@ packages/coding-agent/examples/sdk/README.md	2
 packages/coding-agent/README.md	1
 # omp.sh is a live domain; on-disk config dir name
 packages/collab-web/README.md	3
-# /opt/omp/bin is a real mount prefix (metaharness/src/runner.ts:40-41 SOURCE_SRC_MOUNT/SOURCE_BIN_MOUNT)
-packages/metaharness/README.md	1
 # on-disk config dir name; npm package @oh-my-pi/omp-stats
 packages/stats/README.md	5
 # on-disk config dir name

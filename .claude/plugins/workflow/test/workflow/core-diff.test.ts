@@ -49,15 +49,58 @@ const KNOWN_VIOLATIONS: ReadonlyMap<string, readonly string[]> = new Map([
 
 type Offence = { sha: string; paths: string[] };
 
+/**
+ * The repository root, resolved by GIT rather than by counting `..` segments.
+ *
+ * `bun test` runs with the cwd of whoever invoked it, and this file is reached from
+ * two different ones — `bun test` at the repo root passes, and `bun test` from
+ * `.claude/plugins/workflow/` fails all three rows with
+ * `git log ... exited 128`, because `GUARDED_TREES` holds ROOT-RELATIVE paths that
+ * do not exist from there. Measured both: 3 pass / 0 fail from the root, 0 pass /
+ * 3 fail from the plugin directory, same commit.
+ *
+ * The root is asked of git instead of derived from `import.meta.dir`, for two
+ * reasons that a `../..` walk gets wrong. Counting segments assumes the file's
+ * depth in the tree, which a moved file silently invalidates; and `--show-toplevel`
+ * answers the question git is already being asked, so it cannot disagree with the
+ * repository the log is read from. (`.claude/plugins/workflow/` has no `.git` of
+ * its own — measured — so this resolves the main root from inside the plugin too.)
+ *
+ * Resolved once, lazily: a module-level await would run the subprocess on import,
+ * which is how a test file starts costing something before any row asks it for.
+ */
+let repoRoot: string | undefined;
+
+async function resolveRepoRoot(): Promise<string> {
+	if (repoRoot !== undefined) return repoRoot;
+	const result = await $`git rev-parse --show-toplevel`.quiet().nothrow();
+	const root = result.stdout.toString().trim();
+	if (result.exitCode !== 0 || root === "") {
+		throw new Error(
+			`git rev-parse --show-toplevel exited ${result.exitCode}: this guard measures a git ` +
+				`history, and without a repository root it has nothing to measure`,
+		);
+	}
+	repoRoot = root;
+	return repoRoot;
+}
+
 async function sh(args: string[]): Promise<string> {
-	const result = await $`git ${args}`.quiet().nothrow();
+	const result = await $`git ${args}`
+		.cwd(await resolveRepoRoot())
+		.quiet()
+		.nothrow();
 	if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} exited ${result.exitCode}`);
 	return result.stdout.toString();
 }
 
 /** Every commit that touched a guarded tree, newest first. */
 async function commitsTouchingGuardedTrees(): Promise<string[]> {
-	const out = await sh(["log", "--format=%H", "-20", ...GUARDED_TREES]);
+	// `--` separates revisions from paths. Without it a pathspec that happens to share a
+	// name with a ref (a branch or tag called `extensions`, say) is read as a REVISION and
+	// the log silently describes a different set of commits than the one asked for. The
+	// sibling `git show` below already had it; this call did not.
+	const out = await sh(["log", "--format=%H", "-20", "--", ...GUARDED_TREES]);
 	return out
 		.split("\n")
 		.map(line => line.trim())
@@ -95,7 +138,9 @@ describe("the programme's criterion: extension commits carry no core diff", () =
 		// Named in full rather than counted: "3 commits" sends the reader to a log, whereas
 		// the sha and the offending paths are the whole finding.
 		expect(
-			offences.map(o => `${o.sha.slice(0, 9)} touched core from an extension commit:\n    ${o.paths.join("\n    ")}`).join("\n"),
+			offences
+				.map(o => `${o.sha.slice(0, 9)} touched core from an extension commit:\n    ${o.paths.join("\n    ")}`)
+				.join("\n"),
 		).toBe("");
 	});
 

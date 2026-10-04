@@ -10,12 +10,13 @@ reproduced below.
 
 ## What was copied, and from where
 
-| File here | Copied from | Version |
-|---|---|---|
-| `src/errors.ts` | `src/errors.ts` (`WorkflowErrorCode`, `WorkflowError`, `CapabilityErrorDiagnostic`, `WorkflowCapabilityContractError`) | 3.13.1 @ `3bea96c` |
-| `src/engine/parse.ts` | `src/workflow.ts:514`, `:2011-2133` | 3.13.1 @ `3bea96c` |
-| `src/engine/vm.ts` | `src/workflow.ts:1799-1817`, `:529-546` | 3.13.1 @ `3bea96c` |
-| `src/engine/contract.ts` | `src/workflow-capability-contract.ts:92-101`, `:107-110`, `:113-132`, `:146-149`, `:698-760`, `:839-845`; `src/enums.ts:34-38`; the 18 `runtimeGlobal(...)` declarations at `:317-490` | 3.13.1 @ `3bea96c` |
+| File here                | Copied from                                                                                                                                                                                            | Version            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `src/errors.ts`          | `src/errors.ts` (`WorkflowErrorCode`, `WorkflowError`, `CapabilityErrorDiagnostic`, `WorkflowCapabilityContractError`)                                                                                 | 3.13.1 @ `3bea96c` |
+| `src/engine/parse.ts`    | `src/workflow.ts:514`, `:2011-2133`                                                                                                                                                                    | 3.13.1 @ `3bea96c` |
+| `src/engine/vm.ts`       | `src/workflow.ts:1799-1817`, `:529-546`                                                                                                                                                                | 3.13.1 @ `3bea96c` |
+| `src/engine/contract.ts` | `src/workflow-capability-contract.ts:92-101`, `:107-110`, `:113-132`, `:146-149`, `:698-760`, `:839-845`; `src/enums.ts:34-38`; the 18 `runtimeGlobal(...)` declarations at `:317-490`                 | 3.13.1 @ `3bea96c` |
+| `src/agent-bridge.ts`    | `src/workflow.ts:770-786` (synchronous `timeoutMs` guard), `:1233`, `:1275-1282` (recoverable→`null` / non-recoverable→throw), `:2346-2348` (`isEmptyTextAgentResult`); `src/agent.ts:771`, `:788-790` | 3.13.1 @ `3bea96c` |
 
 `src/engine/vm.ts`'s `DETERMINISM_PRELUDE` is byte-for-byte identical to the
 reference's, verified by comparing the 16 array elements.

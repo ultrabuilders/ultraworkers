@@ -111,6 +111,12 @@ describe("unloadExtension", () => {
 			// so leaving it would reinstall trampolines on the next initialize().
 			expect(runner.getLoadedExtensions().map(e => e.path)).not.toContain(path);
 		} finally {
+			// The fallback registry is process-wide, and `bun test` runs every file
+			// in one process. These two tests were the only ones here that skipped
+			// this, so their `return true` trampolines outlived the file and consumed
+			// every later denied write in the suite — which made
+			// `tools/file-write-fallback.test.ts` red in a full run and green alone.
+			runner.disposeFileFallbacks();
 			await fs.rm(dir, { recursive: true, force: true });
 		}
 	});
@@ -125,6 +131,12 @@ describe("unloadExtension", () => {
 			expect(runner.unloadExtension(path)).toBe(false);
 			expect(runner.unloadExtension("/ext/never-loaded.ts")).toBe(false);
 		} finally {
+			// The fallback registry is process-wide, and `bun test` runs every file
+			// in one process. These two tests were the only ones here that skipped
+			// this, so their `return true` trampolines outlived the file and consumed
+			// every later denied write in the suite — which made
+			// `tools/file-write-fallback.test.ts` red in a full run and green alone.
+			runner.disposeFileFallbacks();
 			await fs.rm(dir, { recursive: true, force: true });
 		}
 	});

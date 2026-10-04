@@ -99,3 +99,113 @@ describe("the workflow realm does not leak the host's constructors", () => {
 		expect(await probe(`try { new Date().getTime(); return "called"; } catch { return "threw"; }`)).toBe("threw");
 	});
 });
+
+/**
+ * epic-vm7y — a capability the OWNER supplies is a HOST function, and a host function's
+ * `.constructor` is the HOST `Function`. That is a working escape out of the realm, and it
+ * defeats the determinism prelude outright.
+ *
+ * These rows are RED today and are expected to stay red until the capability handoff is
+ * fixed. They are the falsifier for that fix — written before it, red because the leak is
+ * real, and they become the proof when it closes. Written before the leak they would be
+ * green and prove nothing; written after the fix they would be a description, not evidence.
+ *
+ * WHY THE ROWS ABOVE DID NOT CATCH THIS, though they were written to hold the same
+ * property. They hold a NARROWER one, and the difference is the whole point. They probe
+ * `({}).constructor.constructor`, which resolves through the REALM's
+ * `Object.prototype.constructor`. A capability is reachable BY REFERENCE — that is what it
+ * is for — and a host function carries the host `Function` in its `.constructor` slot with
+ * no realm intrinsic in between. So the rows above prove no host built-in is reachable by
+ * NAME; these prove none is reachable through a REFERENCE.
+ *
+ * A note on how these rows were checked, because a survivor and a no-op look identical at
+ * `0 fail`. Injecting the host `Function` as a context global leaves every row above GREEN
+ * — but that is a NO-OP mutation, not a surviving one: a global binding does not shadow a
+ * realm intrinsic, so the mechanism was never touched. The escape that IS real bypasses the
+ * realm entirely, by carrying the host `Function` in with a host object.
+ */
+describe("epic-vm7y — a supplied capability does not hand the script the host Function", () => {
+	/** The full 18-global set the contract requires; only `agent` is a real capability. */
+	function implementationsWithHostAgent(): Parameters<typeof runWorkflowScript>[2] {
+		const unwired = (name: string) => () => {
+			throw new Error(`${name} not wired`);
+		};
+		return {
+			// A plain host arrow function — the shape every real capability will have.
+			agent: () => "capability-result",
+			parallel: unwired("parallel"),
+			pipeline: unwired("pipeline"),
+			workflow: unwired("workflow"),
+			verify: unwired("verify"),
+			judgePanel: unwired("judgePanel"),
+			loopUntilDry: unwired("loopUntilDry"),
+			completenessCheck: unwired("completenessCheck"),
+			retry: unwired("retry"),
+			gate: unwired("gate"),
+			checkpoint: unwired("checkpoint"),
+			log: unwired("log"),
+			phase: unwired("phase"),
+			cwd: process.cwd(),
+			process: Object.freeze({ cwd: () => process.cwd() }),
+			args: undefined,
+			budget: Object.freeze({ total: 0, spent: () => 0, remaining: () => 0 }),
+			console: Object.freeze({
+				log: unwired("log"),
+				info: unwired("info"),
+				warn: unwired("warn"),
+				error: unwired("error"),
+			}),
+		} as never;
+	}
+
+	const IMPLS = implementationsWithHostAgent();
+
+	/**
+	 * Runs a body and reports whether it reached a HOST capability, as `"leaked"` or
+	 * `"closed"`. NOT a boolean, and not a bare value: the property under test is
+	 * INACCESSIBLE, and there are two honest ways to achieve that — the constructor route
+	 * fails, or it is gone. A row that asserted on the returned value could only see the
+	 * first, so a fix that made `agent.constructor` throw would satisfy the intent and
+	 * still read red. Measured: rebinding each capability with `constructor` shadowed made
+	 * the route throw `TypeError: agent.constructor is not a function` — the escape WAS
+	 * closed — while a value-asserting row stayed red. That is a row that punishes the fix.
+	 *
+	 * `"closed"` for a throw is not a way of making red go away by catching everything: a
+	 * script-internal failure is the mechanism working. The alternative — asserting on a
+	 * value — is what forced the contortion.
+	 */
+	async function reachThrough(body: string): Promise<"leaked" | "closed"> {
+		try {
+			return (await runWorkflowScript(META, body, IMPLS)) === undefined ? "closed" : "leaked";
+		} catch {
+			// The route did not produce a host value, because the route did not exist.
+			return "closed";
+		}
+	}
+
+	it("does not yield a constructor that can run the host's Math.random, so a resume reproduces", async () => {
+		// THE row. DETERMINISM_PRELUDE exists so a re-run reproduces the values in the
+		// journal; a script that reaches the real `Math.random` through its own capability
+		// produces numbers the cached run can never match, and every guarantee built on the
+		// journal describes a run that cannot happen. `parse.ts`'s DETERMINISM_BLOCKLIST
+		// cannot catch this — it matches source text, and this path is built at runtime.
+		expect(await reachThrough(`return agent.constructor("return Math.random()")();`)).toBe("closed");
+	});
+
+	it("does not yield a constructor that can read the host clock, which is what a journal records", async () => {
+		// `Date.now()` is the other half of the prelude, and the more dangerous half in
+		// practice: a random number is visibly wrong when a resume diverges, a plausible
+		// timestamp is not. A SEPARATE row from the random one because it is a different
+		// capability — a fix could neuter one and not the other — but the same route.
+		expect(await reachThrough(`return agent.constructor("return Date.now()")();`)).toBe("closed");
+	});
+
+	it("does not yield a constructor that can read the host environment, so secrets stay in the realm", async () => {
+		// `process.env` is the sharpest of the three. The realm's own `process` is a frozen
+		// two-key stub precisely so a script cannot read secrets; reaching the HOST's
+		// through the capability defeats that. Asked as "does this route hand back the host
+		// process at all", because a realm `process` with no `env` and a host one are
+		// indistinguishable to any assertion made after the route returns.
+		expect(await reachThrough(`return agent.constructor("return process")();`)).toBe("closed");
+	});
+});

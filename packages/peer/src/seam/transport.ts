@@ -98,6 +98,15 @@ export interface PeerTransportCapabilities {
 	 * far cheaper than discovering it in a transcript that never moved — and the
 	 * transport keeps working for the case it *is* good at, which is
 	 * {@link PeerLockBackend}-free fire-and-forget with a durable inbox.
+	 *
+	 * `true` promises the message reached the recipient's TRANSCRIPT, and nothing
+	 * more: `injected` does NOT promise survival across a restart. That is the
+	 * division of labour with {@link durable}, and it holds only because
+	 * `toDeliveryOutcome` keys off `injects` and `unreadAvailability` keys off
+	 * `durable` — so the two are separate guarantees, never summed. A transport
+	 * declaring `injects: true, durable: false` correctly reports `injected` for a
+	 * message that is then gone after a restart; read it as "delivered into the
+	 * session", never as "durably stored".
 	 */
 	readonly injects: boolean;
 }
@@ -175,6 +184,18 @@ const overrides = new Map<string, PeerTransport>();
  * layer, and a host that shuts its transport down needs the reverse operation to
  * exist. An extension can reach neither end of it: it adds a registration above
  * this one or removes its own, and nothing else.
+ *
+ * `builtin` is a SNAPSHOT OF WHAT THE HOST INSTALLED, not data re-derived on
+ * demand. This differs deliberately from `unregisterProvider`, which restores by
+ * re-deriving the built-ins from the static layer
+ * (`#reloadStaticModels({force: true, …})`) — so a host that changes an
+ * underlying setting sees the change after an unregister. Here, an unregister
+ * re-exposes the transport that was installed at the time, and a host whose
+ * built-in should track a later setting has no path to update it except calling
+ * this function again. That is cheaper (nothing reloads) and correct while the
+ * host installs once; it is a constraint to know about, not one to infer — so a
+ * host that installs per settings must re-install rather than expect unregister
+ * to refresh.
  */
 export function setBuiltinPeerTransport(transport: PeerTransport | undefined): void {
 	if (transport !== undefined) assertProtocolVersion(transport);

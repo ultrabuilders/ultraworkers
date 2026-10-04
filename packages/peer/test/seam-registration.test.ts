@@ -70,7 +70,7 @@ afterEach(async () => {
 	for (const release of owedReleases.splice(0)) release();
 	setBuiltinPeerTransport(undefined);
 	// Every id these rows register, in case a row asserted before registering.
-	for (const id of ["fixture-transport", "fixture-transport-2", "stale-version"]) {
+	for (const id of ["fixture-transport", "fixture-transport-2", "stale-version", "t-A", "t-B"]) {
 		unregisterPeerTransport(id);
 	}
 	await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true })));
@@ -175,6 +175,33 @@ describe("an extension written outside this repo registers both seams", () => {
 		expect(fixture.names).toEqual(
 			expect.arrayContaining(["registerPeerTransport", "registerPeerLockBackend", "registerPeerTools"]),
 		);
+	});
+});
+
+describe("re-registering an id makes the newest transport the active one", () => {
+	it("does not let the first registration keep serving under a reused id", () => {
+		// The consumer this defends: `activePeerTransport` is documented as "the
+		// last registration wins", and an extension reload re-registers under the
+		// same id. If re-registration did not take effect, the session would keep
+		// talking to the transport object the previous load installed — with no
+		// error, no warning, and a fresh object in the registry that is never read.
+		// `Map.set` on an existing key replaces the value but KEEPS the original
+		// insertion order, so "last" is decided by first-registration time.
+		setBuiltinPeerTransport(transportFixture("builtin-uds"));
+
+		// Control: distinct ids, last registered is last. Without this the row below
+		// could be satisfied by a registry that simply always returns the only entry.
+		registerPeerTransport(transportFixture("t-A"));
+		registerPeerTransport(transportFixture("t-B"));
+		expect(activePeerTransport()?.id).toBe("t-B");
+
+		// The defect: t-A is registered LAST in time, but was inserted first.
+		const reloaded = transportFixture("t-A");
+		registerPeerTransport(reloaded);
+
+		// Identity, not id: a registry that kept the old VALUE under a matching id
+		// would pass an id comparison while still serving the stale transport.
+		expect(activePeerTransport()).toBe(reloaded);
 	});
 });
 

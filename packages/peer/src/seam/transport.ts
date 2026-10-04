@@ -206,6 +206,13 @@ export function activePeerTransport(): PeerTransport | undefined {
  */
 export function registerPeerTransport(transport: PeerTransport): void {
 	assertProtocolVersion(transport);
+	// Delete before set. `Map.set` on a key that is already present REPLACES the
+	// value and keeps the ORIGINAL insertion position, so without this line a
+	// re-registered id stays where it first appeared and never becomes "last".
+	// The extension API does not promise ids are unique — a reload re-registers
+	// the same id — and the failure is silent: the new transport is stored, the
+	// old one keeps serving, and nothing reports a conflict.
+	overrides.delete(transport.id);
 	overrides.set(transport.id, transport);
 }
 

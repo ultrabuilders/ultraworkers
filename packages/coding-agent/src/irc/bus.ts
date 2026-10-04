@@ -14,6 +14,7 @@ import { logger, Snowflake } from "@oh-my-pi/pi-utils";
 import { AgentLifecycleManager } from "../registry/agent-lifecycle";
 import { AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
 import type { CustomMessage } from "../session/messages";
+import { resolveInboundFenceContext } from "./inbound-fence";
 
 interface IrcWaiter {
 	from?: string;
@@ -102,15 +103,22 @@ export interface IrcFenceContext {
 	/**
 	 * The fence to consult. Omit to deliver unfenced.
 	 *
-	 * MUTABLE, unlike every other field here, and that asymmetry is deliberate: a
-	 * host holds one context object for the life of the process and rewrites this
-	 * field when the user changes the setting. `readonly` would force a rebuild of
-	 * the bus to change a policy, which is the bug the per-send accessor exists to
-	 * prevent — the object is captured once and re-read on every delivery.
+	 * Mutable so a host can swap the fence implementation itself — an extension
+	 * reloading, a test installing a different one — without rebuilding the bus.
 	 */
 	fence?: IrcFence;
-	/** What the receiving USER chose. `undefined` is NOT `accept`. */
-	readonly policy?: IrcInboundPolicy;
+	/**
+	 * What the receiving USER chose. `undefined` is NOT `accept`.
+	 *
+	 * MUTABLE, and this is the field a settings edit actually changes. `readonly` here
+	 * would have made the mutability of `fence` above useless for its stated purpose:
+	 * the accessor's whole reason to exist (see the constructor) is that a user editing
+	 * `crossSessionInbound` mid-session takes effect on the next message, and a
+	 * settings change is a change to THIS value, not to the function. A host hitting
+	 * the type error had two bad options — cast the readonly away, or replace the
+	 * whole context object per edit — and both hide the mistake from the next reader.
+	 */
+	policy?: IrcInboundPolicy;
 	/** Which settings layer decided `policy`, so a held message can name it. */
 	readonly policySource?: IrcFenceReceiver["policySource"];
 	/** The receiver's own permission mode, for the class comparison. */
@@ -134,7 +142,12 @@ export class IrcBus {
 
 	static global(): IrcBus {
 		if (!IrcBus.#global) {
-			IrcBus.#global = new IrcBus();
+			// Resolved PER SEND, never captured: a settings change must reach the next
+			// message, and this bus outlives every settings edit a user makes in a
+			// session. The peer extension installs the fence at load time
+			// (`addInboundFence`), so the accessor is what turns "the fence exists"
+			// into "the fence applies" without rebuilding the bus.
+			IrcBus.#global = new IrcBus(undefined, undefined, resolveInboundFenceContext);
 		}
 		return IrcBus.#global;
 	}

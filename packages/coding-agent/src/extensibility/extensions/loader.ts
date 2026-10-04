@@ -2,6 +2,7 @@
  * Extension loader - loads TypeScript extension modules using native Bun import.
  */
 import type { PeerLockBackend, PeerTransport } from "../../irc/peer-transport";
+import type { InboundFenceRegistration } from "../../irc/inbound-fence";
 import type * as fs1 from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -342,6 +343,14 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	registerPeerLockBackend(impl: PeerLockBackend): void {
 		this.extension.peerLockBackends.push(impl);
+	}
+
+	registerPeerFence(registration: InboundFenceRegistration): void {
+		// Collected here and INSTALLED by the runner, not installed from here. A fence is
+		// process-wide rather than per-extension, so the bucket exists only to carry the
+		// declaration from load to the single point where the process-wide registry is
+		// written — the same two-stage shape `peerTransports` uses.
+		this.extension.peerFences.push(registration);
 	}
 
 	registerFileDeleteFallback(handler: FileDeleteFallbackHandler): void {
@@ -806,6 +815,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		fileWriteFallbackHandlers: [],
 		peerTransports: [],
 		peerLockBackends: [],
+		peerFences: [],
 		compactionProtections: [],
 		contextTransforms: [],
 		configReloadDisposers: [],

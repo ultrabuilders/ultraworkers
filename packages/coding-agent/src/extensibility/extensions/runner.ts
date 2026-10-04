@@ -2,6 +2,7 @@
  * Extension runner - executes extensions and manages their lifecycle.
  */
 import { addPeerLockBackend, addPeerTransport } from "../../irc/peer-transport";
+import { addInboundFence } from "../../irc/inbound-fence";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	type AgentMessage,
@@ -1331,6 +1332,13 @@ export class ExtensionRunner {
 			}
 			for (const backend of ext.peerLockBackends) {
 				this.#pushFallbackDisposer(ext.path, addPeerLockBackend(backend));
+			}
+			for (const fence of ext.peerFences) {
+				// No try/catch, unlike the transport above: registering a fence cannot
+				// fail (it is a table write, and the protocol check lives in the
+				// transport where skew is possible). The absence of a catch is
+				// therefore deliberate rather than an oversight.
+				this.#pushFallbackDisposer(ext.path, addInboundFence(fence));
 			}
 		}
 

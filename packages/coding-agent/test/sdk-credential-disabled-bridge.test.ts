@@ -453,6 +453,7 @@ describe("createAgentSession credential_disabled subscription", () => {
 				fileWriteFallbackHandlers: [],
 				peerTransports: [],
 				peerLockBackends: [],
+				peerFences: [],
 				fileDeleteFallbackHandlers: [],
 				compactionProtections: [],
 				contextTransforms: [],

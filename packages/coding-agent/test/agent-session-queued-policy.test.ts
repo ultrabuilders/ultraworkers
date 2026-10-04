@@ -50,6 +50,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		fileWriteFallbackHandlers: [],
 		peerTransports: [],
 		peerLockBackends: [],
+		peerFences: [],
 		fileDeleteFallbackHandlers: [],
 		compactionProtections: [],
 		contextTransforms: [],

@@ -4705,6 +4705,7 @@ describe("ExtensionRunner", () => {
 				fileWriteFallbackHandlers: [],
 				peerTransports: [],
 				peerLockBackends: [],
+				peerFences: [],
 				fileDeleteFallbackHandlers: [],
 				compactionProtections: [],
 				contextTransforms: [],

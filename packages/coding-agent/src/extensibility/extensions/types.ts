@@ -1,6 +1,7 @@
 import type { CompactionTransactionObserver } from "../../session/compaction-transaction";
 export type { CompactionTransactionObserver };
 import type { PeerLockBackend, PeerTransport } from "../../irc/peer-transport";
+import type { InboundFenceRegistration } from "../../irc/inbound-fence";
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
 import type { pluginSettingId } from "../settings";
 // Extension surface -> config layer, never the reverse: `Settings` must not have to
@@ -1718,6 +1719,27 @@ export interface ExtensionAPI {
 	registerPeerLockBackend(impl: PeerLockBackend): void;
 
 	/**
+	 * Install the trust fence that decides whether an inbound peer message is acted
+	 * on at all.
+	 *
+	 * **Provider-shaped**, like {@link registerPeerTransport}, and the only reason
+	 * this surface exists: the fence's implementation lives in `@ultraworkers/peer`,
+	 * which already depends on this package, so core cannot import it. The peer
+	 * hands it over at load instead — which is what closed a gap where
+	 * `crossSessionInbound` had a full settings UI and zero readers, and every
+	 * production send went through `IrcBus.global()` unfenced.
+	 *
+	 * Register during extension load. Unloading the extension restores the unfenced
+	 * state, which is a real state rather than a silent hole: a host with no peer
+	 * extension has no peer messages to fence.
+	 *
+	 * Process-wide, not per-extension: two extensions declaring a fence is legal and
+	 * the last loaded wins, because a fence answers "may this message be acted on",
+	 * which is one decision for the process.
+	 */
+	registerPeerFence(registration: InboundFenceRegistration): void;
+
+	/**
 	 * Contribute protection to the context prune pass, so results an extension owns
 	 * are not dropped out from under it as the context fills.
 	 *
@@ -2776,6 +2798,15 @@ export interface Extension {
 	fileDeleteFallbackHandlers: FileDeleteFallbackHandler[];
 	peerTransports: PeerTransport[];
 	peerLockBackends: PeerLockBackend[];
+	/**
+	 * Fence declarations, installed process-wide by the runner at load.
+	 *
+	 * A bucket despite being process-wide, because the runner is the only place that
+	 * writes the global registry and this carries the declaration there. Two extensions
+	 * declaring a fence is legal; the last one loaded wins, which is why the runner
+	 * installs under a disposer rather than letting the last call leak.
+	 */
+	peerFences: InboundFenceRegistration[];
 	compactionProtections: CompactionProtection[];
 	contextTransforms: ContextTransform[];
 	messageRenderers: Map<string, MessageRenderer>;

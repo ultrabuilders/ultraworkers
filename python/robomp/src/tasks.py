@@ -361,7 +361,7 @@ async def handle_release_ci(
     active = db.get_active_release(repo_full)
     row = db.get_release(key)
     if row is None:
-        session_dir = sandbox.workspace_root(repo_full, "release") / f".omp-session-{tag}"
+        session_dir = sandbox.workspace_root(repo_full, "release") / f".ultraworkers-session-{tag}"
         row = db.upsert_release(
             repo=repo_full,
             tag=tag,
@@ -939,7 +939,7 @@ async def handle_pr_conversation(
         issue_row = db.get_issue(issue_row.key) or issue_row
     # Bare @mention with no request body — the route stashes an empty
     # _robomp_directive; _directive_from_payload rejects it but the key
-    # being present tells us a mention happened. Reply cheaply without omp.
+    # being present tells us a mention happened. Reply cheaply without naming the product.
     if directive is None and payload.get("_robomp_directive") is not None:
         comment = _comment_from_payload(payload)
         log.info(

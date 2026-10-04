@@ -36,26 +36,11 @@ afterEach(async () => {
 });
 
 describe("peerEndpoint", () => {
-	it("puts the socket under the runtime dir on this platform", () => {
-		const endpoint = peerEndpoint("/some/project", "/run/user/omp");
-		if (process.platform === "win32") {
-			expect(endpoint.startsWith("\\\\.\\pipe\\omp-peer-")).toBe(true);
-		} else {
-			expect(endpoint).toBe(path.join("/run/user/omp", "peer.sock"));
-		}
+	it("puts the socket under the runtime dir", () => {
+		expect(peerEndpoint("/some/project", "/run/user/omp")).toBe(path.join("/run/user/omp", "peer.sock"));
 	});
 
-	it("keys the Windows name on a hash of the RESOLVED project path", () => {
-		// The point of hashing rather than sanitising: this directory name cannot
-		// be a pipe name at all. A space breaks MAX_PATH, and a colon is rejected
-		// outright. Hashing removes the constructor from the problem instead of
-		// filtering inputs.
-		if (process.platform === "win32") {
-			const ugly = peerEndpoint("/tmp/my project:with\\colon/\u{1f600}", "ignored");
-			expect(ugly).toMatch(/^\\\\\.\\pipe\\omp-peer-[0-9a-f]{16}$/);
-			expect(ugly).not.toBe(peerEndpoint("/tmp/my-project", "ignored"));
-			return;
-		}
+	it("scopes the endpoint per project without hashing, because runtimeDir already does", () => {
 		// On Unix the hash is NOT used, and that is deliberate rather than an
 		// oversight: the socket path is already per-project, because `runtimeDir`
 		// is the project's own runtime directory. Hashing the path here as well
@@ -64,6 +49,42 @@ describe("peerEndpoint", () => {
 		// hash while the caller kept passing one shared runtimeDir.
 		expect(peerEndpoint("/a/b", "/run/project-a")).toBe(path.join("/run/project-a", "peer.sock"));
 		expect(peerEndpoint("/a/c", "/run/project-c")).toBe(path.join("/run/project-c", "peer.sock"));
+	});
+});
+
+/**
+ * The Windows half of `peerEndpoint`, split out so it is SKIPPED rather than silently
+ * skipped.
+ *
+ * These assertions used to sit behind `if (process.platform === "win32") { …; return }`
+ * inside the two rows above. On any non-Windows runner that branch was dead code and the
+ * row still reported green from its POSIX half, so a completely broken Windows pipe name
+ * cost nothing anywhere. Measured: changing the literal `omp-peer-` to `WRONG-` in
+ * `endpoint.ts` left all 266 rows in `packages/peer/test/` passing.
+ *
+ * Uncovered on CI is worse than uncovered here, not better: `scripts/ci-test-ts.ts:173`
+ * does list `"packages/peer"` in the TS bucket, but `ci.yml:615` pins that bucket to
+ * `ubuntu-22.04` / `omp-kata`, so no runner executes this package on Windows. Funding one
+ * is not a one-line change either — `ci-test-ts.ts:158` keeps this package out of the
+ * fast bucket deliberately, because three of its suites race real `bun` processes.
+ *
+ * A skip that SAYS it is a skip is worth more than a green row that asserted nothing: it
+ * cannot be misread as coverage. When a Windows runner is funded for this package, delete
+ * `skipIf` and these two rows start guarding again.
+ */
+describe.skipIf(process.platform !== "win32")("peerEndpoint on Windows", () => {
+	it("puts the socket on a named pipe, not a file path", () => {
+		expect(peerEndpoint("/some/project", "ignored").startsWith("\\\\.\\pipe\\omp-peer-")).toBe(true);
+	});
+
+	it("keys the pipe name on a hash of the RESOLVED project path", () => {
+		// The point of hashing rather than sanitising: this directory name cannot
+		// be a pipe name at all. A space breaks MAX_PATH, and a colon is rejected
+		// outright. Hashing removes the constructor from the problem instead of
+		// filtering inputs.
+		const ugly = peerEndpoint("/tmp/my project:with\\colon/\u{1f600}", "ignored");
+		expect(ugly).toMatch(/^\\\\\.\\pipe\\omp-peer-[0-9a-f]{16}$/);
+		expect(ugly).not.toBe(peerEndpoint("/tmp/my-project", "ignored"));
 	});
 
 	it("is stable for the same inputs", () => {

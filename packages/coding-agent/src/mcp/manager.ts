@@ -40,15 +40,20 @@ import {
 	refreshStoredManagedMcpOAuthCredential,
 } from "./oauth-credentials";
 import type { MCPStoredOAuthCredential } from "./oauth-flow";
+import { assertUrlAllowed } from "./network-policy";
 import type { McpConnectionStatusEvent } from "./startup-events";
 import { resolveMCPStartupTimeoutMs } from "./timeout";
 
 import type { MCPToolDetails } from "@oh-my-pi/pi-tui/tools/mcp";
-import { DeferredMCPTool, MCPTool } from "./tool-bridge";
+import { DeferredMCPTool, isWithdrawnMCPTool, MCPTool, WithdrawnMCPTool } from "./tool-bridge";
 import type { MCPToolCache } from "./tool-cache";
 import { setGeneratedHeader } from "./transports/header-policy";
 import type {
 	MCPAuthChallenge,
+	MCPElicitationHandler,
+	MCPElicitOutcome,
+	MCPElicitPropertySchema,
+	MCPElicitRequest,
 	MCPGetPromptResult,
 	MCPPrompt,
 	MCPRequestOptions,
@@ -60,7 +65,7 @@ import type {
 	MCPToolDefinition,
 	MCPTransport,
 } from "./types";
-import { MCPNotificationMethods } from "./types";
+import { MCPNotificationMethods, type McpCatalogRefreshReason } from "./types";
 
 export type McpCatalogChangeEvent = { serverName: string; kind: "resources" | "prompts" };
 export type MCPConfigLoader = (cwd: string, options?: LoadMCPConfigsOptions) => Promise<LoadMCPConfigsResult>;
@@ -206,6 +211,14 @@ export interface MCPLoadResult {
 	connectedServers: string[];
 	/** Extracted Exa API keys from filtered MCP servers */
 	exaApiKeys: string[];
+	/**
+	 * Per-server network-policy notices for servers that were ALLOWED — today, a
+	 * user-configured server reaching a loopback address. Distinct from `errors`:
+	 * these servers connected. Optional because every existing producer of this
+	 * shape stays valid — a required field would break each literal that builds
+	 * one, and nothing about the warnings needs that.
+	 */
+	networkWarnings?: string[];
 }
 
 /** Readiness of configured MCP servers after the initial tool handshake. */
@@ -236,6 +249,66 @@ export interface MCPDiscoverOptions {
 
 /** Handles an MCP `WWW-Authenticate` challenge and returns refreshed config. */
 export type MCPAuthHandler = (serverName: string, challenge: MCPAuthChallenge) => Promise<MCPServerConfig | undefined>;
+
+/**
+ * Validate an incoming `elicitation/create` params object.
+ *
+ * A server that sends a malformed schema gets a JSON-RPC error rather than a
+ * form built from undefined fields, which would fail later and further from the
+ * cause. `required` is unioned with the per-property flags because servers set it
+ * either way — a field marked `required` on the property and absent from the
+ * array is still required, and dropping it would let an empty value through.
+ */
+function parseElicitRequest(params: unknown): MCPElicitRequest {
+	if (typeof params !== "object" || params === null) {
+		throw Object.assign(new Error("elicitation/create requires an object params"), { code: -32602 });
+	}
+	const record = params as Record<string, unknown>;
+	const schema = record.requestedSchema;
+	if (typeof schema !== "object" || schema === null) {
+		throw Object.assign(new Error("elicitation/create requires requestedSchema"), { code: -32602 });
+	}
+	const rawProperties = (schema as Record<string, unknown>).properties;
+	if (typeof rawProperties !== "object" || rawProperties === null) {
+		throw Object.assign(new Error("elicitation/create requires requestedSchema.properties"), { code: -32602 });
+	}
+	const declared = Array.isArray((schema as Record<string, unknown>).required)
+		? ((schema as Record<string, unknown>).required as unknown[]).filter(
+				(name): name is string => typeof name === "string",
+			)
+		: [];
+	const properties: Record<string, MCPElicitPropertySchema> = {};
+	for (const [name, raw] of Object.entries(rawProperties as Record<string, unknown>)) {
+		if (typeof raw !== "object" || raw === null) continue;
+		const field = raw as Record<string, unknown>;
+		properties[name] = {
+			type: typeof field.type === "string" ? field.type : "string",
+			...(typeof field.title === "string" ? { title: field.title } : {}),
+			...(typeof field.description === "string" ? { description: field.description } : {}),
+			required: field.required === true || declared.includes(name),
+			writeOnly: field.writeOnly === true,
+		};
+	}
+	return {
+		message: typeof record.message === "string" ? record.message : "",
+		requestedSchema: {
+			properties,
+			...(declared.length > 0 ? { required: declared } : {}),
+		},
+	};
+}
+
+/** Narrow an untrusted outcome to one the MCP union can carry. */
+function isElicitOutcome(value: unknown): value is MCPElicitOutcome {
+	if (typeof value !== "object" || value === null) return false;
+	const action = (value as Record<string, unknown>).action;
+	if (action !== "accept" && action !== "decline" && action !== "cancel") return false;
+	if (action === "accept") {
+		const content = (value as Record<string, unknown>).content;
+		return typeof content === "object" && content !== null && !Array.isArray(content);
+	}
+	return true;
+}
 
 /**
  * MCP Server Manager.
@@ -270,6 +343,7 @@ export class MCPManager {
 	#sources = new Map<string, SourceMeta>();
 	#authStorage: AuthStorage | null = null;
 	#authHandler?: MCPAuthHandler;
+	#elicitationHandler?: MCPElicitationHandler;
 	#notificationListeners = new Set<(serverName: string, method: string, params: unknown) => void>();
 	#connectionStatusListeners = new Set<(event: McpConnectionStatusEvent) => void>();
 	#catalogChangeListeners = new Set<(event: McpCatalogChangeEvent) => void>();
@@ -279,7 +353,10 @@ export class MCPManager {
 	 * {@link NOTIFICATION_BUFFER_CAP}, drop-oldest on overflow.
 	 */
 	#pendingNotifications: Array<{ server: string; method: string; params: unknown }> = [];
-	#onToolsChanged?: (tools: CustomTool<TSchema, MCPToolDetails>[]) => void | Promise<void>;
+	#onToolsChanged?: (
+		tools: CustomTool<TSchema, MCPToolDetails>[],
+		reason: McpCatalogRefreshReason,
+	) => void | Promise<void>;
 	#onResourcesChanged?: (serverName: string, uri: string) => void;
 	#onPromptsChanged?: (serverName: string) => void;
 	#notificationsEnabled = false;
@@ -432,7 +509,9 @@ export class MCPManager {
 	 * disconnect, reconnect) invoke the handler synchronously — their downstream
 	 * chains don't need to serialize on the rebind.
 	 */
-	setOnToolsChanged(handler: (tools: CustomTool<TSchema, MCPToolDetails>[]) => void | Promise<void>): void {
+	setOnToolsChanged(
+		handler: (tools: CustomTool<TSchema, MCPToolDetails>[], reason: McpCatalogRefreshReason) => void | Promise<void>,
+	): void {
 		this.#onToolsChanged = handler;
 	}
 
@@ -527,6 +606,19 @@ export class MCPManager {
 	}
 
 	/**
+	 * Set the presenter for `elicitation/create` requests from servers.
+	 *
+	 * With no handler the request is rejected with -32601, like any other
+	 * unknown server-to-client method — so declaring the capability in
+	 * {@link MCPClient} without installing one is a protocol error the user
+	 * would see as a broken server. The two are declared together for that
+	 * reason.
+	 */
+	setElicitationHandler(handler: MCPElicitationHandler | undefined): void {
+		this.#elicitationHandler = handler;
+	}
+
+	/**
 	 * Discover and connect to all MCP servers from .mcp.json files.
 	 * Returns tools and any connection errors.
 	 */
@@ -585,7 +677,11 @@ export class MCPManager {
 	async #applyProjectConfig(enabled: boolean): Promise<void> {
 		await this.#discoveryInFlight;
 		const options = this.#discoverOptions;
-		if (!options || (options.enableProjectConfig ?? true) === enabled) return;
+		// `false`, matching `loadConfigs` and the `mcp.enableProjectConfig` default, and
+		// the direction is load-bearing rather than cosmetic: an unset cached option must
+		// read as OFF, or enabling the flag matches it, returns early, and the reload
+		// this reconciler exists to perform silently never happens.
+		if (!options || (options.enableProjectConfig ?? false) === enabled) return;
 		this.#discoverOptions = { ...options, enableProjectConfig: enabled };
 		const loaded = await this.loadConfigs(this.cwd, {
 			enableProjectConfig: enabled,
@@ -684,12 +780,31 @@ export class MCPManager {
 		let allowBackgroundLogging = false;
 		const statusServerNames: string[] = [];
 		const validationFailures: Array<{ name: string; message: string }> = [];
+		/** Loopback notices for servers that were allowed, surfaced by the panel. */
+		const networkWarnings: string[] = [];
 
 		// Prepare connection tasks
 		const connectionTasks: ConnectionTask[] = [];
 
 		for (const [name, config] of Object.entries(configs)) {
 			this.#startupServers.add(name);
+			// Once per server, here, because this loop already walks every config
+			// exactly once per connect. The fetch-time gate in `mcpFetch` is
+			// deliberately silent — it runs per request, so a loopback server would
+			// emit a line per tool call. This is where the notice the user can read
+			// is produced: a user-configured server is ALLOWED to reach loopback
+			// (GAP-D1 decision (d) — typing 127.0.0.1 is stating an intent), but
+			// "this server can reach services on this machine" should not be silent.
+			const url = (config as { url?: string }).url;
+			if (typeof url === "string") {
+				try {
+					const { warning } = assertUrlAllowed(url, "configured", `MCP server "${name}"`);
+					if (warning) networkWarnings.push(warning);
+				} catch {
+					// A denial here is the fetch gate's job; this loop only reports what
+					// was allowed, so refusing to warn about a refused URL is correct.
+				}
+			}
 			if (sources[name]) {
 				this.#sources.set(name, sources[name]);
 				const existing = this.#connections.get(name);
@@ -739,7 +854,7 @@ export class MCPManager {
 						this.#handleServerNotification(name, method, params);
 					},
 					onRequest: (method, params) => {
-						return this.#handleServerRequest(method, params);
+						return this.#handleServerRequest(method, params, name);
 					},
 				});
 			})().then(
@@ -825,7 +940,7 @@ export class MCPManager {
 						this.reconnectServer(name, options);
 					const customTools = MCPTool.fromTools(connection, serverTools, reconnect);
 					this.#replaceServerTools(name, customTools);
-					await this.#onToolsChanged?.(this.#tools);
+					await this.#onToolsChanged?.(this.#tools, "connect");
 					void this.toolCache?.set(name, config, serverTools);
 
 					notify({ type: "connected", serverName: name });
@@ -925,11 +1040,21 @@ export class MCPManager {
 
 		allowBackgroundLogging = true;
 
+		// Reported here rather than at each call site: `connectServers` has five
+		// callers (startup, the /mcp panel, ACP, extension MCP runtime, and one
+		// more) and three of them discarded the whole result. A notice that only
+		// the callers who remembered to read it would surface is not a notice —
+		// and startup, the path that matters most, is one of the three.
+		for (const warning of networkWarnings) {
+			logger.warn(warning);
+		}
+
 		return {
 			tools: this.#tools,
 			errors,
 			connectedServers: Array.from(connectedServers),
 			exaApiKeys: [], // Will be populated by discoverAndConnect
+			networkWarnings,
 		};
 	}
 
@@ -940,8 +1065,21 @@ export class MCPManager {
 	 * with sanitized characters never prefix-matches its own tools at all.
 	 */
 	#replaceServerTools(name: string, tools: CustomTool<TSchema, MCPToolDetails>[]): void {
+		const incoming = new Set(tools.map(t => t.name));
+		// A server may retract a tool at any time via `notifications/tools/list_changed`.
+		// Leave a tombstone for each one it withdraws so a call already in flight
+		// gets an answer that says what happened, instead of falling through to the
+		// dispatch-miss path and reading as a hallucinated tool name.
+		//
+		// Everything this server offered and no longer does is carried across, and an
+		// existing tombstone is carried AS ITSELF rather than re-wrapped: dropping it
+		// would silently restore the dispatch-miss hole on the next refresh, and
+		// re-wrapping it would mint a fresh tombstone on every refresh, forever.
+		const withdrawn = this.#tools
+			.filter(t => t.mcpServerName === name && !incoming.has(t.name))
+			.map(t => (isWithdrawnMCPTool(t) ? t : new WithdrawnMCPTool(t, name)));
 		this.#tools = this.#tools.filter(t => t.mcpServerName !== name);
-		this.#tools.push(...tools);
+		this.#tools.push(...tools, ...withdrawn);
 		// Stable sort by name so reconnect order does not perturb the array.
 		// See `sortMCPToolsByName` for the cache-stability rationale.
 		sortMCPToolsByName(this.#tools);
@@ -951,7 +1089,10 @@ export class MCPManager {
 		const refresh = (() => {
 			switch (kind) {
 				case "tools":
-					return this.refreshServerTools(serverName);
+					// A `notifications/tools/list_changed` frame IS the push case: the
+					// server moved its own catalog after the user approved the
+					// connection, so the arriving tools must not activate themselves.
+					return this.refreshServerTools(serverName, "push");
 				case "resources":
 					return this.refreshServerResources(serverName);
 				case "prompts":
@@ -1029,15 +1170,44 @@ export class MCPManager {
 	}
 
 	/** Handle server-to-client JSON-RPC requests (e.g. ping, roots/list). */
-	async #handleServerRequest(method: string, _params: unknown): Promise<unknown> {
+	async #handleServerRequest(method: string, params: unknown, serverName: string): Promise<unknown> {
 		switch (method) {
 			case "ping":
 				return {};
 			case "roots/list":
 				return this.#getRoots();
+			case "elicitation/create":
+				return this.#handleElicitationCreate(serverName, params);
 			default:
 				throw Object.assign(new Error(`Unsupported server request: ${method}`), { code: -32601 });
 		}
+	}
+
+	/**
+	 * Answer `elicitation/create`, preserving which of the three outcomes occurred.
+	 *
+	 * The returned object goes straight onto the wire as the JSON-RPC result, so
+	 * `action` is the only thing the server gets. Nothing here normalises or
+	 * defaults it: the handler's choice is the server's answer, and a handler that
+	 * throws surfaces as a JSON-RPC error rather than an unhandled rejection at
+	 * the transport.
+	 */
+	async #handleElicitationCreate(serverName: string, params: unknown): Promise<MCPElicitOutcome> {
+		const handler = this.#elicitationHandler;
+		if (!handler) {
+			throw Object.assign(new Error("Unsupported server request: elicitation/create"), { code: -32601 });
+		}
+		const outcome = await handler(serverName, parseElicitRequest(params));
+		// A host handler that resolves to something outside the union would put a
+		// value on the wire that no server can interpret, and it would do so
+		// without any local error — the same silent failure as collapsing decline
+		// into cancel. Rejecting here keeps a malformed answer visible.
+		if (!isElicitOutcome(outcome)) {
+			throw Object.assign(new Error(`elicitation handler for "${serverName}" returned an invalid outcome`), {
+				code: -32603,
+			});
+		}
+		return outcome;
 	}
 
 	#getRoots(): { roots: Array<{ uri: string; name: string }> } {
@@ -1160,7 +1330,7 @@ export class MCPManager {
 	/**
 	 * Wait for every in-flight connect, tool load, and reconnect to settle.
 	 *
-	 * One-shot callers (e.g. `omp read <mcp-resource>`) discover servers and read
+	 * One-shot callers (e.g. `ultraworkers read <mcp-resource>`) discover servers and read
 	 * immediately; a server whose handshake outlasts the {@link connectServers}
 	 * startup race is still tracked in {@link #pendingConnections} /
 	 * {@link #pendingToolLoads} and therefore invisible to
@@ -1267,7 +1437,7 @@ export class MCPManager {
 		// Remove tools from this server and notify consumers
 		const hadTools = this.#tools.some(t => t.mcpServerName === name);
 		this.#tools = this.#tools.filter(t => t.mcpServerName !== name);
-		if (hadTools) void this.#onToolsChanged?.(this.#tools);
+		if (hadTools) void this.#onToolsChanged?.(this.#tools, "disconnect");
 
 		// Notify prompt consumers so stale commands are cleared
 		if (connection?.prompts?.length) this.#onPromptsChanged?.(name);
@@ -1546,7 +1716,7 @@ export class MCPManager {
 				this.#handleServerNotification(name, method, params);
 			},
 			onRequest: (method, params) => {
-				return this.#handleServerRequest(method, params);
+				return this.#handleServerRequest(method, params, name);
 			},
 		});
 
@@ -1585,7 +1755,7 @@ export class MCPManager {
 			const customTools = MCPTool.fromTools(connection, serverTools, reconnect);
 			void this.toolCache?.set(name, config, serverTools);
 			this.#replaceServerTools(name, customTools);
-			void this.#onToolsChanged?.(this.#tools);
+			void this.#onToolsChanged?.(this.#tools, "connect");
 			void this.#loadServerResourcesAndPrompts(name, connection);
 			return connection;
 		} catch (error) {
@@ -1621,8 +1791,15 @@ export class MCPManager {
 
 	/**
 	 * Refresh tools from a specific server.
+	 *
+	 * `reason` is required rather than defaulted: it is the manager's declaration of WHY
+	 * the catalog changed, and the receiver cannot recover it — a connect, a
+	 * `notifications/tools/list_changed` push and a disconnect all arrive as the same
+	 * array of tools. A default here would be a guess that silently decides whether an
+	 * arriving tool gets activated, which is the trust boundary. Callers that know their
+	 * intent must say so.
 	 */
-	async refreshServerTools(name: string): Promise<void> {
+	async refreshServerTools(name: string, reason: McpCatalogRefreshReason): Promise<void> {
 		const connection = this.#connections.get(name);
 		if (!connection) return;
 
@@ -1637,14 +1814,19 @@ export class MCPManager {
 
 		// Replace tools from this server
 		this.#replaceServerTools(name, customTools);
-		await this.#onToolsChanged?.(this.#tools);
+		await this.#onToolsChanged?.(this.#tools, reason);
 	}
 
 	/**
 	 * Refresh tools from all servers.
+	 *
+	 * `reason` is required and is the caller's to state: this method is entered for
+	 * different causes (a bulk re-list, a reconnect sweep), and only the caller knows
+	 * which. Defaulting it would let a future caller silently pick the trust-relevant
+	 * behaviour, so the parameter stays mandatory.
 	 */
-	async refreshAllTools(): Promise<void> {
-		const promises = Array.from(this.#connections.keys()).map(name => this.refreshServerTools(name));
+	async refreshAllTools(reason: McpCatalogRefreshReason): Promise<void> {
+		const promises = Array.from(this.#connections.keys()).map(name => this.refreshServerTools(name, reason));
 		await Promise.allSettled(promises);
 	}
 

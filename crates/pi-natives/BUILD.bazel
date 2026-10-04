@@ -31,7 +31,7 @@ genrule(
         "src/applefm/stub.c",
         "@applefm_swift//:toolchain.txt",
     ],
-    outs = ["libomp_applefm.a"],
+    outs = ["libultraworkers_applefm.a"],
     cmd = select({
         "//bazel/triples:aarch64-apple-darwin": "/bin/sh $(location src/applefm/build-bridge.sh) build $@ arm64 $$(cut -f1,2 $(location @applefm_swift//:toolchain.txt))",
         "//conditions:default": "/bin/sh $(location src/applefm/build-bridge.sh) build $@ x86_64",
@@ -100,10 +100,10 @@ rust_shared_library(
     proc_macro_deps = all_crate_deps(proc_macro = True),
     rustc_env = select({
         "@platforms//os:macos": {
-            "OMP_OAUTH_DARWIN_HELPER": "$(execpath :oauth_callback_darwin_helper)",
+            "ULTRAWORKERS_OAUTH_DARWIN_HELPER": "$(execpath :oauth_callback_darwin_helper)",
         },
         "//conditions:default": {
-            "OMP_OAUTH_RELAY_BINARY": "$(execpath :oauth_callback_relay)",
+            "ULTRAWORKERS_OAUTH_RELAY_BINARY": "$(execpath :oauth_callback_relay)",
         },
     }),
     rustc_flags = select({

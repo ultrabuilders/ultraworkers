@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import type { BlobDestinationId } from "../src/blob-broker/destinations";
 import type { BlobUploader, BlobUploadRequest } from "../src/blob-broker/publication";
 import {
@@ -76,7 +77,7 @@ describe("self-hosted uploader wire contracts", () => {
 	});
 
 	it("does not corrupt FTP command stdin or mis-map the remote path to its public URL", async () => {
-		const temp = fs.mkdtempSync(path.join(os.tmpdir(), "omp-ftp-uploader-"));
+		const temp = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-ftp-uploader-"));
 		try {
 			const executable = path.join(temp, "fake-curl");
 			const argsFile = path.join(temp, "args");
@@ -124,7 +125,7 @@ describe("self-hosted uploader wire contracts", () => {
 	});
 
 	it("does not mis-map an encoded shared-folder path or write outside its configured subtree", async () => {
-		const root = fs.mkdtempSync(path.join(os.tmpdir(), "omp-shared-uploader-"));
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-shared-uploader-"));
 		try {
 			const uploader = requiredUploader(
 				createSelfHostedUploader(
@@ -339,7 +340,9 @@ describe("legacy uploader wire contracts", () => {
 			expect(init?.method).toBe("POST");
 			const form = formOf(init);
 			expect(form.get("k")).toBe("puush-key");
-			expect(form.get("z")).toBe("omp");
+			// The `z` FIELD NAME is the endpoint's contract and stays literal; its value
+			// is our wire identity, which uploaders-legacy.ts:237 sends as WIRE_NAME.
+			expect(form.get("z")).toBe(WIRE_NAME);
 			await expectFile(form, "f");
 			return new Response("0,https://cdn.test/puush.png,p-42");
 		};

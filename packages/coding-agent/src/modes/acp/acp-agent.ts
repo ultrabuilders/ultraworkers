@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { AgentBusyError, type AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, Model } from "@oh-my-pi/pi-ai";
-import { getBlobsDir, isEnoent, logger, type postmortem, VERSION } from "@oh-my-pi/pi-utils";
+import { getBlobsDir, isEnoent, logger, type postmortem, VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import {
 	type Agent,
 	type AgentSideConnection,
@@ -51,12 +51,14 @@ import {
 	type ExtensionUIContext,
 	type ExtensionUIDialogOptions,
 	getExtensionUISelectOptionLabel,
+	unavailableFrameMessage,
+	type FramelessGuard,
 } from "../../extensibility/extensions";
 import { runExtensionCompact } from "../../extensibility/extensions/compact-handler";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
 import { buildSkillPromptMessage, parseSkillInvocation } from "../../extensibility/skills";
 import { MCPManager } from "../../mcp/manager";
-import type { MCPServerConfig } from "../../mcp/types";
+import type { MCPServerConfig, McpCatalogRefreshReason } from "../../mcp/types";
 import { loadAllExtensions } from "../../modes/components/extensions/state-manager";
 import { getAvailableThemesWithPaths } from "@oh-my-pi/pi-tui";
 import { theme } from "@oh-my-pi/pi-tui/theme";
@@ -422,6 +424,13 @@ function isAcceptedElicitation(
  * at all. Capability gating respects the client's `initialize`
  * advertisement.
  */
+/**
+ * `hasUI` here is `supportsForm` — a variable, not a constant. An author who guards
+ * with it when the client supports `elicitation.form` passes the guard and still gets
+ * this throw, so the message must not tell them the guard would have stopped it.
+ */
+const ACP_FRAMELESS_GUARD = "hasUI-does-not-block-the-call" satisfies FramelessGuard;
+
 export function createAcpExtensionUiContext(
 	connection: AgentSideConnection,
 	getSessionId: () => string,
@@ -433,6 +442,12 @@ export function createAcpExtensionUiContext(
 		// the surface is built. This is the same answer runner.hasUI() would give,
 		// stated where the capability is known rather than inferred later.
 		hasUI: supportsForm,
+		// Deliberately not `supportsForm`. An ACP client that supports
+		// `elicitation.form` reports `hasUI: true` and still cannot mount a header,
+		// a footer or a custom overlay — the three surfaces this names all throw two
+		// members below. Answering from the flag would make the query agree with
+		// `hasUI` here and be wrong, which is the specific failure it exists to fix.
+		canMount: () => false,
 		select: async (title, options, dialogOptions) => {
 			if (!supportsForm) return undefined;
 			const value = await elicitFromAcpClient(
@@ -584,11 +599,31 @@ export function createAcpExtensionUiContext(
 		setWorkingMessage: () => {},
 		// ACP drives its own indicator; this client context does not animate one.
 		setWorkingIndicator: () => {},
-		setWidget: () => {},
-		setFooter: () => {},
-		setHeader: () => {},
+		setWidget: () => {
+			// The one bare `() => {}` left in this literal, and it was the widest of them:
+			// RPC renders a string array and refuses a component factory, so *some* of
+			// setWidget crosses there — but ACP has no widget frame at all, so here both
+			// forms vanish. A widget that never appears is exactly what a panel that did
+			// appear looks like, and this context has no `setStatus`-style text path to
+			// fall back on, which is the condition `noOpUIContext` states for staying
+			// silent. Its neighbours below already throw for the same reason.
+			throw new Error(unavailableFrameMessage("setWidget", "ACP mode", ACP_FRAMELESS_GUARD));
+		},
+		setFooter: () => {
+			throw new Error(unavailableFrameMessage("setFooter", "ACP mode", ACP_FRAMELESS_GUARD));
+		},
+		setHeader: () => {
+			throw new Error(unavailableFrameMessage("setHeader", "ACP mode", ACP_FRAMELESS_GUARD));
+		},
 		setTitle: () => {},
-		custom: async () => undefined as never,
+		custom: () => {
+			// Same lie its neighbours stopped telling on `noOpUIContext`, fixed for the
+			// same reason. `select`/`confirm`/`input`/`editor` above are REAL elicitations
+			// here — an ACP client renders them — which is exactly why `custom` being a
+			// stub is the defect: an author who guards on `hasUI` sees a working surface
+			// next door and reasonably expects this one to answer too.
+			throw new Error(unavailableFrameMessage("custom", "ACP mode", ACP_FRAMELESS_GUARD));
+		},
 		pasteToEditor: () => {},
 		setEditorText: () => {},
 		getEditorText: () => "",
@@ -654,16 +689,16 @@ export class AcpAgent implements Agent {
 			authMethods.push({
 				type: "terminal",
 				id: "terminal",
-				name: "Set up omp in terminal",
-				description: "Launch the omp TUI to add provider keys and select models.",
+				name: `Set up ${WIRE_NAME} in terminal`,
+				description: `Launch the ${WIRE_NAME} TUI to add provider keys and select models.`,
 				args: [ACP_TERMINAL_AUTH_FLAG],
 			});
 		}
 		return {
 			protocolVersion: PROTOCOL_VERSION,
 			agentInfo: {
-				name: "omp",
-				title: "omp",
+				name: WIRE_NAME,
+				title: WIRE_NAME,
 				version: VERSION,
 			},
 			authMethods,
@@ -1141,7 +1176,7 @@ export class AcpAgent implements Agent {
 		switch (method) {
 			case SPEECH_MODELS_LIST_METHOD:
 				return buildAcpSpeechModelsCatalog();
-			case "_omp/sessions/listAll": {
+			case `_${WIRE_NAME}/sessions/listAll`: {
 				const limit = typeof params.limit === "number" ? Math.max(1, Math.min(5000, params.limit as number)) : 1000;
 				const sessions = await SessionManager.listAll();
 				const sorted = sessions.sort((l, r) => r.modified.getTime() - l.modified.getTime()).slice(0, limit);
@@ -1150,7 +1185,7 @@ export class AcpAgent implements Agent {
 					total: sessions.length,
 				};
 			}
-			case "_omp/projects/list": {
+			case `_${WIRE_NAME}/projects/list`: {
 				const sessions = await SessionManager.listAll();
 				const buckets = new Map<
 					string,
@@ -1178,7 +1213,7 @@ export class AcpAgent implements Agent {
 				const projects = Array.from(buckets.values()).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 				return { projects, totalSessions: sessions.length };
 			}
-			case "_omp/chats/byCwd": {
+			case `_${WIRE_NAME}/chats/byCwd`: {
 				const cwd = typeof params.cwd === "string" ? (params.cwd as string) : undefined;
 				if (!cwd) throw new Error("cwd required");
 				const limit = typeof params.limit === "number" ? Math.max(1, Math.min(500, params.limit as number)) : 100;
@@ -1186,7 +1221,7 @@ export class AcpAgent implements Agent {
 				const sorted = sessions.sort((l, r) => r.modified.getTime() - l.modified.getTime()).slice(0, limit);
 				return { sessions: sorted.map(s => this.#toSessionInfo(s)) };
 			}
-			case "_omp/usage": {
+			case `_${WIRE_NAME}/usage`: {
 				// Resolve the session the caller NAMED. Destructuring the first entry
 				// answered a different question — "any session" — so with two sessions
 				// open, asking about the second returned the first one's usage.
@@ -1200,14 +1235,14 @@ export class AcpAgent implements Agent {
 				const reports = await target.fetchUsageReports();
 				return { reports: reports ?? [] };
 			}
-			case "_omp/extensions": {
+			case `_${WIRE_NAME}/extensions`: {
 				const cwd = typeof params.cwd === "string" ? (params.cwd as string) : undefined;
 				const sm = await Settings.init();
 				const disabledIds = cfgDisabledExtensions.get(sm);
 				const extensions = await loadAllExtensions(cwd, disabledIds);
 				return { extensions: extensions as unknown as Array<{ [key: string]: unknown }> };
 			}
-			case "_omp/extensions/toggle": {
+			case `_${WIRE_NAME}/extensions/toggle`: {
 				const providerId = params.providerId;
 				if (typeof providerId !== "string") throw new Error("providerId required");
 				if (params.enabled === false) {
@@ -2687,10 +2722,10 @@ export class AcpAgent implements Agent {
 		// The returned promise propagates failures (the initial awaited refresh below must
 		// fail session setup, as the pre-queue code did); the stored chain swallows them
 		// after logging so background firings only warn and the chain never rejects.
-		const enqueueMcpToolsRefresh = (): Promise<void> => {
+		const enqueueMcpToolsRefresh = (reason: McpCatalogRefreshReason): Promise<void> => {
 			const run = (record.mcpRefreshChain ?? Promise.resolve()).then(async () => {
 				if (record.mcpManager !== manager) return;
-				await record.session.refreshMCPTools(manager.getTools());
+				await record.session.refreshMCPTools(manager.getTools(), reason);
 			});
 			record.mcpRefreshChain = run.catch(error => {
 				logger.warn("ACP MCP tool refresh failed", {
@@ -2699,9 +2734,15 @@ export class AcpAgent implements Agent {
 			});
 			return run;
 		};
-		manager.setOnToolsChanged(() => {
+		// The reason is the manager's declaration of WHY the catalog changed, and the
+		// receiver cannot recover it: a connect, a `notifications/tools/list_changed`
+		// push and a disconnect all arrive as the same array of tools. Dropping it here
+		// sent every ACP refresh down the absent-reason branch, which is handled as
+		// `push` — so on ACP a server's FIRST connection never activated its tools at
+		// all, and `sdk.ts` (which forwards it) did not have that bug.
+		manager.setOnToolsChanged((_tools, reason) => {
 			// Failures are logged once via the stored chain's catch above.
-			enqueueMcpToolsRefresh().catch(() => {});
+			enqueueMcpToolsRefresh(reason).catch(() => {});
 		});
 		const configs: MCPConfigMap = {};
 		const sources: MCPSourceMap = {};
@@ -2725,7 +2766,11 @@ export class AcpAgent implements Agent {
 		}
 
 		record.mcpManager = manager;
-		await enqueueMcpToolsRefresh();
+		// The catalog arriving here is the result of `connectServers` — every server the
+		// client just authorized. That is the one case where activating the arriving
+		// catalog is right: the user connected these servers, so a tool absent from the
+		// approved set is not one the server slipped past them.
+		await enqueueMcpToolsRefresh("connect");
 	}
 
 	#toMcpConfig(server: McpServer): MCPServerConfig {

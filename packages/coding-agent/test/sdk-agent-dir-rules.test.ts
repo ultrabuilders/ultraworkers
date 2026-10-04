@@ -73,7 +73,7 @@ async function createScopedSession(agentDir: string) {
 let tempDir: TempDir;
 
 beforeEach(() => {
-	tempDir = TempDir.createSync("@pi-agent-dir-rules-");
+	tempDir = TempDir.createSync("@ultraworkers-agent-dir-rules-");
 	// The process-global agent dir: a session given its own agentDir must not read it.
 	setAgentDir(tempDir.join("default-agent"));
 	clearCache();

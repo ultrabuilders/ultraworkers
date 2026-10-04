@@ -45,7 +45,7 @@ describe("issue #2600 - session_shutdown handler timeout", () => {
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@pi-issue-2600-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-issue-2600-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "auth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
@@ -67,7 +67,7 @@ describe("issue #2600 - session_shutdown handler timeout", () => {
 		cleanup: () => void;
 	}> {
 		if (count < 1) throw new Error("count must be positive");
-		const tempDir = TempDir.createSync("@pi-issue-2600-test-");
+		const tempDir = TempDir.createSync("@ultraworkers-issue-2600-test-");
 		const extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		const hangExtensionPaths: string[] = [];

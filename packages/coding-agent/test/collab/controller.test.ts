@@ -4,7 +4,7 @@
  * dialogs raised before the relay connects; the registry sees one entry per
  * process keyed by a stable instance ID with an increasing generation; a
  * session switch revokes the old room before its successor is published; and
- * the published access level caps what `omp collab link` can obtain.
+ * the published access level caps what `ultraworkers collab link` can obtain.
  *
  * Real CollabHost/CollabSocket run over the in-memory relay; the registry's
  * real Unix-socket IPC is redirected into a temp dir via a spy on
@@ -213,7 +213,7 @@ const publishWaiters: (() => void)[] = [];
 let capturedSockets: FakeWebSocket[] = [];
 
 beforeEach(async () => {
-	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "omp-collabctl-"));
+	tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-collabctl-"));
 	utils.setAgentDir(path.join(tmp, "agent"));
 	installInMemoryRelay();
 	// Record every fake socket so a test can drive a terminal close on the host's transport.

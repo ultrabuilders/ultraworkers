@@ -6,7 +6,7 @@ import { loadSlashCommands } from "@oh-my-pi/pi-coding-agent/extensibility/slash
 
 describe("loadSlashCommands argument-hint", () => {
 	test("parses argument-hint frontmatter into FileSlashCommand.argumentHint", async () => {
-		const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "omp-arg-hint-"));
+		const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-arg-hint-"));
 		try {
 			const commandsDir = path.join(cwd, ".agent", "commands");
 			await fs.mkdir(commandsDir, { recursive: true });

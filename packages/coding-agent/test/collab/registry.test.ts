@@ -40,7 +40,7 @@ afterEach(async () => {
 });
 
 async function tempDir(): Promise<string> {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-collab-registry-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "uw-collab-registry-"));
 	cleanupDirs.push(dir);
 	return dir;
 }
@@ -126,7 +126,7 @@ function rawRequest(endpoint: string, request: object): Promise<string> {
 function auxEndpoint(dir: string, label: string): string {
 	const id = crypto.randomBytes(4).toString("hex");
 	return process.platform === "win32"
-		? `\\\\.\\pipe\\omp-collab-test-${label}-${id}`
+		? `\\\\.\\pipe\\uw-collab-test-${label}-${id}`
 		: path.join(dir, `${label}-${id}.sock`);
 }
 
@@ -399,7 +399,7 @@ describe("collab registry", () => {
 
 	it("lists a host that omits busy as unknown and drops one that reports garbage", async () => {
 		const dir = await tempDir();
-		// An omp older than the `busy` field: same protocol version, one key short.
+		// An ultraworkers older than the `busy` field: same protocol version, one key short.
 		const older = makeFixture({ sessionId: "older-host" });
 		const { busy: _busy, ...withoutBusy } = older.snapshot;
 		openPublications.push(

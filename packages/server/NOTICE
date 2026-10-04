@@ -1,0 +1,88 @@
+This package is a port of the `server` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below.
+
+The execution plan for this milestone pins `d6af72e`. That commit exists and is
+an ancestor of the tree above, but it is not the tree these files were copied
+from, so the pin recorded here is the one that describes the actual source. A
+provenance line naming a commit nobody read is worse than a stale one.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every file: relative specifiers no longer carry a `.ts` suffix, as this
+     repository's `check-ts-relative-imports` invariant requires.
+  2. Class privacy: 86 `private` members across five files became ES `#private`
+     fields, with their `this.<name>` references rewritten to `this.#<name>`.
+     The public `get closed()` on `UnixByteConnection` is deliberately left
+     public: it is a required member of the `ByteConnection` interface.
+  3. Promise constructors: eight of the nine `new Promise` sites became
+     `Promise.withResolvers()`. `ProtocolTestClient.nextFrom()` keeps its
+     constructor and says why in a comment — it resolves a value derived from a
+     predicate by the waiter loop in `receive()`, which a deferred cannot
+     express.
+  4. Node builtins: named imports from `node:crypto`, `node:fs/promises`,
+     `node:net`, `node:path`, `node:events` became namespace imports with
+     qualified call sites. Three functions took a parameter named `path`, which
+     the module import then shadowed; those parameters are renamed.
+  5. Types shared with packages this repository does not have:
+     `Context`, `BACKGROUND_CONTEXT`, `TODO_CONTEXT` and `withAbortSignal` come
+     from `@oh-my-pi/chord/context` instead of `pi-agent-core`, which is a pure
+     re-export upstream. `SessionMetadata` is declared in `src/types.ts` with
+     all six upstream fields verbatim, including `legacyParentSessionPath`,
+     which nothing here reads. `MaybePromise` is re-exported from
+     `@oh-my-pi/pi-utils/acp/protocol` so it has one owner.
+  6. `NodeJS.Timeout` became `Timer` by this repository's convention. This is
+     not a typecheck requirement: `NodeJS.Timeout` compiles here too.
+  7. Tests: the runner moved from `vitest` to `bun:test`, which `bun:test` has
+     no `vi.waitFor` for; `test/helpers.ts` supplies one polling helper in its
+     place. Two conformance cases were additionally rewritten because Bun
+     1.3.14's `expect(p).rejects` does not settle when the rejection arrives
+     after the expectation was created. Both cases assert the same contract as
+     upstream — see bead `epic-j0yo` for the minimal reproduction.
+
+Every `src/` file differs from its upstream counterpart, so none is listed as
+copied verbatim. The `#private` conversion alone touches all seventeen.
+
+Added by this port, with no upstream counterpart: `LICENSE`, `NOTICE`,
+`CHANGELOG.md`, `tsconfig.json` and `package.json` were rewritten for this
+repository, and `test/helpers.ts` is new. `src/testing/host.ts` carries a
+`TestSessionRepo` in place of upstream's `MemorySessionRepo` import; it is a
+plain `Map` exposing only `list`, `open` and `create`, because a test double
+with a session engine of its own gets exercised by these tests instead of the
+routing contract they cover. Upstream's `vitest.config.ts`,
+`tsconfig.build.json` and `tsconfig.test.json` were dropped — the runner change
+removes the first, and AGENTS.md forbids the `tsc -p tsconfig.build.json` build
+the other two served.
+
+The `package.json` `exports` map also gained explicit `./testing` and `./unix`
+entries. The wildcard `./*` entry maps `./unix` to `./src/unix.ts`, which does
+not exist, so both documented subpaths were unreachable until they were named.
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

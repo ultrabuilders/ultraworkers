@@ -141,7 +141,22 @@ export interface NumberDefinition extends DefinitionBase {
 export interface EnumDefinition<T extends readonly string[] = readonly string[]> extends DefinitionBase {
 	type: "enum";
 	values: T;
-	default: T[number];
+	/**
+	 * May be absent, like every other variant's default.
+	 *
+	 * An enum with no default is a FOUR-state setting, not a three-state one, and
+	 * the fourth state is load-bearing rather than a convenience: `crossSessionInbound`
+	 * (`packages/coding-agent/src/peer/settings.ts`) must distinguish "the user chose
+	 * accept" from "the user chose nothing", because the latter falls back to comparing
+	 * the two sessions' permission classes while the former does not. Giving it a
+	 * default of `"accept"` would make admitting peer messages the accidental
+	 * behaviour of a fresh install, which is the opposite of what the value means.
+	 *
+	 * `boolean`, `string` and `number` all permitted `undefined` before this; enum
+	 * was the odd one out, and the asymmetry was the only thing forcing a
+	 * three-state fiction on a setting that has four states.
+	 */
+	default: T[number] | undefined;
 	env?: SettingEnv<T[number]>;
 	ui?: UiEnum<T>;
 }
@@ -188,9 +203,11 @@ export type DefinitionValue<D> = D extends { type: "boolean"; default: undefined
 				? number | undefined
 				: D extends { type: "number" }
 					? number
-					: D extends { type: "enum"; values: infer V }
+					: D extends { type: "enum"; values: infer V; default: infer DV }
 						? V extends readonly string[]
-							? V[number]
+							? undefined extends DV
+								? V[number] | undefined
+								: V[number]
 							: never
 						: D extends { type: "array" | "record"; default: infer V }
 							? V
@@ -547,7 +564,7 @@ export class Setting<T, Id extends string = string> extends Derived<T> {
 	}
 
 	/**
-	 * Parses user- or agent-supplied text (`omp config set`, `write cfg://…`) into a value of this
+	 * Parses user- or agent-supplied text (`ultraworkers config set`, `write cfg://…`) into a value of this
 	 * setting's type. Booleans accept true/false, yes/no, on/off, 1/0; arrays and records take JSON;
 	 * strings and enums accept bare text or a JSON-quoted string.
 	 *
@@ -805,6 +822,125 @@ export type AnySetting = Setting<unknown>;
 
 const byId = new Map<string, AnySetting>();
 const ordered: AnySetting[] = [];
+/**
+ * Which extension (or `"core"`) declared each setting.
+ *
+ * Ownership is what makes an extension's setting removable: without it, unloading
+ * an extension can only leave its settings behind forever, because `ordered` is
+ * append-only and nothing knows which rows are that extension's. Kept beside the
+ * id map rather than inferred from the id prefix, because the prefix is a
+ * convention an extension author can get wrong and a stale setting is worse than
+ * a name collision.
+ */
+const ownerById = new Map<string, string>();
+const idsByOwner = new Map<string, string[]>();
+
+/**
+ * Drop every setting an owner declared.
+ *
+ * Returns the removed ids. Loading and unloading must be symmetric: an extension
+ * that re-registers on reload would otherwise collide with its own previous
+ * settings, and the error would name a setting the author cannot see.
+ */
+export function unregisterOwned(owner: string): string[] {
+	const ids = idsByOwner.get(owner);
+	if (!ids) return [];
+	for (const id of ids) {
+		const handle = byId.get(id);
+		if (!handle) continue;
+		byId.delete(id);
+		ownerById.delete(id);
+		const index = ordered.indexOf(handle);
+		if (index >= 0) ordered.splice(index, 1);
+	}
+	idsByOwner.delete(owner);
+	invalidateOrderedSettings();
+	return ids;
+}
+
+/**
+ * Called when the registry's membership changes, so the next `orderedSettings()`
+ * recomputes instead of returning a memo that no longer matches `ordered`.
+ *
+ * Lives here rather than in `all-settings.ts` because that module's memo is the
+ * thing that goes stale, and importing it from here would close a cycle: it
+ * already imports every domain from this file.
+ */
+let invalidateOrderedSettingsImpl: (() => void) | undefined;
+
+/** @internal — wired once by `all-settings.ts` at module load. */
+export function setOrderedSettingsInvalidator(invalidate: () => void): void {
+	invalidateOrderedSettingsImpl = invalidate;
+}
+
+/** @internal */
+export function invalidateOrderedSettings(): void {
+	invalidateOrderedSettingsImpl?.();
+}
+
+/**
+ * Reserved root for settings an extension owns.
+ *
+ * Duplicated as a literal rather than imported from `extensibility/settings.ts`, which is
+ * where `pluginSettingId()` builds ids: `config/` must not depend on `extensibility/`, and
+ * that direction is already fixed (every domain imports this file, none is imported back).
+ * A test asserts the two literals agree, so the copy cannot drift silently.
+ */
+const PLUGIN_SETTINGS_ROOT = "plugins";
+
+/**
+ * Owner used by `register`, which is what all 41 in-tree core declaration sites call.
+ *
+ * Named rather than inferred from the id, because "core" is the one owner allowed to
+ * declare a bare id — see `registerOwned`. Core must keep working exactly as it does
+ * today, and exempting it by name is what keeps this change from being a breaking one.
+ */
+const CORE_OWNER = "core";
+
+/**
+ * Declares a setting on behalf of `owner` and returns its typed handle.
+ *
+ * @throws Error when `id` is already registered, naming the id, the owner that holds
+ * it, and the namespace rule an extension must follow.
+ * @throws Error when a non-core owner declares a bare id.
+ */
+export function registerOwned<const D extends SettingDefinition>(
+	owner: string,
+	definition: D,
+): Setting<DefinitionValue<D>, D["id"]> {
+	if (owner !== CORE_OWNER && !definition.id.startsWith(`${PLUGIN_SETTINGS_ROOT}.`)) {
+		throw new Error(
+			`Setting "${definition.id}" was declared by ${owner} outside the reserved ` +
+				`"${PLUGIN_SETTINGS_ROOT}." namespace. Settings an extension owns must be ` +
+				`registered as "${PLUGIN_SETTINGS_ROOT}.<id>.<key>" — build the id with the ` +
+				`injected api.pluginSettingId(<id>, <key>) — so an extension cannot ` +
+				`collide with a core setting or with another extension's.`,
+		);
+	}
+	if (byId.has(definition.id)) {
+		const holder = ownerById.get(definition.id) ?? "an unknown owner";
+		throw new Error(
+			`Setting "${definition.id}" is already registered by ${holder}. ` +
+				`Settings owned by an extension must live under the reserved ` +
+				`"${PLUGIN_SETTINGS_ROOT}.<id>.<key>" namespace, so two extensions cannot ` +
+				`collide on a bare id and one extension's key cannot shadow another's.`,
+		);
+	}
+	const handle = new Setting<DefinitionValue<D>, D["id"]>(definition);
+	byId.set(definition.id, handle as AnySetting);
+	ordered.push(handle as AnySetting);
+	ownerById.set(definition.id, owner);
+	const ids = idsByOwner.get(owner);
+	if (ids) ids.push(definition.id);
+	else idsByOwner.set(owner, [definition.id]);
+	invalidateOrderedSettings();
+	return handle;
+}
+
+/** Owner that declared `id`, or `undefined` for an unknown id. */
+export function ownerOf(id: string): string | undefined {
+	return ownerById.get(id);
+}
 
 /**
  * Declares a setting and returns its typed handle.
@@ -812,11 +948,7 @@ const ordered: AnySetting[] = [];
  * @throws Error when `id` is already registered.
  */
 export function register<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]> {
-	if (byId.has(definition.id)) throw new Error(`Setting "${definition.id}" is registered twice`);
-	const handle = new Setting<DefinitionValue<D>, D["id"]>(definition);
-	byId.set(definition.id, handle as AnySetting);
-	ordered.push(handle as AnySetting);
-	return handle;
+	return registerOwned("core", definition);
 }
 
 /** Handle for `id`, or `undefined` when no setting has that id. */
@@ -827,6 +959,24 @@ export function lookup(id: string): AnySetting | undefined {
 /** Every registered setting, in declaration order. */
 export function all(): readonly AnySetting[] {
 	return ordered;
+}
+
+/**
+ * The ids `owner` currently holds, in declaration order.
+ *
+ * The reader half of the owner index that `registerOwned`/`unregisterOwned` maintain.
+ * Without it an extension author can only learn what they declared by keeping their own
+ * list — and the failure that matters is exactly the one they cannot see: a setting
+ * left behind by an earlier load, whose id `unregisterOwned` would drop without telling
+ * anyone a key existed at all.
+ *
+ * Returns a copy, and returns `[]` for an owner that has registered nothing, so a caller
+ * that drops an extension that never registered a setting needs no guard. Reading the
+ * live array would let a caller splice the index out from under a later `registerOwned`.
+ */
+export function ownedBy(owner: string): readonly string[] {
+	const ids = idsByOwner.get(owner);
+	return ids === undefined ? [] : [...ids];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

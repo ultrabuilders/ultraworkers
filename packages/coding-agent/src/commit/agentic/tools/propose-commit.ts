@@ -13,7 +13,7 @@ import { validateAnalysis } from "../../../commit/analysis/validation";
 import type { CommitType, ConventionalAnalysis, ConventionalDetail } from "../../../commit/types";
 import { normalizeDetails } from "../../../commit/utils";
 import type { CustomTool } from "../../../extensibility/custom-tools/types";
-import { commitTypeSchema, detailSchema } from "./schemas.js";
+import { commitTypeSchema, detailSchema } from "./schemas";
 
 const proposeCommitSchema = type({
 	type: commitTypeSchema,

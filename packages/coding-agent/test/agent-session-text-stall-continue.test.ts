@@ -22,7 +22,7 @@ describe("AgentSession text-only stream stall", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		tempDir = TempDir.createSync("@pi-text-stall-");
+		tempDir = TempDir.createSync("@ultraworkers-text-stall-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);

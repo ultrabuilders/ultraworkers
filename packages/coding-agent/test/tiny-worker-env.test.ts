@@ -14,10 +14,10 @@ describe("workerEnvFromParent", () => {
 		const previous = process.env.GIT_DIR;
 		process.env.GIT_DIR = "/primary/.git";
 		try {
-			const env = workerEnvFromParent({ GIT_WORK_TREE: "/secondary", OMP_WORKER_ENV_PROBE: "kept" });
+			const env = workerEnvFromParent({ GIT_WORK_TREE: "/secondary", ULTRAWORKERS_WORKER_ENV_PROBE: "kept" });
 			expect(env.GIT_DIR).toBeUndefined();
 			expect(env.GIT_WORK_TREE).toBe("/secondary");
-			expect(env.OMP_WORKER_ENV_PROBE).toBe("kept");
+			expect(env.ULTRAWORKERS_WORKER_ENV_PROBE).toBe("kept");
 		} finally {
 			if (previous === undefined) delete process.env.GIT_DIR;
 			else process.env.GIT_DIR = previous;

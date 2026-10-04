@@ -24,6 +24,13 @@ import {
 	loadCapability,
 } from "../../../discovery";
 import { readDisabledServers, readEnabledServers } from "../../../mcp/config-writer";
+import { recordedHookHash } from "../../../config/hook-settings";
+import {
+	hookContentHash,
+	hookTrustKey,
+	hookTrustStatus,
+	type HookTrustStatus,
+} from "../../../extensibility/hooks/trust";
 import { commandPreview } from "@oh-my-pi/pi-tui/overlays/extensions/inspector-model";
 import { inferMcpTransport } from "@oh-my-pi/pi-tui/overlays/extensions/mcp-runtime";
 import {
@@ -50,9 +57,20 @@ function resolveState(
 	source: SourceMeta,
 	isDisabled: boolean,
 	isShadowed: boolean | undefined,
+	isModified = false,
 ): { state: ExtensionState; disabledReason?: DisabledReason } {
 	if (isDisabled) return { state: "disabled", disabledReason: "item-disabled" };
 	if (isShadowed) return { state: "shadowed", disabledReason: "shadowed" };
+	// Below the two the user set deliberately, because that is the order the
+	// loader decides in. Not a claim that both paths block a modified hook — an
+	// earlier version of this comment said that, and it was not true in either
+	// direction: the loader's `addPaths` disabled-check (:920) is not on the path
+	// the trust gate takes, since the trust loop calls `addPath` (:910) directly.
+	// The reason to keep this order is only that the dashboard must reach the same
+	// verdict as the loader. One that disagrees is worse than none — it marks a
+	// running hook blocked, or shows a blocked one active — so the order is
+	// pinned to the loader's, not chosen for what reads best.
+	if (isModified) return { state: "modified", disabledReason: "hook-modified" };
 	if (!isProviderEnabled(source.provider)) return { state: "disabled", disabledReason: "provider-disabled" };
 	if (source.provider === "claude-plugins" && source.origin !== undefined && source.origin !== "claude") {
 		return { state: "active" };
@@ -61,6 +79,42 @@ function resolveState(
 		return { state: "disabled", disabledReason: "user-opt-in" };
 	}
 	return { state: "active" };
+}
+
+/**
+ * Whether the loader would refuse to import this hook.
+ *
+ * Deliberately the same three steps the loader runs in
+ * `discoverExtensionPaths`, in the same order, with the same default settings
+ * scope — a dashboard that disagreed with the loader in either direction would
+ * be worse than no status at all: it would mark a running hook as blocked, or
+ * show a blocked one as active. An unreadable file yields `false` on both sides,
+ * because the loader skips judging it and the import then fails on its own.
+ */
+async function isHookModified(hook: Hook): Promise<boolean> {
+	const hash = await hookContentHash(hook);
+	if (hash === undefined) return false;
+	const recorded = recordedHookHash(hookTrustKey(hook));
+	return recorded !== undefined && hookTrustStatus(recorded, hash, hook._source?.level === "native") === "modified";
+}
+
+/**
+ * The hook's content-trust verdict, for display beside the run state.
+ *
+ * The same three steps the loader runs, in the same order, with the same
+ * settings scope — see the note on `isHookModified`. This one reports the whole
+ * verdict rather than only the blocking case, because the list shows it as a
+ * badge next to `state` and `state` already carries the blocking half.
+ *
+ * `undefined` when the file cannot be hashed: the loader judges nothing there
+ * either, and inventing a verdict would put a badge on screen for a hook the
+ * dashboard knows nothing about.
+ */
+async function hookTrustVerdict(hook: Hook): Promise<HookTrustStatus | undefined> {
+	const hash = await hookContentHash(hook);
+	if (hash === undefined) return undefined;
+	const recorded = recordedHookHash(hookTrustKey(hook));
+	return hookTrustStatus(recorded, hash, hook._source?.level === "native");
 }
 
 /**
@@ -237,6 +291,7 @@ export async function loadAllExtensions(cwd?: string, disabledIds?: string[]): P
 				hook._source,
 				disabledExtensions.has(id),
 				(hook as { _shadowed?: boolean })._shadowed,
+				await isHookModified(hook),
 			);
 
 			extensions.push({
@@ -249,6 +304,7 @@ export async function loadAllExtensions(cwd?: string, disabledIds?: string[]): P
 				path: hook.path,
 				source: sourceFromMeta(hook._source),
 				state,
+				trustState: await hookTrustVerdict(hook),
 				disabledReason,
 				raw: hook,
 			});

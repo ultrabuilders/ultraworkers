@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -22,6 +22,17 @@ import { readText, ReadTextError } from "@oh-my-pi/pi-coding-agent/tools/jfind/t
 import { eligibleFile, renderTree, resolveSearchRoot } from "@oh-my-pi/pi-coding-agent/tools/jfind/tree";
 import { resolveSearchResultPath } from "@oh-my-pi/pi-coding-agent/tools/path-utils";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
+
+// `InternalUrlRouter.instance()` is memoized per process, and Bun batches test files
+// across parallel workers — so a handler registered here would otherwise survive into
+// whichever unrelated file shares the worker, and the failure would surface there.
+beforeEach(() => {
+	InternalUrlRouter.resetForTests();
+});
+
+afterEach(() => {
+	InternalUrlRouter.resetForTests();
+});
 
 /** Read-tier URL filesystem rooted at `cwd`, as the `find` tool builds one per call. */
 function urlFs(cwd: string): InternalUrlFilesystem {

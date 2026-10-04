@@ -13,7 +13,7 @@ import { buildSessionTrace, getTraceEntry, listSessionSummaries, TracePathError 
 import { getSessionsDir } from "@oh-my-pi/pi-utils";
 import { installStatsTestIsolation } from "./helpers/temp-agent";
 
-installStatsTestIsolation("@pi-stats-trace-");
+installStatsTestIsolation("@ultraworkers-stats-trace-");
 
 const T = 1_700_000_000_000;
 const PROJECT = "--tmp--proj--";
@@ -604,7 +604,7 @@ describe("listSessionSummaries", () => {
 					version: 3,
 					id: "current",
 					timestamp: iso(T),
-					cwd: "/home/han/project/omp-kit",
+					cwd: "/home/han/project/ultraworkers-kit",
 					title: "Stale header title",
 				},
 			]
@@ -633,7 +633,7 @@ describe("listSessionSummaries", () => {
 		await Bun.write(legacyFile, JSON.stringify({ type: "title", v: 1, title: "Legacy session" }));
 
 		const rows = await listSessionSummaries();
-		expect(rows.find(row => row.file === currentFile)?.folder).toBe("/home/han/project/omp-kit");
+		expect(rows.find(row => row.file === currentFile)?.folder).toBe("/home/han/project/ultraworkers-kit");
 		expect(rows.find(row => row.file === currentFile)?.title).toBe("Current title");
 		expect(rows.find(row => row.file === compressedFile)?.folder).toBe("/home/han/project/compressed");
 		expect(rows.find(row => row.file === compressedFile)?.title).toBe("Compressed title");

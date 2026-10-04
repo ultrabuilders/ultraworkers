@@ -20,7 +20,7 @@ let sessionManager: SessionManager;
 let mock: MockModel;
 
 beforeEach(() => {
-	tempDir = TempDir.createSync("@pi-agent-session-force-tool-");
+	tempDir = TempDir.createSync("@ultraworkers-agent-session-force-tool-");
 	const model = getBundledModel("anthropic", "claude-sonnet-4-5");
 	if (!model) throw new Error("Expected claude-sonnet-4-5 model to exist");
 

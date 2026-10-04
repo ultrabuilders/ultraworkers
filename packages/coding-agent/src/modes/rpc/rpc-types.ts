@@ -78,7 +78,19 @@ export type RpcCommand =
 
 	// Session
 	| { id?: string; type: "get_session_stats" }
-	| { id?: string; type: "export_html"; outputPath?: string }
+	| {
+			id?: string;
+			type: "export_html";
+			outputPath?: string;
+			/**
+			 * Which registered format to render with. Omitted means the session's
+			 * default, which is what a caller that knows nothing about extensions
+			 * produces. Supplying it is what makes a format an extension registered
+			 * reachable from here — the same `formatId` the CLI flag and
+			 * `exportToHtml` already take, rather than an RPC-only spelling.
+			 */
+			formatId?: string;
+	  }
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "branch"; entryId: string }
 	| { id?: string; type: "get_branch_messages" }

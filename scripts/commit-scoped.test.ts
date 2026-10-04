@@ -1,0 +1,492 @@
+import { describe, expect, it } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { commitStagedPaths, parseArgs } from "./commit-scoped";
+
+/** Run git in `cwd`, returning stdout VERBATIM. Leading whitespace is data for porcelain. */
+async function runRaw(args: string[], cwd: string): Promise<string> {
+	const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+	const [stdout, stderr, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	if (code !== 0) throw new Error(`git ${args.join(" ")} exited ${code}: ${stderr.trim()}`);
+	return stdout;
+}
+
+/** Run git in `cwd`, returning trimmed stdout. */
+async function run(args: string[], cwd: string): Promise<string> {
+	return (await runRaw(args, cwd)).trim();
+}
+
+/**
+ * Run git that is EXPECTED to fail, returning its stderr.
+ *
+ * A conflicting `git merge` exits 1 and `git show HEAD:<absent>` exits 128, and both are
+ * the precondition of the contract under test rather than a broken fixture. `run` throws
+ * on those, which fails the test before it reaches the assertion it exists to make.
+ */
+async function runFails(args: string[], cwd: string): Promise<string> {
+	try {
+		await runRaw(args, cwd);
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+	throw new Error(`expected \`git ${args.join(" ")}\` to fail, but it succeeded`);
+}
+
+/** A repo with one commit, so HEAD exists and a tree can be built on top of it. */
+async function makeRepo(): Promise<string> {
+	const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "commit-scoped-test-"));
+	await run(["init", "-q", "-b", "main"], dir);
+	await run(["config", "user.email", "scope@example.test"], dir);
+	await run(["config", "user.name", "Scope Test"], dir);
+	await run(["config", "commit.gpgsign", "false"], dir);
+	await fs.promises.writeFile(path.join(dir, "seed.txt"), "seed\n");
+	await run(["add", "seed.txt"], dir);
+	await run(["commit", "-q", "-m", "seed"], dir);
+	return dir;
+}
+
+async function write(dir: string, name: string, body: string): Promise<void> {
+	await fs.promises.writeFile(path.join(dir, name), body);
+}
+
+describe("commitStagedPaths", () => {
+	it("commits only the named path and leaves a peer's staged entry staged and uncommitted", async () => {
+		// The incident this exists for: a bare `git commit` carried a peer's staged rows
+		// under my message. The contract is that the peer's entry survives the commit —
+		// still staged, still theirs, absent from the commit.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "mine.txt", "mine v2\n");
+			await run(["add", "mine.txt"], dir);
+			await write(dir, "peer.txt", "peer row\n");
+			await run(["add", "peer.txt"], dir);
+
+			const result = await commitStagedPaths(["mine.txt"], "only mine", { cwd: dir });
+
+			expect(result.wroteCommit).toBe(true);
+			expect(result.committed).toEqual(["mine.txt"]);
+			// The peer's file is not in the commit at all.
+			expect(await run(["show", "--name-only", "--format=", result.commit], dir)).toBe("mine.txt");
+			// …and it is still staged afterwards, byte-identical, not swept and not dropped.
+			expect(await run(["diff", "--cached", "--name-only"], dir)).toBe("peer.txt");
+			expect(await run(["show", ":peer.txt"], dir)).toBe("peer row");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits the staged content, not the working tree, when the two differ", async () => {
+		// This is the whole reason a scoped commit exists rather than `git add` + `git
+		// commit --only`, both of which take the file's CURRENT content. An edit made
+		// after staging must not reach the commit.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "shared.txt", "staged\n");
+			await run(["add", "shared.txt"], dir);
+			// Someone — the author or a peer — touches the file again, unstaged.
+			await write(dir, "shared.txt", "staged\nlater edit, never staged\n");
+
+			const result = await commitStagedPaths(["shared.txt"], "take the staged version", { cwd: dir });
+
+			expect(await run(["show", `${result.commit}:shared.txt`], dir)).toBe("staged");
+			// The later edit is still in the working tree, uncommitted and intact.
+			expect(await fs.promises.readFile(path.join(dir, "shared.txt"), "utf8")).toBe(
+				"staged\nlater edit, never staged\n",
+			);
+			expect(await runRaw(["status", "--porcelain", "shared.txt"], dir)).toBe(" M shared.txt\n");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("refuses when the named path has nothing staged, rather than committing a peer instead", async () => {
+		// The failure this must not have: naming a path that is clean should never fall
+		// back to "commit whatever is staged", which is the bare-commit hazard.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "peer.txt", "peer row\n");
+			await run(["add", "peer.txt"], dir);
+
+			const before = await run(["rev-parse", "HEAD"], dir);
+			await expect(commitStagedPaths(["seed.txt"], "should not happen", { cwd: dir })).rejects.toThrow(
+				/nothing is staged for seed\.txt/,
+			);
+			// The peer's staged row is untouched by the refusal.
+			expect(await run(["rev-parse", "HEAD"], dir)).toBe(before);
+			expect(await run(["diff", "--cached", "--name-only"], dir)).toBe("peer.txt");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("refuses when the staged content is identical to what HEAD already has", async () => {
+		// Staging a file with no change to it leaves nothing to commit. Saying "nothing is
+		// staged" is the accurate report, and it matters that this is a refusal rather
+		// than an empty commit — an empty commit on a shared branch reads as a mistake.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "seed.txt", "seed\n");
+			await run(["add", "seed.txt"], dir);
+
+			await expect(commitStagedPaths(["seed.txt"], "nothing changed", { cwd: dir })).rejects.toThrow(
+				/nothing is staged for seed\.txt/,
+			);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("--dry-run reports the same scope and writes nothing", async () => {
+		const dir = await makeRepo();
+		try {
+			await write(dir, "mine.txt", "mine v2\n");
+			await run(["add", "mine.txt"], dir);
+			await write(dir, "peer.txt", "peer row\n");
+			await run(["add", "peer.txt"], dir);
+			const before = await run(["rev-parse", "HEAD"], dir);
+
+			const preview = await commitStagedPaths(["mine.txt"], "", { cwd: dir, dryRun: true });
+
+			expect(preview.wroteCommit).toBe(false);
+			expect(preview.committed).toEqual(["mine.txt"]);
+			expect(preview.commit).toBe("");
+			// A dry run that moved the ref, or consumed the index, would make the preview
+			// a second way to lose a peer's work.
+			expect(await run(["rev-parse", "HEAD"], dir)).toBe(before);
+			expect((await run(["diff", "--cached", "--name-only"], dir)).split("\n").sort()).toEqual([
+				"mine.txt",
+				"peer.txt",
+			]);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits several named paths together, still excluding everyone else's", async () => {
+		const dir = await makeRepo();
+		try {
+			for (const name of ["one.txt", "two.txt"]) await write(dir, name, `${name} body\n`);
+			await run(["add", "one.txt", "two.txt"], dir);
+			await write(dir, "peer.txt", "peer row\n");
+			await run(["add", "peer.txt"], dir);
+
+			const result = await commitStagedPaths(["one.txt", "two.txt"], "two files", { cwd: dir });
+
+			expect([...result.committed].sort()).toEqual(["one.txt", "two.txt"]);
+			const inCommit = (await run(["show", "--name-only", "--format=", result.commit], dir)).split("\n").sort();
+			expect(inCommit).toEqual(["one.txt", "two.txt"]);
+			expect(await run(["diff", "--cached", "--name-only"], dir)).toBe("peer.txt");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a staged deletion instead of resurrecting the file", async () => {
+		// A deletion leaves NO index entry — `git rm` removes the row — so a tool that
+		// enumerates staged entries cannot see one. The tree is built with `read-tree
+		// HEAD`, which puts the file back, so the commit lands resurrecting a file the
+		// caller deleted while reporting only the paths it did commit. Deletions are not
+		// a rare shape here: this tree's last 200 commits delete 59 tracked source files.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "keep.txt", "keep v1\n");
+			await write(dir, "gone.txt", "should not survive\n");
+			await run(["add", "keep.txt", "gone.txt"], dir);
+			await run(["commit", "-q", "-m", "add both"], dir);
+
+			await write(dir, "keep.txt", "keep v2\n");
+			await run(["add", "keep.txt"], dir);
+			await run(["rm", "-q", "gone.txt"], dir);
+
+			const result = await commitStagedPaths(["keep.txt", "gone.txt"], "modify and delete", { cwd: dir });
+
+			// The deletion is reported as committed — it is part of what the caller staged.
+			expect([...result.committed].sort()).toEqual(["gone.txt", "keep.txt"]);
+			const inHead = (await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).split("\n").sort();
+			expect(inHead).toEqual(["keep.txt", "seed.txt"]);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("treats a re-added file as a modification, not a deletion", async () => {
+		// The neighbour of the deletion shape, and the one a deletion-blind fix gets
+		// wrong in the opposite direction: `git rm` then `git add` leaves the index WITH
+		// an entry, so the path must commit as a modification carrying the re-added bytes.
+		// Reading it as a deletion would drop a file the caller still has.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "back.txt", "original\n");
+			await run(["add", "back.txt"], dir);
+			await run(["commit", "-q", "-m", "add back"], dir);
+
+			await run(["rm", "-q", "back.txt"], dir);
+			await write(dir, "back.txt", "re-added v2\n");
+			await run(["add", "back.txt"], dir);
+
+			const result = await commitStagedPaths(["back.txt"], "rm then re-add", { cwd: dir });
+
+			expect(result.committed).toEqual(["back.txt"]);
+			expect(await run(["ls-tree", "--name-only", "HEAD"], dir)).toContain("back.txt");
+			expect(await run(["show", "HEAD:back.txt"], dir)).toBe("re-added v2");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a mode-only change, which leaves the blob byte-identical", async () => {
+		// A mode is half of what an index entry is. `chmod +x` on a script stages an
+		// entry whose blob is HEAD's blob unchanged, so a filter that compares blobs
+		// classified it as clean and refused the commit with "nothing is staged" — for a
+		// change git itself records as staged.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "run.sh", "#!/bin/sh\n");
+			await run(["add", "run.sh"], dir);
+			await run(["commit", "-q", "-m", "add run.sh"], dir);
+			await run(["update-index", "--chmod=+x", "run.sh"], dir);
+
+			const result = await commitStagedPaths(["run.sh"], "chmod +x", { cwd: dir });
+
+			expect(result.committed).toEqual(["run.sh"]);
+			expect(await run(["ls-tree", "HEAD", "run.sh"], dir)).toStartWith("100755");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("refuses a rename whose source was not named, instead of committing both copies", async () => {
+		// `git mv` stages only the DESTINATION, so naming it alone commits the addition and
+		// leaves the source in the tree — one file under two names, reported as a success.
+		//
+		// This was documented as unfixable because recovering the source "would be a guess".
+		// It is not: `git mv` records the pair, and `git diff --cached --diff-filter=R` reports
+		// it while the rename is staged and uncommitted — exactly when the caller is choosing
+		// what to name. So the tool asks git and refuses, naming the missing path.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "old.txt", "body\n");
+			await run(["add", "old.txt"], dir);
+			await run(["commit", "-q", "-m", "add old"], dir);
+			await run(["mv", "old.txt", "new.txt"], dir);
+
+			await expect(commitStagedPaths(["new.txt"], "dest only", { cwd: dir })).rejects.toThrow(
+				/half-named rename: old\.txt -> new\.txt/,
+			);
+			// Nothing was written, so HEAD still holds the pre-rename tree rather than a
+			// commit that duplicated the file.
+			expect(await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).toBe("old.txt\nseed.txt");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("accepts the same rename once the source is named too", async () => {
+		// The counterfactual for the refusal above. Without this row the guard could be
+		// satisfied by refusing EVERY rename — a refusal that never lets the legitimate case
+		// through protects nothing. The two rows differ in exactly one quantity: whether
+		// the source path is among the named files.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "old.txt", "body\n");
+			await run(["add", "old.txt"], dir);
+			await run(["commit", "-q", "-m", "add old"], dir);
+			await run(["mv", "old.txt", "new.txt"], dir);
+
+			const result = await commitStagedPaths(["old.txt", "new.txt"], "both named", { cwd: dir });
+
+			expect([...result.committed].sort()).toEqual(["new.txt", "old.txt"]);
+			expect((await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).split("\n").sort()).toEqual([
+				"new.txt",
+				"seed.txt",
+			]);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a rename when both paths are named, since `git mv` stages only the destination", async () => {
+		// The index holds no entry for a rename's source, so it is a deletion wearing the
+		// destination's name. Naming both paths is what makes the rename whole.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "old.txt", "body\n");
+			await run(["add", "old.txt"], dir);
+			await run(["commit", "-q", "-m", "add old"], dir);
+			await run(["mv", "old.txt", "new.txt"], dir);
+
+			const result = await commitStagedPaths(["old.txt", "new.txt"], "rename", { cwd: dir });
+
+			expect([...result.committed].sort()).toEqual(["new.txt", "old.txt"]);
+			expect((await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).split("\n").sort()).toEqual([
+				"new.txt",
+				"seed.txt",
+			]);
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("refuses an unmerged path instead of committing one side of the conflict", async () => {
+		// A conflicted path has THREE index rows for one file — stages 1/2/3 — and they are
+		// three candidate resolutions of an unresolved merge. Read as three independent
+		// entries, the last one won, and stage 3 is "theirs": the tool committed a side
+		// git refuses to commit at all, and exited 0. Found by BlackSpire (Agent Mail #636).
+		const dir = await makeRepo();
+		try {
+			await write(dir, "conflict.txt", "base\n");
+			await run(["add", "conflict.txt"], dir);
+			await run(["commit", "-q", "-m", "base"], dir);
+			await run(["checkout", "-q", "-b", "other"], dir);
+			await write(dir, "conflict.txt", "SIDE VERSION\n");
+			await run(["commit", "-qam", "other"], dir);
+			await run(["checkout", "-q", "main"], dir);
+			await write(dir, "conflict.txt", "MAIN VERSION\n");
+			await run(["commit", "-qam", "main"], dir);
+			await runFails(["merge", "other"], dir); // expected to conflict
+
+			expect((await run(["ls-files", "-s", "--", "conflict.txt"], dir)).split("\n")).toHaveLength(3);
+			await expect(commitStagedPaths(["conflict.txt"], "conflicted", { cwd: dir })).rejects.toThrow(
+				/unmerged index entry/,
+			);
+			// Nothing was written, so HEAD still holds the pre-merge content.
+			expect(await run(["show", "HEAD:conflict.txt"], dir)).toBe("MAIN VERSION");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits an intent-to-add file with its real content rather than its empty placeholder", async () => {
+		// `git add -N` records the path carrying git's EMPTY blob — a placeholder that
+		// stands for "this path now exists", not for its bytes. Committing THAT blob writes
+		// a 0-byte file over real content on disk, which is what this tool used to do.
+		//
+		// Refusing was the wrong correction. Found by d9 (Agent Mail #666): `add -N` exists
+		// precisely so a NEW file can be committed by path, and `git commit --only` handles
+		// it by reading the working tree. A tool that rejects a state the tool it replaces
+		// accepts has the polarity backwards. So the placeholder is resolved the way `--only`
+		// resolves it — hash what is on disk.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "ita.txt", "PRECIOUS CONTENT\n");
+			await run(["add", "-N", "ita.txt"], dir);
+
+			const result = await commitStagedPaths(["ita.txt"], "intent to add", { cwd: dir });
+
+			expect(result.committed).toEqual(["ita.txt"]);
+			// The contract that matters: the bytes on disk, not the 0-byte placeholder.
+			expect(await run(["show", "HEAD:ita.txt"], dir)).toBe("PRECIOUS CONTENT");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a TRACKED path whose index entry was emptied, not the empty placeholder", async () => {
+		// The intent-to-add guard above is attached to the `else` of "does HEAD have this
+		// path", so it only fires for a NEW file. A path that is already in HEAD takes the
+		// `if` branch instead — and `git rm --cached` + `git add -N` on such a path leaves
+		// the index holding git's EMPTY blob while HEAD still carries the real source
+		// (`git status` reports `DA`). The empty blob then survives to the commit and
+		// writes a 0-byte file over kilobytes of real source.
+		//
+		// Found by d9 on the shared tree, where six such paths were staged at once, each
+		// holding 2.6-7.7 KB in HEAD. The safe tool was the one that would have destroyed
+		// them, so this is the row that keeps the guard from being new-file-only.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "tracked.ts", "REAL SOURCE\nline two\n");
+			await run(["add", "tracked.ts"], dir);
+			await run(["commit", "-q", "-m", "add tracked"], dir);
+			await run(["rm", "--cached", "-q", "tracked.ts"], dir);
+			await run(["add", "-N", "tracked.ts"], dir);
+			// The state itself, asserted so the row cannot pass on a fixture that drifted.
+			expect(await run(["status", "--porcelain", "--", "tracked.ts"], dir)).toBe("DA tracked.ts");
+			expect(await run(["ls-files", "-s", "--", "tracked.ts"], dir)).toContain(
+				"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+			);
+
+			const result = await commitStagedPaths(["tracked.ts"], "tracked placeholder", { cwd: dir });
+
+			expect(result.committed).toEqual(["tracked.ts"]);
+			// The contract: HEAD keeps the bytes that were on disk, not the 0-byte placeholder.
+			// `run` trims, so this compares without the trailing newline — the same shape as
+			// the intent-to-add row above.
+			expect(await run(["show", "HEAD:tracked.ts"], dir)).toBe("REAL SOURCE\nline two");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("reaches the same commit as `git commit --only` on an intent-to-add file", async () => {
+		// The counterfactual for the row above. "The content is right" is a claim about
+		// what I measured once; "this tool agrees with the tool it replaces" is a claim git
+		// re-derives on every run. Two repos in one identical state — one committed by git,
+		// one by this tool — and the bytes must match. If this tool refuses, or writes 0
+		// bytes, the two disagree, and the disagreement IS the bug.
+		const viaGit = await makeRepo();
+		const viaTool = await makeRepo();
+		try {
+			for (const dir of [viaGit, viaTool]) {
+				await write(dir, "new.ts", "REAL CONTENT\n");
+				await run(["add", "-N", "new.ts"], dir);
+			}
+			await run(["commit", "-q", "-m", "via git", "--only", "--", "new.ts"], viaGit);
+			await commitStagedPaths(["new.ts"], "via commit-scoped", { cwd: viaTool });
+
+			expect(await run(["show", "HEAD:new.ts"], viaTool)).toBe(await run(["show", "HEAD:new.ts"], viaGit));
+		} finally {
+			await fs.promises.rm(viaGit, { force: true, recursive: true });
+			await fs.promises.rm(viaTool, { force: true, recursive: true });
+		}
+	});
+
+	it("commits a deletion that is the only staged change, rather than reporting nothing staged", async () => {
+		// The single-deletion shape reaches the emptiness check first, so it is a separate
+		// failure: the tool reported "nothing is staged" for a path whose only change was
+		// to stop existing, and told the caller to stage lines for a file that is gone.
+		const dir = await makeRepo();
+		try {
+			await write(dir, "gone.txt", "should not survive\n");
+			await run(["add", "gone.txt"], dir);
+			await run(["commit", "-q", "-m", "add gone"], dir);
+			await run(["rm", "-q", "gone.txt"], dir);
+
+			const result = await commitStagedPaths(["gone.txt"], "delete only", { cwd: dir });
+
+			expect(result.wroteCommit).toBe(true);
+			expect(result.committed).toEqual(["gone.txt"]);
+			expect(await run(["ls-tree", "--name-only", "-r", "HEAD"], dir)).toBe("seed.txt");
+		} finally {
+			await fs.promises.rm(dir, { force: true, recursive: true });
+		}
+	});
+});
+
+describe("parseArgs", () => {
+	it("separates paths, message and the dry-run flag in any order", () => {
+		expect(parseArgs(["a.txt", "-m", "msg", "b.txt"])).toEqual({
+			files: ["a.txt", "b.txt"],
+			message: "msg",
+			dryRun: false,
+		});
+		expect(parseArgs(["--dry-run", "a.txt"])).toEqual({ files: ["a.txt"], message: "", dryRun: true });
+	});
+
+	it("refuses an empty path list, and an empty message outside a dry run", () => {
+		// Both are refusals rather than defaults: an empty commit and a commit with no
+		// paths are the two shapes that silently take someone else's work.
+		expect(() => parseArgs(["-m", "msg"])).toThrow(/name at least one path/);
+		expect(() => parseArgs(["a.txt"])).toThrow(/no commit message/);
+		// A dry run needs no message, because it writes nothing.
+		expect(parseArgs(["--dry-run", "a.txt"]).message).toBe("");
+	});
+
+	it("rejects an unknown flag instead of treating it as a path", () => {
+		expect(() => parseArgs(["--amend", "a.txt"])).toThrow(/unknown flag --amend/);
+	});
+});

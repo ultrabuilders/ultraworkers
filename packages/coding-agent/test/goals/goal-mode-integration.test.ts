@@ -54,7 +54,7 @@ type SharedFixture = {
 };
 
 async function createSharedFixture(): Promise<SharedFixture> {
-	const baseDir = TempDir.createSync("@pi-goal-mode-shared-");
+	const baseDir = TempDir.createSync("@ultraworkers-goal-mode-shared-");
 	const authStorage = await AuthStorage.create(path.join(baseDir.path(), "testauth.db"));
 	// The real prompt path gates on a resolvable key; never rely on ambient env.
 	authStorage.keys.setRuntime("anthropic", "test-key");
@@ -68,7 +68,7 @@ async function createSharedFixture(): Promise<SharedFixture> {
 
 async function createGoalHarness(shared: SharedFixture): Promise<GoalHarness> {
 	resetSettingsForTest();
-	const tempDir = TempDir.createSync("@pi-goal-mode-");
+	const tempDir = TempDir.createSync("@ultraworkers-goal-mode-");
 	await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	const { modelRegistry, model } = shared;
 

@@ -1,0 +1,11 @@
+{
+	"name": "@ultraworkers/extension-workflow",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Out-of-repo workflow extension. Engine copied verbatim from opencoding's MIT workflow-engine (Copyright (c) 2026 opencoding); see LICENSE. Deviations from the copy are marked PORT DEVIATION at each site.",
+	"license": "MIT",
+	"dependencies": {
+		"zod": "^4.0.0"
+	}
+}

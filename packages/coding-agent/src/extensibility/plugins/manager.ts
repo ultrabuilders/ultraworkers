@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+	atomicWriteJson,
 	getPluginsDir,
 	getPluginsLockfile,
 	getPluginsNodeModules,
@@ -9,19 +10,29 @@ import {
 	getProjectDir,
 	getProjectPluginOverridesPath,
 	isEnoent,
+	APP_NAME,
 	logger,
+	withFileLock,
 } from "@oh-my-pi/pi-utils";
 import { resolveActiveProjectRegistryPath } from "../../discovery/helpers";
 import { loadExtensions } from "../extensions/loader";
+import { collectDiagnostics } from "../extensions/diagnostics";
 import { refreshBunGitCache } from "./bun-git-cache";
 import { type GitSource, parseGitUrl } from "./git-url";
 import { resolvePluginManifestEntries } from "./loader";
+import { resolveOrDefaultProjectRegistryPath } from "../../discovery/helpers";
+import {
+	getMarketplacesCacheDir,
+	getMarketplacesRegistryPath,
+	getPluginsCacheDir,
+	MarketplaceManager,
+} from "./marketplace/index";
 import { getInstalledPluginsRegistryPath, readInstalledPluginsRegistry } from "./marketplace/registry";
 import { parsePluginId } from "./marketplace/types";
 import { extractPackageName, parsePluginSpec } from "./parser";
 import { normalizePluginRuntimeConfig } from "./runtime-config";
 import type {
-	DoctorCheck,
+	CheckOutcome,
 	DoctorOptions,
 	InstalledPlugin,
 	InstallOptions,
@@ -112,12 +123,96 @@ interface RuntimePackageJson {
 // Plugin Manager
 // =============================================================================
 
+/** Outcome of a plugin-config mutation, as observed on disk. */
+export interface ChangeResult {
+	/** False when the mutation was a no-op, so nothing was written. */
+	changed: boolean;
+	/** Whether the running session already reflects the write. */
+	application: "applied" | "restart-required";
+}
+
+/** A contributed diagnostic that never settles must not take the doctor down with it. */
+const DIAGNOSTIC_TIMEOUT_MS = 5_000;
+
+/**
+ * Parity between `patches/*.patch` and `package.json.patchedDependencies`.
+ *
+ * MANDATORY to report `unavailable` rather than pass: the ledger is local-only
+ * until the M4 patch-dependency work merges, and a build that silently applies
+ * fewer patches than the manifest claims is a failure nobody would otherwise see.
+ *
+ * Moved here from `doctor-checks.ts`, which no production path reached. The check
+ * is only worth anything if the shipped doctor runs it — a registry nothing calls
+ * is a table of intentions, and it left the live summary reporting every line as
+ * accounted for while this one went unchecked.
+ */
+async function checkPatchLedger(root: string): Promise<CheckOutcome> {
+	const patchesDir = path.join(root, "patches");
+	if (!fs.existsSync(patchesDir)) {
+		return {
+			name: "patch_ledger",
+			status: "unavailable",
+			message: `No patches/ directory under ${root} — patch ledger not checked`,
+		};
+	}
+
+	let manifest: { patchedDependencies?: Record<string, string> } | undefined;
+	try {
+		manifest = (await Bun.file(path.join(root, "package.json")).json()) as typeof manifest;
+	} catch {
+		manifest = undefined;
+	}
+	if (!manifest) {
+		return {
+			name: "patch_ledger",
+			status: "unavailable",
+			message: "package.json could not be read — patch ledger not checked",
+		};
+	}
+
+	const declared = manifest.patchedDependencies ?? {};
+	const declaredFiles = Object.values(declared);
+	const entries = await fs.promises.readdir(patchesDir);
+	const missing = declaredFiles.filter(file => !fs.existsSync(path.join(root, file)));
+
+	// The reverse direction too: a patch file nothing declares is applied by nobody,
+	// so the manifest and the directory have drifted apart.
+	const onDisk = entries.filter(name => name.endsWith(".patch")).map(name => `patches/${name}`);
+	const undeclared = onDisk.filter(file => !declaredFiles.includes(file));
+
+	const problems = [
+		...missing.map(file => `declared but missing: ${file}`),
+		...undeclared.map(file => `present but undeclared: ${file}`),
+	];
+	if (problems.length > 0) {
+		return { name: "patch_ledger", status: "error", message: problems.join("; ") };
+	}
+	return {
+		name: "patch_ledger",
+		status: "ok",
+		message: `${declaredFiles.length} patch(es) declared and present`,
+	};
+}
+
 export class PluginManager {
 	#runtimeConfig: PluginRuntimeConfig | null = null;
 	#cwd: string;
 
-	constructor(cwd: string = getProjectDir()) {
+	constructor(
+		cwd: string = getProjectDir(),
+		/**
+		 * Overrides the plugins home, so the lockfile resolves under it. Read,
+		 * lock and write must all agree on one path; passing it per instance is
+		 * what lets a test drive two managers at two different lockfiles.
+		 */
+		readonly home?: string,
+	) {
 		this.#cwd = cwd;
+	}
+
+	/** The single lockfile path this instance reads, locks and writes. */
+	#getLockfile(): string {
+		return getPluginsLockfile(this.home);
 	}
 
 	// ==========================================================================
@@ -135,7 +230,7 @@ export class PluginManager {
 	}
 
 	async #loadRuntimeConfig(): Promise<PluginRuntimeConfig> {
-		return this.#readRuntimeConfigAt(getPluginsLockfile());
+		return this.#readRuntimeConfigAt(this.#getLockfile());
 	}
 
 	async #ensureConfigLoaded(): Promise<PluginRuntimeConfig> {
@@ -145,9 +240,24 @@ export class PluginManager {
 		return this.#runtimeConfig;
 	}
 
-	async #saveRuntimeConfig(): Promise<void> {
-		await this.#ensureConfigLoaded();
-		await Bun.write(getPluginsLockfile(), JSON.stringify(this.#runtimeConfig, null, 2));
+	async #mutateConfig(
+		mutate: (config: PluginRuntimeConfig) => void,
+		application: ChangeResult["application"],
+	): Promise<ChangeResult> {
+		return await withFileLock(this.#getLockfile(), async () => {
+			// Re-read INSIDE the lock rather than trusting the memoized copy: a
+			// second process may have written since it was taken, and mutating
+			// that stale object would silently drop their changes on our write.
+			const config = await this.#loadRuntimeConfig();
+			const before = JSON.stringify(config);
+			mutate(config);
+			const changed = JSON.stringify(config) !== before;
+			this.#runtimeConfig = config;
+			if (changed) {
+				await atomicWriteJson(this.#getLockfile(), config);
+			}
+			return { changed, application };
+		});
 	}
 
 	async #loadProjectOverrides(): Promise<ProjectPluginOverrides> {
@@ -659,13 +769,13 @@ export class PluginManager {
 			await this.#validateInstalledExtensions(installedPlugin);
 
 			// Update runtime config
-			const config = await this.#ensureConfigLoaded();
-			config.plugins[pkg.name] = {
-				version: pkg.version,
-				enabledFeatures,
-				enabled: true,
-			};
-			await this.#saveRuntimeConfig();
+			await this.#mutateConfig(config => {
+				config.plugins[pkg.name] = {
+					version: pkg.version,
+					enabledFeatures,
+					enabled: true,
+				};
+			}, "restart-required");
 
 			return installedPlugin;
 		} catch (err) {
@@ -718,10 +828,10 @@ export class PluginManager {
 		await fs.promises.rm(path.join(getPluginsNodeModules(), name), { recursive: true, force: true });
 
 		// Remove from runtime config
-		const config = await this.#ensureConfigLoaded();
-		delete config.plugins[name];
-		delete config.settings[name];
-		await this.#saveRuntimeConfig();
+		await this.#mutateConfig(config => {
+			delete config.plugins[name];
+			delete config.settings[name];
+		}, "restart-required");
 	}
 
 	/**
@@ -848,14 +958,19 @@ export class PluginManager {
 		const manifest: PluginManifest = pkg.omp || pkg.pi || { version: pkg.version };
 		manifest.version = pkg.version;
 
+		// Captured as a const: the `if (!pkg.name) throw` above narrows `pkg.name`
+		// to string, but that narrowing does not survive into a callback for a
+		// `let`, where the compiler must assume it may have been reassigned.
+		const pluginName = pkg.name;
+
 		// Add to runtime config
-		const config = await this.#ensureConfigLoaded();
-		config.plugins[pkg.name] = {
-			version: pkg.version,
-			enabledFeatures: null,
-			enabled: true,
-		};
-		await this.#saveRuntimeConfig();
+		await this.#mutateConfig(config => {
+			config.plugins[pluginName] = {
+				version: pkg.version,
+				enabledFeatures: null,
+				enabled: true,
+			};
+		}, "restart-required");
 
 		return {
 			name: pkg.name,
@@ -874,13 +989,13 @@ export class PluginManager {
 	/**
 	 * Enable or disable a plugin globally.
 	 */
-	async setEnabled(name: string, enabled: boolean): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (!config.plugins[name]) {
-			throw new Error(`Plugin ${name} not found in runtime config`);
-		}
-		config.plugins[name].enabled = enabled;
-		await this.#saveRuntimeConfig();
+	async setEnabled(name: string, enabled: boolean): Promise<ChangeResult> {
+		return await this.#mutateConfig(config => {
+			if (!config.plugins[name]) {
+				throw new Error(`Plugin ${name} not found in runtime config`);
+			}
+			config.plugins[name].enabled = enabled;
+		}, "restart-required");
 	}
 
 	// ==========================================================================
@@ -898,28 +1013,37 @@ export class PluginManager {
 	/**
 	 * Set enabled features for a plugin.
 	 */
-	async setEnabledFeatures(name: string, features: string[] | null): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (!config.plugins[name]) {
-			throw new Error(`Plugin ${name} not found in runtime config`);
-		}
-
-		// Validate features if setting specific ones
+	async setEnabledFeatures(name: string, features: string[] | null): Promise<ChangeResult> {
+		// Read the manifest BEFORE taking the lock. Validating a feature name is
+		// read-only, so a TOCTOU race here is harmless — whereas holding an OS
+		// lock across manifest I/O would make every other process queue behind
+		// this one for the duration of a disk read.
+		let manifestFeatures: Record<string, unknown> | undefined;
 		if (features && features.length > 0) {
 			const plugin = await this.getPlugin(name, { path: path.join(getPluginsNodeModules(), name) });
-			if (plugin?.manifest.features) {
+			manifestFeatures = plugin?.manifest.features;
+		}
+
+		return await this.#mutateConfig(config => {
+			// Not-found still wins over an unknown feature, as it did before the
+			// lock was introduced: the caller's mistake is the same either way,
+			// but "no such plugin" is the more useful message.
+			if (!config.plugins[name]) {
+				throw new Error(`Plugin ${name} not found in runtime config`);
+			}
+
+			if (features && features.length > 0 && manifestFeatures) {
 				for (const feat of features) {
-					if (!(feat in plugin.manifest.features)) {
+					if (!(feat in manifestFeatures)) {
 						throw new Error(
-							`Unknown feature "${feat}" in ${name}. Available: ${Object.keys(plugin.manifest.features).join(", ")}`,
+							`Unknown feature "${feat}" in ${name}. Available: ${Object.keys(manifestFeatures).join(", ")}`,
 						);
 					}
 				}
 			}
-		}
 
-		config.plugins[name].enabledFeatures = features;
-		await this.#saveRuntimeConfig();
+			config.plugins[name].enabledFeatures = features;
+		}, "restart-required");
 	}
 
 	// ==========================================================================
@@ -942,24 +1066,29 @@ export class PluginManager {
 	/**
 	 * Set a plugin setting value.
 	 */
-	async setPluginSetting(name: string, key: string, value: unknown): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (!config.settings[name]) {
-			config.settings[name] = {};
-		}
-		config.settings[name][key] = value;
-		await this.#saveRuntimeConfig();
+	async setPluginSetting(name: string, key: string, value: unknown): Promise<ChangeResult> {
+		return await this.#mutateConfig(config => {
+			if (!config.settings[name]) {
+				config.settings[name] = {};
+			}
+			config.settings[name][key] = value;
+		}, "restart-required");
 	}
 
 	/**
 	 * Delete a plugin setting.
 	 */
-	async deletePluginSetting(name: string, key: string): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (config.settings[name]) {
-			delete config.settings[name][key];
-			await this.#saveRuntimeConfig();
-		}
+	async deletePluginSetting(name: string, key: string): Promise<ChangeResult> {
+		return await this.#mutateConfig(config => {
+			// No `if (config.settings[name])` early return. Deleting a key that
+			// was never there is a no-op, and the diff reports `changed: false`
+			// for it. The old guard skipped the write entirely, which left
+			// "nothing to delete" indistinguishable from "deleted" — and callers
+			// now branch on that difference.
+			if (config.settings[name]) {
+				delete config.settings[name][key];
+			}
+		}, "restart-required");
 	}
 
 	// ==========================================================================
@@ -969,8 +1098,8 @@ export class PluginManager {
 	/**
 	 * Run health checks on the plugin system.
 	 */
-	async doctor(options: DoctorOptions = {}): Promise<DoctorCheck[]> {
-		const checks: DoctorCheck[] = [];
+	async doctor(options: DoctorOptions = {}): Promise<CheckOutcome[]> {
+		const checks: CheckOutcome[] = [];
 
 		// Check 1: Plugins directory exists
 		const pluginsDir = getPluginsDir();
@@ -1038,13 +1167,32 @@ export class PluginManager {
 								fixed,
 							});
 						} else {
-							const fixed = options.fix ? await this.#removeOrphanedConfig(name) : false;
-							checks.push({
-								name: `orphan:${name}`,
-								status: "warning",
-								message: "Plugin in config but not installed",
-								fixed,
-							});
+							// Restore first, delete second. Putting the plugin back is what
+							// the user wants from `--fix`; deleting their config entry is
+							// only the honest fallback for an entry whose bytes cannot be
+							// proven — a branch or tag re-fetched now is a different commit,
+							// and silently swapping it in would be worse than removing it.
+							const restore = options.fix ? await this.#restoreOrphanedPlugin(name) : null;
+							if (restore?.fixed) {
+								checks.push({
+									name: `orphan:${name}`,
+									status: "ok",
+									message: "Plugin in config but not installed — restored from its pinned source",
+									fixed: true,
+									changedOnDisk: true,
+								});
+							} else {
+								const repair = options.fix ? await this.#removeOrphanedConfig(name) : null;
+								checks.push({
+									name: `orphan:${name}`,
+									status: "warning",
+									message: restore?.reason
+										? `Plugin in config but not installed — not restored: ${restore.reason}`
+										: "Plugin in config but not installed",
+									fixed: repair?.fixed ?? false,
+									changedOnDisk: repair?.change.changed ?? false,
+								});
+							}
 						}
 					} else {
 						checks.push({
@@ -1071,7 +1219,7 @@ export class PluginManager {
 					status: fixed ? "ok" : "error",
 					message: fixed
 						? `Reconciled version drift: node_modules now matches lock v${recordedVersion}`
-						: `Version drift: lock records v${recordedVersion} but node_modules has v${pluginPkg.version} (run \`omp plugin install ${name} --force\`)`,
+						: `Version drift: lock records v${recordedVersion} but node_modules has v${pluginPkg.version} (run \`${APP_NAME} plugin install ${name} --force\`)`,
 					fixed,
 				});
 				if (fixed) {
@@ -1091,7 +1239,7 @@ export class PluginManager {
 				status: hasManifest ? "ok" : "warning",
 				message: hasManifest
 					? `v${pluginPkg.version}${pluginPkg.description ? ` - ${pluginPkg.description}` : ""}`
-					: `v${pluginPkg.version} - No omp/pi manifest (not an omp plugin)`,
+					: `v${pluginPkg.version} - No ${APP_NAME}/pi manifest (not an ${APP_NAME} plugin)`,
 			});
 
 			// Check tools path exists if specified
@@ -1137,17 +1285,65 @@ export class PluginManager {
 			if (runtimeState?.enabledFeatures && manifest?.features) {
 				for (const feat of runtimeState.enabledFeatures) {
 					if (!(feat in manifest.features)) {
-						const fixed = options.fix ? await this.#removeInvalidFeature(name, feat) : false;
+						const repair = options.fix ? await this.#removeInvalidFeature(name, feat) : null;
 						checks.push({
 							name: `plugin:${name}:feature:${feat}`,
 							status: "warning",
 							message: `Enabled feature "${feat}" not in manifest`,
-							fixed,
+							fixed: repair?.fixed ?? false,
+							changedOnDisk: repair?.change.changed ?? false,
 						});
 					}
 				}
 			}
 		}
+
+		// Extension-contributed checks join the built-in ones; they never replace
+		// them. A doctor whose own findings an extension could suppress would stop
+		// being able to report a fault in the very extension that supplied it,
+		// which is the one case where a plugin is most likely to be at fault.
+		//
+		// Each is run with a timeout rather than awaited bare: a diagnostic is
+		// third-party code on a path that must still print the built-in findings.
+		// An extension that hangs here would otherwise take `ultraworkers plugin doctor`
+		// down with it — the check meant to report a broken extension becoming the
+		// outage.
+		for (const { source, diagnostic } of collectDiagnostics()) {
+			// The timer is CLEARED, not merely raced. `Promise.race` settles as soon
+			// as `run()` does, but an uncleared timer keeps the event loop alive for
+			// the rest of its window: doctor would print every finding and then stand
+			// there for five seconds before the process could exit. Clearing also
+			// discards the pending `reject`, so the fast path cannot fire a rejection
+			// into a race that has already been decided.
+			const { promise: expiry, reject } = Promise.withResolvers<never>();
+			const timer = setTimeout(() => reject(new Error("timed out")), DIAGNOSTIC_TIMEOUT_MS);
+			try {
+				const outcome = await Promise.race([Promise.resolve(diagnostic.run()), expiry]);
+				checks.push({
+					name: `extension:${diagnostic.id}`,
+					...outcome,
+					message: `[${source}] ${outcome.message}`,
+				});
+			} catch (err) {
+				checks.push({
+					name: `extension:${diagnostic.id}`,
+					// An error is not a pass. Reported as an error naming the reason,
+					// because a check that silently vanished would leave the user
+					// believing an unverified surface was verified.
+					status: "error",
+					message: `[${source}] check failed: ${err instanceof Error ? err.message : String(err)}`,
+				});
+			} finally {
+				clearTimeout(timer);
+			}
+		}
+
+		// The patch ledger. `unavailable` is a real answer here — the
+		// premise (a `patches/` directory to compare against) is missing on any
+		// install that is not this repo — and it must not be folded into the
+		// error/warning/ok counts, or the summary would claim full coverage of
+		// checks that never ran.
+		checks.push(await checkPatchLedger(this.#cwd));
 
 		return checks;
 	}
@@ -1216,23 +1412,78 @@ export class PluginManager {
 		}
 	}
 
-	async #removeInvalidFeature(name: string, feat: string): Promise<boolean> {
-		const config = await this.#ensureConfigLoaded();
-		const state = config.plugins[name];
-		if (state?.enabledFeatures) {
-			state.enabledFeatures = state.enabledFeatures.filter(f => f !== feat);
-			await this.#saveRuntimeConfig();
-			return true;
+	/**
+	 * Drop a feature the manifest no longer declares.
+	 *
+	 * `fixed` keeps the boolean this always returned — "did we run the repair".
+	 * `change` is new and says whether the lockfile actually moved, which is a
+	 * different question: a feature already absent from the list is repaired
+	 * successfully and writes nothing.
+	 */
+	async #removeInvalidFeature(name: string, feat: string): Promise<{ fixed: boolean; change: ChangeResult }> {
+		if (!(await this.#ensureConfigLoaded()).plugins[name]?.enabledFeatures) {
+			return { fixed: false, change: { changed: false, application: "restart-required" } };
 		}
-		return false;
+		const change = await this.#mutateConfig(config => {
+			const state = config.plugins[name];
+			if (state?.enabledFeatures) {
+				state.enabledFeatures = state.enabledFeatures.filter(f => f !== feat);
+			}
+		}, "restart-required");
+		return { fixed: true, change };
 	}
 
-	async #removeOrphanedConfig(name: string): Promise<boolean> {
-		const config = await this.#ensureConfigLoaded();
-		delete config.plugins[name];
-		delete config.settings[name];
-		await this.#saveRuntimeConfig();
-		return true;
+	/**
+	 * Put back a plugin whose installed copy went missing, when its recorded source
+	 * can prove what would come back.
+	 *
+	 * Returns `fixed: false` with a reason rather than throwing: this runs inside a
+	 * doctor sweep over every configured plugin, and one entry that cannot be
+	 * restored is a finding to report, not a sweep to abort. The caller falls back
+	 * to {@link #removeOrphanedConfig}, because removing the config entry is still
+	 * correct when the bytes cannot be proven.
+	 */
+	async #restoreOrphanedPlugin(name: string): Promise<{ fixed: boolean; reason: string }> {
+		// The installed registry is keyed by `name@marketplace`, but a doctor sweep
+		// only has the bare package name out of the config. The marketplace half is
+		// recoverable from the key; nothing else about the entry is, which is why
+		// the reinstall has to go back through the catalog rather than be assembled
+		// from the registry alone.
+		const registry = await readInstalledPluginsRegistry(getInstalledPluginsRegistryPath());
+		const id = Object.keys(registry.plugins).find(key => key === name || key.startsWith(`${name}@`));
+		if (!id) return { fixed: false, reason: "no installed-registry entry records which marketplace it came from" };
+
+		const parsed = parsePluginId(id);
+		if (!parsed) return { fixed: false, reason: `installed-registry id "${id}" is not a name@marketplace pair` };
+
+		const scope = registry.plugins[id]?.[0]?.scope ?? "user";
+		try {
+			const marketplace = new MarketplaceManager({
+				marketplacesRegistryPath: getMarketplacesRegistryPath(),
+				installedRegistryPath: getInstalledPluginsRegistryPath(),
+				projectInstalledRegistryPath: await resolveOrDefaultProjectRegistryPath(this.#cwd),
+				marketplacesCacheDir: getMarketplacesCacheDir(),
+				pluginsCacheDir: getPluginsCacheDir(),
+			});
+			await marketplace.restorePlugin(parsed.name, parsed.marketplace, { scope });
+			return { fixed: true, reason: "" };
+		} catch (err) {
+			// The pin refusal arrives here like any other failure, and it is the one
+			// that matters: it is the gate refusing, so its message is the finding.
+			return { fixed: false, reason: err instanceof Error ? err.message : String(err) };
+		}
+	}
+
+	/**
+	 * Drop config for a plugin that is no longer installed. `fixed` and `change`
+	 * mean the same two things as in {@link #removeInvalidFeature}.
+	 */
+	async #removeOrphanedConfig(name: string): Promise<{ fixed: boolean; change: ChangeResult }> {
+		const change = await this.#mutateConfig(config => {
+			delete config.plugins[name];
+			delete config.settings[name];
+		}, "restart-required");
+		return { fixed: true, change };
 	}
 }
 

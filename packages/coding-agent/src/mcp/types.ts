@@ -196,6 +196,13 @@ export interface MCPImplementation {
 export interface MCPClientCapabilities {
 	roots?: { listChanged?: boolean };
 	sampling?: Record<string, never>;
+	/**
+	 * Present when the host can answer `elicitation/create`; the spec's shape is
+	 * an empty object, so `{}` here is the signal and any non-empty value is
+	 * ignored. Only set this alongside `MCPManager.setElicitationHandler` — see
+	 * that setter for why the two cannot be separated.
+	 */
+	elicitation?: Record<string, never>;
 	experimental?: Record<string, unknown>;
 }
 
@@ -272,6 +279,68 @@ export interface MCPAuthChallenge {
 	/** Values from `_meta["mcp/www_authenticate"]`. */
 	readonly wwwAuthenticate: readonly string[];
 }
+
+/**
+ * What the user chose in response to an `elicitation/create` request.
+ *
+ * The three arms stay distinct all the way to the wire because the MCP union has
+ * exactly three members and a server reads the difference: `decline` is a
+ * considered "no" that the server may offer again, while `cancel` is the user
+ * walking away. Collapsing them into one value — or into `undefined` — tells the
+ * server nothing it can act on, and no local error is raised when it happens.
+ *
+ * {@link TIMEOUT_ACTION} is the deliberate landing spot for a timeout. The union
+ * has no fourth arm, so a timeout must resolve into one that was chosen rather
+ * than falling out of the type; see the constant for why that one.
+ */
+export type MCPElicitOutcome =
+	| { readonly action: "accept"; readonly content: Record<string, MCPElicitContentValue> }
+	| { readonly action: "decline" | "cancel" };
+
+/**
+ * The action a timeout resolves to.
+ *
+ * A timeout means the user did not answer, which is not the same as declining —
+ * the server may still be waiting on a human — but the MCP union offers no arm
+ * for "unanswered", and inventing a fourth arm would make this client the only
+ * thing in the ecosystem speaking a dialect no server implements. `decline` is
+ * the conservative pick: a server told "decline" stops asking, which is the
+ * outcome a user who walked away would have wanted, whereas `cancel` may prompt
+ * the server to treat the interaction as abandoned mid-flight.
+ */
+export const TIMEOUT_ACTION = "decline" as const;
+
+/** A single elicitation form value. Mirrors the spec's constrained scalar set. */
+export type MCPElicitContentValue = string | number | boolean | string[];
+
+/** One field of an `elicitation/create` requested schema. */
+export interface MCPElicitPropertySchema {
+	readonly type: string;
+	readonly title?: string;
+	readonly description?: string;
+	/** Present and true when the field must be filled before the form submits. */
+	readonly required?: boolean;
+	/** Never render the value, and never let it reach the transcript. */
+	readonly writeOnly?: boolean;
+}
+
+/** An `elicitation/create` request as it arrives from a server. */
+export interface MCPElicitRequest {
+	readonly message: string;
+	readonly requestedSchema: {
+		readonly properties: Readonly<Record<string, MCPElicitPropertySchema>>;
+		readonly required?: readonly string[];
+	};
+}
+
+/**
+ * Presents an `elicitation/create` request to the user.
+ *
+ * The host installs this through `MCPManager.setElicitationHandler`; a manager
+ * with no handler rejects the request with -32601, exactly as it does for any
+ * other unknown server-to-client method.
+ */
+export type MCPElicitationHandler = (serverName: string, request: MCPElicitRequest) => Promise<MCPElicitOutcome>;
 
 /** tools/call response */
 export interface MCPToolCallResult {
@@ -495,6 +564,21 @@ export const MCPNotificationMethods = {
 	RESOURCES_UPDATED: "notifications/resources/updated",
 	PROMPTS_LIST_CHANGED: "notifications/prompts/list_changed",
 } as const;
+
+/**
+ * Why an MCP tool catalog reached the session.
+ *
+ * Every one of these arrives downstream as the same `tools` array, so the reason
+ * cannot be recovered from the argument and has to be declared by the caller:
+ *
+ * - `connect` — a server finished connecting (or reconnected) and handed over its
+ *   full catalog. Arriving tools become active: the user connected this server.
+ * - `push` — the server sent `notifications/tools/list_changed`. A connected and
+ *   already-trusted server widening its own reach. Only tools already active stay
+ *   active; this is the trust boundary.
+ * - `disconnect` — a server went away and its tools are retracted.
+ */
+export type McpCatalogRefreshReason = "connect" | "push" | "disconnect";
 
 /** Extract a JsonRpcError from a thrown value. Preserves `.code` and `.message` from Error instances or plain objects. */
 export function toJsonRpcError(error: unknown): JsonRpcError {

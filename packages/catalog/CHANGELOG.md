@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added `usage-merge`: `emptyUsage`, `addUsageInto` and `mergeUsage`, one field-by-field accumulator for `Usage`. Optional fields stay absent when no side reports them, so a provider that never returned reasoning is never recorded as having thought for zero tokens
+
 - Added `compat.bedrockMessagesApi` for `anthropic-messages` models: detected from a Bedrock `/anthropic` base URL under any provider id, it drops tool `strict`, fits `metadata.user_id` to Bedrock's pattern, and enables on-demand compaction; set it in `models.yml` to opt a proxy or an `ANTHROPIC_BASE_URL` reroute in, or `false` to opt out ([#13311](https://github.com/can1357/oh-my-pi/pull/13311)).
 
 ### Fixed

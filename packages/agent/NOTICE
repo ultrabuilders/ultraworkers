@@ -1,0 +1,86 @@
+This package carries code from two upstreams. They are separate works under
+separate licences and are recorded separately below — do not merge them.
+
+This file is a provenance record, and it is PARTIAL. Section 2 says exactly how
+far its own audit goes and what it does not cover.
+
+================================================================================
+1. senpi — https://github.com/code-yeongyu/senpi
+================================================================================
+
+Pinned at commit ea9216269e9254b821446130b60d1e00759761dc (2026-09-28).
+Upstream licence: MIT.
+
+  Copyright (c) 2025 Mario Zechner (upstream pi-mono)
+  Copyright (c) 2026 Yeongyu Kim and senpi contributors
+
+Both copyright lines are retained under the MIT terms, which require the notice
+and permission notice to be included in all copies. The second holder appears
+nowhere else in this repository; this file is its only record.
+
+Provenance: fork-and-adapt, not clean-room. One file was read directly and
+carried across. Normalizing away comments and blank lines, upstream and this
+repository agree on 34 of 34 code lines, with exactly one line differing.
+
+Adapted files:
+  src/compaction/drop-failed-assistant-turns.ts   (the port itself)
+  src/compaction/compaction.ts                    (call site)
+  src/compaction/index.ts                         (barrel re-export)
+
+Adaptations, in order of how widely they apply:
+
+  1. Location: upstream keeps this helper at
+     `packages/ai/src/utils/drop-failed-assistant-turns.ts`. Here it lives in
+     `packages/agent/src/compaction/` and is re-exported through the compaction
+     barrel, because its only consumer is the compaction entry point.
+  2. Docblock: upstream's comment cites paths and lanes from its own tree
+     (`api/transform-messages.ts`, the claude-sdk-oauth prompt bridge, cursor
+     turns). Those were replaced with this repository's equivalent seams
+     (`buildSessionContext()`, `convertToLlm`); the upstream reasoning is kept.
+     The provenance paragraph above was added.
+  3. Formatting: oxfmt is the only formatter here, so `filter((message) => ...)`
+     is normalized to `filter(message => ...)`. This is the single differing
+     line, and it has no effect on behaviour.
+
+No behavioral change was made to the ported code.
+
+================================================================================
+2. pi — https://github.com/earendil-works/pi
+================================================================================
+
+Pinned at commit 8eb2bccf2603c28907ef3a583a04cafb1af284ae, the same pin five of
+this repository's other package NOTICEs already use.
+Upstream licence: MIT — Copyright (c) 2025 Mario Zechner, already retained in
+this package's LICENSE.
+
+Provenance: fork-and-adapt, not clean-room, and heavily adapted. This section is
+weaker than section 1 and is labelled partial rather than asserted.
+
+How far the audit behind this section actually goes:
+
+  - Basename correspondence was established between this package's `src/` and
+    `pi`'s `packages/agent/src/`, including the `harness/` subtree that holds
+    most of the overlapping names.
+  - Distinctive-line carry-over (lines >= 25 characters, excluding boilerplate)
+    was then sampled on six file pairs, as a percentage of upstream's own
+    distinctive lines:
+
+        proxy.ts                                    63%
+        compaction/messages.ts                      32%
+        compaction/branch-summarization.ts          27%
+        compaction/compaction.ts                   23%
+        agent-loop.ts                               23%
+
+    These figures describe adaptation, not equality. Upstream's compaction and
+    agent-loop modules have been substantially rewritten here, so this package
+    is NOT byte-identical to upstream modulo formatting — the language used by
+    the other package NOTICEs in this repository would overstate it here.
+  - Six pairs out of this package's 43 source files were sampled. The remaining
+    files have NOT been audited, and the samples are not claimed to be
+    representative of them.
+
+What this section does not claim: a per-file attribution list for the pi
+derivation, and a definitive statement of which of this package's files derive
+from pi at all. Both remain open work. Note that other pi packages
+(`packages/ai`, `packages/tui`, `packages/coding-agent`) carry the same pi
+derivation and the same absence of a NOTICE; this file does not speak for them.

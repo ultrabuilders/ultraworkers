@@ -57,7 +57,7 @@ describe("MCPManager notification listeners", () => {
 	let workDir: string;
 
 	beforeEach(() => {
-		workDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-mcp-notif-"));
+		workDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-mcp-notif-"));
 	});
 
 	afterEach(() => {
@@ -218,7 +218,11 @@ describe("MCPManager notification listeners", () => {
 				await hold2;
 				cbState = "ended";
 			});
-			const refreshDone = manager.refreshServerTools("alpha");
+			// `"push"` is the reason `#handleServerNotification` declares for a
+			// `tools/list_changed` frame, which is the path this comment names. The test is
+			// about the callback staying alive across a refresh, not about activation, so the
+			// reason must stay the one the real caller passes.
+			const refreshDone = manager.refreshServerTools("alpha", "push");
 			// Give the callback time to enter the await.
 			await Bun.sleep(20);
 			expect(cbState).toBe("started");

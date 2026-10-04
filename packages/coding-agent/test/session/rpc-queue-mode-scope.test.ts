@@ -34,7 +34,7 @@ describe("AgentSession queue-mode controls are session-scoped by default", () =>
 	let configPath: string;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-queue-scope-");
+		tempDir = TempDir.createSync("@ultraworkers-queue-scope-");
 		agentDir = tempDir.path();
 		configPath = path.join(agentDir, "config.yml");
 

@@ -86,7 +86,7 @@ async function createHarness(
 	responses: MockResponse[],
 	options?: { retryEnabled?: boolean },
 ): Promise<Harness & { mock: MockModel }> {
-	const tempDir = TempDir.createSync("@pi-yield-empty-stop-");
+	const tempDir = TempDir.createSync("@ultraworkers-yield-empty-stop-");
 
 	const mock = createMockModel({ responses });
 	const modelRegistry = sharedModelRegistry;

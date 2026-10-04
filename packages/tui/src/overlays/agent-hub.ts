@@ -701,7 +701,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		}
 		const tabs = node("tabs", { items: SECTION_TABS, active: this.#section }, undefined, "section");
 		const body = this.#section === "activity" ? this.#describeActivity() : this.#describeAgents(nativeTree);
-		this.#native = overlayCard("omp.overlay.agentHub", "Agent Hub", [tabs, ...body]);
+		this.#native = overlayCard("ultraworkers.overlay.agentHub", "Agent Hub", [tabs, ...body]);
 		return this.#native;
 	}
 
@@ -973,10 +973,10 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		const out: NativeChild[] = [
 			node(
 				"row",
-				{ role: "omp.hub.title", gap: "sm", align: "center" },
+				{ role: "ultraworkers.hub.title", gap: "sm", align: "center" },
 				[
 					text(sanitizeDisplaySingleLine(ref.displayName || ref.id), {
-						role: "omp.picker.title",
+						role: "ultraworkers.picker.title",
 						truncate: "end",
 					}),
 					node("badge", { text: ref.status, tone: statusDot(ref.status) }),
@@ -1000,7 +1000,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			}
 			facts.splice(facts[0]?.k === "Task" ? 1 : 0, 0, { k: "Model", v: model });
 		}
-		out.push(node("kv", { items: facts, layout: "grid", role: "omp.hub.kv" }, undefined, "facts"));
+		out.push(node("kv", { items: facts, layout: "grid", role: "ultraworkers.hub.kv" }, undefined, "facts"));
 		if (metrics?.contextTokens !== undefined && metrics.contextWindow) {
 			const ratio = Math.max(0, Math.min(1, metrics.contextTokens / metrics.contextWindow));
 			const label = `${formatNumber(metrics.contextTokens)} / ${formatNumber(metrics.contextWindow)} · ${Math.round(ratio * 100)}%`;
@@ -1029,7 +1029,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			return node(
 				"row",
 				{
-					role: "omp.hub.activity.row",
+					role: "ultraworkers.hub.activity.row",
 					gap: "sm",
 					align: "baseline",
 					actions: { click: "transcript" },
@@ -1045,7 +1045,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			);
 		});
 		if (rows.length === 0) rows.push(text([span("No response or tool activity yet", "dim")]));
-		out.push(node("section", { head: "Recent activity", role: "omp.hub.activity" }, rows, "recentActivity"));
+		out.push(node("section", { head: "Recent activity", role: "ultraworkers.hub.activity" }, rows, "recentActivity"));
 		return out;
 	}
 
@@ -1201,7 +1201,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 						[span("Finished, parked, and killed subagents remain with the session that created them.", "dim")],
 						{ wrap: "word" },
 					),
-					text([span("Resume that session with omp-dev --continue, or spawn a task here.", "dim")], {
+					text([span("Resume with ultraworkers --continue, or spawn a task here.", "dim")], {
 						wrap: "word",
 					}),
 				],
@@ -1293,7 +1293,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			grow: 2,
 			min: { w: `${DETAIL_MIN_WIDTH}ch` },
 			gap: "sm",
-			role: "omp.overlay.agentHub.detail",
+			role: "ultraworkers.overlay.agentHub.detail",
 		} as const;
 		if (!ref) return node("col", layout, [text([span("Select an agent to inspect", "dim")])], "detail");
 		const observed = this.#observableFor(ref.id);
@@ -1858,7 +1858,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 				const emptyState = [
 					`${theme.fg("muted", theme.status.shadowed)} ${theme.bold("No agents in this session")}`,
 					theme.fg("dim", "Finished, parked, and killed subagents remain with the session that created them."),
-					theme.fg("dim", "Resume that session with omp-dev --continue, or spawn a task here."),
+					theme.fg("dim", "Resume with ultraworkers --continue, or spawn a task here."),
 				];
 				for (const line of emptyState.slice(0, budget)) {
 					lines.push(line);

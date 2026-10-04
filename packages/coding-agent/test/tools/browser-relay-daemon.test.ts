@@ -129,7 +129,7 @@ process.stdout.write(String(await probeRelayServer(url)));`,
 	});
 
 	it("stays alive while a consumer in another project holds the global broker lease", async () => {
-		const home = await fs.mkdtemp(path.join(os.tmpdir(), "omp-relay-global-"));
+		const home = await fs.mkdtemp(path.join(os.tmpdir(), "uw-relay-global-"));
 		const firstProject = path.join(home, "project-a");
 		const secondProject = path.join(home, "project-b");
 		const firstMarker = path.join(home, "first-ready");
@@ -170,7 +170,7 @@ try {
 						USERPROFILE: home,
 						PI_CONFIG_DIR: ".omp",
 						OMP_PROFILE: profile,
-						OMP_DAEMON_IDLE_GRACE_MS: "200",
+						ULTRAWORKERS_DAEMON_IDLE_GRACE_MS: "200",
 						OMP_TEST_RELAY_URL: cdpUrl,
 						OMP_TEST_READY_MARKER: marker,
 					},

@@ -1,23 +1,25 @@
 /**
  * Config CLI command handlers.
  *
- * Handles `omp config <command>` subcommands for managing settings.
+ * Handles `ultraworkers config <command>` subcommands for managing settings.
  * The settings registry (`config/registry.ts`) is the source of truth for available settings.
  */
 
-import { APP_NAME, getAgentDir, isRecord } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getAgentDir } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { orderedSettings } from "../config/all-settings";
 import { type AnySetting, lookup } from "../config/registry";
+import { globalLayerValue, writeGlobalSetting } from "../config/shadowing";
 import { Settings, settings } from "../config/settings";
 import { theme } from "@oh-my-pi/pi-tui/theme";
+import { configMigrate } from "./commands/config-migrate";
 import { initXdg } from "./commands/init-xdg";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export type ConfigAction = "list" | "get" | "set" | "reset" | "path" | "init-xdg";
+export type ConfigAction = "list" | "get" | "set" | "reset" | "path" | "init-xdg" | "migrate";
 
 export interface ConfigCommandArgs {
 	action: ConfigAction;
@@ -25,6 +27,30 @@ export interface ConfigCommandArgs {
 	value?: string;
 	flags: {
 		json?: boolean;
+		/** Opt in to the destructive path. `config migrate` alone never writes. */
+		apply?: boolean;
+		/**
+		 * Move anyway when the config root is open. Without it a live database or
+		 * daemon refuses the move, because renaming it is what loses the data.
+		 */
+		force?: boolean;
+		/**
+		 * Extra `config.yml` overlays to apply for this invocation.
+		 *
+		 * Both `--config` spellings arrive here already merged by the caller: the
+		 * documented one, ahead of the command token (`ultraworkers --config <path>
+		 * config get <key>`), is stripped out of the argv for every command that does
+		 * not share the launch flag surface and recorded on the process-wide overlay
+		 * channel (`setGlobalConfigFiles` in `config/settings.ts`), which every
+		 * `Settings.init` afterwards merges; the command-position spelling is parsed
+		 * as an ordinary flag and reaches this field directly. Order is the order they
+		 * were typed, and `PI_CONFIG_FILES` loads before both.
+		 *
+		 * Before this existed, `Settings.init` saw no overlay at all and fell back to
+		 * `PI_CONFIG_FILES` — which is why `--config` was documented, parsed, and
+		 * warned about in `shadowing.ts`, yet did nothing on this path.
+		 */
+		config?: string[];
 	};
 }
 // =============================================================================
@@ -63,7 +89,7 @@ function findSettingDef(path: string): CliSettingDef | undefined {
 // Argument Parser
 // =============================================================================
 
-const VALID_ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg"];
+const VALID_ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg", "migrate"];
 
 /**
  * Parse config subcommand arguments.
@@ -95,6 +121,10 @@ export function parseConfigArgs(args: string[]): ConfigCommandArgs | undefined {
 		const arg = args[i];
 		if (arg === "--json") {
 			result.flags.json = true;
+		} else if (arg === "--apply") {
+			result.flags.apply = true;
+		} else if (arg === "--force") {
+			result.flags.force = true;
 		} else if (!arg.startsWith("-")) {
 			positionalArgs.push(arg);
 		}
@@ -161,7 +191,7 @@ function getTypeDisplay(def: CliSettingDef): string {
 // =============================================================================
 
 export async function runConfigCommand(cmd: ConfigCommandArgs): Promise<void> {
-	await Settings.init();
+	await Settings.init({ configFiles: cmd.flags.config });
 
 	switch (cmd.action) {
 		case "list":
@@ -181,6 +211,9 @@ export async function runConfigCommand(cmd: ConfigCommandArgs): Promise<void> {
 			break;
 		case "init-xdg":
 			await initXdg();
+			break;
+		case "migrate":
+			await configMigrate(cmd.flags.apply === true, cmd.flags.force === true);
 			break;
 	}
 }
@@ -293,69 +326,33 @@ async function handleSet(key: string | undefined, value: string | undefined, fla
 		process.exit(1);
 	}
 
+	// Validate before write, and report the value that is in force. Parsing sits
+	// inside the `try` because it is what rejects a value the definition will not
+	// accept: an invalid entry must fail here, with the reason, and never reach
+	// `config.yml`. The shared latch in `shadowing.ts` then asks who won, under the
+	// CLI's own policy of `keep` — someone running `ultraworkers config set` may be
+	// configuring a checkout where the layer that shadows the value here does not
+	// exist, so discarding their edit would destroy something they meant to keep.
+	// The write stays on disk and the shadowing is reported, which is what makes
+	// the value observable rather than silently ineffective. Detection and wording
+	// come from `shadowing.ts`, so this surface and the settings panel cannot
+	// disagree about *why* a value is not in force.
 	try {
-		def.setting.set(settings, def.setting.parse(value));
+		const outcome = writeGlobalSetting(def.setting, settings, def.setting.parse(value), "keep");
 		await settings.flush();
+
+		const saved = globalLayerValue(def.setting, settings);
+		if (flags.json) {
+			console.log(
+				JSON.stringify({ key: def.path, value: saved, ...(outcome.status === "shadowed" ? outcome.json : {}) }),
+			);
+			return;
+		}
+		console.log(chalk.green(`${theme.status.success} Set ${def.path} = ${formatValue(saved)}`));
+		if (outcome.status === "shadowed") console.log(chalk.yellow(`${theme.status.warning} ${outcome.message}`));
 	} catch (err) {
 		console.error(chalk.red(String(err)));
 		process.exit(1);
-	}
-
-	// Report the value written to config.yml. When another layer or an environment variable still
-	// supplies the effective value, say which instead of echoing its value as if it had been set.
-	const saved = globalValue(def.setting);
-	const shadow = shadowingSource(def.setting);
-
-	if (flags.json) {
-		console.log(JSON.stringify({ key: def.path, value: saved, ...shadow?.json }));
-		return;
-	}
-	console.log(chalk.green(`${theme.status.success} Set ${def.path} = ${formatValue(saved)}`));
-	if (shadow) console.log(chalk.yellow(`${theme.status.warning} ${shadow.message}`));
-}
-
-/** Value `setting` holds in the global config layer — what `config set` wrote. */
-function globalValue(setting: AnySetting): unknown {
-	let value: unknown = settings.getGlobalSettings();
-	for (const segment of setting.segments) value = isRecord(value) ? value[segment] : undefined;
-	return value;
-}
-
-/** Where the effective value comes from when it is not the global config (or the default), if anywhere. */
-function shadowingSource(setting: AnySetting): { json: Record<string, string>; message: string } | undefined {
-	const provenance = setting.provenance(settings);
-	switch (provenance) {
-		case "global":
-		case "default":
-			return undefined;
-		case "env": {
-			const name = setting.envName;
-			if (!name) return undefined;
-			return setting.envFallback
-				? {
-						json: { fallbackEnv: name },
-						message: `$${name} is used as a fallback while the saved value is blank.`,
-					}
-				: {
-						json: { overriddenBy: name },
-						message: `$${name} overrides this value; unset it for the saved value to apply.`,
-					};
-		}
-		case "project":
-			return {
-				json: { overriddenBy: provenance },
-				message: "Project settings override this value here; edit or remove it there for the saved value to apply.",
-			};
-		case "overlay":
-			return {
-				json: { overriddenBy: provenance },
-				message: "A --config / PI_CONFIG_FILES overlay overrides this value for this process.",
-			};
-		case "runtime":
-			return {
-				json: { overriddenBy: provenance },
-				message: "A runtime override supplies the effective value for this process.",
-			};
 	}
 }
 
@@ -412,9 +409,12 @@ ${chalk.bold("Commands:")}
   reset <key>        Remove a setting from config.yml so its default applies
   path               Print the config directory path
   init-xdg           Initialize XDG Base Directory structure
+  migrate            Move the config root to its new name (dry run; --apply to move)
 
 ${chalk.bold("Options:")}
   --json             Output as JSON
+  --apply           Actually move directories (config migrate only)
+  --force           Move even when a database or daemon is still using the root
 
 ${chalk.bold("Examples:")}
   ${APP_NAME} config list
@@ -425,6 +425,8 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} config reset steeringMode
   ${APP_NAME} config list --json
   ${APP_NAME} config init-xdg
+  ${APP_NAME} config migrate
+  ${APP_NAME} config migrate --apply
 
 ${chalk.bold("Boolean Values:")}
   true, false, yes, no, on, off, 1, 0

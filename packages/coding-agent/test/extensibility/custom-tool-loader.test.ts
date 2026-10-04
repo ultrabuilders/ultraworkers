@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { toolWireSchema } from "@oh-my-pi/pi-ai/utils/schema";
 import { validateToolArguments } from "@oh-my-pi/pi-ai/utils/validation";
 import { loadCustomTools, type ToolPathWithSource } from "../../src/extensibility/custom-tools/loader";
+import { hostGuardState } from "../../src/extensibility/utils";
 
 let tempRoot: string | undefined;
 
@@ -15,8 +16,30 @@ afterEach(async () => {
 	}
 });
 
+/**
+ * Detector for a guard window abandoned by an EARLIER test file.
+ *
+ * `withHostGuard` restores stdin in `finally` only when its depth returns to 0. A window
+ * whose promise never settles — a harness that abandons it, a test that times out inside
+ * it — leaves the depth above zero for the rest of the process, and every later
+ * `withHostGuard` then sees a window already open and does nothing. The test above, which
+ * asserts the guard resumed host stdin, stops being able to observe that resume.
+ *
+ * Reading the depth is cheaper than reproducing the failure: the flake
+ * `resumes host stdin when a tool pauses it at import time` has been observed once in
+ * ~3388 runs and never on demand, and running this file alone can never see it, because
+ * the damage is done by a file that ran earlier. This turns "run the suite for nine
+ * minutes and hope" into "run the suite and read one number".
+ *
+ * A non-zero reading is the finding, not a cleanup step — this file does not reset the
+ * depth, because a reset would hide exactly the condition it exists to surface.
+ */
+afterAll(() => {
+	expect(hostGuardState().depth).toBe(0);
+});
+
 async function writeTool(name: string, source: string): Promise<string> {
-	tempRoot ??= await fs.mkdtemp(path.join(os.tmpdir(), "omp-custom-tool-loader-"));
+	tempRoot ??= await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-custom-tool-loader-"));
 	const filePath = path.join(tempRoot, name);
 	await Bun.write(filePath, source);
 	return filePath;
@@ -241,6 +264,14 @@ describe("custom tool loader", () => {
 	});
 
 	it("resumes host stdin when a tool pauses it at import time", async () => {
+		// Snapshot BOTH halves of stdin's state, the way the sibling test above
+		// does. Restoring only `isPaused()` leaves a `data` listener attached if
+		// the guard under test regressed, and bun runs every file in one process:
+		// a listener leaked here outlives the test and is inherited by whichever
+		// file runs next. Its input handling then depends on a test this one ran
+		// earlier, which is the shape of an order-dependent failure — and this
+		// test is the one that has been observed failing only inside a full suite.
+		const dataBefore = process.stdin.listenerCount("data");
 		const pausedBefore = process.stdin.isPaused();
 		if (pausedBefore) process.stdin.resume();
 		const pauseTool = await writeTool(
@@ -262,6 +293,12 @@ describe("custom tool loader", () => {
 			expect(result.tools.map(tool => tool.tool.name)).toEqual(["stdin_pause_tool"]);
 			expect(process.stdin.isPaused()).toBeFalse();
 		} finally {
+			// Same defensive cleanup as the sibling: drop any listener the guard
+			// leaked so this file cannot decide a later file's stdin behaviour.
+			const leaked = process.stdin.listeners("data").slice(dataBefore);
+			for (const listener of leaked) {
+				process.stdin.removeListener("data", listener as (...args: unknown[]) => void);
+			}
 			if (pausedBefore) process.stdin.pause();
 			else process.stdin.resume();
 		}

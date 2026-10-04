@@ -7,7 +7,7 @@ import { type CreateAgentSessionOptions, createAgentSession } from "@oh-my-pi/pi
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { CONFIG_DIR_NAME, TempDir } from "@oh-my-pi/pi-utils";
+import { PROJECT_AGENT_DIR_NAME, TempDir } from "@oh-my-pi/pi-utils";
 
 type SystemPromptOption = string | string[] | ((defaultPrompt: string[]) => string | string[]);
 type ExplicitSystemPromptOptions = Pick<CreateAgentSessionOptions, "systemPromptTemplate" | "customSystemPrompt">;
@@ -18,9 +18,9 @@ async function withSession<T>(
 	fn: (session: AgentSession) => Promise<T>,
 	explicitSystemPromptOptions: ExplicitSystemPromptOptions = {},
 ): Promise<T> {
-	using tempDir = TempDir.createSync("@omp-sdk-system-prompt-template-");
+	using tempDir = TempDir.createSync("@ultraworkers-sdk-system-prompt-template-");
 	const cwd = tempDir.join("project");
-	await Bun.write(path.join(cwd, CONFIG_DIR_NAME, "SYSTEM_TEMPLATE.md"), nativeTemplate);
+	await Bun.write(path.join(cwd, PROJECT_AGENT_DIR_NAME, "SYSTEM_TEMPLATE.md"), nativeTemplate);
 
 	const authStorage = await AuthStorage.create(":memory:");
 	const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));

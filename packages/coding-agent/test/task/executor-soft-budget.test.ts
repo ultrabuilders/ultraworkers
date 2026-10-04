@@ -186,7 +186,7 @@ describe("runSubprocess soft request budget", () => {
 		AgentRegistry.resetGlobalForTests();
 		AgentLifecycleManager.resetGlobalForTests();
 		AsyncJobManager.resetForTests();
-		tempDir = TempDir.createSync("@pi-soft-budget-");
+		tempDir = TempDir.createSync("@ultraworkers-soft-budget-");
 	});
 	afterEach(() => {
 		vi.restoreAllMocks();

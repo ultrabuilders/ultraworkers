@@ -93,15 +93,55 @@ File mới `packages/coding-agent/src/modes/mode-registry.ts` (thư mục `src/m
 
 > **Khoảng trống chưa ai nêu trong plan:** `ModeDefinition.settingsDomain` được mô tả là *"`all-settings.ts` DOMAINS id"*, nhưng `const DOMAINS` ở `packages/coding-agent/src/config/all-settings.ts:44` **không được export** — file đó chỉ export `orderedSettings()` ở `:90`. Kiểu `readonly settingsDomain: string` sẽ compile nhưng **không ràng buộc gì cả**. Chọn một trong hai: export một union type `SettingsDomainId` từ `all-settings.ts`, hoặc ghi rõ trong đặc tả rằng nó là `string` tự do và không có kiểm kiểu.
 
-### Bước 4 — 7 field ở `interactive-mode.ts:908-915` thành cặp accessor (TÁCH khỏi bước 3)
+### Bước 4 — 5 field mode thật thành cặp accessor; 2 field của loop giữ nguyên (TÁCH khỏi bước 3)
+
+> **ĐÍNH CHÍNH — đo lại 2026-10-02. Bản gốc của bước này nói "7 field" và SAI.**
+> Số dòng `:908-915` cũng đã thối; khai báo thật hôm nay ở `interactive-mode.ts:1101-1108`.
 
 Đã kiểm: `grep -cE "^\t(planModeEnabled|planModePaused|vibeModeEnabled|goalModeEnabled|goalModePaused|loopModeEnabled|loopModePaused) = "` → **7** hôm nay. `grep -cE "^\t(get|set) (…)"` → **0** hôm nay.
 
-Getter trần **không đủ**. `git grep -nE '\.(…) = ' -- packages/coding-agent/src` → **32 dòng**, và `git grep -l` trên cùng pattern → **đúng một file**: `interactive-mode.ts`. Chia theo field: `planModeEnabled` 4, `planModePaused` 5, `vibeModeEnabled` 3, `goalModeEnabled` 7, `goalModePaused` 7, `loopModeEnabled` 2, `loopModePaused` 4 (tổng 32 ✓).
+Getter trần **không đủ**. `git grep -nE '\.(…) = ' -- packages/coding-agent/src` → **32 dòng**, và `git grep -l` trên cùng pattern → **đúng một file**: `interactive-mode.ts`. Chia theo field: `planModeEnabled` 4, `planModePaused` 5, `vibeModeEnabled` 3, `goalModeEnabled` 7, `goalModePaused` 7, `loopModeEnabled` 2, `loopModePaused` 4 (tổng 32 ✓). **Số đếm này vẫn đúng ngày hôm nay.**
 
-**`:913` là `planModePlanFilePath`, không phải boolean** — nằm xen giữa 7 field mà plan liệt kê. Giữ nó là field thô. Chỉ 7 field boolean ở `:908, 909, 910, 911, 912, 914, 915` mới thành accessor.
+**`planModePlanFilePath` không phải boolean** — nằm xen giữa 7 field. Giữ là field thô. 7 field boolean thật ở `:1101, 1102, 1103, 1104, 1105, 1107, 1108`.
 
-`planModePaused` là chốt chặn thật: `grep -n 'this.planModePaused' interactive-mode.ts` → **16 chỗ**, và `#updatePlanModeStatus` (`:3762-3772`) đẩy nó thẳng vào status line dưới tên `paused` qua `this.statusLine.setPlanModeStatus(status)` ở `:3770`. Chuyển 6 mà bỏ field thứ bảy thì chip `Plan ⏸` ngừng cập nhật ngay khoảnh khắc 6 cái kia rời registry.
+`planModePaused` là chốt chặn thật: `grep -n 'this.planModePaused' interactive-mode.ts` → **17 chỗ** hôm nay (plan ghi 16), và `#updatePlanModeStatus` (**`:4238`**, plan ghi `:3762`) đẩy nó thẳng vào status line dưới tên `paused` qua `this.statusLine.setPlanModeStatus(status)` ở `:4246`.
+
+#### Vì sao "7 field" là sai — bằng chứng
+
+`setActiveToolsByName` được gọi ở `interactive-mode.ts:4539, 4624, 4718, 4918, 4938, 5929` — **toàn bộ thuộc plan/goal/vibe, không chỗ nào thuộc loop**.
+
+Ràng buộc loại trừ lẫn nhau, đo bằng cặp phạm vi:
+
+- `#enterGoalMode` (`:4898-4906`): `if (goalModeEnabled) return;` → `if (planModeEnabled || planModePaused) { warn; return; }` → `if (vibeModeEnabled) { warn; return; }`. **plan ⟂ goal ⟂ vibe.**
+- `git grep -nE 'loopModeEnabled' -- interactive-mode.ts | awk -F: '$1>=4640 && $1<=4990'` → **rỗng**: không chỗ vào plan/goal/vibe nào nhìn loop.
+- `git grep -nE 'planModeEnabled' -- interactive-mode.ts | awk -F: '$1>=2900 && $1<=2990'` → **rỗng**: loop không nhìn plan.
+
+⇒ **loop và plan/goal/vibe có thể cùng bật.** `ModeRegistry` có **một** `#activeId`, nên map `loopModeEnabled` → `setActivation("loop")` sẽ **đẩy plan ra khỏi registry** ⇒ `writePolicy()` trả `undefined` ⇒ **mất read-only của plan mode khi người dùng vẫn đang ở plan mode**. Đó là hỏng hiện ra màn hình.
+
+| | đổi tool set | chip status-line | nhìn mode khác |
+| --- | --- | --- | --- |
+| plan | có (`:4718`) | có | có |
+| goal | có (`:4918`) | có | có |
+| vibe | có (`:5774`) | có | có |
+| **loop** | **không** | có (`:2908`) | **không** |
+
+*(Cả bốn đều có chip: setter nằm ở `packages/tui/src/status-line/component.ts`, KHÔNG phải `segments.ts`.)*
+
+#### Việc bước 4 làm
+
+> **THỨ TỰ — bước này KHÔNG chạy được trước khi đăng ký mode.** Đo hôm nay: `grep -rn 'modeRegistry\.' -- packages/coding-agent/src` → **không có call site nào**; `register()` chưa có ai gọi. Chạy control:
+> ```bun
+> const r = new ModeRegistry(); r.setActivation("plan");
+> // → THROWS: Cannot activate unregistered mode "plan"
+> ```
+> Nghĩa là accessor của bước 4 sẽ **ném exception ở mọi lần bật/tắt mode**. Phải **đảo thứ tự**: đăng ký 5 mode tích hợp (nay là bước 7) **trước**, rồi mới chuyển field.
+
+- **5 field → accessor**: `planModeEnabled`, `planModePaused`, `goalModeEnabled`, `goalModePaused`, `vibeModeEnabled`.
+- **`loopModeEnabled` / `loopModePaused` giữ là field thô**, kèm comment nói vì sao (loop không đổi tool set, không `enter`/`exit`, không hỏi ai — nó chỉ render giống mode).
+
+Cảnh báo "bỏ field thứ bảy thì chip `Plan ⏸` ngừng cập nhật" nói về *xoá* field. Bước này **không xoá** field nào: `*Paused` vẫn là field thô và vẫn được `#updatePlanModeStatus` đẩy vào `setPlanModeStatus` y hệt hôm nay.
+
+**Còn mở, cần a4 trả lời:** nếu một extension đăng ký mode rồi cần **cùng tồn tại** với plan mode, registry phải thành multi-active (`Set`) và `order` đã viết sẵn để phá hòa cho chip. Chưa có bằng chứng nào trong repo rằng ai cần điều đó.
 
 ### Bước 5 — 4 accessor `AgentSession` lên registry
 
@@ -140,9 +180,13 @@ Viết `packages/tui/test/status-line-extension-mode.test.ts` trong **chính com
 
 ### Bước 7 — Nạp registry bằng cách BỌC
 
-Đăng ký plan trước, rồi goal, vibe, loop, prewalk. Mỗi definition bọc ủy quyền `enter`/`exit` cho method `InteractiveMode` sẵn có — code gốc đứng nguyên tại chỗ. Chạy lại seam-1 sau **mỗi** mode.
+> **Bước này phải chạy TRƯỚC bước 4** (xem mục "THỨ TỰ" ở bước 4). Không có nó thì mọi accessor của bước 4 ném `Cannot activate unregistered mode`.
+>
+> **Không đăng ký `loop`** — bản gốc của bước này có loop trong danh sách, sai theo đo ở bước 4: loop không đổi tool set, không `enter`/`exit`, và không loại trừ lẫn nhau với plan/goal/vibe.
 
-> `order` của năm mode tích hợp phải lấy từ output của WI-2. Nếu WI-2 chỉ hạ một thứ tự kiểu chẩn đoán mà không có danh sách chuẩn thì bước 7 không có gì để gán, và ưu tiên trên status-line trở thành nguồn sự thật thứ hai cạnh tranh với `segments.ts:369-407`.
+Đăng ký plan trước, rồi goal, vibe, prewalk. Mỗi definition bọc ủy quyền `enter`/`exit` cho method `InteractiveMode` sẵn có — code gốc đứng nguyên tại chỗ. Chạy lại seam-1 sau **mỗi** mode.
+
+> `order` của các mode tích hợp phải lấy từ output của WI-2. Nếu WI-2 chỉ hạ một thứ tự kiểu chẩn đoán mà không có danh sách chuẩn thì bước 7 không có gì để gán, và ưu tiên trên status-line trở thành nguồn sự thật thứ hai cạnh tranh với `segments.ts:369-407`.
 
 ### Bước 8 — `test/modes/mode-registry.test.ts`
 

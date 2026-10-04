@@ -2,8 +2,23 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { isPidRunning } from "@oh-my-pi/pi-utils/procmgr";
 import { runCli } from "../src/cli";
+// The selectors below cross the process boundary as argv, so they are wire values
+// and belong to the product's constants rather than to this file. Spelling one out
+// here meant a rename of `WIRE_NAME` left the test asserting a selector nothing
+// dispatches any more — and it still passed, because the sentinel assertions
+// nearby match on the same literal.
+import { JS_EVAL_PROCESS_ARG } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
 
-// The worker-host re-entry seam dispatches any `__omp_worker_*` selector to
+// A selector reaches the dispatcher as argv, so the prefix is a wire value the
+// product owns. Deriving it here keeps these assertions on the name the CLI
+// actually dispatches. The suffix stays a literal because the point of these
+// tests is the *shape* of the name — the negative case is what proves an
+// unrecognized selector fails loudly — and a suffix built from the same
+// constant would make that case assert nothing about the unknown path.
+const UNKNOWN_SELECTOR = `${WORKER_HOST_SELECTOR_PREFIX}does_not_exist`;
+
+// The worker-host re-entry seam dispatches any `__ultraworkers_worker_*` selector to
 // `runWorkerEntrypoint`. An unrecognized selector must fail loudly rather than
 // exit 0 with empty output, so a stale/mistyped selector cannot look healthy to
 // a parent process or install smoke path (issue #5712).
@@ -20,10 +35,10 @@ describe("worker selector dispatch", () => {
 	it("fails with a nonzero exit and stderr error on an unknown selector", async () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-		await runCli(["__omp_worker_does_not_exist"]);
+		await runCli([UNKNOWN_SELECTOR]);
 
 		expect(process.exitCode).toBe(1);
-		expect(stderr).toHaveBeenCalledWith("Error: unknown worker selector: __omp_worker_does_not_exist\n");
+		expect(stderr).toHaveBeenCalledWith(`Error: unknown worker selector: ${UNKNOWN_SELECTOR}\n`);
 	});
 	it("declares workerHostEntry in process entry before dispatching worker selector", async () => {
 		const repoRoot = path.resolve(__dirname, "../../..");
@@ -37,7 +52,7 @@ describe("worker selector dispatch", () => {
 				process.stdout.write("ENTRY=" + (workerHostEntry() ?? "null"));
 				process.exit(0);
 				`,
-				"__omp_worker_does_not_exist",
+				UNKNOWN_SELECTOR,
 			],
 			cwd: repoRoot,
 			env: { ...process.env, PI_COMPILED: "true" },
@@ -62,7 +77,7 @@ describe("worker selector dispatch", () => {
 
 	it("exits promptly when an IPC worker selector is launched without an IPC channel", async () => {
 		const proc = Bun.spawn({
-			cmd: [process.execPath, "packages/coding-agent/src/cli.ts", "__omp_worker_js_eval_process"],
+			cmd: [process.execPath, "packages/coding-agent/src/cli.ts", JS_EVAL_PROCESS_ARG],
 			cwd: path.resolve(__dirname, "../../.."),
 			stdin: "ignore",
 			stdout: "ignore",
@@ -83,7 +98,7 @@ describe("worker selector dispatch", () => {
 				"-e",
 				`
 				const child = Bun.spawn({
-					cmd: [process.execPath, "packages/coding-agent/src/cli.ts", "__omp_worker_js_eval_process"],
+					cmd: [process.execPath, "packages/coding-agent/src/cli.ts", ${JSON.stringify(JS_EVAL_PROCESS_ARG)}],
 					cwd: ${JSON.stringify(repoRoot)},
 					ipc(msg) {},
 					serialization: "advanced",
@@ -132,7 +147,7 @@ describe("worker selector dispatch", () => {
 				"-e",
 				`
 				const child = Bun.spawn({
-					cmd: [process.execPath, "packages/coding-agent/src/cli.ts", "__omp_worker_js_eval_process"],
+					cmd: [process.execPath, "packages/coding-agent/src/cli.ts", ${JSON.stringify(JS_EVAL_PROCESS_ARG)}],
 					cwd: ${JSON.stringify(repoRoot)},
 					env: { ...process.env, PI_TEST_NO_NATIVES: "1" },
 					ipc() {},
@@ -185,7 +200,7 @@ describe("worker selector dispatch", () => {
 				return originalKill.call(process, pid, sig);
 			};
 			const { runCli } = await import("./packages/coding-agent/src/cli.ts");
-			await runCli(["__omp_worker_js_eval_process"]);
+			await runCli([${JSON.stringify(JS_EVAL_PROCESS_ARG)}]);
 		`;
 
 		const child = Bun.spawn({

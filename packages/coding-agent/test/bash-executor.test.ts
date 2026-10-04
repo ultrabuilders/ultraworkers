@@ -35,7 +35,7 @@ const KILL_SETTLE_MS = 25; // let the kill signal land before we touch `release`
 const KILL_REACT_MS = 50; // > one poll interval: a survivor would write its marker
 
 function makeTempDir(): string {
-	return fs.mkdtempSync(path.join(os.tmpdir(), "omp-bash-exec-"));
+	return fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-bash-exec-"));
 }
 
 function shellQuote(value: string): string {
@@ -162,12 +162,29 @@ describe("executeBash", () => {
 			data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
 		};
 		const frame = await encodeTerminalImage(image);
-		const result = await executeBash(`printf '%s' ${shellQuote(frame)}; printf '%060000d\n' 0; printf tail; exit 7`, {
-			cwd: tempDir,
-			timeout: 5000,
-		});
+		// The flood is MANY SHORT LINES, not one long one, and that is the whole
+		// point of this test being stable.
+		//
+		// `OutputSink` applies a per-LINE column cap (`tools.outputMaxColumns`,
+		// default 768) that drops every remaining byte up to the next `\n`. A
+		// single unbroken run of characters therefore loses the tail the moment
+		// the line trips the cap — which is what the previous `printf '%060000d'`
+		// flood did. Worse, that path leaves `truncated` FALSE, because the
+		// per-line cap is a different counter from the size budget: the result
+		// looks untruncated while the tail is silently gone. So the assertion
+		// below passed or failed on where the tail happened to land, which is
+		// load-dependent — the definition of a flake that reads like a regression.
+		//
+		// Short lines keep every line under the cap, so the tail survives on its
+		// own line, and the flood is comfortably past the 50 KB size budget (640
+		// x 80 = 51 KB, 3x headroom) so truncation is real rather than incidental.
+		const result = await executeBash(
+			`printf '%s' ${shellQuote(frame)}; yes ${"0".repeat(80)} | head -n 640; printf 'tail'; exit 7`,
+			{ cwd: tempDir, timeout: 5000 },
+		);
 
 		expect(result.exitCode).toBe(7);
+		expect(result.truncated).toBe(true);
 		expect(result.images).toHaveLength(1);
 		expect(result.images?.[0]).toMatchObject({ type: "image", mimeType: "image/png" });
 		expect(result.output).toContain("tail");
@@ -269,7 +286,7 @@ describe("executeBash", () => {
 			return;
 		}
 
-		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-shellpath-"));
+		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-shellpath-"));
 		const marker = path.join(shellDir, "fake-shell-ran");
 		const markerEscaped = marker.replace(/'/g, "'\\''");
 		const fakeShell = path.join(shellDir, "fake-shell");
@@ -320,7 +337,7 @@ exit 64
 	it("persists cd, bare cd, and cd - when shortcut commands use a non-bash user shell", async () => {
 		if (process.platform === "win32") return;
 
-		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-cd-shellpath-"));
+		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-cd-shellpath-"));
 		const marker = path.join(shellDir, "fake-shell-ran");
 		const fakeShell = path.join(shellDir, "fake-shell");
 		const childDir = path.join(tempDir, "child");
@@ -405,7 +422,7 @@ exit 64
 		}
 
 		const originalShell = Bun.env.SHELL;
-		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-env-shell-"));
+		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-env-shell-"));
 		const marker = path.join(shellDir, "env-shell-ran");
 		const markerEscaped = marker.replace(/'/g, "'\\''");
 		const fakeShell = path.join(shellDir, "fish");
@@ -474,7 +491,7 @@ exit 64
 			return;
 		}
 
-		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-zsh-shellpath-"));
+		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-zsh-shellpath-"));
 		fs.writeFileSync(path.join(shellDir, ".zshrc"), "alias pi_shell_alias='printf zsh-alias-ok\\\\n'\n");
 		cfgShellPath.set(Settings.instance, zshPath);
 
@@ -523,7 +540,7 @@ exit 64
 			return;
 		}
 
-		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-fish-shellpath-"));
+		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-fish-shellpath-"));
 		const configDir = path.join(shellDir, ".config", "fish");
 		fs.mkdirSync(path.join(configDir, "conf.d"), { recursive: true });
 		fs.writeFileSync(path.join(configDir, "config.fish"), "function pi_fish_fn; echo fish-fn-ok; end\n");
@@ -574,7 +591,7 @@ exit 64
 			return;
 		}
 
-		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-zsh-pty-"));
+		const shellDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-zsh-pty-"));
 		fs.writeFileSync(path.join(shellDir, ".zshrc"), "alias pi_pty_alias='printf pty-alias-ok'\n");
 		cfgShellPath.set(Settings.instance, zshPath);
 
@@ -1506,5 +1523,90 @@ describe("applyDirenvPreflight direnv-load clamp", () => {
 
 		expect(spy).toHaveBeenCalledTimes(1);
 		expect(spy.mock.calls[0][1]?.timeoutMs).toBe(30_000);
+	});
+});
+
+/**
+ * The two `sanitizeChildEnv` call sites in `bash-executor.ts`, observed from inside
+ * a real command.
+ *
+ * `applyDirenvPreflight` scrubs the env on TWO branches — the no-direnv path and the
+ * merged-direnv path — and a test that called the helper and inspected its return
+ * value would pass with either branch unwired, because the other one would answer.
+ * Worse, asserting the helper's return value never crosses the part that matters:
+ * the scrub has to survive `buildNonInteractiveEnv` and the embedded shell's spawn
+ * before it is worth anything. So each case below runs an actual command and has
+ * the command read ITS OWN environment, which is the only place the contract is
+ * observable.
+ *
+ * `LD_PRELOAD` is the discriminator because macOS ignores `LD_*` outright, so it
+ * arrives through the environment rather than aborting the child at exec time the
+ * way an inherited `DYLD_INSERT_LIBRARIES` would.
+ *
+ * `loadDirenvEnv` is spied rather than driven by a real `.envrc`: the diff is the
+ * INPUT to the branch under test, and mocking it keeps the case hermetic — no
+ * direnv binary, no `direnv allow`, no HOME redirection. Everything downstream of
+ * the diff is real.
+ */
+describe("executeBash loader-hijack scrub, per call site", () => {
+	let tempDir: string;
+
+	beforeEach(async () => {
+		tempDir = makeTempDir();
+		resetSettingsForTest();
+		await Settings.init({ inMemory: true, cwd: tempDir });
+	});
+
+	afterEach(() => {
+		resetSettingsForTest();
+		vi.restoreAllMocks();
+		if (fs.existsSync(tempDir)) removeSyncWithRetries(tempDir);
+	});
+
+	/**
+	 * `<LD_PRELOAD>|<probe>|<PATH survived>` as the command itself sees it.
+	 * A plain string, not a template: `${…}` is shell expansion here and would
+	 * otherwise be eaten as JS interpolation.
+	 */
+	const PROBE = 'printf \'%s|%s|%s\' "${LD_PRELOAD:-}" "$PI_PROBE" "${PATH:+set}"';
+
+	/**
+	 * A scrub that also ate the rest of the env would be a far more common failure
+	 * than the hijack it prevents: it breaks every LSP server, browser, and package
+	 * manager. So the same assertion that proves the removal proves the filter is
+	 * narrow enough to ship.
+	 */
+	function expectScrubbedAndIntact(result: { output: string }): void {
+		expect(result.output.trim()).toBe("|ok|set");
+	}
+
+	it("removes a caller-supplied loader variable on the no-direnv branch", async () => {
+		// bash-executor.ts:162 — `opts.callerEnv ? sanitizeChildEnv(opts.callerEnv) : undefined`.
+		// The `callerEnv` truthiness guard means this branch only scrubs when the
+		// caller passed an overlay at all, which is exactly the case here.
+		vi.spyOn(direnvModule, "loadDirenvEnv").mockResolvedValue(null);
+
+		const result = await executeBash(PROBE, {
+			cwd: tempDir,
+			timeout: 5000,
+			env: { LD_PRELOAD: "/tmp/evil.so", PI_PROBE: "ok" },
+		});
+
+		expectScrubbedAndIntact(result);
+	});
+
+	it("removes a direnv-supplied loader variable on the merged branch", async () => {
+		// bash-executor.ts:166 — the OTHER call site, on the path a repo with a
+		// `.envrc` takes. Both branches need covering: a repo that has a `.envrc`
+		// never reaches :162, so passing here while :162 rotted would still be the
+		// hijack for exactly the developers who use direnv.
+		vi.spyOn(direnvModule, "loadDirenvEnv").mockResolvedValue({
+			set: { LD_PRELOAD: "/tmp/evil.so", PI_PROBE: "ok" },
+			unset: [],
+		});
+
+		const result = await executeBash(PROBE, { cwd: tempDir, timeout: 5000 });
+
+		expectScrubbedAndIntact(result);
 	});
 });

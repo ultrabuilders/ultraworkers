@@ -121,6 +121,51 @@ describe("run() root help", () => {
 	});
 });
 
+describe("the brand and the command are separate names", () => {
+	// `bin` is what the program calls itself (the `--version` banner); `command` is
+	// what the user types (every `$ <name> <command>` line). They used to be one
+	// variable, so a rebrand changed both: help began printing
+	// `$ ultraworkers update` while the command on PATH was still `omp`, and
+	// pasting it failed. The two roles are separate values now, and the row below
+	// is the proof they can move apart — a single variable cannot.
+	async function runWith(names: { bin: string; command?: string }, argv: string[]): Promise<string> {
+		const writes: string[] = [];
+		const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(chunk => {
+			writes.push(String(chunk));
+			return true;
+		});
+		try {
+			await run({
+				bin: names.bin,
+				command: names.command,
+				version: "1.2.3",
+				argv,
+				commands: [{ name: "bench", load: async () => BenchLikeCommand }],
+			});
+		} finally {
+			stdoutSpy.mockRestore();
+		}
+		return writes.join("");
+	}
+
+	it("puts the brand on the version banner and the command on the usage line", async () => {
+		const banner = await runWith({ bin: "brandname", command: "cmdname" }, ["--version"]);
+		expect(banner).toBe("brandname/1.2.3\n");
+
+		const usage = await runWith({ bin: "brandname", command: "cmdname" }, ["bench", "--help"]);
+		expect(usage).toContain("$ cmdname bench MODELS... [FLAGS]");
+		// The brand must not leak into a line the reader is meant to paste.
+		expect(usage).not.toContain("brandname");
+	});
+
+	it("falls back to the brand when no separate command name is given", async () => {
+		// Backwards compatibility for every caller that passes only `bin`, which is
+		// what every existing test in this file does.
+		const usage = await runWith({ bin: "brandname" }, ["bench", "--help"]);
+		expect(usage).toContain("$ brandname bench MODELS... [FLAGS]");
+	});
+});
+
 describe("run() usage errors", () => {
 	// Contract: a missing required arg prints a concise `error:` + USAGE line to
 	// stderr and exits 1 — it must NOT throw past run() (which would dump a

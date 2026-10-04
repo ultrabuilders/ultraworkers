@@ -68,7 +68,7 @@ describe("AgentSession advisor toggle", () => {
 	let sessionManager: SessionManager;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-advisor-toggle-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-toggle-");
 		const testAgentDir = path.join(tempDir.path(), "agent");
 		await fs.mkdir(testAgentDir, { recursive: true });
 		setAgentDir(testAgentDir);
@@ -953,7 +953,7 @@ describe("AgentSession advisor toggle", () => {
 			hasHandlers: (eventType: string) => eventType === "session_before_branch",
 			emit: async () => ({ skipConversationRestore: true }),
 		} as unknown as ExtensionRunner;
-		const branchDir = TempDir.createSync("@pi-advisor-branch-");
+		const branchDir = TempDir.createSync("@ultraworkers-advisor-branch-");
 		const branchManager = SessionManager.create(branchDir.path(), branchDir.path());
 		const branchSession = new AgentSession({
 			agent: new Agent({
@@ -996,7 +996,7 @@ describe("AgentSession advisor toggle", () => {
 				return undefined;
 			},
 		} as unknown as ExtensionRunner;
-		const branchDir = TempDir.createSync("@pi-advisor-branch-fail-");
+		const branchDir = TempDir.createSync("@ultraworkers-advisor-branch-fail-");
 		const branchManager = SessionManager.create(branchDir.path(), branchDir.path());
 		const branchSession = new AgentSession({
 			agent: new Agent({

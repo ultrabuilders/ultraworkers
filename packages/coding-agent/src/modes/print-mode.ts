@@ -2,8 +2,8 @@
  * Print mode (single-shot): Send prompts, output result, exit.
  *
  * Used for:
- * - `omp -p "prompt"` - text output
- * - `omp --mode json "prompt"` - JSON event stream
+ * - `ultraworkers -p "prompt"` - text output
+ * - `ultraworkers --mode json "prompt"` - JSON event stream
  */
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
@@ -18,7 +18,7 @@ import { formatPersistenceDurabilityFailure, formatPersistenceFailure } from "./
 import { initializeExtensions } from "./runtime-init";
 
 import { cfgPlanDefaultOnStartup, cfgPlanEnabled } from "../plan-mode/settings";
-import { flushRawStdout, writeRawStdout } from "../utils/stdout-guard";
+import { emitRawStdout, flushRawStdout } from "../utils/stdout-guard";
 
 /**
  * Options for print mode.
@@ -144,7 +144,7 @@ async function runPrintModeCore(
 	if (mode === "json") {
 		const header = session.sessionManager.getHeader();
 		if (header) {
-			void writeRawStdout(structuredOut, `${JSON.stringify(header)}\n`);
+			emitRawStdout(structuredOut, `${JSON.stringify(header)}\n`);
 		}
 	}
 	// Set up extensions for print mode (no UI, no command context)
@@ -219,7 +219,7 @@ async function runPrintModeCore(
 	session.subscribe(event => {
 		// In JSON mode, output all events
 		if (mode === "json") {
-			void writeRawStdout(structuredOut, `${JSON.stringify(printableEvent(event))}\n`);
+			emitRawStdout(structuredOut, `${JSON.stringify(printableEvent(event))}\n`);
 		} else if (event.type === "notice" && event.source === CREDENTIAL_DISABLED_NOTICE_SOURCE) {
 			// Text mode renders no session notices, but an automatic sign-out must not stay
 			// hidden behind a sibling account that quietly answers the prompt.
@@ -315,9 +315,9 @@ async function runPrintModeCore(
 			// Output text content
 			for (const content of assistantMsg.content) {
 				if (content.type === "text") {
-					void writeRawStdout(structuredOut, `${sanitizeText(content.text)}\n`);
+					emitRawStdout(structuredOut, `${sanitizeText(content.text)}\n`);
 				} else if (printThoughts && content.type === "thinking" && content.thinking.trim().length > 0) {
-					void writeRawStdout(structuredOut, `${sanitizeText(content.thinking)}\n`);
+					emitRawStdout(structuredOut, `${sanitizeText(content.thinking)}\n`);
 				}
 			}
 		}
@@ -342,7 +342,7 @@ async function runPrintModeCore(
 	await flushRawStdout();
 	// Dispose before returning the status instead of hard-exiting ahead of it:
 	// the awaited `dispose()` runs the browser reaper (releaseTabsForOwner), so
-	// an OMP-owned Chromium cannot survive the exit (issue #5643).
+	// an ultraworkers-owned Chromium cannot survive the exit (issue #5643).
 	//
 	// A latched store failure rethrows from `dispose()`; report it as lost
 	// durability rather than letting it escape as a raw fatal dump.

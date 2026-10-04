@@ -12,6 +12,7 @@ import { formatQuery, parseSearchQuery } from "../query";
 import type { SearchParams } from "./base";
 import { SearchProvider } from "./base";
 import { classifyProviderHttpError, withHardTimeout } from "./utils";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 
 type SearchParamsWithFetch = SearchParams & { fetch?: FetchImpl };
 
@@ -86,8 +87,7 @@ export async function searchSynthetic(params: SearchParamsWithFetch): Promise<Se
 		key => callSyntheticSearch(key, query, params.signal, fetchImpl, params.timeoutMs),
 		{
 			signal: params.signal,
-			missingKeyMessage:
-				"Synthetic credentials not found. Set SYNTHETIC_API_KEY or login with 'omp /login synthetic'.",
+			missingKeyMessage: `Synthetic credentials not found. Set SYNTHETIC_API_KEY or login with '${WIRE_NAME} /login synthetic'.`,
 		},
 	);
 	const sources: SearchSource[] = [];

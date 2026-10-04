@@ -6,12 +6,16 @@
  * - compare a tool capability tier against the active approval mode,
  * - format the generic approval prompt body.
  */
+import { editInspect } from "@oh-my-pi/pi-natives";
+import { isRecord, stringProperty } from "@oh-my-pi/pi-utils";
 import type { AgentTool, ToolApprovalDecision, ToolTier } from "@oh-my-pi/pi-agent-core";
+import { extractFlatShellCommandSegments } from "./shell-tokenize";
 import type { Settings } from "../config/settings";
 
 import { cfgToolsApproval, cfgToolsApprovalMode } from "./settings";
 
 export type { ToolApproval, ToolApprovalDecision, ToolTier } from "@oh-my-pi/pi-agent-core";
+import { declaredEffects, effectPoliciesFrom, resolveEffectFloor } from "./effects";
 
 export type ApprovalPolicy = "allow" | "deny" | "prompt";
 export type ApprovalMode = "always-ask" | "write" | "yolo";
@@ -27,7 +31,7 @@ export interface ResolvedExecuteTimeApproval {
 	userPolicies: Record<string, unknown>;
 }
 
-type ApprovalSubject = Pick<AgentTool, "name" | "approval" | "formatApprovalDetails"> & {
+export type ApprovalSubject = Pick<AgentTool, "name" | "approval" | "formatApprovalDetails"> & {
 	/**
 	 * Previous public name of this tool, when a rename changed how it mints.
 	 * MCP tools minted before digits were kept carry their digit-stripped name
@@ -207,7 +211,19 @@ export function resolveApproval(
 	userConfig: Record<string, unknown> = {},
 ): ResolvedApproval {
 	const decision = getToolDecision(tool, args);
-	const policyKey = decision.policyKey ?? tool.name;
+	// Three rungs, most specific first: a key the tool declares itself, then the
+	// canonicalized *action* (`bash:git status`), then the bare tool name. The middle
+	// rung is the one this fix adds.
+	//
+	// It exists because the writer and the reader disagreed about what a decision is
+	// keyed on. `wrapper.ts` persists "Approve always" under
+	// `canonicalizeApprovalKey(name, args)`, so a grant for one command landed at
+	// `bash:git status` while this function looked only at `bash` and never found it —
+	// the user answered "always" and was asked again on the next identical command.
+	// Keying on the action narrows rather than widens, which is the safe direction: a
+	// grant is for one specific action, and a tool-name policy still applies to every
+	// other action through the fallback below.
+	const policyKey = decision.policyKey ?? canonicalizeApprovalKey(tool.name, args);
 	const userPolicy = Object.hasOwn(userConfig, policyKey) ? normalizePolicy(userConfig[policyKey]) : undefined;
 	const fallbackPolicy =
 		policyKey !== tool.name && userPolicy === undefined && Object.hasOwn(userConfig, tool.name)
@@ -252,7 +268,37 @@ export function resolveApproval(
 		};
 	}
 
+	// The declared-effect floor, applied ahead of the mode branch on purpose. Under
+	// `yolo` everything is allowed, so a floor evaluated after this point would
+	// never once apply — the one mode where a user still expects their policy to
+	// hold. Effects may only narrow, so this can turn an `allow` into a `prompt` or
+	// a `deny`, never the reverse.
+	const effects = declaredEffects(tool.name);
+	const effectFloor = resolveEffectFloor(effects, effectPoliciesFrom(userConfig));
+	if (effectFloor?.policy === "deny") {
+		return {
+			policy: "deny",
+			tier: decision.tier,
+			override: false,
+			source: "user",
+			policyKey: `effects.${effectFloor.effect}`,
+			reason: `declared effect "${effectFloor.effect}" is denied by user policy`,
+		};
+	}
+
 	if (mode === "yolo") {
+		// A declared effect the user asked to be prompted for survives `yolo`: the
+		// whole point of declaring one is that the user gets asked anyway.
+		if (effectFloor?.policy === "prompt" && !decision.policy) {
+			return {
+				policy: "prompt",
+				tier: decision.tier,
+				override: false,
+				source: "user",
+				policyKey: `effects.${effectFloor.effect}`,
+				reason: `declared effect "${effectFloor.effect}" requires approval`,
+			};
+		}
 		if (decision.policy) {
 			return {
 				policy: decision.policy,
@@ -384,4 +430,109 @@ export function formatApprovalPrompt(tool: ApprovalSubject, args: unknown, reaso
 	}
 
 	return lines.join("\n");
+}
+
+/**
+ * What an "always" decision is remembered against.
+ *
+ * ## Why this exists
+ *
+ * The key used to be the tool's name. So "Always allow" on one `bash` call granted
+ * every later `bash` call for the rest of the session — a user who approved
+ * `git status` had also approved `rm -rf ./build`, and nothing on screen said so.
+ * The decision set is unchanged; only what it is remembered against changed.
+ *
+ * ## What it keys on
+ *
+ * The canonicalized *action*, per tool:
+ *
+ * - `bash` — the parsed command segments, rejoined. Splitting with the shell
+ *   tokenizer that `bash-interceptor` already uses means quoting and operators are
+ *   read the way the shell reads them, rather than by a second regex that would
+ *   disagree with the first one on exactly the inputs that matter.
+ * - `delete` / `move` — the path, lexically normalized.
+ * - `edit` — which destructive operation was detected, since one edit payload can
+ *   carry both.
+ *
+ * Paths are normalized lexically, not through `realpath`, because this runs on the
+ * synchronous path that builds the permission prompt and has no session cwd to
+ * resolve against. The consequence is honest and small: two spellings of one file
+ * that differ by a symlink ask twice. Asking twice is the safe direction; the
+ * alternative is a key that resolves against a cwd this function does not have.
+ *
+ * `allow_always` and `reject_always` deliberately share this key. Splitting them
+ * would make a permanently rejected action prompt again, which is the opposite of
+ * what the user chose.
+ */
+export function canonicalizeApprovalKey(toolName: string, args: unknown): string {
+	const input = isRecord(args) ? args : {};
+	// Whitespace runs are collapsed so a re-indented command is recognised as the
+	// same action, while every character that can change what the shell does is
+	// kept verbatim.
+	const squeeze = (text: string): string => text.replace(/\s+/g, " ").trim();
+
+	if (toolName === "bash") {
+		const command = stringProperty(input, "command");
+		// No command means there is nothing to canonicalize from, so it deliberately
+		// falls through to the digest below rather than sharing the bare tool name.
+		if (command) {
+			const segments = extractFlatShellCommandSegments(command).map(segment => squeeze(segment.text));
+			return segments.length > 0 ? `bash:${segments.join(" ; ")}` : `bash:${squeeze(command)}`;
+		}
+	}
+	if (toolName === "delete") {
+		const filePath = stringProperty(input, "path");
+		return filePath ? `delete:${squeeze(filePath)}` : toolName;
+	}
+	if (toolName === "move") {
+		const from = stringProperty(input, "oldPath") ?? stringProperty(input, "path") ?? stringProperty(input, "from");
+		const to =
+			stringProperty(input, "newPath") ?? stringProperty(input, "to") ?? stringProperty(input, "destination");
+		if (from && to) return `move:${squeeze(from)}->${squeeze(to)}`;
+		return from ? `move:${squeeze(from)}` : toolName;
+	}
+	if (toolName === "edit") {
+		const intent = getEditDestructiveIntent(args);
+		return intent ? `edit:${intent.kind}` : toolName;
+	}
+	// A tool this function does not know how to canonicalize. Falling back to the
+	// tool name here would quietly restore exactly the bug this function exists to
+	// remove, and it would restore silently: the day a fifth gated tool is added to
+	// `getPermissionIntent` and its author forgets a branch here, every one of its
+	// calls shares one grant again, and no test goes red.
+	//
+	// So an unrecognised tool keys on its whole argument payload. It cannot know
+	// which parts of that payload constitute the action, so it uses all of them —
+	// which can only ever narrow, never widen. Narrowing costs the user a repeat
+	// question; widening costs them a grant they never gave.
+	return `${toolName}:${Bun.hash.wyhash(JSON.stringify(args) ?? "").toString(16)}`;
+}
+
+/**
+ * Which destructive operation an `edit` payload carries, if any.
+ *
+ * Lives in `tools/approval.ts` because `canonicalizeApprovalKey` keys an `edit` call on
+ * its answer, and the extension tool wrapper keys on that too — so both callers
+ * belong below the session layer that this used to sit in.
+ */
+export function getEditDestructiveIntent(args: unknown): { kind: "delete" | "move"; paths: string[] } | undefined {
+	if (!isRecord(args)) return undefined;
+
+	const argsJson = JSON.stringify(args);
+	const modes = Array.isArray(args.edits) ? ["patch"] : ["hashline", "apply_patch"];
+	for (const mode of modes) {
+		try {
+			const fileOps = editInspect(mode, argsJson).fileOps;
+			const op =
+				fileOps.find(candidate => candidate.kind === "delete") ??
+				fileOps.find(candidate => candidate.kind === "move");
+			if (!op || (op.kind !== "delete" && op.kind !== "move")) continue;
+			const paths = op.kind === "move" && op.to ? [op.path, op.to] : [op.path];
+			return { kind: op.kind, paths };
+		} catch {
+			// The payload does not use this edit mode's syntax.
+		}
+	}
+
+	return undefined;
 }

@@ -31,8 +31,12 @@ import { setXdevRendererLookup } from "./xdev";
 
 export * from "./renderer";
 
-/** Renderers keyed by tool name (plus `apply_patch`/`reject` aliases that share a renderer). */
-export const toolRenderers: Record<string, ToolRenderer> = {
+/** Renderers keyed by tool name (plus `apply_patch`/`reject` aliases that share a renderer).
+ *  Frozen: this is core's built-in presentation, not an extension point. A plugin that
+ *  wants a different transcript for its own tool declares `renderCall`/`renderResult` on
+ *  the tool definition — that path is per-tool, ordered, and owned by the runner. Writing
+ *  here would repaint every tool for the whole process, so it is closed. */
+export const toolRenderers: Readonly<Record<string, ToolRenderer>> = Object.freeze<Record<string, ToolRenderer>>({
 	ask: askToolRenderer,
 	ast_grep: astGrepToolRenderer,
 	ast_edit: astEditToolRenderer,
@@ -67,7 +71,7 @@ export const toolRenderers: Record<string, ToolRenderer> = {
 	vibe_kill: createVibeToolRenderer("kill"),
 	vibe_list: createVibeToolRenderer("list"),
 	write: writeToolRenderer,
-};
+});
 
 // Wire the xd:// render delegation without the xdev module importing this registry.
 setXdevRendererLookup(name => toolRenderers[name]);

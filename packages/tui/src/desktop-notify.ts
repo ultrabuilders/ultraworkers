@@ -23,10 +23,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { $which } from "@oh-my-pi/pi-utils";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import type { TerminalId, TerminalNotification } from "./terminal-capabilities";
-
-/** Application name surfaced as the notification source. */
-const APP_NAME = "omp";
 
 /** Resolved notifier binary used to fan a notification out to D-Bus. */
 export type DesktopNotifierKind = "notify-send" | "gdbus";
@@ -175,7 +173,7 @@ export function sendDesktopNotification(message: string | TerminalNotification):
 	try {
 		// `.unref()` lets the event loop exit while the notifier is still running.
 		// Without it, an unresponsive D-Bus activation (slow `notify-send`, hung
-		// `gdbus` waiting on a stalled session bus) would keep `omp` alive past
+		// `gdbus` waiting on a stalled session bus) would keep `ultraworkers` alive past
 		// the renderer's shutdown — a completion toast must never delay process
 		// exit. Ignored stdio alone does not detach the child from the parent's
 		// reference count.

@@ -13,11 +13,13 @@ import type { ComputerSafetyCheck, ImageContent, Static, TextContent, TSchema } 
 import { sanitizeText, untilAborted } from "@oh-my-pi/pi-utils";
 import type { Theme } from "@oh-my-pi/pi-tui/theme";
 import {
+	canonicalizeApprovalKey,
 	denyError,
 	formatApprovalPrompt,
 	resolveApproval,
 	resolveApprovalFromContext,
 	truncateForPrompt,
+	type ResolvedApproval,
 } from "../../tools/approval";
 import { defaultLoadModeForToolName } from "../../tools/essential-tools";
 import { withFileMutationSession } from "../../tools/file-write-fallback";
@@ -25,12 +27,14 @@ import { normalizeToolEventInput, resolveToolEventInput } from "../tool-event-in
 import { applyToolProxy } from "../tool-proxy";
 import type { ExtensionRunner } from "./runner";
 import type { RegisteredTool, ToolCallEventResult } from "./types";
+import { ToolCallBlockedError } from "../shared-events";
+import type { ToolApprovalRequestedEventResult } from "../shared-events";
 
 /**
- * Second `renderCall` argument that satisfies both the omp and the upstream-pi
+ * Second `renderCall` argument that satisfies both the ultraworkers and the upstream-pi
  * renderer contracts.
  *
- * omp invokes renderers as `renderCall(args, options, theme)` (see
+ * ultraworkers invokes renderers as `renderCall(args, options, theme)` (see
  * `packages/tui/src/tools/renderer.ts`), while pi-era renderers — including
  * every third-party plugin written against pi's published example — are
  * declared `renderCall(args, theme, context)`. Both shapes take three
@@ -90,10 +94,14 @@ export class RegisteredToolAdapter implements AgentTool<any, any, any> {
 				);
 		}
 		if (registeredTool.definition.renderResult) {
+			// Forward the whole options object, and apply the theme augmentation
+			// that renderCall already got. Re-listing fields here meant a new one
+			// reached renderCall but silently stopped at this boundary, and the
+			// theme was applied on one path and not the other.
 			this.renderResult = (result: any, options: any, theme: any, args?: any) =>
 				registeredTool.definition.renderResult!(
 					result,
-					{ expanded: options.expanded, isPartial: options.isPartial, spinnerFrame: options.spinnerFrame },
+					renderOptionsWithTheme(options, theme as Theme),
 					theme as Theme,
 					args,
 				);
@@ -142,7 +150,16 @@ export function wrapRegisteredTools(registeredTools: RegisteredTool[], runner: E
 	return registeredTools.map(rt => wrapRegisteredTool(rt, runner));
 }
 
-const LOOP_DISPATCH_CONTEXT = Symbol("omp.loop-dispatch");
+const LOOP_DISPATCH_CONTEXT = Symbol("ultraworkers.loop-dispatch");
+
+/**
+ * The "don't ask again for this action" choice in the approval prompt.
+ *
+ * A named constant rather than a literal because the wrapper tests assert on it and
+ * because the string is also the value compared against the prompt's return — two
+ * spellings of one option that a rename could silently decouple.
+ */
+const APPROVE_ALWAYS_OPTION = "Approve always";
 type LoopAwareToolContext = AgentToolContext & { [LOOP_DISPATCH_CONTEXT]?: true };
 
 function computerSafetyChecks(context: AgentToolContext | undefined): ComputerSafetyCheck[] {
@@ -212,6 +229,33 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		return target.restartForModeChange();
 	}
 
+	/**
+	 * Record a refusal that was settled before anyone was asked.
+	 *
+	 * The `asked` half is deliberately absent: no question reached the user, and an
+	 * audit that invented one would misreport the turn — the same reasoning that
+	 * leaves `yolo`, an `xd://` bypass, and an ACP-approved replay unrecorded. What
+	 * did happen is that the call was refused, and that is what an audit of "what was
+	 * this turn blocked by" needs to answer.
+	 *
+	 * These two sites threw `denyError` and recorded nothing, so a `policy: "deny"`
+	 * from the tool's own approval function — a critical `bash` command, a user
+	 * `bash.patterns` deny — left a refusal the user saw and the log did not.
+	 * `isApprovalDenial` already looks for precisely this shape (`phase: "answered"`
+	 * carrying `policy: "deny"`), so the reader was written for an entry no writer
+	 * produced; that is what made this a gap rather than a missing feature.
+	 */
+	#recordPolicyDenial(resolved: ResolvedApproval, toolCallId: string): void {
+		this.runner.recordApprovalEntry({
+			requestId: toolCallId,
+			phase: "answered",
+			toolName: this.tool.name,
+			policyKey: resolved.policyKey ?? this.tool.name,
+			policy: "deny",
+			source: "tool",
+		});
+	}
+
 	async execute(
 		toolCallId: string,
 		params: Static<TParameters>,
@@ -241,6 +285,7 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		);
 		const preResolved = resolveApproval(this.tool, approvalArgs(params, context), approvalMode, userPolicies);
 		if (preResolved.policy === "deny") {
+			this.#recordPolicyDenial(preResolved, toolCallId);
 			throw denyError(preResolved, this.tool.name);
 		}
 
@@ -274,7 +319,9 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 
 				if (callResult?.block) {
 					const reason = callResult.reason || "Tool execution was blocked by an extension";
-					throw new Error(reason);
+					// Typed, so the distinction survives the throw: a caller can tell a
+					// handler that declined from one that crashed without reading the prose.
+					throw new ToolCallBlockedError(callResult.kind ?? "denied", reason);
 				}
 				if (isNonBlankContext(callResult?.additionalContext)) {
 					pendingAdditionalContext = callResult.additionalContext;
@@ -314,6 +361,7 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		context?.xdevTierResolved?.(resolved.tier);
 		if (resolved.policy === "deny") {
 			cancelPreflight();
+			this.#recordPolicyDenial(resolved, toolCallId);
 			throw denyError(resolved, this.tool.name);
 		}
 		const pendingSafetyChecks = computerSafetyChecks(context);
@@ -347,8 +395,62 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			const hasApprovalHandlers =
 				this.runner.hasHandlers("tool_approval_requested") || this.runner.hasHandlers("tool_approval_resolved");
 			const sessionId = context?.sessionManager?.getSessionId() ?? "";
+
+			// Approval audit pair, for the reason the ACP gate records one: after a crash the
+			// only question that matters is who approved this, and a record at either end
+			// alone cannot answer it — one written at the answer cannot tell a denial from a
+			// process that died with the prompt open.
+			//
+			// `policyKey` comes from `resolveApproval`, which decides the *policy*, and
+			// is deliberately not the tool name: `explicitPrompt` above keys off
+			// `resolved.policyKey ?? this.tool.name`, so a tool that declares a narrower key
+			// was decided by a rule its name would misreport.
+			//
+			// Whether a question is actually asked is *not* decided there alone:
+			// `approvalCheck.required` above folds in `pendingSafetyChecks`, `acpBypass`
+			// and `xdevBypass`, none of which `resolveApproval` sees. A reader auditing
+			// the transcript therefore needs both halves — the policy from here, and the
+			// fact that nothing was asked from `approvalCheck`.
+			//
+			// Reaching this block *is* the fact that a question was asked. The paths that
+			// resolve a policy without asking — yolo, an `xd://` bypass, an ACP-approved call
+			// replaying here — leave `approvalCheck.required` false and record nothing,
+			// which is the honest answer: nothing was asked of anyone.
+			this.runner.recordApprovalEntry({
+				requestId: toolCallId,
+				phase: "asked",
+				toolName: this.tool.name,
+				policyKey: resolved.policyKey ?? this.tool.name,
+				source: "user",
+			});
+			// Idempotent by construction: every terminal outcome below funnels through
+			// `emitApprovalResolved`, but a gate whose recorder double-writes would corrupt
+			// the very absence — "asked with no answer" — that makes a crash legible.
+			let approvalAnswered = false;
+			// The veto an extension returned from `tool_approval_requested`, if any. Held
+			// until `emitApprovalResolved` is in scope so a denial is recorded the same way
+			// a user's "Deny" is, and takes the same exit below.
+			let approvalVeto: ToolApprovalRequestedEventResult | undefined;
+			const recordApprovalAnswered = (decision: string): void => {
+				if (approvalAnswered) return;
+				approvalAnswered = true;
+				this.runner.recordApprovalEntry({
+					requestId: toolCallId,
+					phase: "answered",
+					toolName: this.tool.name,
+					policyKey: resolved.policyKey ?? this.tool.name,
+					decision,
+					source: "user",
+				});
+			};
+
 			if (hasApprovalHandlers) {
-				await this.runner.emit({
+				// Bound, not discarded: an extension may veto the call before it is ever
+				// put to the user. The value is acted on below, once `emitApprovalResolved`
+				// exists to record the answer. A handler that throws or returns nothing
+				// leaves `undefined` here, which is indistinguishable from "no handler
+				// objected" — the prompt is then asked exactly as it was before.
+				approvalVeto = await this.runner.emit({
 					type: "tool_approval_requested",
 					sessionId,
 					toolName: this.tool.name,
@@ -359,6 +461,10 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			}
 
 			const emitApprovalResolved = async (approved: boolean, reason?: string) => {
+				// Ahead of the `hasApprovalHandlers` guard on purpose. The pair is the
+				// session's own record of who approved what; whether an extension happens to
+				// subscribe to the event must not decide whether it exists.
+				recordApprovalAnswered(approved ? "approved" : "denied");
 				if (!hasApprovalHandlers) return;
 				await this.runner.emit({
 					type: "tool_approval_resolved",
@@ -377,11 +483,13 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 				await emitApprovalResolved(false, reason);
 				cancelPreflight();
 				if (pendingSafetyChecks.length > 0) {
-					throw new Error(
+					throw new ToolCallBlockedError(
+						"denied",
 						`Tool "${this.tool.name}" has pending provider safety checks but no interactive UI is available.`,
 					);
 				}
-				throw new Error(
+				throw new ToolCallBlockedError(
+					"denied",
 					`Tool "${this.tool.name}" requires approval but no interactive UI available.\n` +
 						`Options:\n` +
 						`  1. Set tools.approvalMode: yolo in /settings\n` +
@@ -391,24 +499,112 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			}
 
 			const uiContext = this.runner.getUIContext();
+			// Hoisted above the veto below, which settles siblings under this key exactly as
+			// the user-driven deny does.
+			const actionKey = resolved.policyKey ?? canonicalizeApprovalKey(this.tool.name, effectiveParams);
+			// An extension veto is a denial the user never gets to answer, so it takes the
+			// same exit a "Deny" takes below — same sibling cascade, same preflight cancel,
+			// same `ToolCallBlockedError`. Placed here, after the no-UI gate above (whose
+			// denial is the more specific one) and before the prompt is ever built, so a
+			// veto never reaches the screen. With no handler returning `cancel`, `this` is
+			// undefined and the prompt is asked exactly as it was before the seam existed.
+			if (approvalVeto?.cancel) {
+				this.runner.settlePendingApprovals(actionKey, "deny");
+				await emitApprovalResolved(false, approvalVeto.reason);
+				cancelPreflight();
+				throw new ToolCallBlockedError(
+					"denied",
+					approvalVeto.reason ?? `Tool call denied by extension: ${this.tool.name}`,
+				);
+			}
+
 			const basePrompt = formatApprovalPrompt(this.tool, resolvedArgs, approvalCheck.reason);
 			const safetyPrompt =
 				pendingSafetyChecks.length > 0
 					? `${basePrompt}\nProvider safety checks:\n${safetyCheckLines(pendingSafetyChecks).join("\n")}`
 					: basePrompt;
 			let choice: string | undefined;
+			// Registered for as long as the prompt is on screen, so a decision on a
+			// sibling call can release it. Parallel calls are dispatched with
+			// `Promise.allSettled` (agent-loop.ts:3712) and each raises its own
+			// prompt, so without this the grants below would only ever reach calls
+			// that had not started prompting yet.
+			// One resolver, created before registration so the registered callback and the
+			// race share it. Without the registration happening first there is a window
+			// in which a sibling's decision finds no entry to release.
+			let releaseByDecision: (decision: "approve" | "deny") => void = () => {};
+			const released = new Promise<string>(resolve => {
+				releaseByDecision = decision => resolve(decision === "approve" ? "Approve" : "Deny");
+			});
+			const unregister = this.runner.registerPendingApproval?.(toolCallId, actionKey, decision => {
+				releaseByDecision(decision);
+			});
 			try {
-				choice = await uiContext.select(safetyPrompt, ["Approve", "Deny"]);
+				// "Always" is offered alongside Approve/Deny rather than replacing them, so
+				// a user who did not want it still sees the same two choices first. It is
+				// keyed on the *action* (`policyKey`), not the tool: approving `git status`
+				// must not also approve `rm -rf ./build`, which is the reason
+				// `resolveApproval` prefers `tools.approval.<policyKey>` over the tool name
+				// and the reason the ACP gate canonicalizes what it keys on.
+				choice = await Promise.race([
+					uiContext.select(safetyPrompt, ["Approve", "Deny", APPROVE_ALWAYS_OPTION]),
+					released,
+				]);
 			} catch (err) {
+				unregister?.();
 				await emitApprovalResolved(false, err instanceof Error ? err.message : "approval aborted");
 				cancelPreflight();
 				throw err;
 			}
-			const approved = choice === "Approve";
+			unregister?.();
+			const approved = choice === "Approve" || choice === APPROVE_ALWAYS_OPTION;
+			if (choice === APPROVE_ALWAYS_OPTION) {
+				// Written to the same settings the gate resolved against, not to
+				// `runner.sessionSettings`: those differ whenever the call carried an
+				// execute-time context, and writing to the runner's copy would persist
+				// the decision where this call would not read it back. Best-effort — a
+				// settings layer that cannot be written means the user is asked again
+				// next time, which is the pre-existing behaviour, not a reason to refuse a
+				// call they approved.
+				const settings = context?.settings ?? this.runner.sessionSettings;
+				if (settings) {
+					// `actionKey` was computed above and is the same key the pending
+					// registry indexed this prompt under, so a grant here releases exactly
+					// the siblings it covers rather than an approximation of them.
+					//
+					// Called unconditionally, like `settlePendingApprovals` below. The two
+					// halves of "always" are one decision: recording the grant without
+					// releasing the siblings leaves the user having answered a question the
+					// batch then asks again. `persistApprovalPolicy` is declared non-optional
+					// on `ExtensionRunner` (runner.ts:1097), a class with one implementation,
+					// so `?.` guarded nothing a caller could actually do.
+					this.runner.persistApprovalPolicy(actionKey, "allow", settings);
+					// Release the siblings still asking about this same action. They had
+					// already resolved and were already showing a prompt, so without this
+					// the new grant would be invisible to the calls it was made for — the
+					// user answers "always" and the batch still nags them one prompt per
+					// remaining call.
+					this.runner.settlePendingApprovals(actionKey, "approve");
+				}
+			}
 			await emitApprovalResolved(approved, approved ? undefined : "denied by user");
 			if (!approved) {
+				// Called unconditionally, and NOT through `?.`. The cascade is what stops the
+				// siblings hanging on a prompt nobody will ever see, so a runner that cannot
+				// perform it is a broken approval path — that must be loud. An optional call
+				// here would turn the exact failure this comment describes into a silent one:
+				// the deny would be recorded, the cascade would not happen, and the batch would
+				// wait on an answer already given. `settlePendingApprovals` is declared
+				// non-optional on `ExtensionRunner`, so `?.` guarded nothing the type permits.
+				// A denial settles the siblings asking about the same action, for the same
+				// reason the grant above does. The refaudit states the failure precisely:
+				// without a cascade, rejecting one leaves the rest of the batch hanging on a
+				// prompt nobody will ever see, because the user has already answered. They
+				// resolve as denied and take the same exit this call takes, rather than
+				// waiting on an answer that is never coming.
+				this.runner.settlePendingApprovals(actionKey, "deny");
 				cancelPreflight();
-				throw new Error(`Tool call denied by user: ${this.tool.name}`);
+				throw new ToolCallBlockedError("denied", `Tool call denied by user: ${this.tool.name}`);
 			}
 			if (pendingSafetyChecks.length > 0) {
 				if (!context) {

@@ -40,6 +40,21 @@ export type SessionTreeEntry = { id: string; parentId: string | null } & (
 	| { type: "credential_pin"; provider: string }
 	| { type: "ttsr_injection"; injectedRules: string[] }
 	| { type: "session_init" | "reset_boundary" }
+	| { type: "approval"; toolName: string; phase: "asked" | "answered"; decision?: string }
+	/**
+	 * `turn` looks unreachable from this tree — `isUserRequestEntry` admits only
+	 * user messages, so a turn entry never reaches the selector. The arm is
+	 * nevertheless required, and it is required *for a reason that is not visible
+	 * here*: this union is the display projection of the host's `SessionEntry`, and
+	 * omitting a member makes the producer fail to narrow, not this file fail to
+	 * compile. The type error surfaces in the host, at a distance from the omission.
+	 *
+	 * So the tempting cleanup — "the tree filters turns out, therefore this arm is
+	 * dead, delete it" — is wrong, and re-deriving it costs a typecheck round-trip
+	 * to rediscover. The filter lives in TUI; this union is consumed by the host;
+	 * they change independently.
+	 */
+	| { type: "turn"; turnIndex: number; phase: "started" | "ended" }
 );
 
 /** Session tree shape consumed by the selector. */
@@ -517,6 +532,14 @@ class TreeList implements Component {
 			case "title_change":
 				parts.push("title", entry.title);
 				break;
+			case "approval":
+				// The pair reads as one story in the tree: what was asked, and what
+				// it was answered. `decision` is absent on the `asked` half.
+				parts.push(
+					"approval",
+					entry.phase === "answered" ? `${entry.toolName}: ${entry.decision}` : `${entry.toolName}: asked`,
+				);
+				break;
 			case "mode_change":
 				parts.push("mode", entry.mode);
 				break;
@@ -622,9 +645,9 @@ class TreeList implements Component {
 		} else if (entry.type === "message") {
 			const message = entry.message;
 			if (message.role === "assistant") kind = "assistant";
-			else if (message.role === "toolResult") [kind, role] = ["tool", `omp.tool.${message.toolName}`];
-			else if (message.role === "bashExecution") [kind, role] = ["tool", "omp.tool.bash"];
-			else if (message.role === "pythonExecution") [kind, role] = ["tool", "omp.tool.eval"];
+			else if (message.role === "toolResult") [kind, role] = ["tool", `ultraworkers.tool.${message.toolName}`];
+			else if (message.role === "bashExecution") [kind, role] = ["tool", "ultraworkers.tool.bash"];
+			else if (message.role === "pythonExecution") [kind, role] = ["tool", "ultraworkers.tool.eval"];
 		}
 		return {
 			id: row.key,
@@ -662,11 +685,13 @@ class TreeList implements Component {
 					entries: [entry],
 				};
 				const copy = targetCopy(target, collectBlocks(target.entries));
-				preview.push(text(`${copy.label[0]!.toUpperCase()}${copy.label.slice(1)}`, { role: "omp.picker.title" }));
+				preview.push(
+					text(`${copy.label[0]!.toUpperCase()}${copy.label.slice(1)}`, { role: "ultraworkers.picker.title" }),
+				);
 				if (selected.label) preview.push(text([span(plainText(selected.label), "warning")]));
 				preview.push(turnPreview(target, copy.content || parts));
 			} else {
-				preview.push(text(parts, { role: "omp.picker.title" }));
+				preview.push(text(parts, { role: "ultraworkers.picker.title" }));
 				if (selected.label) preview.push(text([span(plainText(selected.label), "warning")]));
 			}
 		}
@@ -676,7 +701,7 @@ class TreeList implements Component {
 
 	/**
 	 * The visible entries as a native `list` keyed `"list"`, items keyed by
-	 * entry id. Selection stays omp's; the terminal scrolls and virtualizes.
+	 * entry id. Selection stays ultraworkers'; the terminal scrolls and virtualizes.
 	 * Branch heads carry a `branch` icon and the active path an accent bullet
 	 * instead of drawn tree connectors.
 	 */
@@ -1289,7 +1314,7 @@ class LabelInput implements Component {
 	/** The picker preview while editing: the prompt and the label `Input` (save/cancel sit in the action bar). */
 	get preview(): readonly NativeChild[] {
 		this.#preview ??= [
-			text("Label", { role: "omp.picker.title" }),
+			text("Label", { role: "ultraworkers.picker.title" }),
 			text([span("Empty to remove", "muted")]),
 			this.#input,
 		];
@@ -1549,7 +1574,7 @@ export class TreeSelectorComponent extends OverlayPanel {
 				{ keys: ["ctrl+o"], label: "filter" },
 			]),
 		];
-		const result = overlayCard("omp.overlay.tree", "Session Tree", children);
+		const result = overlayCard("ultraworkers.overlay.tree", "Session Tree", children);
 		this.#nativeMemo = { content, query, cursor, filterMode, node: result };
 		return result;
 	}

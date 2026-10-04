@@ -480,5 +480,7 @@ export function enablementLabel(state: ExtensionState, reason?: string, shadowed
 		}
 		case "shadowed":
 			return `Shadowed${shadowedBy ? ` by ${sanitizeDisplayText(shadowedBy)}` : ""}`;
+		case "modified":
+			return "Modified (file changed after approval — not loaded)";
 	}
 }

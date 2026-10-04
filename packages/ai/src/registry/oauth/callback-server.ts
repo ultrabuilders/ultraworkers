@@ -11,6 +11,7 @@
  * - exchangeToken(): Exchange authorization code for tokens
  */
 import * as os from "node:os";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { logger } from "@oh-my-pi/pi-utils";
 import * as AIError from "../../error";
 import * as nativeSchemeCallback from "./native-scheme-callback";
@@ -590,7 +591,13 @@ export abstract class OAuthCallbackFlow {
 		}
 
 		return new Response(
-			(templateHtml as unknown as string).replaceAll("__OAUTH_STATE__", JSON.stringify(resultState)),
+			(templateHtml as unknown as string)
+				.replaceAll("__OAUTH_STATE__", JSON.stringify(resultState))
+				// The page shows the product name in the tab title and beside the wordmark, and it
+				// is a static text import — there is no seam in the asset itself. Substituting the
+				// shared constant is the same mechanism `__OAUTH_STATE__` already uses, so the
+				// brand stops being a second, hand-maintained copy of what `APP_NAME` says.
+				.replaceAll("__APP_NAME__", APP_NAME),
 			{
 				status: resultState.ok ? 200 : 500,
 				headers: { "Content-Type": "text/html" },

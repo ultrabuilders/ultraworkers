@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as nativePath from "@oh-my-pi/pi-natives/path";
 import {
+	APP_NAME,
 	__resetProjectDirCacheForTests,
 	directoryIsMissing,
 	getLogPath,
@@ -63,7 +64,7 @@ describe("project directory state", () => {
 	});
 
 	it("normalizes each containment operand only once", () => {
-		const root = fs.mkdtempSync(path.join(os.tmpdir(), "omp-dirs-containment-"));
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-dirs-containment-"));
 		const candidate = path.join(root, "child");
 		fs.mkdirSync(candidate);
 		const realpath = spyOn(fs, "realpathSync");
@@ -93,7 +94,7 @@ describe("dated log path", () => {
 		// sink (logger/rotating-file.ts) never creates.
 		const date = new Date(2026, 4, 31, 2, 30);
 		expect(localDay(date)).toBe("2026-05-31");
-		expect(path.basename(getLogPath(date, 123))).toBe("omp.2026-05-31.123.log");
+		expect(path.basename(getLogPath(date, 123))).toBe(`${APP_NAME}.2026-05-31.123.log`);
 	});
 
 	it("keeps the local-day key under a forced non-UTC timezone", () => {

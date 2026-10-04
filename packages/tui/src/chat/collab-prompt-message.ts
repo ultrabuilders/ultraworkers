@@ -34,9 +34,10 @@ export class CollabPromptMessageComponent extends Container {
 		});
 		markdown.setIgnoreTight(true);
 		this.addChild(markdown);
-		this.#native = card({ role: "omp.user.collab", tone: "user", head: [span(`«${from}» ›`, "accent strong")] }, [
-			md(text),
-		]);
+		this.#native = card(
+			{ role: "ultraworkers.user.collab", tone: "user", head: [span(`«${from}» ›`, "accent strong")] },
+			[md(text)],
+		);
 	}
 
 	/** A user-toned card headed by the guest's name, with the prompt as markdown. */

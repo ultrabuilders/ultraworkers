@@ -639,10 +639,11 @@ def resolve_omp_bin(raw: str | None) -> str:
     repo_bin = resolve_repo_omp_bin()
     if repo_bin:
         return repo_bin
-    found = shutil.which("omp")
+    found = shutil.which("ultraworkers") or shutil.which("omp")
     if not found:
         raise SystemExit(
-            "Could not find `omp` on PATH and could not resolve the repo CLI. Set --omp-bin or OMP_BIN."
+            "Could not find `ultraworkers` (or the legacy `omp`) on PATH and could not resolve "
+            "the repo CLI. Set --omp-bin or OMP_BIN."
         )
     return found
 

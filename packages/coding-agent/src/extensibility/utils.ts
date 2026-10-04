@@ -1,9 +1,10 @@
 import * as path from "node:path";
-import { postmortem } from "@oh-my-pi/pi-utils";
+import { postmortem, logger } from "@oh-my-pi/pi-utils";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 import { extractUriScheme } from "../internal-urls/parse";
 import { InternalUrlRouter } from "../internal-urls/router";
 import { expandPath } from "../tools/path-utils";
+import { unavailableFrameMessage, type FramelessGuard } from "./extensions/unavailable-ui";
 import type { HookUIContext } from "./hooks/types";
 
 /**
@@ -28,14 +29,38 @@ export function resolvePath(filePath: string, cwd: string): string {
 /**
  * Create a no-op UI context for headless modes.
  */
+/**
+ * A custom tool runs before `setUIContext` swaps in the real context, so it sees this
+ * `HookUIContext` — which has no `hasUI` member at all. `pi.ui.hasUI` is therefore
+ * `undefined`: falsy, so `if (pi.ui.hasUI)` skips the call that would otherwise throw.
+ * Absent is not the same as declared `false`, but the advice behaves identically, so
+ * the message may name the guard here.
+ */
+const FRAMELESS_GUARD = "hasUI-blocks-the-call" satisfies FramelessGuard;
+
 export function createNoOpUIContext(): HookUIContext {
 	return {
 		select: async () => undefined,
 		confirm: async () => false,
 		input: async () => undefined,
-		notify: () => {},
+		// Same decision as `noOpUIContext.notify`: logged, not swallowed and not thrown.
+		// See the comment there for why those three are not the same choice. The prefix
+		// names this context so the two are distinguishable in the log — they are the
+		// only two places a `notify` can vanish, and "which seam swallowed it" is the
+		// first question when reading one of these back.
+		notify: (message, type) => {
+			logger.debug("Extension notification dropped (custom tool context)", { message, type });
+		},
 		setStatus: () => {},
-		custom: async () => undefined as never,
+		custom: () => {
+			// The same lie as `noOpUIContext.custom` and the ACP/RPC contexts, fixed for
+			// the same reason: `undefined as never` satisfies `Promise<T>` while handing
+			// back a value the author's factory never produced. A custom tool's module
+			// body runs during `load()`, so this context is live before `setUIContext`
+			// swaps it — a top-level `await pi.ui.custom(...)` would get `undefined` and
+			// no error, with nothing having run to produce it.
+			throw new Error(unavailableFrameMessage("custom", "a headless mode", FRAMELESS_GUARD));
+		},
 		setEditorText: () => {},
 		getEditorText: () => "",
 		editor: async () => undefined,
@@ -101,7 +126,7 @@ export class ExtensionExitError extends Error {
 	) {
 		super(
 			`Module called ${alias}(${code === undefined ? "" : String(code)}) during guarded extension/hook loading; ` +
-				`OMP extension/hook modules must not terminate the host process.`,
+				`ultraworkers extension/hook modules must not terminate the host process.`,
 		);
 		this.name = "ExtensionExitError";
 		this.code = code;
@@ -130,6 +155,58 @@ let hostGuardStdinWasPaused = false;
 let hostGuardStdinWasRaw = false;
 
 /**
+ * Build the throwing replacement that stands in for `process.exit` or
+ * `process.reallyExit` while a guard window is open.
+ *
+ * A synchronous exit cannot be intercepted by `try/catch`, so the only way to stop a
+ * stranger's module from killing OMP during startup is to remove the primitive and put
+ * something throwable in its place. Each stub is stamped by its caller with the native
+ * exit it shadows, so host-owned shutdown can still reach the real thing (#6488).
+ *
+ * Which windows exist, how they nest, and what a window that never closes costs belong to
+ * {@link withHostGuard}, whose it is; this factory only makes one stub.
+ */
+function guardedExit(alias: ExitAliasName): (code?: number | string) => never {
+	return (code?: number | string): never => {
+		throw new ExtensionExitError(code, alias);
+	};
+}
+
+/** What the host guard is currently doing to this process. */
+export interface HostGuardState {
+	/** Guard windows opened but not yet closed. Stays above zero after an abandoned window. */
+	readonly depth: number;
+	/** Whether `process.exit` is currently replaced by a throwing stub. */
+	readonly exitGuarded: boolean;
+	/** Whether `process.reallyExit` is currently replaced by a throwing stub. */
+	readonly reallyExitGuarded: boolean;
+}
+
+/**
+ * Report what `withHostGuard` is currently doing to this process.
+ *
+ * The guard fences host-owned state while third-party module code runs and restores it in
+ * a `finally`. A window that is opened and never closed leaves that state fenced for the
+ * rest of the process: `process.exit` stays replaced by a stub that throws, and no later
+ * `withHostGuard` re-arms or restores, because it sees a window already open. A leaked
+ * window is something only an abandoned continuation can produce — a test harness that
+ * starts a guard and never lets it settle — and until now nothing reported it. The guard
+ * then keeps failing for reasons that have nothing to do with whatever the process is
+ * actually doing.
+ *
+ * This reads the guard's own bookkeeping and changes nothing. It exists because "fenced
+ * right now, as intended" and "still fenced long after the window that fenced it is gone"
+ * are indistinguishable from the outside, and only the second is a defect.
+ */
+export function hostGuardState(): HostGuardState {
+	return {
+		depth: hostGuardDepth,
+		exitGuarded: hostGuardOriginalProcessExit !== null,
+		reallyExitGuarded: hostGuardOriginalReallyExit !== null,
+	};
+}
+
+/**
  * Run `fn` with host-owned process state fenced off from third-party module
  * evaluation, restored in `finally`. Guards the dynamic-import and
  * factory-invocation sites that load extension / hook / tool / plugin modules
@@ -148,15 +225,31 @@ let hostGuardStdinWasRaw = false;
  *   adds is removed, and the stream's paused and raw-mode state is restored to
  *   the pre-load snapshot.
  *
- * Nested and concurrent guard windows are safe: only the outermost guard
- * snapshots and restores host state.
+ * Nested guard windows are safe: only the outermost guard snapshots and
+ * restores host state.
+ *
+ * OVERLAPPING windows are a weaker claim than that. Because the counter is a
+ * plain depth, two windows that interleave rather than nest (A enters, B enters,
+ * A exits, B exits) snapshot only once and restore only once — on B's exit, using
+ * A's snapshot. Between A's exit and B's exit stdin is unguarded, which is real
+ * but bounded: it lasts exactly as long as the inner window has left to run.
+ * "Safe" above means no state is lost or corrupted, not that no window exists.
+ *
+ * A depth left above zero by an abandoned window (its `finally` never runs) is a
+ * different failure: every later `withHostGuard` in that process becomes a no-op,
+ * since neither the snapshot nor the restore branch is reached. A test harness that
+ * times out inside a window strands it without anyone writing an abandoned promise —
+ * measured, not assumed — and neither kind of strand unwinds on its own, however long
+ * the process is given. See {@link hostGuardState} for what can be observed about it.
+ *
+ * DO NOT ADD A RECOVERY PATH HERE. When `finally` does not run there is no correct
+ * state to recover to: the snapshot was never taken, so any restore has to guess who
+ * paused stdin and what they meant, and a wrong guess overwrites a pause belonging to
+ * something else — a guard that "heals" a stranded depth fails OPEN and silently, which
+ * is strictly worse than the strand it papers over. There is nothing here to recover
+ * because the continuation holding the state is gone, not merely misplaced. The fix for
+ * a stranded window belongs to whatever abandoned it.
  */
-function guardedExit(alias: ExitAliasName): (code?: number | string) => never {
-	return (code?: number | string): never => {
-		throw new ExtensionExitError(code, alias);
-	};
-}
-
 export async function withHostGuard<T>(fn: () => Promise<T>): Promise<T> {
 	if (hostGuardDepth === 0) {
 		// Stamp each throwing replacement with the native primitive it shadows so

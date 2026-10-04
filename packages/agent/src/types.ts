@@ -222,6 +222,32 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 
 	/**
+	 * Assert, on every provider request, that the messages being sent are
+	 * reproducible from `context.messages` through this same pipeline.
+	 *
+	 * Defaults to ON under `bun test` when the pipeline carries no
+	 * `transformContext`, and OFF otherwise. Production is unaffected either way.
+	 * The automatic half is deliberately narrow: re-deriving re-runs exactly two
+	 * host-supplied hooks — `transformContext` and `convertToLlm` — and nothing
+	 * downstream of them. `transformContext` is the one that can carry arbitrary
+	 * code, because `sdk.ts` wires it to `extensionRunner.emitContext`, which runs
+	 * extension `context` handlers; re-deriving would execute them twice per
+	 * request and let the check perturb what it measures. A pipeline that has one
+	 * is therefore not checked automatically. Set this explicitly for a pipeline
+	 * whose `transformContext` is pure — the auto-learn capture agent in `sdk.ts`
+	 * qualifies today, since its transform is `wrapSteeringForModel`.
+	 *
+	 * Either way this is how a divergence gets *noticed* rather than discovered
+	 * later as a mysteriously cold provider cache: any transform, converter or
+	 * provider normalization that stops being a pure function of its input throws
+	 * at the call site instead of quietly sending something the history does not
+	 * account for.
+	 *
+	 * @see {@link assertDerivable}
+	 */
+	derivationInvariant?: boolean;
+
+	/**
 	 * Optional transform applied to the context before `convertToLlm`.
 	 *
 	 * Use this for operations that work at the AgentMessage level:
@@ -885,6 +911,13 @@ export interface SpeculativeToolExecutionConfig {
 export interface BeforeToolCallResult {
 	block?: boolean;
 	reason?: string;
+	/**
+	 * Why the call was blocked, when `block` is set: `denied` if a gate declined,
+	 * `hook-failed` if a gate threw or timed out. Both fail closed identically, so
+	 * without this the loop reports a crashed third-party hook as a refusal nobody
+	 * made. Optional, and absent when no gate blocked the call.
+	 */
+	kind?: "denied" | "hook-failed";
 	args?: Record<string, unknown>;
 	additionalContext?: string;
 }

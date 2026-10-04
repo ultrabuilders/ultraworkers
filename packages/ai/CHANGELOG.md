@@ -2,15 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+- `@oh-my-pi/pi-ai/testing` exports a faux provider for tests: `fauxProvider()` returns a handle
+  whose `streamSimple` emits scripted assistant messages, tool calls and deferred responses without a
+  network call, and `fauxAssistantMessage`/`fauxToolCall`/`fauxText`/`fauxThinking` build the messages
+  it streams. `createModels()` returns an empty lookup for the case where a test wants the
+  "nothing configured" state rather than a scripted one. The subpath resolves through the existing
+  `"./*": "./src/*.ts"` export map.
+
+- The message-level retry helpers are now reachable from the package root. `isRetryableAssistantMessage`,
+  `isProviderRetryableError` and `isTransientStatus` were exported by their module but the barrel
+  re-exported only `./error/rate-limit`, so `import { isRetryableAssistantMessage } from "@oh-my-pi/pi-ai"`
+  failed even though the function existed and was documented.
+- `resetBedrockProviderModule()` clears a host-supplied Bedrock transport installed by
+  `setBedrockProviderModule()`. The override was module-level state with no way back to the built-in
+  provider, so anything that installed one kept it for the rest of the process.
+- `resetCursorProviderModule()` does the same for `setCursorProviderModule()`.
+
 ### Changed
 
+- Provider streams for GitLab Duo, GitLab Duo Workflow, Kimi, pi-native and Synthetic are now loaded on demand, so importing `stream.ts` no longer pulls in every provider transport. A transport that fails to load reports the provider, api and model instead of a bare module-resolution error.
 - `DEBUG_CURSOR` provider debug output now goes to the log file instead of the terminal.
 
 ### Fixed
 
+- The OAuth login page now names the product you actually installed. Its browser tab and wordmark carried a hand-typed copy of the old name while the binary had long been `ultraworkers` — so the one screen a user types a password into named a product that no longer exists. Both strings now come from the shared `APP_NAME` constant through the templating the page already used.
 - Fixed Claude on Amazon Bedrock's Anthropic Messages routes (`/anthropic` on bedrock-runtime and bedrock-mantle): runtime requests no longer fail with a request-metadata 400, and both routes use Anthropic's on-demand compaction ([#13311](https://github.com/can1357/oh-my-pi/pull/13311) by [@mustafaabidali](https://github.com/mustafaabidali)).
 - `/usage` no longer shows an always-empty `gpt-4 requests` row for Cursor accounts on usage-based plans; the Cursor Models and Other Models meters remain ([#13726](https://github.com/can1357/oh-my-pi/pull/13726) by [@will-bogusz](https://github.com/will-bogusz)).
 - Cursor turns routed through an HTTP proxy now finish instead of hanging after the response completes ([#13724](https://github.com/can1357/oh-my-pi/pull/13724) by [@will-bogusz](https://github.com/will-bogusz)).
+- The streaming-response tests for the Cowork transport now exercise a real mid-body disconnect. They previously ran against a response body that had already ended, so they could not observe the drop they were written to check.
+
 ### Changed
 
 - Changed to fall back to adaptive thinking when between_tools is used with xhigh effort

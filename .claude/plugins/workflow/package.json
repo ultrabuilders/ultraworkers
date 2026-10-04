@@ -1,0 +1,12 @@
+{
+	"name": "@ultraworkers/plugin-workflow",
+	"private": true,
+	"type": "module",
+	"description": "Dynamic Workflows — an out-of-repo extension. No file in this directory may be placed under packages/.",
+	"scripts": {
+		"test": "bun test ./.claude/plugins/workflow/test/"
+	},
+	"dependencies": {
+		"@babel/parser": "^7.29.7"
+	}
+}

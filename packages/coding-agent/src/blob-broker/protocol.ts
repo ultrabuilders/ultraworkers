@@ -2,12 +2,13 @@
  * Cross-process contract for the broker-owned blob daemon.
  *
  * One blob daemon runs per project scope (launched through the same daemon
- * broker that owns the shared Chromium and LSP mux), so every omp process in
+ * broker that owns the shared Chromium and LSP mux), so every ultraworkers process in
  * the project shares one exposure (tunnel or uploader) and one URL per blob.
  * Control traffic rides HTTP over a Unix socket in the daemon runtime dir;
  * public traffic reaches the same store through the exposure.
  */
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 export { BLOB_BROKER_WORKER_ARG } from "../cli/worker-selectors";
 import type { BlobDestinationId } from "./destinations";
 import type { BlobPublication, RemoteDeleteAction } from "./publication";
@@ -15,20 +16,34 @@ import type { BlobBrokerSavingsStatus } from "./savings";
 import type { DestinationRuntimeConfig } from "./uploader-runtime";
 
 /** Environment key carrying the control socket path the worker listens on. */
-export const BLOB_BROKER_SOCKET_ENV = "OMP_BLOB_BROKER_SOCKET";
+export const BLOB_BROKER_SOCKET_ENV = "ULTRAWORKERS_BLOB_BROKER_SOCKET";
 
 /** Environment key carrying the JSON {@link BlobBrokerWorkerConfig}. */
-export const BLOB_BROKER_CONFIG_ENV = "OMP_BLOB_BROKER_CONFIG";
+export const BLOB_BROKER_CONFIG_ENV = "ULTRAWORKERS_BLOB_BROKER_CONFIG";
 
-/** Stable broker daemon name for the shared blob broker. */
-export const BLOB_BROKER_DAEMON_NAME = "omp.blob.broker";
+/**
+ * Stable broker daemon name for the shared blob broker — what `ultraworkers ps`
+ * shows the user.
+ *
+ * Derived from {@link APP_NAME}, same rule and same reason as
+ * `LSP_MUX_DAEMON_NAME`: this is a human-facing label, so spelling the product
+ * out here is what let it drift. The only consumer is `daemon.ts` in this
+ * package, which starts, describes and stops by this constant.
+ */
+export const BLOB_BROKER_DAEMON_NAME = `${APP_NAME}.blob.broker`;
 
-/** Broker readiness regex matched against the banner printed by the worker. */
-export const BLOB_BROKER_READY_PATTERN = String.raw`omp blob broker serving \S+`;
+/**
+ * Broker readiness regex matched against the banner printed by the worker.
+ *
+ * Deliberately carries NO product name — the banner below leads with
+ * {@link APP_NAME}, so the two ends stay matched across a rename. Same rule as
+ * `ida/protocol.ts` and `relay/daemon.ts:26`.
+ */
+export const BLOB_BROKER_READY_PATTERN = String.raw`blob broker serving \S+`;
 
 /** Banner printed on stdout once the exposure is up and control is listening. */
 export function blobBrokerReadyBanner(baseUrl: string): string {
-	return `omp blob broker serving ${baseUrl}`;
+	return `${APP_NAME} blob broker serving ${baseUrl}`;
 }
 
 /** Resolve the control socket path for one project scope. */

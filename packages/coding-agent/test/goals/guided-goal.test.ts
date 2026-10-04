@@ -36,7 +36,7 @@ type GuidedGoalHarness = {
 
 async function createHarness(options?: { goalEnabled?: boolean }): Promise<GuidedGoalHarness> {
 	resetSettingsForTest();
-	const tempDir = TempDir.createSync("@pi-guided-goal-");
+	const tempDir = TempDir.createSync("@ultraworkers-guided-goal-");
 	await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	const settings = Settings.isolated({
 		"compaction.enabled": false,

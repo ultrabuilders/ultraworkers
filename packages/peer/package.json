@@ -1,0 +1,100 @@
+{
+ "name": "@ultraworkers/peer",
+ "version": "18.4.3",
+ "description": "Cross-session agent messaging and file leases with fencing",
+ "keywords": [
+  "agents",
+  "messaging",
+  "coordination",
+  "leases"
+ ],
+ "homepage": "https://omp.sh",
+ "bugs": {
+  "url": "https://github.com/can1357/oh-my-pi/issues"
+ },
+ "license": "MIT",
+ "author": {
+  "name": "Stencil Labs, Inc.",
+  "url": "https://stencil.so"
+ },
+ "repository": {
+  "type": "git",
+  "url": "git+https://github.com/can1357/oh-my-pi.git",
+  "directory": "packages/peer"
+ },
+ "files": [
+  "src",
+  "extensions",
+  "README.md",
+  "CHANGELOG.md",
+  "LICENSE"
+ ],
+ "type": "module",
+ "sideEffects": false,
+ "main": "./src/index.ts",
+ "types": "./src/index.ts",
+ "omp": {
+  "extensions": [
+   "./extensions"
+  ]
+ },
+ "exports": {
+  ".": {
+   "types": "./src/index.ts",
+   "import": "./src/index.ts"
+  },
+  "./*": {
+   "types": "./src/*.ts",
+   "import": "./src/*.ts"
+  },
+  "./*.js": "./src/*.ts",
+  "./fence": {
+   "types": "./src/fence/index.ts",
+   "import": "./src/fence/index.ts"
+  },
+  "./identity": {
+   "types": "./src/identity/index.ts",
+   "import": "./src/identity/index.ts"
+  },
+  "./inbox": {
+   "types": "./src/inbox/index.ts",
+   "import": "./src/inbox/index.ts"
+  },
+  "./injection": {
+   "types": "./src/injection/index.ts",
+   "import": "./src/injection/index.ts"
+  },
+  "./lease": {
+   "types": "./src/lease/index.ts",
+   "import": "./src/lease/index.ts"
+  },
+  "./presence": {
+   "types": "./src/presence/index.ts",
+   "import": "./src/presence/index.ts"
+  },
+  "./seam": {
+   "types": "./src/seam/index.ts",
+   "import": "./src/seam/index.ts"
+  },
+  "./tools": {
+   "types": "./src/tools/index.ts",
+   "import": "./src/tools/index.ts"
+  },
+  "./transport": {
+   "types": "./src/transport/index.ts",
+   "import": "./src/transport/index.ts"
+  }
+ },
+ "scripts": {
+  "check": "oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts' && bun run check:types",
+  "check:types": "tsgo -p tsconfig.json --noEmit",
+  "lint": "oxlint .",
+  "fix": "oxlint --fix --fix-suggestions . && bun run fmt",
+  "fmt": "oxfmt --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts'",
+  "test": "bun test --parallel"
+ },
+ "dependencies": {
+  "@oh-my-pi/pi-coding-agent": "catalog:",
+  "@oh-my-pi/pi-utils": "catalog:"
+ }
+}

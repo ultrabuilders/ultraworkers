@@ -110,7 +110,7 @@ interface ShutdownHarness {
 }
 
 async function createHarness(): Promise<ShutdownHarness> {
-	const dir = TempDir.createSync("@pi-headless-shutdown-");
+	const dir = TempDir.createSync("@ultraworkers-headless-shutdown-");
 	tempDirs.push(dir);
 	const authStorage = await AuthStorage.create(":memory:");
 	const settings = Settings.isolated({ "marketplace.autoUpdate": "off" });
@@ -193,7 +193,7 @@ describe("headless persistence-failure shutdown path", () => {
 		} catch (error) {
 			// `cli.ts` runs `runCli(...).catch(fatal)`, and `fatal()` renders
 			// `Bun.inspect(error)` onto fd 2. Reproduce that here so the stderr
-			// asserted below is the stderr an `omp --print` user would get.
+			// asserted below is the stderr an `ultraworkers --print` user would get.
 			escaped = error;
 			process.stderr.write(`${Bun.inspect(error, { colors: false })}\n`);
 		} finally {

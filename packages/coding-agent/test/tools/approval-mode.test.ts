@@ -154,21 +154,20 @@ describe("tools.approvalMode setting", () => {
 		).rejects.toThrow(/requires approval but no interactive UI available/);
 	});
 
-	it("critical bash patterns do not prompt in yolo mode with bash allowed", async () => {
+	// This test used to assert that a critical pattern simply did not prompt under
+	// `yolo`, and read the command's "(no output)" to prove it had run. A critical
+	// pattern is a `deny` now rather than an override, so the refusal is stronger
+	// than the old one — it is the same refusal whether or not `yolo` is on.
+	it("critical bash patterns are refused in yolo even when bash is allowed", async () => {
 		const settings = approvalSettings({
 			"tools.approvalMode": "yolo",
 			"tools.approval": { bash: "allow" },
 		});
-		const result = await bashTool().execute(
-			"critical",
-			{ command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
-			undefined,
-			undefined,
-			{
+		await expect(
+			bashTool().execute("critical", { command: "rm -f /tmp/bun-fake-timer-probe.test.ts" }, undefined, undefined, {
 				settings,
-			} as AgentToolContext,
-		);
-		expect(textOf(result)).toContain("(no output)");
+			} as AgentToolContext),
+		).rejects.toThrow('Tool "bash" is blocked by tool policy.\nReason: Critical pattern detected');
 	});
 
 	it("attributes bash pattern denies to tool policy", async () => {
@@ -192,19 +191,23 @@ describe("tools.approvalMode setting", () => {
 		expect(textOf(result)).toContain("override");
 	});
 
-	it("CLI --auto-approve also bypasses safety-override patterns", async () => {
+	// `--auto-approve` still forces yolo for ordinary calls (the test above), but it
+	// no longer reaches a critical pattern: the command is refused before any mode
+	// or auto-approve flag is consulted.
+	it("CLI --auto-approve does not reach a critical bash pattern", async () => {
 		const settings = approvalSettings({ "tools.approvalMode": "always-ask" });
-		const result = await bashTool().execute(
-			"cli-critical",
-			{ command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
-			undefined,
-			undefined,
-			{
-				settings,
-				autoApprove: true,
-			} as AgentToolContext,
-		);
-		expect(textOf(result)).toContain("(no output)");
+		await expect(
+			bashTool().execute(
+				"cli-critical",
+				{ command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
+				undefined,
+				undefined,
+				{
+					settings,
+					autoApprove: true,
+				} as AgentToolContext,
+			),
+		).rejects.toThrow('Tool "bash" is blocked by tool policy.\nReason: Critical pattern detected');
 	});
 
 	it("xd:// dispatch approval (xdevApproved) suppresses the tier-only re-prompt", async () => {
@@ -242,7 +245,7 @@ describe("tools.approvalMode setting", () => {
 		).rejects.toThrow(/blocked by user policy/);
 	});
 
-	it("ACP-approved arguments satisfy explicit user and tool-override prompts", async () => {
+	it("ACP-approved arguments satisfy an explicit user prompt but not a critical pattern", async () => {
 		const promptSettings = approvalSettings({
 			"tools.approvalMode": "always-ask",
 			"tools.approval": { bash: "prompt" },
@@ -259,18 +262,24 @@ describe("tools.approvalMode setting", () => {
 		);
 		expect(textOf(explicitResult)).toContain("acp-explicit");
 
+		// The tool-override half used to run here. A critical pattern was an override,
+		// `yolo` resolves an override to allow, and ACP approval agreed — so both routes
+		// opened it. It is a deny now, which is decided before either is consulted, so
+		// ACP approval cannot satisfy it. This is a different refusal from the one
+		// below: that is a user `bash.patterns` deny, this is the tool's own.
 		const overrideSettings = approvalSettings({ "tools.approvalMode": "always-ask" });
-		const overrideResult = await bashTool().execute(
-			"acp-tool-override",
-			{ command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
-			undefined,
-			undefined,
-			{
-				settings: overrideSettings,
-				acpApprovedArgs: { command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
-			} as AgentToolContext,
-		);
-		expect(textOf(overrideResult)).toContain("(no output)");
+		await expect(
+			bashTool().execute(
+				"acp-tool-override",
+				{ command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
+				undefined,
+				undefined,
+				{
+					settings: overrideSettings,
+					acpApprovedArgs: { command: "rm -f /tmp/bun-fake-timer-probe.test.ts" },
+				} as AgentToolContext,
+			),
+		).rejects.toThrow('Tool "bash" is blocked by tool policy.\nReason: Critical pattern detected');
 	});
 
 	it("ACP-approved arguments do not bypass deny policies", async () => {

@@ -135,26 +135,38 @@ export function getOrCreateAdvisorProviderSessionId(
 	return next;
 }
 
-/** Built tool names, for validating an advisor's `tools` list. */
-const KNOWN_TOOL_NAMES = new Set<string>(BUILTIN_TOOL_NAMES);
-
 /**
- * Keep only valid tool names from an advisor's `tools` list, dropping unknowns
- * with a warning. The advisor is a full agent, so any built tool may be granted;
- * the runtime further filters to what's actually available this session.
+ * Normalize an advisor's `tools` list, dropping nothing.
+ *
+ * The names are not validated here. This used to filter against a closed set of
+ * `BUILTIN_TOOL_NAMES`, which quietly deleted any tool an extension registered —
+ * the one list a config author could not predict, and the reason the drop was
+ * invisible on screen.
+ *
+ * Nothing needs to be validated: `session-advisors.ts` intersects this list with
+ * the tools the session actually has, so an unknown name matches nothing and
+ * costs nothing. Deleting the name here bought no safety and lost the ability
+ * to name a plugin's tool at all.
+ *
  * `undefined` means "use the default subset" (read/grep/glob); only an explicit
  * raw empty list means "no tools".
  */
 function filterAdvisorTools(tools: string[] | undefined, sourcePath: string): string[] | undefined {
 	if (tools === undefined) return undefined;
 	if (tools.length === 0) return [];
-	// Normalize legacy aliases (search→grep, find→glob) and dedupe before validating.
-	const filtered = normalizeToolNames(tools).filter(name => {
-		if (KNOWN_TOOL_NAMES.has(name)) return true;
-		logger.warn("Advisor config: dropping unknown tool", { path: sourcePath, tool: name });
-		return false;
-	});
-	return filtered.length > 0 ? filtered : undefined;
+	// Normalize legacy aliases (search→grep, find→glob) and dedupe. A name that
+	// resolves to nothing is reported and kept, so a `WATCHDOG.yml` naming an
+	// extension's tool keeps working when that extension loads.
+	const normalized = normalizeToolNames(tools);
+	for (const name of normalized) {
+		if (!BUILTIN_TOOL_NAMES.includes(name as (typeof BUILTIN_TOOL_NAMES)[number])) {
+			logger.debug("Advisor config: tool is not built-in; resolving it against the session", {
+				path: sourcePath,
+				tool: name,
+			});
+		}
+	}
+	return normalized;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import {
 	buildDesktopNotifyCommand,
 	type DesktopNotifier,
@@ -105,10 +106,10 @@ describe("buildDesktopNotifyCommand", () => {
 		expect(buildDesktopNotifyCommand(notifySend, "ping")).toEqual([
 			"/usr/bin/notify-send",
 			"--app-name",
-			"omp",
+			APP_NAME,
 			"--urgency=normal",
 			"--expire-time=5000",
-			"omp",
+			APP_NAME,
 			"ping",
 		]);
 	});
@@ -123,7 +124,7 @@ describe("buildDesktopNotifyCommand", () => {
 		).toEqual([
 			"/usr/bin/notify-send",
 			"--app-name",
-			"omp",
+			APP_NAME,
 			"--urgency=critical",
 			"--expire-time=5000",
 			"Session 12",
@@ -135,16 +136,16 @@ describe("buildDesktopNotifyCommand", () => {
 		expect(buildDesktopNotifyCommand(notifySend, { title: "   ", body: "Waiting for input" })).toEqual([
 			"/usr/bin/notify-send",
 			"--app-name",
-			"omp",
+			APP_NAME,
 			"--urgency=normal",
 			"--expire-time=5000",
-			"omp",
+			APP_NAME,
 			"Waiting for input",
 		]);
 	});
 
 	it("produces a freedesktop Notify call for gdbus including the urgency hint byte", () => {
-		expect(buildDesktopNotifyCommand(gdbus, { title: "omp", body: "ping", urgency: "low" })).toEqual([
+		expect(buildDesktopNotifyCommand(gdbus, { title: APP_NAME, body: "ping", urgency: "low" })).toEqual([
 			"/usr/bin/gdbus",
 			"call",
 			"--session",
@@ -154,10 +155,10 @@ describe("buildDesktopNotifyCommand", () => {
 			"/org/freedesktop/Notifications",
 			"--method",
 			"org.freedesktop.Notifications.Notify",
-			"omp",
+			APP_NAME,
 			"0",
 			"",
-			"omp",
+			APP_NAME,
 			"ping",
 			"[]",
 			'{"urgency": <byte 0>}',
@@ -193,7 +194,7 @@ describe("sendDesktopNotification", () => {
 		expect(opts.cmd).toEqual([
 			"/usr/bin/notify-send",
 			"--app-name",
-			"omp",
+			APP_NAME,
 			"--urgency=normal",
 			"--expire-time=5000",
 			"Session",

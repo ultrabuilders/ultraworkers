@@ -27,6 +27,7 @@ import {
 	procmgr,
 } from "@oh-my-pi/pi-utils";
 import { withFileLock } from "@oh-my-pi/pi-utils/file-lock";
+import { KEYBINDINGS_YAML, KEYBINDINGS_YML } from "@oh-my-pi/pi-tui/app-keybindings";
 import { isLightTheme } from "@oh-my-pi/pi-tui/theme/theme";
 import { JSONC, YAML } from "bun";
 import { invalidate as invalidateCapabilityFsCache } from "../capability/fs";
@@ -54,6 +55,7 @@ import {
 import "./all-settings";
 import { cfgModelRoles, cfgModelRoleStorage } from "./model-settings";
 import { cfgShellPath } from "../exec/settings";
+import { runConfigReloadPass, WatchSourceAccumulator } from "./reload-observer";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -322,7 +324,7 @@ function settingsGroupOnlyPrefixes(): Readonly<Record<string, true>> {
  * Drop entries from capability-provided project settings whose non-object
  * value would shadow an entire settings group. `.claude/settings.json` is
  * shared with other tools, and a foreign leaf like `"tui": "fullscreen"`
- * deep-merges over omp's `tui` group, silently replacing every `tui.*`
+ * deep-merges over ultraworkers' `tui` group, silently replacing every `tui.*`
  * setting for sessions rooted in that project. Values at schema leaves,
  * unknown keys, and well-formed nested objects pass through unchanged.
  */
@@ -648,6 +650,15 @@ export class Settings {
 	#watchingFiles = false;
 	/** Directory watchers for config sources, keyed by directory, with the basenames that trigger a reload. */
 	#fileWatchers = new Map<string, { watcher: fs.FSWatcher; names: Set<string> }>();
+	/**
+	 * Watched paths that changed since the last completed pass, so a reload can say
+	 * WHICH files the user edited. A set, not a single field: one debounced pass
+	 * merges every file that changed inside the window, and a handler told about
+	 * only the last one cannot see the co-applied edits. Empty until the first
+	 * event: a reload can also be triggered directly, and naming no file is better
+	 * than naming a stale one.
+	 */
+	#pendingWatchSources = new WatchSourceAccumulator();
 	/** Debounce timer for watcher-triggered reloads. */
 	#watchReloadTimer?: NodeJS.Timeout;
 
@@ -659,8 +670,32 @@ export class Settings {
 		this.#agentDir = path.normalize(options.agentDir ?? getAgentDir());
 		this.#configPath = options.inMemory ? null : path.join(this.#agentDir, MAIN_CONFIG_FILENAMES[0]);
 		const configFiles = process.env.PI_CONFIG_FILES?.split(path.delimiter).filter(Boolean) ?? [];
+		// Global `--config` overlays sit between the environment variable and this
+		// call's own `configFiles`, because that is the order they were typed:
+		// `docs/config-usage.md` has `PI_CONFIG_FILES` loading before the `--config`
+		// files, and a command-position `--config` is a `--config` file like any other.
+		configFiles.push(...globalConfigFiles);
 		if (options.configFiles) configFiles.push(...options.configFiles);
-		this.#configFiles = configFiles.map(file => path.resolve(this.#cwd, expandTilde(file)));
+		this.#configFiles = configFiles
+			// A blank operand is not a path. `--config=` parses to `""`, and `path.resolve`
+			// turns it into the cwd DIRECTORY, which the strict overlay reader then rejects
+			// with "Directories cannot be read like files" — a hard error about a file the
+			// user never named.
+			//
+			// Filtered HERE, at the one line every source passes through, rather than at
+			// each producer. Filtering upstream covers only the producers you remembered,
+			// and there are five, not the three this originally claimed: `PI_CONFIG_FILES`
+			// (line above), the launch-flag channel (re-arms on every invoke), and three
+			// call-sites passing `options.configFiles` — `main.ts`, `cli/models-cli.ts`, and
+			// `cli/config-cli.ts`. Only the first two are reachable from the launch-flag
+			// parser; the last two never touch it.
+			//
+			// The test trims but the VALUE is passed through untouched. Trimming the value
+			// instead would reject a legal POSIX filename ending in whitespace:
+			// `/tmp/x/trail.yml ` exists, and `trim()` turns it into `/tmp/x/trail.yml`,
+			// which does not. Blankness is a property to test for, not to normalise away.
+			.filter(file => file.trim().length > 0)
+			.map(file => path.resolve(this.#cwd, expandTilde(file)));
 		this.#persist = !options.inMemory && options.readOnly !== true;
 		liveSettingsInstances.add(new WeakRef(this));
 		if (options.overrides) this.#overrides = this.#overrideLayer(options.overrides);
@@ -1111,6 +1146,14 @@ export class Settings {
 			if (real !== file) addTarget(path.dirname(real), path.basename(real));
 		};
 		for (const filename of MAIN_CONFIG_FILENAMES) addFile(path.join(this.#agentDir, filename));
+		// Keybindings are the user's own config and live in the agent dir, so editing them is a
+		// config edit like any other. The names are imported from the loader rather than spelled
+		// out here: a watcher that spelled them out would be a second copy of a name the loader
+		// already owns, and renaming the loader to `.yaml` would leave it firing on a file
+		// nothing opens. `keybindings.json` is deliberately absent — it is migrated to `.yml` on
+		// load, so watching it arms a watcher on a path the running process never reads.
+		addFile(path.join(this.#agentDir, KEYBINDINGS_YML));
+		addFile(path.join(this.#agentDir, KEYBINDINGS_YAML));
 		const projectCwd = path.resolve(this.#cwd);
 		const projectConfigDir = getProjectAgentDir(projectCwd);
 		addFile(path.join(projectConfigDir, "config.yml"));
@@ -1145,6 +1188,7 @@ export class Settings {
 					const entry = this.#fileWatchers.get(dir);
 					if (!entry || entry.watcher !== watcher) return;
 					if (filename && !entry.names.has(path.basename(filename.toString()))) return;
+					this.#pendingWatchSources.add(filename ? path.join(dir, filename.toString()) : dir);
 					this.#scheduleWatchReload();
 				});
 			} catch (error) {
@@ -1173,11 +1217,31 @@ export class Settings {
 
 	async #reloadFromWatch(): Promise<void> {
 		if (!this.#watchingFiles) return;
-		try {
-			await this.#exclusive("keep-last-good", () => this.#reloadPersistedLayers("keep-last-good"));
-		} catch (error) {
-			logger.warn("Settings: failed to apply on-disk config change", { error: String(error) });
+		// Asked before the apply, not after: a handler that only learns a config
+		// edit landed has already lost the chance to hold it. A deferral leaves the
+		// previous values in force and the watcher armed, so the next edit retries —
+		// the user's change is never dropped.
+		const sources = this.#pendingWatchSources.snapshot();
+		// The veto/apply/notify order lives in `runConfigReloadPass` so the pairing —
+		// a held pass produces no notification — is reachable without a process-global
+		// watcher. `apply` swallows its own failure exactly as it did inline: the pass
+		// is over either way, and the after-handlers are told so.
+		const pass = await runConfigReloadPass({ sources }, async () => {
+			try {
+				await this.#exclusive("keep-last-good", () => this.#reloadPersistedLayers("keep-last-good"));
+			} catch (error) {
+				logger.warn("Settings: failed to apply on-disk config change", { error: String(error) });
+			}
+		});
+		if (!pass.applied) {
+			logger.debug("Settings: config reload deferred by an observer", { sources, reasons: pass.deferrals });
+			this.#syncFileWatchers();
+			return;
 		}
+		// The pass is over, so its sources are history. A deferral returns above
+		// without clearing, because that edit was never applied and the retry has
+		// to name it again.
+		this.#pendingWatchSources.clear();
 		// Sources may have appeared, moved, or vanished; re-target the watchers.
 		this.#syncFileWatchers();
 	}
@@ -1261,6 +1325,10 @@ export class Settings {
 	async reloadFromDisk(): Promise<void> {
 		if (!this.#persist) return;
 		await this.#exclusive("strict", () => this.#reloadPersistedLayers("strict"));
+		// Everything on disk is now applied, so no watched change is outstanding.
+		// Skipped on the throwing path above, where the reload did not land and the
+		// sources are still pending.
+		this.#pendingWatchSources.clear();
 	}
 
 	/**
@@ -3795,6 +3863,40 @@ export function withActiveSettings<T>(instance: Settings | undefined, fn: () => 
 
 let globalInstance: Settings | null = null;
 let globalInstancePromise: Promise<Settings> | null = null;
+
+/**
+ * Overlays requested on the global flag surface (`ultraworkers --config <path>`),
+ * before the command token.
+ *
+ * The CLI runner removes those flags from the argv a subcommand parses — a command
+ * that declares no `--config` rejects the token outright (#8891) — so the value
+ * cannot reach {@link Settings} through `SettingsOptions` at the call sites. About
+ * twenty of them under `src/cli/` each initialize settings with their own `cwd`, and
+ * threading a parameter through every one to carry a value they all share would put
+ * the same overlay in twenty places to forget.
+ *
+ * Hence one place, set once before dispatch, read by every instance. The
+ * alternative — an explicit field threaded from the runner — was built first and is
+ * exactly this problem with more code: it fixed one call site out of twenty and
+ * needed the other nineteen edited individually.
+ *
+ * Ambient by design, like `PI_CONFIG_FILES` on the line above it and like
+ * {@link getProjectDir}: these describe the launch, not any one command.
+ */
+let globalConfigFiles: readonly string[] = [];
+
+/**
+ * Record the `--config` overlays this launch asked for. Called by the CLI runner
+ * before it dispatches a command, so every settings instance built afterwards
+ * loads them. A later call replaces the list rather than adding to it, because a
+ * runner runs once per process and an accumulating setter would make a second
+ * call's overlays silently apply to a run that never asked for them.
+ *
+ * @internal
+ */
+export function setGlobalConfigFiles(files: readonly string[]): void {
+	globalConfigFiles = [...files];
+}
 let boundSettingsInstance: Settings | null = null;
 let boundSettingsMethods = new Map<PropertyKey, unknown>();
 
@@ -3852,6 +3954,12 @@ export function resetSettingsForTest(): void {
 	liveSettingsInstances.clear();
 	globalInstance = null;
 	globalInstancePromise = null;
+	// The recorded global `--config` overlay is process state too. Without this a
+	// test that sets it hands the overlay to every later test in the same process,
+	// and to any second `runCli` call — which is exactly what an in-process runner
+	// or an SDK embedding does. It is never cleared on the production path either,
+	// because there the runner is documented to run once.
+	globalConfigFiles = [];
 	clearBoundSettingsMethods();
 	// Effect-owned process state (theme, redaction, request limits, …) returns to its defaults.
 	resetRegistryForTest(Settings.isolated());

@@ -2,8 +2,15 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `TelemetryContext` is now `AgentTelemetryContext`, and nothing outside this package referenced it. Two different contracts in one workspace were sharing that name: this one is synchronous (`startSpan(name, fn): T`, a bare name, a `"unset" | "ok" | "error"` status), while `@oh-my-pi/pi-telemetry` exports a `TelemetryContext` that is asynchronous (`startSpan(options, cb): Promise<T>`, an options object, an object-shaped status). Neither is assignable to the other, so the compiler rejects a mix-up — but two same-named contracts still invite the import that has to be rechecked, and the failure lands at the seam rather than at the import. The package keeps the bare name deliberately: `pi` names its telemetry contract `TelemetryContext`, so that is the parity-preserving name, and the agent runtime's copy is the one that moves. It also reads as what it pairs with — `AgentTelemetryConfig`, already exported here and already used by `sdk.ts`
+
 ### Fixed
 
+- The package README told you to `npm install @oh-my-pi/pi-agent` and imported from that name in every
+  example. No such package has ever been published — the install 404s and the imports do not resolve.
+  The package is `@oh-my-pi/pi-agent-core`, and all seven references now name it
 - Span failure details are now bounded before they are exported: a depth and byte budget, and only
   allowlisted fields. A payload carrying a key outside the allowlist is refused rather than exported
   in part. Every span that records an exception — chat, tool execution and run level — now records a
@@ -11,8 +18,23 @@
 
 ### Added
 
+- Deterministic context reduction: `collapseToolResultRuns` folds a run of same-kind `read`/`grep`/`bash`
+  results into one line naming what they covered, and `shrinkVerboseAssistantText` truncates older
+  over-budget assistant answers behind a `[response shrunk]` marker. Both take the same shape as the
+  compaction prune pass, so an extension registers one with `registerContextTransform` and the
+  summarizer is billed for shape rather than bytes. Neither runs unless the whole pass clears a savings
+  threshold — a rewrite that reclaims a handful of tokens costs more in prompt-cache churn than it
+  returns
+- A vendor-neutral telemetry contract (`TelemetryContext`/`TelemetrySpan`) with a no-op backend, an
+  in-memory recording backend, and a shared conformance suite any backend can be run against — so a
+  second telemetry backend is an adapter rather than an edit of every call site
 - Emergency compaction floors: a session that holds too much heap, serialized context, images, messages, or
   transcript on disk now compacts even when it is under its token threshold
+- `derivationInvariant` on the agent and agent loop: asserts on every provider request that the messages
+  sent are reproducible from the message history, so a transform, converter or provider normalization
+  that stops being a pure function of its input fails at the call site instead of silently sending a
+  history the session does not hold. On by default under `bun test` for pipelines with no
+  `transformContext`, and off in production; set it explicitly for a pipeline whose transform is pure
 
 ### Changed
 

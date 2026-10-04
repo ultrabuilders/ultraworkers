@@ -34,19 +34,19 @@ All providers normalize source files into `Rule`:
 
 ```ts
 interface Rule {
-  name: string;
-  path: string;
-  content: string;
-  globs?: string[];
-  alwaysApply?: boolean;
-  description?: string;
-  condition?: string[];
-  astCondition?: string[];
-  question?: string;
-  scope?: string[];
-  agents?: string[];
-  interruptMode?: "never" | "prose-only" | "tool-only" | "always";
-  _source: SourceMeta;
+	name: string;
+	path: string;
+	content: string;
+	globs?: string[];
+	alwaysApply?: boolean;
+	description?: string;
+	condition?: string[];
+	astCondition?: string[];
+	question?: string;
+	scope?: string[];
+	agents?: string[];
+	interruptMode?: "never" | "prose-only" | "tool-only" | "always";
+	_source: SourceMeta;
 }
 ```
 
@@ -74,7 +74,7 @@ Loads `.omp` rules from:
 - project rules: `<cwd>/.omp/rules/*.{md,mdc}` when the cwd's `.omp/` directory is non-empty
 - user rules: `<active-native-agent-dir>/rules/*.{md,mdc}`
 - sticky user rule: `<active-native-agent-dir>/RULES.md`
-- sticky project rule: `RULES.md` from the nearest non-empty `.omp/` directory selected while walking from cwd toward the repository root; OMP does not continue farther when that directory lacks the file
+- sticky project rule: `RULES.md` from the nearest non-empty `.omp/` directory selected while walking from cwd toward the repository root; ultraworkers does not continue farther when that directory lacks the file
 
 The active native agent directory is `~/.omp/agent` by default, follows named profiles, and honors `PI_CODING_AGENT_DIR`.
 
@@ -147,7 +147,7 @@ Loads `*.instructions.md` recursively from:
 - project: `<cwd>/.github/instructions/`
 - user: `<dir>/.github/instructions/` for every directory in the comma-separated `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`
 
-The filename without `.instructions.md` is the rule name. Shared Markdown parsing still recognizes normal OMP rule metadata, including TTSR fields. GitHub's `applyTo` is additionally normalized as follows:
+The filename without `.instructions.md` is the rule name. Shared Markdown parsing still recognizes normal ultraworkers rule metadata, including TTSR fields. GitHub's `applyTo` is additionally normalized as follows:
 
 - a comma-separated string (or tolerated YAML array) becomes `globs`;
 - `*`, `**`, or `**/*` makes the rule always-apply and clears `globs`;
@@ -261,14 +261,14 @@ After rule discovery in `createAgentSession` (`sdk.ts`), `bucketRules(...)` appl
 - Filtering happens once, in `bucketRules(...)` at session creation, before TTSR registration: an unmatched rule joins no bucket, is never compiled into `TtsrManager`, and is not addressable via `rule://` in that session.
 - Subagents receive the parent's unfiltered discovered rule list and re-evaluate `agents` under their own name, so a scout-only rule loads in scouts and nowhere else.
 
-  ```yaml
-  agents: [scout, "foreman-*"]
-  ```
+   ```yaml
+   agents: [scout, "foreman-*"]
+   ```
 
-  ```yaml
-  # Main agent only; every subagent ignores this rule:
-  agents: main
-  ```
+   ```yaml
+   # Main agent only; every subagent ignores this rule:
+   agents: main
+   ```
 
 ### `condition`, `astCondition`, `question`, `scope`, and `interruptMode`
 
@@ -276,34 +276,35 @@ After rule discovery in `createAgentSession` (`sdk.ts`), `bucketRules(...)` appl
 - `astCondition` is the ast-grep trigger field: a string or YAML sequence of structural patterns, kept verbatim (no glob inference). It only matches on edit/write tool streams, where the language is inferred from the file path. A rule may set `condition`, `astCondition`, or both.
 - `question` makes the rule **judged**: a single natural-language yes/no question the `judge` model role answers about each completed in-scope output (reply, reasoning, or tool call). It never matches mid-stream and never interrupts; a yes delivers the rule as a warning (see `ttsr-injection-lifecycle.md` §10). When `condition`/`astCondition` are also set they only gate whether the question is asked, which keeps judge cost down. Runs per `ttsr.judge` (`auto` requires a native TypeSafe jev judge).
 
-  ```yaml
-  question: "Does the reply claim tests pass without showing they were run?"
-  scope: text
-  ```
+   ```yaml
+   question: "Does the reply claim tests pass without showing they were run?"
+   scope: text
+   ```
+
 - `scope` narrows TTSR matching to an allowlist of stream surfaces. It accepts either a comma-separated YAML string or a YAML sequence. Omitting it watches assistant prose (`text`) and all tool arguments (`tool`), but not thinking.
 
-  ```yaml
-  # Prose and thinking; equivalent forms:
-  scope: "text, thinking"
-  ```
+   ```yaml
+   # Prose and thinking; equivalent forms:
+   scope: "text, thinking"
+   ```
 
-  ```yaml
-  scope: [text, thinking]
-  ```
+   ```yaml
+   scope: [text, thinking]
+   ```
 
-  ```yaml
-  # A block-style YAML sequence is also valid:
-  scope:
-    - text
-    - thinking
-  ```
+   ```yaml
+   # A block-style YAML sequence is also valid:
+   scope:
+      - text
+      - thinking
+   ```
 
-  ```yaml
-  # Only TypeScript source snapshots produced by edit/write:
-  scope: "tool:edit(*.ts), tool:write(*.ts)"
-  ```
+   ```yaml
+   # Only TypeScript source snapshots produced by edit/write:
+   scope: "tool:edit(*.ts), tool:write(*.ts)"
+   ```
 
-  Valid tokens are `text`, `thinking`, `tool` (or `toolcall`), and `tool:<name>(<path-glob>)`. The parser tolerates the malformed fallback spelling `scope: "text","thinking"`, but portable rule files should put the comma inside one YAML string or use a YAML sequence.
+   Valid tokens are `text`, `thinking`, `tool` (or `toolcall`), and `tool:<name>(<path-glob>)`. The parser tolerates the malformed fallback spelling `scope: "text","thinking"`, but portable rule files should put the comma inside one YAML string or use a YAML sequence.
 
 - A `condition` token that looks like a file glob becomes `tool:edit(<glob>)` and `tool:write(<glob>)` scope entries plus catch-all condition `.*`; `astCondition` tokens never trigger this shorthand.
 - `interruptMode` can override the global TTSR interrupt mode for the rule.
@@ -324,11 +325,7 @@ This is advisory/contextual: prompt text asks the model to read applicable rules
 installed once per top-level session in `sdk.ts`:
 
 ```ts
-setActiveRules([
-  ...rulebookRules,
-  ...alwaysApplyRules,
-  ...ttsrManager.getRules(),
-]);
+setActiveRules([...rulebookRules, ...alwaysApplyRules, ...ttsrManager.getRules()]);
 ```
 
 Implications:

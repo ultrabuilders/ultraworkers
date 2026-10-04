@@ -1,10 +1,10 @@
 import { clearSubmittedText } from "./helpers/draft";
-import { reset as resetCapabilities } from "../capability";
+import { invalidateAllCaches } from "../capability";
 import {
 	clearPluginRootsAndCaches,
 	resolveActiveProjectRegistryPath,
 	resolveOrDefaultProjectRegistryPath,
-} from "../discovery/helpers.js";
+} from "../discovery/helpers";
 import { PluginManager } from "../extensibility/plugins";
 import {
 	getInstalledPluginsRegistryPath,
@@ -34,7 +34,7 @@ export async function reloadTuiPluginState(ctx: InteractiveModeContext): Promise
 	await refreshAgentDiscovery(ctx.sessionManager.getCwd(), ctx.session.effectiveExtensionRoots);
 	await ctx.refreshSkillState();
 	await ctx.refreshSlashCommandState();
-	resetCapabilities();
+	invalidateAllCaches();
 	if (ctx.mcpManager) {
 		await new MCPCommandController(ctx).reloadServers();
 	}

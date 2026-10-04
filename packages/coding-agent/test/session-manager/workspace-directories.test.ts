@@ -89,7 +89,7 @@ describe("SessionManager workspace directories", () => {
 	});
 
 	it("persists additionalDirectories in the session header across reopen", async () => {
-		using tempDir = TempDir.createSync("@pi-session-workspace-persist-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-workspace-persist-");
 		const session = SessionManager.create(tempDir.path(), tempDir.path());
 		await session.addWorkspaceDirectory(path.join(tempDir.path(), "sibling"));
 		// Materialize on disk so reopen reads the header (lazy gate needs assistant output).
@@ -107,7 +107,7 @@ describe("SessionManager workspace directories", () => {
 	});
 
 	it("clears the header field when the last additional directory is removed", async () => {
-		using tempDir = TempDir.createSync("@pi-session-workspace-clear-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-workspace-clear-");
 		const session = SessionManager.create(tempDir.path(), tempDir.path());
 		await session.addWorkspaceDirectory(path.join(tempDir.path(), "extra"));
 		session.appendMessage(makeAssistantMessage());
@@ -134,7 +134,7 @@ describe("SessionManager workspace directories", () => {
 	});
 
 	it("setAdditionalDirectories persists the updated header on a resumed session", async () => {
-		using tempDir = TempDir.createSync("@pi-session-workspace-resume-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-workspace-resume-");
 		const session = SessionManager.create(tempDir.path(), tempDir.path());
 		// Simulate a resumed session: append an assistant message so the file exists, then setAdditionalDirectories.
 		session.appendMessage(makeAssistantMessage());
@@ -152,7 +152,7 @@ describe("SessionManager workspace directories", () => {
 	});
 
 	it("keeps seeded roots in memory until the session is durable (no empty session file)", async () => {
-		using tempDir = TempDir.createSync("@pi-session-workspace-lazy-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-workspace-lazy-");
 		const session = SessionManager.create(tempDir.path(), tempDir.path());
 		await session.setAdditionalDirectories([path.join(tempDir.path(), "extra")]);
 		await session.addWorkspaceDirectory(path.join(tempDir.path(), "extra2"));
@@ -170,7 +170,7 @@ describe("SessionManager workspace directories", () => {
 	});
 
 	it("forkFrom preserves additionalDirectories from the source session", async () => {
-		using tempDir = TempDir.createSync("@pi-session-workspace-fork-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-workspace-fork-");
 		const source = SessionManager.create(tempDir.path(), tempDir.path());
 		await source.addWorkspaceDirectory(path.join(tempDir.path(), "extra"));
 		source.appendMessage(makeAssistantMessage());

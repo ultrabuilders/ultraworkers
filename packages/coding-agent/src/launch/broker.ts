@@ -3,7 +3,16 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { FileLock, Process, type PtyRunResult, PtySession } from "@oh-my-pi/pi-natives";
-import { isEnoent, isRecord, logger, postmortem, procmgr, sanitizeText, setProcessName } from "@oh-my-pi/pi-utils";
+import {
+	APP_NAME,
+	isEnoent,
+	isRecord,
+	logger,
+	postmortem,
+	procmgr,
+	sanitizeText,
+	setProcessName,
+} from "@oh-my-pi/pi-utils";
 import { TerminalQueryResponder } from "@oh-my-pi/pi-utils/vterm";
 import { hostHasInheritableConsole } from "../eval/py/spawn-options";
 import {
@@ -362,7 +371,7 @@ async function holdsLiveForeignLease(pidPath: string, endpoint: string): Promise
  * Claim the one-broker-per-scope lease. The native lock is process-owned, so
  * the OS releases it however the broker dies — a crashed broker can never wedge
  * the scope behind a stale lease again (issue #11080). `broker.pid` stays as
- * human-readable metadata for `omp ps` and dead-scope pruning.
+ * human-readable metadata for `ultraworkers ps` and dead-scope pruning.
  */
 async function acquireBrokerLease(runtimeDir: string, endpoint: string): Promise<BrokerLease | null> {
 	const pidPath = path.join(runtimeDir, PID_FILE);
@@ -538,7 +547,7 @@ class DaemonBroker {
 		let id = "unknown";
 		try {
 			const decoded: unknown = JSON.parse(line);
-			// Correlate before validating: an operation this broker cannot parse (a newer omp
+			// Correlate before validating: an operation this broker cannot parse (a newer ultraworkers
 			// reaching a broker that predates it) must fail the caller's request, not strand it
 			// until the client-side timeout.
 			if (isRecord(decoded) && typeof decoded.id === "string") id = decoded.id;
@@ -1538,8 +1547,8 @@ export async function startDaemonBrokerFromEnvironment(options: DaemonBrokerStar
 	// releases on exit, so keeping `lease` referenced keeps the scope owned.
 	const lease = await acquireBrokerLease(runtimeDir, endpoint);
 	if (!lease) return;
-	setProcessName("omp daemon broker");
-	// Record the scope's project dir so `omp ps` can map this hash-keyed runtime
+	setProcessName(`${APP_NAME} daemon broker`);
+	// Record the scope's project dir so `ultraworkers ps` can map this hash-keyed runtime
 	// dir back to its project (and derive the Windows pipe name) offline.
 	void writeDaemonScopeMeta(runtimeDir, projectDir).catch(error => {
 		logger.warn("Failed to record daemon scope metadata", {

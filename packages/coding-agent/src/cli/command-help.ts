@@ -1,13 +1,14 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import type { CommandMetadata } from "@oh-my-pi/pi-utils/cli";
 
 export const acpHelp = {
-	description: "Run omp as an ACP (Agent Client Protocol) server over stdio",
+	description: `Run ${APP_NAME} as an ACP (Agent Client Protocol) server over stdio`,
 } satisfies CommandMetadata;
 
 export const agentsHelp = { description: "Manage bundled task agents" } satisfies CommandMetadata;
 
 export const authBrokerHelp = {
-	description: "Manage the omp auth-broker (credential vault)",
+	description: `Manage the ${APP_NAME} auth-broker (credential vault)`,
 } satisfies CommandMetadata;
 
 export const authGatewayHelp = {
@@ -50,6 +51,14 @@ export const compressHelp = {
 
 export const configHelp = { description: "Manage configuration settings" } satisfies CommandMetadata;
 
+export const extensionsTriageHelp = {
+	description: "List every discovered extension with its load state and the reason it is blocked",
+} satisfies CommandMetadata;
+
+export const approvalAuditHelp = {
+	description: "Show who approved each tool call in a session transcript, and which prompts were never resolved",
+} satisfies CommandMetadata;
+
 export const dryBalanceHelp = {
 	description: "Dry-run OAuth account balancing across random session ids",
 } satisfies CommandMetadata;
@@ -58,6 +67,9 @@ export const galleryHelp = {
 	description: "Preview tool, composer, and status-line renderers in a deterministic visual gallery",
 } satisfies CommandMetadata;
 
+export const doctorHelp = {
+	description: "Diagnose whether this environment can run the agent (PATH, log directory mode, theme and tool seams)",
+} satisfies CommandMetadata;
 export const gcHelp = { description: "Run storage garbage collection" } satisfies CommandMetadata;
 export const ifBenchHelp = {
 	description:
@@ -69,6 +81,10 @@ export const gitHelp = {
 
 export const findHelp = {
 	description: "Semantic search: describe a behavior, get the files and line ranges that implement it",
+} satisfies CommandMetadata;
+
+export const sessionHelp = {
+	description: "List, archive, or restore sessions",
 } satisfies CommandMetadata;
 
 export const grepHelp = { description: "Test grep tool" } satisfies CommandMetadata;
@@ -139,7 +155,7 @@ export const sshHelp = { description: "Manage SSH host configurations" } satisfi
 export const statsHelp = { description: "View usage statistics" } satisfies CommandMetadata;
 
 export const streamHelp = {
-	description: "Broadcast local omp session screens and chat to your public live channel",
+	description: `Broadcast local ${APP_NAME} session screens and chat to your public live channel`,
 } satisfies CommandMetadata;
 
 export const tinyModelsHelp = {

@@ -42,7 +42,11 @@ import type { InteractiveModeContext } from "../../modes/types";
 import { ContextUsageView } from "@oh-my-pi/pi-tui/status-line/context-usage";
 import { JobsPanel } from "@oh-my-pi/pi-tui/overlays/jobs-panel";
 import { computeSessionContextBreakdown } from "../../session/context-usage-runtime";
-import { buildHotkeysMarkdown, HotkeysSheetComponent } from "@oh-my-pi/pi-tui/hotkeys-markdown";
+import {
+	buildHotkeysMarkdown,
+	type HotkeyGroupContribution,
+	HotkeysSheetComponent,
+} from "@oh-my-pi/pi-tui/hotkeys-markdown";
 import { isNativeRendering } from "@oh-my-pi/pi-tui/native/state";
 import { buildToolsMarkdown } from "@oh-my-pi/pi-tui/prompt/tools-markdown";
 import type { AsyncJobSnapshotItem } from "../../session/agent-session";
@@ -57,6 +61,7 @@ import {
 	type SessionWorktree,
 } from "../../session/session-worktree";
 import { formatShakeSummary, type ShakeMode, type ShakeResult } from "../../session/shake-types";
+import type { UsageBreakdown } from "../../session/usage-breakdown";
 import {
 	codexUsagePlan,
 	formatActiveAccountLabel,
@@ -88,11 +93,34 @@ import { formatRemainingOnlyTotal, isUsedOnlyAbsoluteAmount } from "@oh-my-pi/pi
 import type { UnavailableUsageAccount } from "@oh-my-pi/pi-tui/overlays/usage-dashboard";
 
 import { cfgTerminalShowImages } from "../settings";
+import { shortenPath } from "@oh-my-pi/pi-tui/render/render-utils";
 import { cfgProviderAppendOnlyContext } from "../../session/settings";
 import { cfgShareRedactSecrets, cfgShareServerUrl, cfgShareStore } from "../../commands/settings";
 
 function formatCreditValue(value: number): string {
 	return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+/**
+ * Shortcut groups contributed by loaded extensions, so `/hotkeys` lists what an
+ * extension actually registered instead of only core's closed action vocabulary.
+ *
+ * One group per extension rather than one per shortcut, because a registrant
+ * with four shortcuts wants them findable as their own thing. An extension with
+ * no shortcuts contributes nothing at all — the empty case has to render exactly
+ * what it did before this seam existed, and that is the contract.
+ */
+function extensionHotkeyGroups(session: InteractiveModeContext["session"]): HotkeyGroupContribution[] {
+	const groups: HotkeyGroupContribution[] = [];
+	for (const extension of session.extensionRunner?.getLoadedExtensions() ?? []) {
+		if (extension.shortcuts.size === 0) continue;
+		const rows = [...extension.shortcuts.values()].map(shortcut => ({
+			keys: [shortcut.shortcut] as const,
+			action: shortcut.description ?? "Extension shortcut",
+		}));
+		groups.push({ title: extension.label ?? shortenPath(extension.path), rows });
+	}
+	return groups;
 }
 
 function showMarkdownPanel(ctx: InteractiveModeContext, title: string, markdown: string): void {
@@ -164,7 +192,7 @@ export class CommandController {
 
 	async handleExportCommand(text: string): Promise<void> {
 		try {
-			const { outputPath, useUserThemes } = parseExportArgs(text.slice("/export".length));
+			const { outputPath, useUserThemes, formatId } = parseExportArgs(text.slice("/export".length));
 			if (outputPath === "--copy" || outputPath === "clipboard" || outputPath === "copy") {
 				this.ctx.showWarning("Use /dump to copy the session to clipboard.");
 				return;
@@ -172,7 +200,7 @@ export class CommandController {
 
 			// The viewed session: the focused subagent's transcript (plus its own
 			// subagents) from a focused view, otherwise the main session.
-			const filePath = await this.ctx.viewSession.exportToHtml({ outputPath, useUserThemes });
+			const filePath = await this.ctx.viewSession.exportToHtml({ outputPath, useUserThemes, formatId });
 			this.ctx.showStatus(`Session exported to: ${filePath}`);
 			this.openInBrowser(filePath);
 		} catch (error: unknown) {
@@ -352,11 +380,13 @@ export class CommandController {
 
 	async handleSessionCommand(): Promise<void> {
 		const stats = this.ctx.session.getSessionStats();
-		const premiumRequests =
-			"premiumRequests" in stats && typeof stats.premiumRequests === "number"
-				? stats.premiumRequests
-				: this.ctx.session.sessionManager.getUsageStatistics().premiumRequests;
-		const normalizedPremiumRequests = Math.round((premiumRequests + Number.EPSILON) * 100) / 100;
+		// `SessionStats.premiumRequests` is `number` (agent-session-types.ts) and
+		// `getSessionStats` always assigns it, defaulting to 0. A guard for a
+		// missing field could therefore never fall through, and if one ever did it
+		// would silently mix a LIFETIME count into a block whose every other row
+		// is windowed to the active transcript, making the `Totals` block disagree
+		// with itself. Read the one source.
+		const normalizedPremiumRequests = Math.round((stats.premiumRequests + Number.EPSILON) * 100) / 100;
 
 		let info = "";
 		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
@@ -435,13 +465,7 @@ export class CommandController {
 			// the money, and rendering it apart would imply it annotates the others.
 			const breakdown = stats.usageBreakdown;
 			if (breakdown !== undefined && breakdown.buckets.length > 0) {
-				info += `\n${theme.bold("By model")}\n`;
-				for (const bucket of breakdown.buckets) {
-					info += `${theme.fg("dim", `${bucket.key}:`)} ${bucket.cost.toFixed(4)}\n`;
-				}
-				if (breakdown.cacheMiss.missedCost > 0) {
-					info += `${theme.fg("dim", "Cache misses:")} ${breakdown.cacheMiss.missedCost.toFixed(4)}\n`;
-				}
+				info += renderUsageAttribution(breakdown, theme);
 			}
 		}
 
@@ -703,7 +727,10 @@ export class CommandController {
 	}
 
 	handleHotkeysCommand(): void {
-		const bindings = { keybindings: this.ctx.keybindings };
+		const bindings = {
+			keybindings: this.ctx.keybindings,
+			extraGroups: extensionHotkeyGroups(this.ctx.session),
+		};
 		if (isNativeRendering()) {
 			// A native terminal gets a dismissable sheet with keycaps instead of a transcript table.
 			const sheet = new HotkeysSheetComponent(bindings, () => {
@@ -1473,7 +1500,7 @@ export class CommandController {
 				if (shouldPersistCwd) return await this.#applyBashResultCwd(result);
 			} catch (error) {
 				this.ctx.showError(
-					`Bash command completed, but OMP failed to update its working directory: ${
+					`Bash command completed, but ultraworkers failed to update its working directory: ${
 						error instanceof Error ? error.message : "Unknown error"
 					}`,
 				);
@@ -1858,6 +1885,30 @@ export function renderProviderSection(details: ProviderDetails, uiTheme: Pick<Th
 		lines.push(`${uiTheme.fg("dim", `${field.label}:`)} ${field.value}`);
 	}
 	return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Render the `By model` attribution block.
+ *
+ * The bucket rows are a PARTITION: they sum to exactly the `Cost` total printed
+ * above them, and `buildUsageBreakdown` is what keeps that true. The cache-miss
+ * row is not a summand — `missedTokens` is walked over the whole branch rather
+ * than the active transcript, because only the branch still carries the
+ * `compaction` and `model_change` entries that explain WHY a read collapsed.
+ *
+ * So it is a different quantity in a summing block. Drawn in the summands'
+ * `key: 0.0000` format it reads as one more addend, and a user who adds the
+ * visible column gets a total that disagrees with the `Cost` printed above it.
+ * The separator is presentational — the number is kept, because a user who paid
+ * for a collapsed cache needs to see it, and deleting it would hide real spend.
+ */
+export function renderUsageAttribution(breakdown: UsageBreakdown, uiTheme: Pick<Theme, "fg" | "bold">): string {
+	const rows = breakdown.buckets.map(bucket => `${uiTheme.fg("dim", `${bucket.key}:`)} ${bucket.cost.toFixed(4)}\n`);
+	const out = `\n${uiTheme.bold("By model")}\n${rows.join("")}`;
+	if (breakdown.cacheMiss.missedCost > 0) {
+		return `${out}\n${uiTheme.fg("dim", "Cache misses (not in the total):")} ${breakdown.cacheMiss.missedCost.toFixed(4)}\n`;
+	}
+	return out;
 }
 
 function resolveProviderUsageTotal(reports: UsageReport[]): number {

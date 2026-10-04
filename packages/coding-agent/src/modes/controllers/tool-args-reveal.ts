@@ -5,6 +5,13 @@ import { nextStep, STREAMING_REVEAL_FRAME_MS } from "./streaming-reveal";
 /** Minimal component surface the reveal pushes frames into. */
 type ToolArgsRevealComponent = Component & {
 	updateArgs(args: unknown, toolCallId?: string): void;
+	/**
+	 * Optional: the raw prefix is also published on a typed channel so a
+	 * renderer can read it without knowing that producers stash it in the args
+	 * object under `__partialJson`. Optional because a component predating the
+	 * channel still receives the prefix through `updateArgs`.
+	 */
+	setRawArgs?(raw: { json: string; complete: boolean }, toolCallId?: string): void;
 };
 
 // Top-level string args a renderer reads mid-stream. The streamed-args decode
@@ -574,6 +581,10 @@ export class ToolArgsRevealController {
 		for (const [id, entry] of this.#entries) {
 			if (entry.component && entry.revealed < entry.target.length) {
 				entry.component.updateArgs(displayArgsForPrefix(entry, entry.target, true).args, id);
+				// flushAll snaps to the full received stream at message_end, so
+				// this prefix is everything that arrived — but still not a
+				// completed argument object; the turn was cut short.
+				entry.component.setRawArgs?.({ json: entry.target, complete: false }, id);
 			}
 		}
 		this.#entries.clear();
@@ -623,6 +634,11 @@ export class ToolArgsRevealController {
 			const display = displayArgsForPrefix(entry, entry.target.slice(0, entry.revealed));
 			if (display.changed) {
 				entry.component.updateArgs(display.args, id);
+				// The raw prefix rides along on the typed channel too. It is
+				// published even when the decoded args did not change, because
+				// a renderer watching the buffer is exactly the one that has
+				// nothing else to repaint on.
+				entry.component.setRawArgs?.({ json: entry.target.slice(0, entry.revealed), complete: false }, id);
 				rendered.add(entry.component);
 			}
 			advanced = true;

@@ -34,7 +34,7 @@ describe("AgentSession prewalk", () => {
 	let session: AgentSession | undefined;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-prewalk-");
+		tempDir = TempDir.createSync("@ultraworkers-prewalk-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));

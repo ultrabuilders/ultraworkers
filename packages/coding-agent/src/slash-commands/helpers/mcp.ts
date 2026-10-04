@@ -13,6 +13,7 @@ import { MCPManager } from "../../mcp/manager";
 import { getSmitheryApiKey } from "../../mcp/smithery-auth";
 import { searchSmitheryRegistry } from "../../mcp/smithery-registry";
 import type { MCPServerConfig, MCPServerConnection } from "../../mcp/types";
+import { applyScopePolicy } from "../../mcp/scope-policy";
 import { parseCommandArgs } from "../../utils/command-args";
 import type { ParsedSlashCommand, SlashCommandResult, SlashCommandRuntime } from "../types";
 import { commandConsumed, errorMessage, parseNamedScopeArgs, parseSubcommand, usage } from "./parse";
@@ -236,9 +237,13 @@ async function collectConnectedMcpLines(
 	if (servers.length === 0) return undefined;
 
 	const lines: string[] = [];
-	for (const { name, config } of servers) {
+	for (const { name, config, scope } of servers) {
 		try {
-			const collected = await withPreparedMcpConnection(runtime, name, config, connection =>
+			// GAP-D9: `getMcpConfiguredServers` reads the project file directly and
+			// reports the scope; these configs never pass through `loadAllMCPConfigs`,
+			// so the policy has to be applied here or `/mcp resources` and `/mcp
+			// prompts` are a `!command` door of their own.
+			const collected = await withPreparedMcpConnection(runtime, name, applyScopePolicy(config, scope), connection =>
 				collect(name, connection),
 			);
 			lines.push(...collected);
@@ -283,13 +288,18 @@ async function handleTestCommand(rest: string, runtime: SlashCommandRuntime): Pr
 	if (!server) return usage(`Server "${name}" not found. Run /mcp list to see configured servers.`, runtime);
 
 	try {
-		return await withPreparedMcpConnection(runtime, name, server.config, async connection => {
-			const tools = await listTools(connection);
-			const lines = [`Server "${name}" connected (${tools.length} tools).`];
-			for (const tool of tools) lines.push(`  - ${tool.name}`);
-			await runtime.output(lines.join("\n"));
-			return commandConsumed();
-		});
+		return await withPreparedMcpConnection(
+			runtime,
+			name,
+			applyScopePolicy(server.config, server.scope),
+			async connection => {
+				const tools = await listTools(connection);
+				const lines = [`Server "${name}" connected (${tools.length} tools).`];
+				for (const tool of tools) lines.push(`  - ${tool.name}`);
+				await runtime.output(lines.join("\n"));
+				return commandConsumed();
+			},
+		);
 	} catch (err) {
 		return usage(`Connection to "${name}" failed: ${errorMessage(err)}`, runtime);
 	}

@@ -35,7 +35,7 @@ describe("libkitty end-to-end", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-libkitty-e2e-");
+		tempDir = TempDir.createSync("@ultraworkers-libkitty-e2e-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

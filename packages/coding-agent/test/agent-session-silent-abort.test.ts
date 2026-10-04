@@ -92,7 +92,7 @@ describe("AgentSession silent-abort marker stamping", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		fixtureDir = TempDir.createSync("@pi-silent-abort-fixture-");
+		fixtureDir = TempDir.createSync("@ultraworkers-silent-abort-fixture-");
 		authStorage = await AuthStorage.create(path.join(fixtureDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);

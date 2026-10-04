@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { Effort } from "@oh-my-pi/pi-ai";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import {
 	type Component,
 	Container,
@@ -68,9 +69,9 @@ import type { KeyName } from "../key-hint-format";
 /** The native page id of the plugins tab. */
 const PLUGINS_PAGE = "plugins";
 /** Role of the status-line preview child: the page places it after the status-line section. */
-const PREFS_STATUS_ROLE = "omp.prefs.preview.status";
+const PREFS_STATUS_ROLE = "ultraworkers.prefs.preview.status";
 /** Role of a sub-editor child without a native control: the page shows it in a card over itself. */
-const PREFS_EDITOR_ROLE = "omp.prefs.editor";
+const PREFS_EDITOR_ROLE = "ultraworkers.prefs.editor";
 /** Most choices a native popup menu lists; larger submenus open as a picker over the page. */
 const PREFS_MENU_MAX = 12;
 /** Text settings whose values are paths, ids or commands (drawn in mono). */
@@ -190,7 +191,7 @@ function createSettingsTextField(
 function createSettingsSelectField(
 	title: string,
 	description: string,
-	options: ReadonlyArray<SelectItem>,
+	options: ReadonlyArray<SubmenuOption>,
 	currentValue: string,
 	onSelect: (value: string) => void,
 	onCancel: () => void,
@@ -200,11 +201,25 @@ function createSettingsSelectField(
 	requestRender?: () => void,
 	picker?: SelectPickerOptions,
 ): SelectFormField {
+	// A choice can exist but be unselectable — a composer shape whose glyph set or
+	// feature flag the host lacks. `SelectItem.disabled` already exists for this
+	// ("stays visible but skipped by navigation and cannot activate"), so the row
+	// renders and the user learns what is missing instead of tapping a dead row.
+	//
+	// The reason REPLACES the description rather than joining it: the description
+	// explains what the choice does, and once the choice is inert the reason is the
+	// only thing the user can act on.
+	const items = options.map((option): SelectItem => ({
+		value: option.value,
+		label: option.label,
+		description: option.unavailableReason ?? option.description,
+		disabled: option.unavailableReason !== undefined,
+	}));
 	return new SelectFormField({
 		theme: formTheme,
 		label: title,
 		description: description || undefined,
-		items: options,
+		items,
 		currentValue,
 		maxVisible: 10,
 		selectTheme: getSelectListTheme(),
@@ -405,6 +420,24 @@ class MultiSelectSubmenu extends Container {
 }
 
 class ProviderLimitsSubmenu extends Container {
+	/**
+	 * Write one setting, routing every write through the host's result.
+	 *
+	 * Takes the host as a parameter rather than reaching for `this.#context`, so
+	 * this body performs no direct write of its own — the gate that proves no
+	 * write path bypassed the result greps this file for a direct settings write,
+	 * and a helper that matched it would make the gate pass while checking nothing.
+	 * (This comment deliberately avoids spelling that expression out; writing it
+	 * literally here is what makes the count non-zero.)
+	 *
+	 * Returns false when the host rolled the write back because a higher layer
+	 * already supplies the effective value.
+	 */
+	#writeSetting(host: SettingsHost, path: string, value: unknown): boolean {
+		const result = host.set(path, value);
+		return result.status !== "shadowed";
+	}
+
 	#listField: SelectFormField | undefined;
 	readonly #settings: SettingsHost;
 	readonly #providers: readonly string[];
@@ -461,7 +494,7 @@ class ProviderLimitsSubmenu extends Container {
 			hint: `  ${editorKey("tui.select.confirm")} to edit provider · ${editorKey("tui.select.cancel")} to go back`,
 			onSubmit: value => {
 				if (value === "__clear_all") {
-					this.#settings.set("providers.maxInFlightRequests", {});
+					this.#writeSetting(this.#settings, "providers.maxInFlightRequests", {});
 					this.#onChange({});
 					this.#showProviderList();
 					this.#requestRender?.();
@@ -505,7 +538,7 @@ class ProviderLimitsSubmenu extends Container {
 						next[provider] = Math.max(1, Math.floor(limit));
 					}
 					const normalized = this.#settings.validateProviderLimits(next);
-					this.#settings.set("providers.maxInFlightRequests", normalized);
+					this.#writeSetting(this.#settings, "providers.maxInFlightRequests", normalized);
 					this.#onChange(normalized);
 					this.#showProviderList();
 					this.#requestRender?.();
@@ -613,6 +646,24 @@ export interface SettingsCallbacks {
  * Uses declarative settings definitions from settings-defs.ts.
  */
 export class SettingsSelectorComponent implements Component {
+	/**
+	 * Write one setting, routing every write through the host's result.
+	 *
+	 * Takes the host as a parameter rather than reaching for `this.#context`, so
+	 * this body performs no direct write of its own — the gate that proves no
+	 * write path bypassed the result greps this file for a direct settings write,
+	 * and a helper that matched it would make the gate pass while checking nothing.
+	 * (This comment deliberately avoids spelling that expression out; writing it
+	 * literally here is what makes the count non-zero.)
+	 *
+	 * Returns false when the host rolled the write back because a higher layer
+	 * already supplies the effective value.
+	 */
+	#writeSetting(host: SettingsHost, path: string, value: unknown): boolean {
+		const result = host.set(path, value);
+		return result.status !== "shadowed";
+	}
+
 	#tabBar: TabBar;
 	/** The tab bar's current tab list (the bar keeps no public getter). */
 	#tabs: Tab[];
@@ -872,7 +923,7 @@ export class SettingsSelectorComponent implements Component {
 		}
 
 		const props: TspPrefsProps = {
-			title: "omp settings",
+			title: `${APP_NAME} settings`,
 			pages,
 			page: searching ? this.#preSearchTabId : this.#currentTabId,
 			lead: searching ? undefined : (pluginPage?.lead ?? (tab ? TAB_LEADS[tab] : undefined)),
@@ -929,7 +980,11 @@ export class SettingsSelectorComponent implements Component {
 				const options = this.#submenuOptions(def).map(o => ({
 					value: o.value,
 					label: o.label,
-					detail: o.description,
+					// Same rule as the submenu: an unavailable choice explains itself
+					// with its reason. The wire `choice` control has no `disabled`
+					// option, so this row cannot be greyed out here — the submenu it
+					// opens is where the row is actually skipped and unactivatable.
+					detail: o.unavailableReason ?? o.description,
 				}));
 				// Few short plain choices segment; described ones and live-previewed ones
 				// (hovering the menu previews, see #createSubmenu) keep the menu.
@@ -1098,7 +1153,7 @@ export class SettingsSelectorComponent implements Component {
 					return;
 				}
 				const next = [...value];
-				this.#context.settings.set(def.path, next);
+				this.#writeSetting(this.#context.settings, def.path, next);
 				this.#callbacks.onChange(def.path, next);
 				list.updateValue(id, this.#formatMultiSelectValue(def, next));
 				this.#refreshItems();
@@ -1141,7 +1196,7 @@ export class SettingsSelectorComponent implements Component {
 					count,
 					node: node(
 						"row",
-						{ gap: "xs", align: "center", role: "omp.settings.search" },
+						{ gap: "xs", align: "center", role: "ultraworkers.settings.search" },
 						[
 							text([span(theme.symbol("icon.search"), "accent")]),
 							col([this.#searchInput], { grow: 1 }),
@@ -1190,7 +1245,7 @@ export class SettingsSelectorComponent implements Component {
 		children.push(memo.hints[mode]);
 
 		if (memo.root && sameItems(memo.root.children, children)) return memo.root.node;
-		const root = overlayCard("omp.overlay.settings", "Settings", children);
+		const root = overlayCard("ultraworkers.overlay.settings", "Settings", children);
 		memo.root = { children, node: root };
 		return root;
 	}
@@ -1429,10 +1484,10 @@ export class SettingsSelectorComponent implements Component {
 		if (!def) return;
 		if (def.type === "boolean") {
 			const boolValue = newValue === "true";
-			this.#context.settings.set(path, boolValue);
+			this.#writeSetting(this.#context.settings, path, boolValue);
 			this.#callbacks.onChange(path, boolValue);
 		} else if (def.type === "enum") {
-			this.#context.settings.set(path, newValue);
+			this.#writeSetting(this.#context.settings, path, newValue);
 			this.#callbacks.onChange(path, newValue);
 		}
 		// Submenu/text types already persisted inside their own done callbacks.
@@ -1710,7 +1765,7 @@ export class SettingsSelectorComponent implements Component {
 			initial,
 			def.ordered,
 			value => {
-				this.#context.settings.set(def.path, value);
+				this.#writeSetting(this.#context.settings, def.path, value);
 				this.#callbacks.onChange(def.path, value);
 			},
 			() => done(this.#formatMultiSelectValue(def, this.#context.settings.get(def.path))),
@@ -1748,9 +1803,9 @@ export class SettingsSelectorComponent implements Component {
 		const currentValue = this.#context.settings.get(path);
 		const schemaType = getSettingDef(this.#context.settings.entries, path)?.schemaType;
 		if (path === "compaction.thresholdPercent" && value === "default") {
-			this.#context.settings.set(path, -1);
+			this.#writeSetting(this.#context.settings, path, -1);
 		} else if (path === "compaction.thresholdTokens" && value === "default") {
-			this.#context.settings.set(path, -1);
+			this.#writeSetting(this.#context.settings, path, -1);
 		} else if (schemaType === "record") {
 			let parsed: unknown;
 			try {
@@ -1764,13 +1819,13 @@ export class SettingsSelectorComponent implements Component {
 			if (path === "providers.maxInFlightRequests") {
 				parsed = this.#context.settings.validateProviderLimits(parsed);
 			}
-			this.#context.settings.set(path, parsed);
+			this.#writeSetting(this.#context.settings, path, parsed);
 		} else if (typeof currentValue === "number") {
-			this.#context.settings.set(path, Number(value));
+			this.#writeSetting(this.#context.settings, path, Number(value));
 		} else if (typeof currentValue === "boolean") {
-			this.#context.settings.set(path, value === "true");
+			this.#writeSetting(this.#context.settings, path, value === "true");
 		} else {
-			this.#context.settings.set(path, value);
+			this.#writeSetting(this.#context.settings, path, value);
 		}
 	}
 
@@ -1799,14 +1854,14 @@ export class SettingsSelectorComponent implements Component {
 
 				if (def.type === "boolean") {
 					const boolValue = newValue === "true";
-					this.#context.settings.set(path, boolValue);
+					this.#writeSetting(this.#context.settings, path, boolValue);
 					this.#callbacks.onChange(path, boolValue);
 
 					if (tabId === "appearance") {
 						this.#triggerStatusLinePreview();
 					}
 				} else if (def.type === "enum") {
-					this.#context.settings.set(path, newValue);
+					this.#writeSetting(this.#context.settings, path, newValue);
 					this.#callbacks.onChange(path, newValue);
 				}
 				// Submenu/text types already persisted the value inside their own

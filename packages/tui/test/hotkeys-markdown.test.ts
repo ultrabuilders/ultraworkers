@@ -1,13 +1,26 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { setKeyHintPlatform } from "@oh-my-pi/pi-tui/app-keybindings";
 import { buildHotkeysMarkdown } from "@oh-my-pi/pi-tui/hotkeys-markdown";
+import { initThemeSync, setSymbolPreset } from "@oh-my-pi/pi-tui/theme";
 
 /** Exit-row wiring for stubs that only care about display strings: no key claims the
  *  forward-delete role, so the exit row renders its plain "Exit" wording. */
 const noForwardDelete = { getKeys: () => [], matchesCanonical: () => false };
 
 describe("buildHotkeysMarkdown", () => {
-	afterEach(() => setKeyHintPlatform(undefined));
+	// Key hints render through the ACTIVE THEME's `key.*` symbols — words in the
+	// ascii preset (`Ctrl`), glyphs in unicode (`⌃`). These assertions pin exact
+	// bytes, so they have to pin the preset as well as the platform. Before this,
+	// they held only while no other test file had loaded a theme, which made this
+	// file pass alone and fail in the suite depending purely on run order.
+	beforeEach(async () => {
+		await setSymbolPreset("ascii");
+	});
+
+	afterEach(() => {
+		setKeyHintPlatform(undefined);
+		initThemeSync();
+	});
 
 	it("emits flush-left markdown and uses the configured temporary selector hint", () => {
 		const displayStrings: Record<string, string> = {
@@ -93,5 +106,36 @@ describe("buildHotkeysMarkdown", () => {
 
 		expect(markdown).not.toContain("Option+");
 		expect(markdown).not.toContain("Cmd+");
+	});
+
+	it("lists a shortcut contributed through the registration seam, after the built-in groups", () => {
+		const markdown = buildHotkeysMarkdown({
+			keybindings: { ...noForwardDelete, getDisplayString: () => "Disabled" },
+			extraGroups: [
+				{
+					title: "Deploy helper",
+					rows: [{ keys: ["ctrl+shift+d"], action: "Deploy to staging" }],
+				},
+			],
+		});
+
+		// The row a user reads to learn their extension's key exists at all:
+		// formatted through the same path as a built-in row, under its own heading.
+		expect(markdown).toContain("**Deploy helper**");
+		expect(markdown).toContain("| `Ctrl+Shift+D` | Deploy to staging |");
+		// Rendered after core's groups, so a registrant never displaces a built-in row.
+		expect(markdown.indexOf("**Deploy helper**")).toBeGreaterThan(markdown.indexOf("**Other**"));
+	});
+
+	it("leaves the reference byte-identical when nothing is contributed", () => {
+		const keybindings = { ...noForwardDelete, getDisplayString: () => "Disabled" };
+		const withoutSeam = buildHotkeysMarkdown({ keybindings });
+		const withEmptyContributions = buildHotkeysMarkdown({ keybindings, extraGroups: [] });
+
+		// The negative half of the seam contract: an extension that registers no
+		// shortcut must not be able to change what /hotkeys prints — including by
+		// contributing a group, which must not leave an empty heading behind.
+		expect(withEmptyContributions).toBe(withoutSeam);
+		expect(withoutSeam).not.toContain("****");
 	});
 });

@@ -26,15 +26,11 @@ const ttsrSettings = cfgTtsr.get(settings);
 // Live source: enable/repeat/interrupt/context changes apply on the next check.
 const ttsrManager = new TtsrManager(() => cfgTtsr.get(settings));
 const rulesResult = await loadCapability<Rule>(ruleCapability.id, { cwd });
-const { rulebookRules, alwaysApplyRules } = bucketRules(
-  rulesResult.items,
-  ttsrManager,
-  {
-    builtinRules: ttsrSettings.builtinRules,
-    disabledRules: ttsrSettings.disabledRules,
-    agentName: resolvedAgentName,
-  },
-);
+const { rulebookRules, alwaysApplyRules } = bucketRules(rulesResult.items, ttsrManager, {
+	builtinRules: ttsrSettings.builtinRules,
+	disabledRules: ttsrSettings.disabledRules,
+	agentName: resolvedAgentName,
+});
 ```
 
 `bucketRules(...)` drops names listed in `ttsr.disabledRules`, drops embedded builtin-defaults rules when `ttsr.builtinRules === false`, drops rules whose `agents` globs do not match this session's agent, registers accepted TTSR rules, and then routes the remaining rules to always-apply/rulebook buckets.
@@ -158,12 +154,12 @@ Non-interrupting matches split by `matchContext.source`:
 
 - **`source === "tool"` (tool-source match).** The rule is bucketed into `TtsrCoordinator.#perToolInjections`, keyed by the matched tool call's `id`, and marked injected in memory immediately. There is **no** deferred follow-up turn and the stream is not aborted. When the tool actually produces a result, the `afterToolCall` hook prepends a rendered `ttsr-tool-reminder.md` block to `ctx.result.content` (a single `text` block inserted ahead of the tool's own content) and persists a `ttsr_injection` entry with the consumed rule names. The template payload is:
 
-  ```xml
-  <system-reminder reason="rule_violation" rule="{{name}}" path="{{path}}">
-  ...
-  {{content}}
-  </system-reminder>
-  ```
+   ```xml
+   <system-reminder reason="rule_violation" rule="{{name}}" path="{{path}}">
+   ...
+   {{content}}
+   </system-reminder>
+   ```
 
 - **Eval-bridged AgentTool calls.** Finalized inner calls are checked at the `ExtensionToolWrapper` boundary; prelude host calls (`browser.*`, `computer.*`, `tab.run`) are not AgentTool dispatches and stay outside this path.
 
@@ -296,4 +292,4 @@ A rule with `question` is judged: its natural-language question goes to the `jud
 
 `/omfg` generates `condition`, `astCondition`, or `question` rules, instructed to prefer the pattern triggers. It validates candidates against conversation history through the same completed-output view (`TtsrToolInspector.outputs`); a `question` candidate must pass its scope/prefilter and get a yes from the judge on one of the 8 most recent in-scope outputs. With no judge available, the user decides whether to save it unconfirmed.
 
-`omp ttsr list` shows each rule's `question`. `omp ttsr test` never calls the judge, so question rules report as not triggered, with their question shown. `omp ttsr scan` skips question rules: their conditions are prefilters, not violations.
+`ultraworkers ttsr list` shows each rule's `question`. `ultraworkers ttsr test` never calls the judge, so question rules report as not triggered, with their question shown. `ultraworkers ttsr scan` skips question rules: their conditions are prefilters, not violations.

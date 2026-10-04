@@ -58,11 +58,11 @@ async function loadHistory(file: string): Promise<SessionEntry[]> {
 
 describe("SessionManager.forkFrom", () => {
 	it("suppresses terminal breadcrumbs while preserving source history under a new parented session", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-");
 		const previousAgentDir = getAgentDir();
 		const previousTermSessionId = process.env.TERM_SESSION_ID;
 		setAgentDir(path.join(tempDir.path(), "agent"));
-		process.env.TERM_SESSION_ID = "omp-fork-test";
+		process.env.TERM_SESSION_ID = "ultraworkers-fork-test";
 		try {
 			const cwd = path.join(tempDir.path(), "project");
 			const sessionDir = path.join(tempDir.path(), "sessions");
@@ -122,7 +122,7 @@ describe("SessionManager.forkFrom", () => {
 	});
 
 	it("copies source artifacts recursively into the fork by default", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-artifacts-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-artifacts-");
 		const { cwd, sessionDir, sourceFile, sourceArtifactsDir } = await createSessionWithArtifacts(tempDir.path());
 
 		const forked = await SessionManager.forkFrom(sourceFile, cwd, sessionDir, undefined, {
@@ -138,7 +138,7 @@ describe("SessionManager.forkFrom", () => {
 	});
 
 	it("does not copy artifacts when the caller opts out", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-no-artifacts-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-no-artifacts-");
 		const { cwd, sessionDir, sourceFile } = await createSessionWithArtifacts(tempDir.path());
 
 		const forked = await SessionManager.forkFrom(sourceFile, cwd, sessionDir, undefined, {
@@ -153,7 +153,7 @@ describe("SessionManager.forkFrom", () => {
 	});
 
 	it("does not treat an extensionless source's parent directory as artifacts", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-extensionless-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-extensionless-");
 		const cwd = path.join(tempDir.path(), "project");
 		const sessionDir = path.join(tempDir.path(), "sessions");
 		const forkDir = path.join(tempDir.path(), "forks");
@@ -182,7 +182,7 @@ describe("SessionManager.forkFrom", () => {
 	});
 
 	it("zeroes inherited cost while preserving token counts only when reset is requested", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-cost-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-cost-");
 		const cwd = path.join(tempDir.path(), "project");
 		const sessionDir = path.join(tempDir.path(), "sessions");
 		await fs.mkdir(sessionDir, { recursive: true });
@@ -255,7 +255,7 @@ describe("SessionManager.forkFrom", () => {
 	});
 
 	it("pairs an unresolved tool call with a synthetic aborted result only when repair is requested", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-repair-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-repair-");
 		const cwd = path.join(tempDir.path(), "project");
 		const sessionDir = path.join(tempDir.path(), "sessions");
 		await fs.mkdir(sessionDir, { recursive: true });
@@ -329,7 +329,7 @@ describe("SessionManager.forkFrom", () => {
 	});
 
 	it("repairs only the active branch when sibling paths contain assistants and results", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-branch-repair-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-branch-repair-");
 		const cwd = path.join(tempDir.path(), "project");
 		const sessionDir = path.join(tempDir.path(), "sessions");
 		await fs.mkdir(sessionDir, { recursive: true });
@@ -433,7 +433,7 @@ describe("SessionManager.forkFrom", () => {
 	});
 
 	it("leaves an already-terminal tail untouched when repair is requested", async () => {
-		using tempDir = TempDir.createSync("@omp-session-fork-terminal-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-fork-terminal-");
 		const cwd = path.join(tempDir.path(), "project");
 		const sessionDir = path.join(tempDir.path(), "sessions");
 		await fs.mkdir(sessionDir, { recursive: true });

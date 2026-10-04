@@ -1,14 +1,14 @@
 /**
- * Centralized path helpers for omp config directories.
+ * Centralized path helpers for ultraworkers config directories.
  *
  * Uses PI_CONFIG_DIR (default ".omp") for the config root and
  * PI_CODING_AGENT_DIR to override the agent directory.
  *
  * On Linux, if XDG_DATA_HOME / XDG_STATE_HOME / XDG_CACHE_HOME environment
  * variables are set, paths are redirected to XDG-compliant locations under
- * $XDG_*_HOME/omp/. This requires running `omp config migrate` first to
+ * $XDG_*_HOME/ultraworkers/. This requires running `ultraworkers config migrate` first to
  * move data to the new locations. No filesystem existence checks are performed
- * — if the env var is set, omp trusts that the migration has been done.
+ * — if the env var is set, ultraworkers trusts that the migration has been done.
  */
 
 import * as fs from "node:fs";
@@ -16,16 +16,71 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { expandWindowsLongPath } from "@oh-my-pi/pi-natives/path";
 import { engines, version } from "../package.json" with { type: "json" };
+import { APP_NAME } from "./brand";
 import { isEnoent, isEnotdir } from "./fs-error";
 
-/** App name (e.g. "omp") */
-export const APP_NAME: string = "omp";
+/**
+ * Display name of the app.
+ *
+ * The definition now lives in `./brand`, which imports nothing, so a browser bundle can
+ * print the product name without pulling this module — and the `node:fs`/`node:path`
+ * chain behind it — into the client. It is re-exported here so that every existing
+ * `@oh-my-pi/pi-utils` and `@oh-my-pi/pi-utils/dirs` consumer resolves it unchanged.
+ *
+ * Both statements are needed: `export *` re-exports the name to callers but does NOT
+ * create a local binding, and this module still uses `APP_NAME` in its own path helpers.
+ */
+export * from "./brand";
 
-/** Public homepage that inference gateways (OpenRouter, Vercel AI Gateway) credit omp traffic to. */
+/** Wire identity — the third-party contract value; do not change without a compatibility decision. */
+export const WIRE_NAME: string = "ultraworkers";
+
+/** Public homepage that inference gateways (OpenRouter, Vercel AI Gateway) credit traffic to. */
 export const APP_URL: string = "https://omp.sh/";
 
 /** Config directory name (e.g. ".omp") */
 export const CONFIG_DIR_NAME: string = ".omp";
+
+/**
+ * Legacy spelling of the home-scoped config root, kept resolvable for reads.
+ *
+ * The write target already moved — {@link CONFIG_DIR_NAME_NEXT} heads
+ * {@link CONFIG_DIR_CANDIDATES}, so new config lands in `.ultraworkers` and this
+ * spelling is the read fallback behind it.
+ *
+ * Naming it separately is what lets reads fall back without disturbing that
+ * order, and it is why {@link CONFIG_DIR_NAME} must not simply be flipped to the
+ * next spelling. `config.ts` admits a user config directory only when it *is*
+ * `CONFIG_DIR_NAME` or its name is separately enabled, so moving the constant
+ * does not migrate anyone — it moves `.omp` behind that enablement, and an
+ * existing install stops reading its own config with no upgrade path. `trust.ts`
+ * records this repo being bitten by that same rename once already.
+ */
+export const LEGACY_CONFIG_DIR_NAME: string = ".omp";
+
+/** Canonical spelling of the home-scoped config root — the write target. */
+export const CONFIG_DIR_NAME_NEXT: string = ".ultraworkers";
+
+/**
+ * Ordered home-scoped candidates: canonical write target first, legacy
+ * read-compatible fallback second.
+ *
+ * The order IS the contract, exactly the shape
+ * {@link MAIN_CONFIG_FILENAMES} already models. Every read and write path
+ * derives from this one list via {@link getConfigDirCandidates}, because two
+ * lists that agree today are two lists that drift.
+ */
+export const CONFIG_DIR_CANDIDATES: readonly string[] = [CONFIG_DIR_NAME_NEXT, LEGACY_CONFIG_DIR_NAME];
+
+/**
+ * Ordered XDG candidates — deliberately NOT {@link CONFIG_DIR_CANDIDATES}.
+ *
+ * A home root is dot-prefixed because it derives from a config-dir name; an
+ * XDG `appRoot` is bare because it joins `APP_NAME`. Sharing one list would be
+ * wrong for exactly one of the two, and wrong *invisibly* while
+ * `XDG_*_HOME` is unset — the case where nobody is looking.
+ */
+export const XDG_CONFIG_DIR_CANDIDATES: readonly string[] = ["ultraworkers", "omp"];
 
 /** Ordered main settings filenames: canonical write target first, legacy-compatible YAML fallback second. */
 export const MAIN_CONFIG_FILENAMES = ["config.yml", "config.yaml"] as const;
@@ -71,7 +126,7 @@ export function normalizeProfileName(profile: string | undefined): string | unde
 		WINDOWS_RESERVED_BASENAME_RE.test(normalized)
 	) {
 		throw new Error(
-			`Invalid OMP profile "${profile}". Profile names must match ${PROFILE_NAME_RE.source}, ` +
+			`Invalid ultraworkers profile "${profile}". Profile names must match ${PROFILE_NAME_RE.source}, ` +
 				`cannot be "." or "..", cannot end with ".", and cannot be a Windows reserved device name ` +
 				`(CON, PRN, AUX, NUL, COM0-9, LPT0-9, or any of those with an extension).`,
 		);
@@ -87,8 +142,8 @@ export function normalizeProfileName(profile: string | undefined): string | unde
  * than silently inheriting `PI_PROFILE`. Delegates validation/normalization to
  * {@link normalizeProfileName} (which throws on a syntactically invalid value).
  */
-export function resolveProfileEnv(omp: string | undefined, pi: string | undefined): string | undefined {
-	return normalizeProfileName(omp !== undefined ? omp : pi);
+export function resolveProfileEnv(canonical: string | undefined, legacy: string | undefined): string | undefined {
+	return normalizeProfileName(canonical !== undefined ? canonical : legacy);
 }
 
 function getProfileFromEnv(): string | undefined {
@@ -101,7 +156,7 @@ function getProfileFromEnv(): string | undefined {
  * crash a bare `import` of this module with an uncaught stack trace before the
  * CLI's error handling is in scope. The default profile is used instead; the
  * CLI re-validates the env (see `runCli` in coding-agent/src/cli.ts) so the
- * user still gets a clean "Invalid OMP profile" message.
+ * user still gets a clean "Invalid ultraworkers profile" message.
  */
 function readProfileFromEnvSafe(): string | undefined {
 	try {
@@ -111,9 +166,26 @@ function readProfileFromEnvSafe(): string | undefined {
 	}
 }
 
-/** Profile-independent config root (~/.omp), shared by every omp profile. */
+/**
+ * Profile-independent config root a READ uses, shared by every ultraworkers profile.
+ *
+ * Keeps its name and its read meaning: `collab/registry.ts` imports it, and
+ * silently re-pointing that import at the write root would break a path that has
+ * nothing to do with the rebrand. Writes go to {@link getBaseConfigWriteRoot}.
+ */
 export function getBaseConfigRoot(): string {
 	return path.join(os.homedir(), getConfigDirName());
+}
+
+/**
+ * Profile-independent config root a WRITE uses.
+ *
+ * An explicit sibling rather than a flag on {@link getBaseConfigRoot}, so every
+ * existing reader stays a reader by construction — a boolean argument here
+ * would let a caller "fix" a read into a write without the type noticing.
+ */
+export function getBaseConfigWriteRoot(): string {
+	return path.join(os.homedir(), getConfigWriteRootName());
 }
 
 function getProfileConfigRoot(profile: string | undefined): string {
@@ -305,7 +377,135 @@ export function getSafeProjectCwd(): string {
 
 /** Get the config directory name relative to home (e.g. ".omp" or PI_CONFIG_DIR override). */
 export function getConfigDirName(): string {
-	return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;
+	// Explicit overrides, newest spelling first, then the resolved read root, then
+	// the write root. A fresh install with no directory at all must still resolve
+	// to the canonical name, so the last step is the write root and never the
+	// legacy spelling — falling back to legacy here would make a brand-new
+	// install create `.omp`, which is the opposite of the migration.
+	return (
+		process.env.ULTRAWORKERS_CONFIG_DIR ||
+		process.env.PI_CONFIG_DIR ||
+		getConfigReadRootName() ||
+		getConfigWriteRootName()
+	);
+}
+
+/**
+ * The ordered candidate spellings for the home-scoped config root.
+ *
+ * Pure: no filesystem, no cache, no env read. Both the read side and the write
+ * side pull from here so they cannot drift — a read that consults one list and
+ * a write that consults another is how a half-migrated install happens.
+ */
+export function getConfigDirCandidates(): string[] {
+	return [...CONFIG_DIR_CANDIDATES];
+}
+
+/**
+ * Test seam for the read-root cache, named after the sibling
+ * `__resetInstallIdCacheForTests` / `__resetProfileSnapshotForTests` /
+ * `__resetDirsFromEnvForTests` seams already in this module.
+ *
+ * Not optional: the resolver singletons below exist precisely to rebuild after
+ * the environment changes, and a config-root cache they do not clear outlives
+ * the very invalidation mechanism the module is built around.
+ */
+export function __resetConfigDirCacheForTests(): void {
+	cachedConfigReadRootName = undefined;
+}
+
+let cachedConfigReadRootName: string | undefined;
+
+/**
+ * The home-scoped config root a READ should use, chosen in priority order so an
+ * unrelated directory cannot capture the install:
+ *
+ *   1. the first candidate that actually holds a main config file — evidence it
+ *      is a config root, not just a directory somebody created;
+ *   2. otherwise the first candidate that exists — the pre-migration behaviour,
+ *      kept as a fallback so an install whose config predates every candidate
+ *      spelling still resolves where its state is rather than reading empty;
+ *   3. otherwise the write root, so a fresh install gets the canonical name.
+ *
+ * Step 1 is what makes the rule safe. "First that exists" alone is not a config
+ * root test: `getInstallId` and `adoptLegacyFile` both `mkdirSync` the canonical
+ * parent as a side effect, so merely *asking* a question could create an empty
+ * directory that then won the next read — and ultraworkers would read an empty config
+ * while a full one sat in the legacy root. A directory created that way holds no
+ * config file, so it loses step 1 and the real root wins.
+ *
+ * The marker is ANY name in {@link MAIN_CONFIG_FILENAMES}, not just the first.
+ * Writes always target `MAIN_CONFIG_FILENAMES[0]`, but every read path loops the
+ * whole list, so a root holding only the `.yaml` spelling is a legitimate config
+ * root — keying on `[0]` alone would ignore exactly that install.
+ *
+ * Cached for the process lifetime because a config root that moves mid-process
+ * is worse than one that is briefly stale — and every caller that can change
+ * the answer (`refreshDirsFromEnv`, `setAgentDir`, `setProfile`) clears it.
+ */
+export function getConfigReadRootName(): string {
+	if (cachedConfigReadRootName !== undefined) return cachedConfigReadRootName;
+	const home = os.homedir();
+	for (const candidate of getConfigDirCandidates()) {
+		try {
+			if (hasMainConfigFile(path.join(home, candidate))) {
+				cachedConfigReadRootName = candidate;
+				return candidate;
+			}
+		} catch {}
+	}
+	for (const candidate of getConfigDirCandidates()) {
+		try {
+			if (fs.existsSync(path.join(home, candidate))) {
+				cachedConfigReadRootName = candidate;
+				return candidate;
+			}
+		} catch {}
+	}
+	return getConfigWriteRootName();
+}
+
+/**
+ * True when this config root holds a main config file somewhere ultraworkers would
+ * actually read one from.
+ *
+ * The file lives in the root's **agent** directory, not the root itself —
+ * `<root>/agent/config.yml`, or `<root>/profiles/<profile>/agent/config.yml`
+ * when a profile is active — because every reader joins MAIN_CONFIG_FILENAMES
+ * onto `#agentDir`. Probing the root directly would find nothing on a real
+ * install and silently fall through to the next candidate.
+ *
+ * Both levels are checked so the probe does not depend on which profile happens
+ * to be active at the moment the root is resolved: a root is a config root
+ * because it holds config, not because the caller is currently looking at it.
+ */
+function hasMainConfigFile(configDir: string): boolean {
+	const agentDirs = [path.join(configDir, "agent")];
+	try {
+		const profilesDir = path.join(configDir, "profiles");
+		for (const entry of fs.readdirSync(profilesDir, { withFileTypes: true })) {
+			if (entry.isDirectory()) agentDirs.push(path.join(profilesDir, entry.name, "agent"));
+		}
+	} catch {}
+	for (const dir of agentDirs) {
+		for (const filename of MAIN_CONFIG_FILENAMES) {
+			try {
+				if (fs.existsSync(path.join(dir, filename))) return true;
+			} catch {}
+		}
+	}
+	return false;
+}
+
+/**
+ * The home-scoped config root a WRITE must use: the canonical name, always.
+ *
+ * No filesystem probe and no cache, deliberately — a write path that asked the
+ * disk would keep writing into `.omp` for as long as the legacy directory
+ * existed, which is the opposite of migrating away from it.
+ */
+export function getConfigWriteRootName(): string {
+	return CONFIG_DIR_NAME_NEXT;
 }
 
 /** Get the config agent directory name relative to home (e.g. ".omp/agent" or PI_CONFIG_DIR + "/agent"). */
@@ -321,8 +521,8 @@ export function getConfigAgentDirName(): string {
 type XdgCategory = "data" | "state" | "cache";
 
 /**
- * Resolves and caches all omp directory paths. On Linux, when XDG environment
- * variables are set, paths are redirected under $XDG_*_HOME/omp/. A new
+ * Resolves and caches all ultraworkers directory paths. On Linux, when XDG environment
+ * variables are set, paths are redirected under $XDG_*_HOME/ultraworkers/. A new
  * instance is created whenever the agent directory changes, which naturally
  * invalidates all cached paths.
  */
@@ -331,7 +531,7 @@ class DirResolver {
 	readonly agentDir: string;
 
 	// Per-category base dirs. Without XDG, all three equal configRoot / agentDir.
-	// With XDG on Linux, they point to $XDG_*_HOME/omp/.
+	// With XDG on Linux, they point to $XDG_*_HOME/ultraworkers/.
 	readonly #rootDirs: Record<XdgCategory, string>;
 	readonly #agentDirs: Record<XdgCategory, string>;
 
@@ -348,14 +548,14 @@ class DirResolver {
 		const isDefault = this.agentDir === defaultAgent;
 
 		// XDG is a Linux convention. On supported platforms, default profile state
-		// resolves under $XDG_*_HOME/omp once `omp config init-xdg` has migrated
+		// resolves under $XDG_*_HOME/ultraworkers once `ultraworkers config init-xdg` has migrated
 		// the user's data. Named profiles follow a stricter rule: the XDG choice
 		// is keyed on the profile-specific XDG path, never the base app root.
 		//
 		// Why: if we consulted the base app root for named profiles too, the same
 		// profile could resolve to `~/.omp/profiles/<name>` on first activation
-		// (when no $XDG_*_HOME/omp exists yet) and then silently move to
-		// `$XDG_*_HOME/omp/profiles/<name>` the moment the base appeared, orphaning
+		// (when no $XDG_*_HOME/ultraworkers exists yet) and then silently move to
+		// `$XDG_*_HOME/ultraworkers/profiles/<name>` the moment the base appeared, orphaning
 		// the earlier state. Pinning on the profile path means a profile's location
 		// is decided at first activation and stays put until the user explicitly
 		// migrates it (e.g. by mkdir'ing the XDG profile dir).
@@ -366,19 +566,27 @@ class DirResolver {
 			const resolveIf = (envVar: string) => {
 				const value = process.env[envVar];
 				if (!value) return undefined;
-				try {
-					const appRoot = path.join(value, APP_NAME);
-					if (profile) {
-						const profilePath = path.join(appRoot, "profiles", profile);
-						if (fs.existsSync(profilePath)) {
-							return profilePath;
+				// Both spellings, canonical first — see
+				// {@link XDG_CONFIG_DIR_CANDIDATES} for why this is not the home
+				// candidate list. The profile pinning below is unchanged and still
+				// decides by profile path; it simply gets asked once per spelling,
+				// so a profile that lives under the legacy root keeps resolving there
+				// instead of jumping to the new one the moment it appears.
+				for (const name of XDG_CONFIG_DIR_CANDIDATES) {
+					try {
+						const appRoot = path.join(value, name);
+						if (profile) {
+							const profilePath = path.join(appRoot, "profiles", profile);
+							if (fs.existsSync(profilePath)) {
+								return profilePath;
+							}
+							continue;
 						}
-						return undefined;
-					}
-					if (fs.existsSync(appRoot)) {
-						return appRoot;
-					}
-				} catch {}
+						if (fs.existsSync(appRoot)) {
+							return appRoot;
+						}
+					} catch {}
+				}
 				return undefined;
 			};
 			xdgData = resolveIf("XDG_DATA_HOME");
@@ -391,7 +599,10 @@ class DirResolver {
 			state: xdgState ?? this.configRoot,
 			cache: xdgCache ?? this.configRoot,
 		};
-		// XDG flattens the agent/ prefix: ~/.omp/agent/sessions → $XDG_DATA_HOME/omp/sessions
+		// XDG flattens the agent/ prefix: ~/.omp/agent/sessions → $XDG_DATA_HOME/<dir>/sessions,
+		// where <dir> comes from XDG_CONFIG_DIR_CANDIDATES (new spelling first, old
+		// second). Not APP_NAME: that one is display identity only, and these
+		// paths are where user state actually lives.
 		this.#agentDirs = {
 			data: xdgData ?? this.agentDir,
 			state: xdgState ?? this.agentDir,
@@ -493,6 +704,7 @@ const RESOLVER_HOME = os.homedir();
  * `preProfileAgentDirEnv` snapshot is intentionally left untouched.
  */
 export function refreshDirsFromEnv(): void {
+	__resetConfigDirCacheForTests();
 	dirs = new DirResolver({
 		agentDirOverride: resolveActiveAgentDirOverride(),
 		profile: activeProfile,
@@ -511,6 +723,7 @@ export function getConfigRootDir(): string {
 /** Set the coding agent directory. Creates a fresh resolver, invalidating all cached paths. */
 export function setAgentDir(dir: string): void {
 	activeProfile = undefined;
+	__resetConfigDirCacheForTests();
 	dirs = new DirResolver({ agentDirOverride: dir });
 	process.env.PI_CODING_AGENT_DIR = dir;
 	preProfileAgentDirEnv = dir;
@@ -562,6 +775,10 @@ export function setProfile(profile: string | undefined): void {
 			readPiProfileFromEnvSafe(),
 		);
 	}
+	// Same obligation as `setAgentDir` / `refreshDirsFromEnv`: this function
+	// exists to rebuild the resolver after the environment changes, so a config
+	// root cache it leaves behind is frozen at the moment of the switch.
+	__resetConfigDirCacheForTests();
 	activeProfile = next;
 	if (activeProfile) {
 		dirs = new DirResolver({ profile: activeProfile });
@@ -595,9 +812,20 @@ export function getAgentDir(): string {
 	return dirs.agentDir;
 }
 
+/**
+ * Project-scoped config directory name, pinned to the legacy spelling.
+ *
+ * Deliberately NOT following the home-side rename, and deliberately not
+ * `CONFIG_DIR_NAME`: a `.omp` directory inside a project is usually already
+ * committed to that project's git history. Renaming it rewrites the user's
+ * repository rather than this product — so it is pinned here and the reason is
+ * recorded next to the constant instead of in a bead that closes.
+ */
+export const PROJECT_AGENT_DIR_NAME: string = LEGACY_CONFIG_DIR_NAME;
+
 /** Get the project-local config directory (.omp). */
 export function getProjectAgentDir(cwd: string = getProjectDir()): string {
-	return path.join(cwd, CONFIG_DIR_NAME);
+	return path.join(cwd, PROJECT_AGENT_DIR_NAME);
 }
 
 // =============================================================================
@@ -609,14 +837,22 @@ export function getReportsDir(): string {
 	return dirs.rootSubdir("reports", "state");
 }
 
-/** Get the logs directory (~/.omp/logs). */
+/**
+ * Get the logs directory — `logs` under the resolved **state** root.
+ *
+ * Not a fixed `~/.omp/logs`: the state root is `xdgState ?? configRoot`, and
+ * `configRoot` is itself resolved through {@link XDG_CONFIG_DIR_CANDIDATES},
+ * canonical spelling first (`dirs.ts:83`). A docblock naming one spelling
+ * describes one branch of that resolution, so a reader who took it literally
+ * would look in the wrong place on an install that resolved the other branch.
+ */
 export function getLogsDir(): string {
 	return dirs.rootSubdir("logs", "state");
 }
 
 /**
  * Local-timezone `YYYY-MM-DD` day key (zero-padded), formatted exactly like
- * the rotating log sink's file naming: log files are named `omp.<day>.<pid>.log`
+ * the rotating log sink's file naming: log files are named `ultraworkers.<day>.<pid>.log`
  * with the LOCAL day, not the UTC day `toISOString()` yields. Anything that
  * computes "today's" log path or matches same-day log files by name must use
  * this key, or between local midnight and UTC midnight it points at files that
@@ -626,7 +862,15 @@ export function localDay(date: Date): string {
 	return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-/** Get this process's dated log path (~/.omp/logs/omp.YYYY-MM-DD.PID.log, local-day named like the rotating sink). */
+/**
+ * Get this process's dated log path — `<logs dir>/<APP_NAME>.<local-day>.<pid>.log`.
+ *
+ * Both halves of the old `~/.omp/logs/omp.YYYY-MM-DD.PID.log` were wrong, and
+ * only one was visible from the signature: the directory is resolved (see
+ * {@link getLogsDir}), and the file name comes from `APP_NAME`, not the literal
+ * this comment used to print. The neighbouring {@link localDay} docblock
+ * already named the real form.
+ */
 export function getLogPath(date = new Date(), pid = process.pid): string {
 	return path.join(getLogsDir(), `${APP_NAME}.${localDay(date)}.${pid}.log`);
 }
@@ -673,8 +917,8 @@ export function getRemoteDir(): string {
  * empty/whitespace input or a path that is still relative after expansion.
  *
  * A worktree base is process-global and consumed by both creation
- * (PR checkout, task isolation) and cleanup (`omp worktree`). A relative value
- * would resolve against whatever cwd happened to launch `omp`, so checkout and
+ * (PR checkout, task isolation) and cleanup (`ultraworkers worktree`). A relative value
+ * would resolve against whatever cwd happened to launch `ultraworkers`, so checkout and
  * cleanup could disagree — we refuse it rather than silently bind it to cwd.
  */
 function resolveWorktreeBase(value: string | undefined): string | undefined {
@@ -690,7 +934,7 @@ let worktreesDirOverride: string | undefined;
 
 /**
  * Relocate the base directory for agent-managed worktrees (PR checkouts, task
- * isolation, and `omp worktree` cleanup all read the same base). Driven by the
+ * isolation, and `ultraworkers worktree` cleanup all read the same base). Driven by the
  * `worktree.base` setting in coding-agent; pass `undefined`/empty to clear and
  * fall back to `OMP_WORKTREE_DIR` or the `~/.omp/wt` default.
  *
@@ -730,7 +974,7 @@ export function getPythonEnvDir(): string {
 	return dirs.rootSubdir("python-env", "data");
 }
 
-/** Get the shared Python gateway state directory (~/.omp/agent/python-gateway; XDG default: $XDG_STATE_HOME/omp/python-gateway). */
+/** Get the shared Python gateway state directory (~/.omp/agent/python-gateway; XDG default: $XDG_STATE_HOME/ultraworkers/python-gateway). */
 export function getPythonGatewayDir(): string {
 	return dirs.agentSubdir(undefined, "python-gateway", "state");
 }
@@ -755,7 +999,7 @@ export function getDocsRsCacheDir(): string {
 	return dirs.rootSubdir("webcache", "cache");
 }
 
-/** Get the auto-QA grievances SQLite database path (~/.omp/autoqa.db; XDG: $XDG_DATA_HOME/omp/autoqa.db). */
+/** Get the auto-QA grievances SQLite database path (~/.omp/autoqa.db; XDG: $XDG_DATA_HOME/ultraworkers/autoqa.db). */
 export function getAutoQaDbPath(): string {
 	return dirs.rootSubdir("autoqa.db", "data");
 }
@@ -907,11 +1151,11 @@ export function getTinyModelsCacheDir(agentDir?: string): string {
 	return dirs.agentSubdir(agentDir, path.join("cache", "tiny-models"), "cache");
 }
 
-/** Get the document conversion cache directory (~/.omp/agent/cache/document-conversions; XDG default: $XDG_CACHE_HOME/omp/cache/document-conversions). */
+/** Get the document conversion cache directory (~/.omp/agent/cache/document-conversions; XDG default: $XDG_CACHE_HOME/ultraworkers/cache/document-conversions). */
 export function getDocumentConversionCacheDir(agentDir?: string): string {
 	return dirs.agentSubdir(agentDir, path.join("cache", "document-conversions"), "cache");
 }
-/** Get the composer speculative cache database (~/.omp/agent/cache/composer.db; XDG default: $XDG_CACHE_HOME/omp/cache/composer.db). */
+/** Get the composer speculative cache database (~/.omp/agent/cache/composer.db; XDG default: $XDG_CACHE_HOME/ultraworkers/cache/composer.db). */
 export function getComposerCacheDbPath(agentDir?: string): string {
 	return dirs.agentSubdir(agentDir, path.join("cache", "composer.db"), "cache");
 }
@@ -971,9 +1215,9 @@ export function getCustomSessionFilesDir(agentDir?: string): string {
 	return dirs.agentSubdir(agentDir, "custom-session-files", "state");
 }
 
-/** Get the crash log path (~/.omp/agent/omp-crash.log). */
+/** Get the crash log path (~/.omp/agent/omp-crash.log, named from {@link APP_NAME}). */
 export function getCrashLogPath(agentDir?: string): string {
-	return dirs.agentSubdir(agentDir, "omp-crash.log", "state");
+	return dirs.agentSubdir(agentDir, `${APP_NAME}-crash.log`, "state");
 }
 
 /** Get the debug log path (~/.omp/agent/omp-debug.log). */
@@ -985,7 +1229,7 @@ export function getDebugLogPath(agentDir?: string): string {
  * Best-effort one-time copy of a legacy config-root file to its redirected XDG
  * location. Existing installs that enable XDG after the file was created keep
  * their data (e.g. a placeholder key whose loss would break deobfuscation of
- * persisted transcripts). The legacy file is left in place for older omp
+ * persisted transcripts). The legacy file is left in place for older ultraworkers
  * versions sharing the profile.
  */
 function adoptLegacyFile(legacyPath: string, targetPath: string): void {
@@ -1000,24 +1244,24 @@ function adoptLegacyFile(legacyPath: string, targetPath: string): void {
 	}
 }
 
-/** Get the secret placeholder key path (~/.omp/agent/secret-placeholder.key; XDG default: $XDG_STATE_HOME/omp/secret-placeholder.key). Adopts a legacy key on first XDG resolution. */
+/** Get the secret placeholder key path (~/.omp/agent/secret-placeholder.key; XDG default: $XDG_STATE_HOME/ultraworkers/secret-placeholder.key). Adopts a legacy key on first XDG resolution. */
 export function getSecretPlaceholderKeyPath(): string {
 	const keyPath = dirs.agentSubdir(undefined, "secret-placeholder.key", "state");
 	adoptLegacyFile(path.join(dirs.agentDir, "secret-placeholder.key"), keyPath);
 	return keyPath;
 }
 
-/** Directory holding the per-model tiny-worker sockets and logs (~/.omp/run/tiny; XDG default: $XDG_STATE_HOME/omp/run/tiny). */
+/** Directory holding the per-model tiny-worker sockets and logs (~/.omp/run/tiny; XDG default: $XDG_STATE_HOME/ultraworkers/run/tiny). */
 export function getTinyWorkerRuntimeDir(): string {
 	return dirs.rootSubdir(path.join("run", "tiny"), "state");
 }
 
-/** Root directory containing every per-project daemon runtime scope (~/.omp/run/daemons; XDG default: $XDG_STATE_HOME/omp/run/daemons). */
+/** Root directory containing every per-project daemon runtime scope (~/.omp/run/daemons; XDG default: $XDG_STATE_HOME/ultraworkers/run/daemons). */
 export function getDaemonRuntimeRoot(): string {
 	return dirs.rootSubdir(path.join("run", "daemons"), "state");
 }
 
-/** Get the daemon runtime directory for a project (~/.omp/run/daemons/<hash>; XDG default: $XDG_STATE_HOME/omp/run/daemons/<hash>). */
+/** Get the daemon runtime directory for a project (~/.omp/run/daemons/<hash>; XDG default: $XDG_STATE_HOME/ultraworkers/run/daemons/<hash>). */
 export function getDaemonRuntimeDir(projectDir: string): string {
 	const key = Bun.hash.wyhash(path.resolve(projectDir)).toString(16).padStart(16, "0");
 	return path.join(getDaemonRuntimeRoot(), key);
@@ -1036,12 +1280,12 @@ export function getGlobalDaemonRuntimeDir(service: string): string {
 	return path.join(getGlobalDaemonRuntimeRoot(), service);
 }
 
-/** Get the provider in-flight root directory (~/.omp/run/provider-inflight; XDG default: $XDG_STATE_HOME/omp/run/provider-inflight). */
+/** Get the provider in-flight root directory (~/.omp/run/provider-inflight; XDG default: $XDG_STATE_HOME/ultraworkers/run/provider-inflight). */
 export function getProviderInFlightRoot(): string {
 	return dirs.rootSubdir(path.join("run", "provider-inflight"), "state");
 }
 
-/** Get the marketplaces registry path (~/.omp/marketplaces.json; XDG default: $XDG_DATA_HOME/omp/marketplaces.json). Adopts a legacy registry on first XDG resolution. */
+/** Get the marketplaces registry path (~/.omp/marketplaces.json; XDG default: $XDG_DATA_HOME/ultraworkers/marketplaces.json). Adopts a legacy registry on first XDG resolution. */
 export function getMarketplacesRegistryPath(): string {
 	const registryPath = dirs.rootSubdir("marketplaces.json", "data");
 	adoptLegacyFile(path.join(dirs.configRoot, "marketplaces.json"), registryPath);
@@ -1096,13 +1340,13 @@ let cachedInstallId: string | null = null;
 const INSTALL_ID_FILE = "install-id";
 /**
  * Application label for usage attribution (`OMP_APP_NAME`), defaulting to
- * `omp`. Embedders that drive omp programmatically (robomp, CI bots, …) set
+ * {@link APP_NAME}. Embedders that drive ultraworkers programmatically (robomp, CI bots, …) set
  * the env var so broker-side per-client burn tracking can answer "what did
  * app X use" instead of folding everything into one install-wide bucket.
  */
 export function getAppName(): string {
 	const value = process.env.OMP_APP_NAME?.trim();
-	return value ? value : "omp";
+	return value ? value : APP_NAME;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1121,13 +1365,49 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * profile shares one id and the global cache stays correct no matter the
  * profile / `getInstallId` call order.
  */
+/**
+ * Persist an install id, tolerating the races this module has always tolerated.
+ *
+ * `O_EXCL` so a concurrent first call cannot clobber a winner, and a swallowed
+ * failure so the caller keeps a usable in-memory value for the rest of the
+ * process. Mirrors the create path in {@link getInstallId} rather than inventing
+ * a second write discipline for the same file.
+ */
+function writeInstallId(filePath: string, id: string): void {
+	try {
+		fs.mkdirSync(path.dirname(filePath), { recursive: true });
+		const fd = fs.openSync(filePath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+		try {
+			fs.writeSync(fd, `${id}\n`);
+		} finally {
+			fs.closeSync(fd);
+		}
+	} catch {}
+}
+
 export function getInstallId(): string {
 	if (cachedInstallId) return cachedInstallId;
-	const filePath = path.join(getBaseConfigRoot(), INSTALL_ID_FILE);
+
+	// Writes land in the canonical root, always. Reads walk the candidates in
+	// order, so an install that still only has a legacy id is found there — and
+	// the first assertion any test of this makes is that the SAME uuid comes
+	// back, not merely that some uuid comes back. A test that only checked the
+	// second would let the system read the legacy root forever and never
+	// converge, which is the failure this line exists to prevent.
+	const home = os.homedir();
+	// An explicit override names the one root to use for BOTH directions — the
+	// same precedence `getConfigDirName` applies. Deriving the write path from
+	// the write root alone would silently ignore `PI_CONFIG_DIR`, so an install
+	// that redirects its config root kept reading and writing somewhere else.
+	const override = process.env.ULTRAWORKERS_CONFIG_DIR || process.env.PI_CONFIG_DIR;
+	const writePath = override
+		? path.join(home, override, INSTALL_ID_FILE)
+		: path.join(home, getConfigWriteRootName(), INSTALL_ID_FILE);
+	const legacyPath = override ? writePath : path.join(home, LEGACY_CONFIG_DIR_NAME, INSTALL_ID_FILE);
 
 	let observedInvalid = false;
 	try {
-		const existing = fs.readFileSync(filePath, "utf8").trim();
+		const existing = fs.readFileSync(writePath, "utf8").trim();
 		if (UUID_RE.test(existing)) {
 			cachedInstallId = existing;
 			return existing;
@@ -1135,6 +1415,22 @@ export function getInstallId(): string {
 		// File present but unparseable — fall through and overwrite below.
 		observedInvalid = existing.length > 0;
 	} catch {}
+
+	if (!observedInvalid) {
+		// No usable id in the canonical root. The legacy one, if any, is this
+		// install's real identity — adopting it is what stops the rebrand from
+		// re-identifying every existing user as a new install.
+		try {
+			const legacy = fs.readFileSync(legacyPath, "utf8").trim();
+			if (UUID_RE.test(legacy)) {
+				writeInstallId(writePath, legacy);
+				cachedInstallId = legacy;
+				return legacy;
+			}
+		} catch {}
+	}
+
+	const filePath = writePath;
 
 	const next = crypto.randomUUID();
 	try {

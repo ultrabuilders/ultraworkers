@@ -1,5 +1,5 @@
 /** Anthropic on-demand compaction: prefix-only requests, signed replay and failure fallback. */
-import { afterEach, describe, expect, test, vi } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "bun:test";
 import {
 	findAnthropicCompactionCut,
 	type CompactionPreparation,
@@ -108,11 +108,58 @@ function recordingCompleteImpl(respond: (ctx: Context, options: SimpleStreamOpti
 	return { calls, completeImpl };
 }
 
+/**
+ * An ambient `ANTHROPIC_BASE_URL` silently switches the entire native lane off.
+ *
+ * `resolveDirectAnthropicBaseUrl` (packages/ai/src/providers/anthropic-state.ts:18)
+ * honours the env var even when the model already names the official endpoint, so a
+ * proxy or gateway left in the developer's shell makes
+ * `shouldUseAnthropicNativeCompaction` false. Every case below then still passes or
+ * fails on the *fallback* path, and 13 of them fail with symptoms that name the
+ * wrong thing entirely — `firstKeptEntryId` is `kept-1` rather than `kept-2`, which
+ * reads as a keep-budget bug and sends you hunting through two innocent commits.
+ *
+ * Scrubbed here, at this file's own process layer, and restored below: the product
+ * behaviour is correct and must not change, and a hand-maintained scrub list in a
+ * shared runner is how this goes wrong a second time. `resolveDirectAnthropicBaseUrl`
+ * reads the variable on every call, so this takes effect without a module reload.
+ */
+let ambientBaseUrl: string | undefined;
+beforeAll(() => {
+	ambientBaseUrl = process.env.ANTHROPIC_BASE_URL;
+	delete process.env.ANTHROPIC_BASE_URL;
+});
+afterAll(() => {
+	if (ambientBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL;
+	else process.env.ANTHROPIC_BASE_URL = ambientBaseUrl;
+});
+
 afterEach(() => {
 	vi.restoreAllMocks();
 });
 
 describe("shouldUseAnthropicNativeCompaction", () => {
+	test("the native lane is selected for this model", () => {
+		expect(shouldUseAnthropicNativeCompaction(makeAnthropicModel())).toBe(true);
+	});
+
+	test("a non-official ANTHROPIC_BASE_URL is what the scrub above exists for", () => {
+		// Pins the hazard rather than the scrub. A row asserting "the env var is
+		// undefined" would be hollow: the scrub guarantees that, so it could never go
+		// red and would prove nothing. This one sets the variable itself and asserts
+		// the lane really does turn off — so it goes red if `resolveDirectAnthropicBaseUrl`
+		// ever stops honouring the environment, which is the signal that the scrub has
+		// become unnecessary rather than that it is broken.
+		//
+		// It also documents why the 13 failures below looked like keep-budget bugs.
+		process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:20128/v1";
+		try {
+			expect(shouldUseAnthropicNativeCompaction(makeAnthropicModel())).toBe(false);
+		} finally {
+			delete process.env.ANTHROPIC_BASE_URL;
+		}
+	});
+
 	test("covers beta-supported first-party models on supported endpoints", () => {
 		expect(shouldUseAnthropicNativeCompaction(makeAnthropicModel())).toBe(true);
 		expect(shouldUseAnthropicNativeCompaction(makeAnthropicModel({ remoteCompaction: { enabled: false } }))).toBe(

@@ -30,7 +30,10 @@ export function createGallerySegmentContext(sessionOptions?: GallerySessionOptio
 		activeRepo: {
 			cwd: "/workspace/oh-my-pi",
 			repoRoot: "/workspace/oh-my-pi",
-			relativeRepoRoot: "oh-my-pi",
+			// Display-only, and deliberately the post-rebrand name: this is the string
+			// a gallery screenshot shows, so `repoRoot` staying `/workspace/oh-my-pi`
+			// is the point rather than an inconsistency.
+			relativeRepoRoot: "ultraworkers",
 			source: "single-direct-child-repo",
 		},
 		width: 100,
@@ -161,7 +164,7 @@ function variantsFor(id: StatusLineSegmentId): readonly SegmentVariantSpec[] {
 					label: "linked worktree",
 					context: {
 						options: { path: { stripWorkPrefix: true } },
-						worktree: { projectName: "oh-my-pi", worktreeName: "gallery-reference" },
+						worktree: { projectName: "ultraworkers", worktreeName: "gallery-reference" },
 						git: { branch: "gallery-reference", status: null, pr: null },
 					},
 				},

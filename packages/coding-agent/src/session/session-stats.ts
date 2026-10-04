@@ -6,10 +6,11 @@ import {
 	type SessionMessageEntry,
 } from "@oh-my-pi/pi-agent-core/compaction";
 import type { AssistantMessage, Model, ProviderResponseMetadata, Usage } from "@oh-my-pi/pi-ai";
-import { isRecord } from "@oh-my-pi/pi-utils";
 import type { ModelRegistry } from "../config/model-registry";
 import type { Settings } from "../config/settings";
 
+import { addUsageInto, emptyUsage } from "@oh-my-pi/pi-catalog/usage-merge";
+import { reportedToolUsage } from "../tools/usage-reporter";
 import type { ContextUsage } from "../extensibility/extensions/types";
 import {
 	computeNonMessageBreakdown,
@@ -20,7 +21,13 @@ import type { ContextUsageBreakdown, SessionStats } from "./agent-session-types"
 import { getLatestCompactionEntry } from "./session-context";
 import type { ModelUsageEntry, SessionEntry } from "./session-entries";
 import type { SessionManager } from "./session-manager";
-import { buildUsageBreakdown, TOOLS_SUMMARIES_BUCKET, type UsageBucketInput } from "./usage-breakdown";
+import {
+	buildUsageBreakdown,
+	CACHE_ATTRIBUTION_WINDOW_MS,
+	NOISE_FLOOR_TOKENS,
+	TOOLS_SUMMARIES_BUCKET,
+	type UsageBucketInput,
+} from "./usage-breakdown";
 import { cfgSkillful } from "./settings";
 
 interface PendingContextSnapshot {
@@ -76,6 +83,110 @@ function activeModelUsageEntries(branch: SessionEntry[]): ModelUsageEntry[] {
 	return branch.slice(startIndex).filter((entry): entry is ModelUsageEntry => entry.type === "model_usage");
 }
 
+/**
+ * Prompt-cache read the session was billed for twice, in tokens.
+ *
+ * A turn is charged only when the read genuinely collapsed — the turn after one
+ * that read more — AND something explains the collapse. The triggers are the same
+ * three `buildSessionContext` treats as `pendingReset` (`session-context.ts`
+ * `handleEntryResetTracking`): a compaction, a `model_change`, a plan-mode
+ * transition. Plus a serving-model change, which `trackMessageCacheState`
+ * derives from the messages rather than the entries.
+ *
+ * Where this DELIBERATELY diverges from `trackMessageCacheState`: that function
+ * consumes `pendingReset` on every assistant turn it sees, while this one holds
+ * the reset across a turn that produced no usage. A turn with no usage got no
+ * provider response, so it neither read a cache nor invalidated one — it cannot
+ * be what the reset was explaining. `cacheMissExplainedAt` is a transcript
+ * display decision ("did the turn before this one cause this turn's drop — draw
+ * the marker or not?", `ui-helpers.ts`), and an error turn consuming the
+ * explanation is the right call for a question about the immediately preceding
+ * turn. This is a question about whether the cache was lost and whether anything
+ * was responsible, and there the reset belongs to the next turn that actually
+ * made a request. So for a compaction → dead turn → collapsing turn sequence the
+ * transcript draws no marker while this reports a justified loss. Both are right
+ * about their own question; the two numbers are not the same number and must not
+ * be read as one. `test/session/cache-miss-attribution.test.ts` pins both halves
+ * of that against the real `buildSessionContext`.
+ *
+ * The amount is the drop, not this turn's prompt. Re-reading a prefix you already
+ * paid to read is the loss; the genuinely-new tail of the prompt is not, and
+ * billing it as a miss would overstate every compaction by the size of the
+ * conversation that survived it.
+ *
+ * Time between turns gates the ambiguous case: inside
+ * {@link CACHE_ATTRIBUTION_WINDOW_MS} a re-read is just the next request after a
+ * fast reply, and charging it to the previous turn would be worse than not
+ * answering. A model change is exempt — the new model's prefix is cold by
+ * construction, however quickly it follows.
+ */
+function cacheMissTokens(branch: readonly SessionEntry[]): number {
+	let pendingReset = false;
+	let currentMode = "none";
+	let lastModel: string | undefined;
+	let lastCacheRead = 0;
+	let lastFinishedAt: number | undefined;
+	let missedTokens = 0;
+	// Providers that have shown any cache activity at all this session. Read
+	// BEFORE the current turn joins it, so a provider that only ever warms up
+	// later cannot excuse an earlier cold turn.
+	const providersReportingCaching = new Set<string>();
+
+	for (const entry of branch) {
+		if (entry.type === "compaction" || entry.type === "model_change") {
+			pendingReset = true;
+			continue;
+		}
+		if (entry.type === "mode_change") {
+			if ((entry.mode === "plan") !== (currentMode === "plan")) pendingReset = true;
+			currentMode = entry.mode;
+			continue;
+		}
+		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+
+		const turn = entry.message;
+		// A turn that produced no usage never invalidated anything either, so it
+		// must not consume a pending reset on behalf of the turn that follows it.
+		const usage = turn.usage;
+		if (!usage) continue;
+
+		const model = `${turn.provider}/${turn.model}`;
+		const modelChanged = lastModel !== undefined && lastModel !== model;
+		const providerReportsCaching = providersReportingCaching.has(turn.provider);
+		if (usage.cacheRead > 0 || usage.cacheWrite > 0) providersReportingCaching.add(turn.provider);
+
+		const lost = Math.max(0, lastCacheRead - usage.cacheRead);
+		if (lost >= NOISE_FLOOR_TOKENS) {
+			const idleMs = lastFinishedAt === undefined ? 0 : Math.max(0, turn.timestamp - lastFinishedAt);
+			// A provider that reports a warm read elsewhere already explains its own
+			// cold turns; one that reports neither is not reporting cache data at all,
+			// so the model change is the only explanation left standing.
+			const explained = pendingReset || (modelChanged && !providerReportsCaching);
+			if (explained && (modelChanged || idleMs >= CACHE_ATTRIBUTION_WINDOW_MS)) missedTokens += lost;
+		}
+
+		pendingReset = false;
+		lastModel = model;
+		lastCacheRead = usage.cacheRead;
+		lastFinishedAt = turn.completedAt ?? turn.timestamp;
+	}
+	return missedTokens;
+}
+
+/**
+ * Per-million cacheRead rate for a breakdown row key.
+ *
+ * `Tools/summaries` is not a model, so it has no single rate — returning
+ * undefined leaves its share of the miss unpriced rather than guessing from one
+ * of the subagent models folded into it.
+ */
+function cacheReadRatePerMillion(registry: ModelRegistry, key: string): number | undefined {
+	if (key === TOOLS_SUMMARIES_BUCKET) return undefined;
+	const separator = key.indexOf("/");
+	if (separator <= 0) return undefined;
+	return registry.find(key.slice(0, separator), key.slice(separator + 1))?.cost.cacheRead;
+}
+
 /** Computes session totals and tracks the in-flight context estimate. */
 export class SessionStatsTracker {
 	readonly #host: SessionStatsTrackerHost;
@@ -118,50 +229,32 @@ export class SessionStatsTracker {
 		let assistantMessages = 0;
 		let toolResults = 0;
 		let toolCalls = 0;
-		let totalInput = 0;
-		let totalOutput = 0;
-		let totalCacheRead = 0;
-		let totalReasoning = 0;
-		let totalCacheWrite = 0;
-		let totalTokens = 0;
-		let totalCost = 0;
-		let totalPremiumRequests = 0;
-		let creditCost = 0;
-		let committedCreditCost = 0;
-		let committedAcuCost = 0;
-		let hasCredits = false;
 		const routedModels: Record<string, number> = {};
 		const bucketInputs: UsageBucketInput[] = [];
+		// One canonical total, folded through the shared helper, read once at the
+		// end. This closure used to name eight fields by hand, so any field it did
+		// not name was dropped here while another path kept it — the divergence the
+		// shared helper exists to end. Reading `reasoning`, `premiumRequests` and
+		// the credit meters off the SAME total also means the reported scalars
+		// cannot disagree with the token totals about which records carried them.
+		const usageTotal = emptyUsage();
 		const addUsage = (usage: Usage): void => {
-			totalInput += usage.input;
-			totalOutput += usage.output;
-			totalReasoning += usage.reasoningTokens ?? 0;
-			totalCacheRead += usage.cacheRead;
-			totalCacheWrite += usage.cacheWrite;
-			totalTokens += usage.totalTokens;
-			totalPremiumRequests += usage.premiumRequests ?? 0;
-			totalCost += usage.cost.total;
-			const credits = usage.credits;
-			if (credits !== undefined) {
-				hasCredits = true;
-				creditCost += credits.cost ?? 0;
-				committedCreditCost += credits.committedCost ?? 0;
-				committedAcuCost += credits.acuCost ?? 0;
-			}
+			addUsageInto(usageTotal, usage);
 		};
 		for (const message of state.messages) {
 			if (message.role === "user") {
 				userMessages++;
 			} else if (message.role === "toolResult") {
 				toolResults++;
-				if (message.toolName === "task") {
-					const usage = taskToolUsage(message.details);
-					// A `task` result is a CHILD process's usage, not the user's model,
-					// so it gets its own bucket instead of being folded into the caller.
-					if (usage) {
-						addUsage(usage);
-						bucketInputs.push({ key: TOOLS_SUMMARIES_BUCKET, isTurn: false, usage });
-					}
+				const usage = reportedToolUsage(message.toolName, message.details);
+				// A sub-run's usage is a CHILD process's usage, not the user's model,
+				// so it gets its own bucket instead of being folded into the caller.
+				// The tool name is no longer tested here: every tool with a
+				// registered reporter contributes, and one without contributes
+				// nothing — the pre-seam behaviour for every name but `task`.
+				if (usage) {
+					addUsage(usage);
+					bucketInputs.push({ key: TOOLS_SUMMARIES_BUCKET, isTurn: false, usage });
 				}
 			} else if (message.role === "assistant") {
 				assistantMessages++;
@@ -182,7 +275,8 @@ export class SessionStatsTracker {
 				}
 			}
 		}
-		for (const entry of activeModelUsageEntries(this.#host.sessionManager.getBranch())) {
+		const branch = this.#host.sessionManager.getBranch();
+		for (const entry of activeModelUsageEntries(branch)) {
 			addUsage(entry.usage);
 			// Model-usage entries describe subagent models, so they belong with the
 			// other subagent work rather than under a model the user never selected.
@@ -197,28 +291,34 @@ export class SessionStatsTracker {
 			toolResults,
 			totalMessages: state.messages.length,
 			tokens: {
-				input: totalInput,
-				output: totalOutput,
-				reasoning: totalReasoning,
-				cacheRead: totalCacheRead,
-				cacheWrite: totalCacheWrite,
-				total: totalTokens,
+				input: usageTotal.input,
+				output: usageTotal.output,
+				reasoning: usageTotal.reasoningTokens ?? 0,
+				cacheRead: usageTotal.cacheRead,
+				cacheWrite: usageTotal.cacheWrite,
+				total: usageTotal.totalTokens,
 			},
-			cost: totalCost,
-			premiumRequests: totalPremiumRequests,
-			...(hasCredits
+			cost: usageTotal.cost.total,
+			premiumRequests: usageTotal.premiumRequests ?? 0,
+			...(usageTotal.credits !== undefined
 				? {
 						credits: {
-							cost: creditCost,
-							committedCost: committedCreditCost,
-							acuCost: committedAcuCost,
+							cost: usageTotal.credits.cost ?? 0,
+							committedCost: usageTotal.credits.committedCost ?? 0,
+							acuCost: usageTotal.credits.acuCost ?? 0,
 						},
 					}
 				: undefined),
 			...(Object.keys(routedModels).length > 0 ? { routedModels } : undefined),
 			// Fed from the SAME three sources as the flat totals above, so the
-			// attribution and the total cannot disagree.
-			usageBreakdown: buildUsageBreakdown({ buckets: bucketInputs }),
+			// attribution and the total cannot disagree. The miss walk reads the same
+			// branch: only the branch still carries the compaction and model_change
+			// entries that say WHY a read collapsed.
+			usageBreakdown: buildUsageBreakdown({
+				buckets: bucketInputs,
+				missedTokens: cacheMissTokens(branch),
+				cacheReadRatePerMillion: key => cacheReadRatePerMillion(this.#host.modelRegistry, key),
+			}),
 			contextUsage: this.getContextUsage(),
 		};
 	}
@@ -437,22 +537,4 @@ export class SessionStatsTracker {
 			responseStatus: response.status,
 		});
 	}
-}
-
-function taskToolUsage(details: unknown): Usage | undefined {
-	if (!details || typeof details !== "object") return undefined;
-	const usage = Reflect.get(details, "usage");
-	return isUsage(usage) ? usage : undefined;
-}
-
-function isUsage(value: unknown): value is Usage {
-	if (!isRecord(value) || !isRecord(value.cost)) return false;
-	return (
-		typeof value.input === "number" &&
-		typeof value.output === "number" &&
-		typeof value.cacheRead === "number" &&
-		typeof value.cacheWrite === "number" &&
-		typeof value.totalTokens === "number" &&
-		typeof value.cost.total === "number"
-	);
 }

@@ -1,21 +1,21 @@
 # Mnemopi memory backend
 
-omp can use `@oh-my-pi/pi-mnemopi` as a local long-term memory backend.
+ultraworkers can use `@oh-my-pi/pi-mnemopi` as a local long-term memory backend.
 
 Set:
 
 ```yaml
 memory:
-  backend: mnemopi
+   backend: mnemopi
 ```
 
 Example:
 
 ```yaml
 memory:
-  backend: mnemopi
+   backend: mnemopi
 mnemopi:
-  scoping: per-project-tagged
+   scoping: per-project-tagged
 ```
 
 With this backend enabled, the coding agent:
@@ -60,7 +60,7 @@ Read the full content and metadata for a recalled result with `read memory://<me
 | `mnemopi.debug`               | `false`            | Enable debug logging for backend failures.                                                                                                                                                                                                                                             |
 | `mnemopi.noEmbeddings`        | `false`            | Pass `noEmbeddings` to `Mnemopi` and force FTS-only recall.                                                                                                                                                                                                                            |
 | `mnemopi.embeddingVariant`    | `en`               | Local embedding model variant: `en` = `BAAI/bge-base-en-v1.5` (768d), `multilingual` = `intfloat/multilingual-e5-large` (1024d). `mnemopi.embeddingModel`/`MNEMOPI_EMBEDDING_MODEL` override it; changing it rebuilds stored embeddings on the next writable start.                    |
-| `mnemopi.embeddingModel`      | variant default    | Explicit embedding model id; overrides `mnemopi.embeddingVariant`. Precedence: this setting > `MNEMOPI_EMBEDDING_MODEL` env > variant default; a blank or `null` setting counts as unset.                                                                                                                                         |
+| `mnemopi.embeddingModel`      | variant default    | Explicit embedding model id; overrides `mnemopi.embeddingVariant`. Precedence: this setting > `MNEMOPI_EMBEDDING_MODEL` env > variant default; a blank or `null` setting counts as unset.                                                                                              |
 | `mnemopi.embeddingApiUrl`     | env/default        | OpenAI-compatible embedding endpoint passed to `Mnemopi`.                                                                                                                                                                                                                              |
 | `mnemopi.embeddingApiKey`     | env/default        | Embedding API key passed to `Mnemopi`.                                                                                                                                                                                                                                                 |
 | `mnemopi.llmMode`             | `smol`             | `smol` resolves the configured pi-ai `tiny` role then `smol`; `remote` uses the settings below; `none` disables LLM calls.                                                                                                                                                             |
@@ -96,9 +96,9 @@ FTS-only:
 
 ```yaml
 memory:
-  backend: mnemopi
+   backend: mnemopi
 mnemopi:
-  noEmbeddings: true
+   noEmbeddings: true
 ```
 
 Equivalent constructor shape:
@@ -111,18 +111,18 @@ Remote embeddings:
 
 ```yaml
 mnemopi:
-  embeddingModel: text-embedding-3-small
-  embeddingApiUrl: https://api.openai.com/v1
-  embeddingApiKey: ${OPENAI_API_KEY}
+   embeddingModel: text-embedding-3-small
+   embeddingApiUrl: https://api.openai.com/v1
+   embeddingApiKey: ${OPENAI_API_KEY}
 ```
 
 Equivalent constructor shape:
 
 ```ts
 new Mnemopi({
-  embeddingModel: "text-embedding-3-small",
-  embeddingApiUrl: "https://api.openai.com/v1",
-  embeddingApiKey,
+	embeddingModel: "text-embedding-3-small",
+	embeddingApiUrl: "https://api.openai.com/v1",
+	embeddingApiKey,
 });
 ```
 
@@ -130,10 +130,10 @@ Remote LLM:
 
 ```yaml
 mnemopi:
-  llmMode: remote
-  llmBaseUrl: https://api.openai.com/v1
-  llmApiKey: ${OPENAI_API_KEY}
-  llmModel: gpt-4.1-mini
+   llmMode: remote
+   llmBaseUrl: https://api.openai.com/v1
+   llmApiKey: ${OPENAI_API_KEY}
+   llmModel: gpt-4.1-mini
 ```
 
 Equivalent constructor shapes:
@@ -147,14 +147,14 @@ Dynamic function LLM for rotating OAuth tokens:
 
 ```ts
 new Mnemopi({
-  llm: async (prompt, opts) => {
-    const token = await getFreshOauthToken();
-    return await completeWithPiAi(prompt, {
-      token,
-      maxTokens: opts?.maxTokens,
-      temperature: opts?.temperature,
-    });
-  },
+	llm: async (prompt, opts) => {
+		const token = await getFreshOauthToken();
+		return await completeWithPiAi(prompt, {
+			token,
+			maxTokens: opts?.maxTokens,
+			temperature: opts?.temperature,
+		});
+	},
 });
 ```
 
@@ -162,14 +162,14 @@ pi-ai tiny/smol role LLM:
 
 ```yaml
 mnemopi:
-  llmMode: smol
+   llmMode: smol
 ```
 
 The coding agent resolves `tiny` first and then `smol`, and passes a dynamic completion function so every Mnemopi LLM call can fetch current provider credentials at call time:
 
 ```ts
 new Mnemopi({
-  llm: async (prompt, opts) => completeSmolWithCurrentAuth(prompt, opts),
+	llm: async (prompt, opts) => completeSmolWithCurrentAuth(prompt, opts),
 });
 ```
 

@@ -61,7 +61,7 @@ describe("session exit diagnostics", () => {
 	});
 
 	it("records a durable tool start marker and shutdown diagnostic before a pending result exists", async () => {
-		tempDir = TempDir.createSync("@pi-session-exit-");
+		tempDir = TempDir.createSync("@ultraworkers-session-exit-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		const modelRegistry = new ModelRegistry(authStorage);
@@ -140,7 +140,7 @@ describe("session exit diagnostics", () => {
 	});
 
 	it("signal teardown persists the postmortem reason, not the generic dispose", async () => {
-		tempDir = TempDir.createSync("@pi-session-exit-signal-");
+		tempDir = TempDir.createSync("@ultraworkers-session-exit-signal-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		const modelRegistry = new ModelRegistry(authStorage);
@@ -208,7 +208,7 @@ describe("session exit diagnostics", () => {
 	});
 
 	it("does not materialize an empty session just to write an exit marker", async () => {
-		tempDir = TempDir.createSync("@pi-empty-session-exit-");
+		tempDir = TempDir.createSync("@ultraworkers-empty-session-exit-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);
 		const model = getBundledModel("anthropic", "claude-sonnet-4-5");

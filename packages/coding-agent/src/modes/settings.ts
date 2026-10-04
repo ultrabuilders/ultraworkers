@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { combine, effect, register, type Setting } from "../config/registry";
 import { formatKeyHint, formatKeyHints } from "@oh-my-pi/pi-tui/app-keybindings";
 import { cfgReadToolResultPreview } from "../tools/settings";
@@ -1007,7 +1008,7 @@ export const cfgStartupCheckUpdate = register({
 		tab: "interaction",
 		group: "Startup & Updates",
 		label: "Check for Updates",
-		description: "Check for omp updates on startup",
+		description: `Check for ${APP_NAME} updates on startup`,
 	},
 });
 
@@ -1020,7 +1021,7 @@ export const cfgUpdateChannel = register({
 		tab: "interaction",
 		group: "Startup & Updates",
 		label: "Update Channel",
-		description: "Update channel used by omp update and the startup update check",
+		description: `Update channel used by ${APP_NAME} update and the startup update check`,
 		options: [
 			{ value: "stable", label: "Stable" },
 			{ value: "canary", label: "Canary" },

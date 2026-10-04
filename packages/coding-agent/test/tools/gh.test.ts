@@ -20,7 +20,14 @@ import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { withRepoLock } from "@oh-my-pi/pi-coding-agent/utils/repo-lock";
 import type { VcsGitRepo } from "@oh-my-pi/pi-natives";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
-import { getAgentDir, hashPath, normalizePathForComparison, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
+import {
+	getAgentDir,
+	getWorktreesDir,
+	hashPath,
+	normalizePathForComparison,
+	removeWithRetries,
+	setAgentDir,
+} from "@oh-my-pi/pi-utils";
 
 const TINY_PNG_BASE64 =
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
@@ -228,11 +235,20 @@ async function setupTempHome(): Promise<{ home: string; cleanup: () => Promise<v
  * local branch name, mirroring the encoding used by `pr_checkout`. Resolves
  * symlinks (matches the production `fs.realpath` step) so assertions match
  * the value rendered into the tool result.
+ *
+ * The root comes from `getWorktreesDir()`, never from a literal dot-dir. The
+ * config root moved from `.omp` to `.ultraworkers` with `.omp` kept as a
+ * read-only fallback, so a test that spells the root pins a migration step it
+ * does not own — and fails the moment the canonical spelling changes again.
+ * What this test actually owns is the *encoding*: `<pr>-<hash of primary root>`
+ * under the resolved worktrees root. `fs.realpath` throws if the tool never
+ * created the directory, which is the half of the contract that is really at
+ * risk here.
  */
-async function expectedWorktreePath(home: string, primaryRoot: string, localBranch: string): Promise<string> {
+async function expectedWorktreePath(primaryRoot: string, localBranch: string): Promise<string> {
 	const prNumber = localBranch.replace(/^pr-/, "");
 	const segment = `${prNumber}-${hashPath(primaryRoot)}`;
-	return fs.realpath(path.join(home, ".omp", "wt", segment));
+	return fs.realpath(path.join(getWorktreesDir(), segment));
 }
 
 describe("parsePrUnifiedDiff", () => {
@@ -1169,7 +1185,7 @@ describe("github tool", () => {
 			expect(githubSpy.mock.calls[1]?.[1]).toContain("ghe.example.com/contrib/repo");
 			const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 			const primaryRoot = vcs.requireGit(fixture.repoRoot).primaryRoot() ?? fixture.repoRoot;
-			const worktreePath = await expectedWorktreePath(tempHome.home, primaryRoot, "pr-123");
+			const worktreePath = await expectedWorktreePath(primaryRoot, "pr-123");
 			expect(text).toContain("Checked Out Pull Request #123");
 			expect(text).toContain(`Worktree: ${worktreePath}`);
 			// Contributor push metadata persisted to git config (single read).
@@ -1205,7 +1221,7 @@ describe("github tool", () => {
 
 	it("pins gh messages while preserving UTF-8 character locale", async () => {
 		if (process.platform === "win32") return;
-		const fakeBin = await fs.mkdtemp(path.join(os.tmpdir(), "omp-fake-gh-locale-"));
+		const fakeBin = await fs.mkdtemp(path.join(os.tmpdir(), "uw-fake-gh-locale-"));
 		const fakeGh = path.join(fakeBin, "gh");
 		await fs.writeFile(
 			fakeGh,
@@ -1328,8 +1344,8 @@ echo ok
 			const result = await tool.execute("pr-checkout", { op: "pr_checkout", pr: ["100", "200"] });
 			const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 			const primaryRoot = vcs.requireGit(fixture.repoRoot).primaryRoot() ?? fixture.repoRoot;
-			const wt100 = await expectedWorktreePath(tempHome.home, primaryRoot, "pr-100");
-			const wt200 = await expectedWorktreePath(tempHome.home, primaryRoot, "pr-200");
+			const wt100 = await expectedWorktreePath(primaryRoot, "pr-100");
+			const wt200 = await expectedWorktreePath(primaryRoot, "pr-200");
 
 			expect(text).toContain("# 2 Pull Request Worktrees");
 			expect(text).toContain("Checked Out Pull Request #100");

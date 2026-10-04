@@ -32,7 +32,7 @@ describe("AgentSession Anthropic wrap-up hint", () => {
 	let session: AgentSession | undefined;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-wrap-up-");
+		tempDir = TempDir.createSync("@ultraworkers-wrap-up-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("anthropic", "anthropic-test-key");
 	});

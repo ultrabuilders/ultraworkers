@@ -23,7 +23,7 @@ describe("Context usage consolidation", () => {
 	let mockModel: Model;
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-context-shared-");
+		sharedDir = TempDir.createSync("@ultraworkers-context-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		authStorage.keys.setRuntime("openai", "test-key");

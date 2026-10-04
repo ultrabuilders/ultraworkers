@@ -37,7 +37,7 @@ describe("ManagedTimers ownership", () => {
 			1,
 		);
 
-		expect(timers.clearFor(mine)).toBe(1);
+		expect(timers.clearForPath(mine.path)).toBe(1);
 
 		timers.clear(mineTimer);
 		timers.clearAll();
@@ -49,21 +49,21 @@ describe("ManagedTimers ownership", () => {
 
 	it("leaves an unowned timer alone, so it cannot be claimed by whichever extension unloads first", () => {
 		// The trampoline contexts have no extension to attribute a timer to. If
-		// `clearFor` could match the sentinel, unloading one extension would take
+		// `clearForPath` could match the sentinel, unloading one extension would take
 		// down every trampoline-scheduled timer in the process.
 		const timers = new ManagedTimers(() => {});
 		timers.setInterval(UNOWNED_TIMERS, () => {}, 1000);
 		timers.setInterval(extension("/ext/a"), () => {}, 1000);
 
-		expect(timers.clearFor(extension("/ext/a"))).toBe(1);
+		expect(timers.clearForPath("/ext/a")).toBe(1);
 		// If the sentinel had been cleared too, this would be 0.
-		expect(timers.clearFor(extension("/ext/a"))).toBe(0);
+		expect(timers.clearForPath("/ext/a")).toBe(0);
 		timers.clearAll();
 	});
 
 	it("reports nothing to clear for an extension that scheduled nothing", () => {
 		const timers = new ManagedTimers(() => {});
-		expect(timers.clearFor(extension("/ext/never-seen"))).toBe(0);
+		expect(timers.clearForPath("/ext/never-seen")).toBe(0);
 	});
 
 	it("keeps the sentinel unmatchable by any real path", () => {

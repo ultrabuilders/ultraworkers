@@ -67,7 +67,7 @@ describe("InteractiveMode plan.defaultOnStartup", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-default-plan-");
+		tempDir = TempDir.createSync("@ultraworkers-default-plan-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		cfgStartupQuiet.set(Settings.instance, true);
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
@@ -292,7 +292,7 @@ describe("InteractiveMode plan.defaultOnStartup", () => {
 		});
 		await created.init({ suppressWelcomeIntro: true });
 
-		await session!.refreshMCPTools([mcpTool]);
+		await session!.refreshMCPTools([mcpTool], "connect");
 		expect(session!.getEnabledToolNames()).toContain(mcpTool.name);
 		expect(session!.getMountedXdevToolNames()).toContain(mcpTool.name);
 
@@ -309,7 +309,7 @@ describe("InteractiveMode plan.defaultOnStartup", () => {
 		const created = createHarness(Settings.isolated({ "plan.defaultOnStartup": true, "compaction.enabled": false }));
 		await created.init({ suppressWelcomeIntro: true });
 		const mcpTool = makeMcpTool();
-		await session!.refreshMCPTools([mcpTool]);
+		await session!.refreshMCPTools([mcpTool], "connect");
 		const resolvedPlanPath = resolveLocalUrlToPath(planFilePath, {
 			getArtifactsDir: () => session!.sessionManager.getArtifactsDir(),
 			getSessionId: () => session!.sessionManager.getSessionId(),
@@ -370,7 +370,7 @@ describe("InteractiveMode plan.defaultOnStartup", () => {
 		const previousModel = session?.model;
 		await created.init({ suppressWelcomeIntro: true });
 		const planModel = session?.model;
-		await session!.refreshMCPTools([mountedTool]);
+		await session!.refreshMCPTools([mountedTool], "connect");
 		await session!.setActiveToolsByName([...session!.getEnabledToolNames(), planSelectedTool.name]);
 		const planTools = session!.getEnabledToolNames();
 		const planActiveTools = session!.getActiveToolNames();

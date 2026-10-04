@@ -6,18 +6,19 @@
  * evaluation is unnecessary in an ordinary interactive process.
  */
 /** Blob-broker selector shared by the CLI dispatcher and worker launcher. */
-export const BLOB_BROKER_WORKER_ARG = "__omp_worker_blob_broker";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
+export const BLOB_BROKER_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}blob_broker`;
 /** Computer-worker selector shared by the CLI dispatcher and worker launcher. */
-export const COMPUTER_WORKER_ARG = "__omp_worker_computer";
+export const COMPUTER_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}computer`;
 /** Daemon-broker selector shared by the CLI dispatcher and worker launcher. */
-export const DAEMON_BROKER_WORKER_ARG = "__omp_worker_daemon_broker";
+export const DAEMON_BROKER_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}daemon_broker`;
 /** IDA-host selector shared by the CLI dispatcher and the broker daemon spec. */
-export const IDA_HOST_WORKER_ARG = "__omp_worker_ida_host";
+export const IDA_HOST_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}ida_host`;
 /** LSP-multiplexer selector shared by the CLI dispatcher and worker launcher. */
-export const LSP_MUX_WORKER_ARG = "__omp_worker_lsp_mux";
+export const LSP_MUX_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}lsp_mux`;
 /** Activity-worker selector shared by the CLI dispatcher and worker launcher. */
-export const STATS_ACTIVITY_WORKER_ARG = "__omp_worker_stats_activity";
+export const STATS_ACTIVITY_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stats_activity`;
 /** Text-prediction daemon selector shared by the CLI dispatcher and the broker daemon spec. */
-export const TEXT_PREDICT_WORKER_ARG = "__omp_worker_text_predict";
+export const TEXT_PREDICT_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}text_predict`;
 /** Terminal-output selector shared by the CLI dispatcher and worker launcher. */
-export const TERMINAL_OUTPUT_WORKER_ARG = "__omp_worker_terminal_output";
+export const TERMINAL_OUTPUT_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}terminal_output`;

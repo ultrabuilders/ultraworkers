@@ -183,11 +183,11 @@ export const BUILTIN_COLLABORATION_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpe
 		allowArgs: true,
 		handle: async (command, runtime) => {
 			try {
-				const { outputPath, useUserThemes } = parseExportArgs(command.args);
+				const { outputPath, useUserThemes, formatId } = parseExportArgs(command.args);
 				if (outputPath === "--copy" || outputPath === "clipboard" || outputPath === "copy") {
 					return usage("Use /dump to copy the session to clipboard.", runtime);
 				}
-				const filePath = await runtime.session.exportToHtml({ outputPath, useUserThemes });
+				const filePath = await runtime.session.exportToHtml({ outputPath, useUserThemes, formatId });
 				await runtime.output(`Session exported to: ${filePath}`);
 				return commandConsumed();
 			} catch (err) {
@@ -292,7 +292,7 @@ export const BUILTIN_COLLABORATION_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpe
 		inlineHint: "[start|view|list|stop|status] [relayUrl]",
 		subcommands: [
 			{ name: "view", description: "Share a read-only link (guests can watch, not prompt)" },
-			{ name: "list", description: "List active local Collab hosts (no links; use `omp collab link`)" },
+			{ name: "list", description: `List active local Collab hosts (no links; use \`${APP_NAME} collab link\`)` },
 			{ name: "status", description: "Show link + participants" },
 			{ name: "stop", description: "Stop sharing" },
 		],
@@ -336,8 +336,8 @@ export const BUILTIN_COLLABORATION_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpe
 				return;
 			}
 			if (verb === "list") {
-				// Same registry as `omp collab list`: metadata only, never a link. A
-				// link is a deliberate per-host act (`omp collab link <id> [--view]`),
+				// Same registry as `ultraworkers collab list`: metadata only, never a link. A
+				// link is a deliberate per-host act (`ultraworkers collab link <id> [--view]`),
 				// so a listing can be shown or logged without granting anything.
 				if (rest.trim()) {
 					ctx.showError(`Usage: /collab list — for links or JSON use \`${APP_NAME} collab link|list\``);

@@ -144,7 +144,7 @@ describe("AgentSession Gemini header-runaway interrupt", () => {
 	let session: AgentSession | undefined;
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-gemini-header-interrupt-shared-");
+		sharedDir = TempDir.createSync("@ultraworkers-gemini-header-interrupt-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("openrouter", "openrouter-test-key");
 		modelRegistry = new ModelRegistry(authStorage);

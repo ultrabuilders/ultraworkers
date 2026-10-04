@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
@@ -15,6 +16,8 @@ import {
 	shouldEnableHyperlinksByDefault,
 	shouldEnableSynchronizedOutputByDefault,
 	synchronizedOutputUserOverride,
+	setOsc99Supported,
+	TerminalInfo,
 	isInsideHerdr,
 	isInsideTerminalMultiplexer,
 } from "@oh-my-pi/pi-tui/terminal-capabilities";
@@ -103,7 +106,7 @@ describe("detectTerminalId", () => {
 
 describe("tmux client terminal resolution", () => {
 	it.skipIf(process.platform === "win32")("uses the attached client's terminal profile", async () => {
-		const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-tmux-client-"));
+		const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-tmux-client-"));
 		try {
 			const tmux = path.join(binDir, "tmux");
 			await Bun.write(
@@ -130,22 +133,45 @@ printf "%s\\n" "WezTerm 20260905-175422-0f4b5596"
 				cmd: [
 					process.execPath,
 					"--eval",
-					`import { TERMINAL, TERMINAL_ID } from "@oh-my-pi/pi-tui/terminal-capabilities";
-console.log(JSON.stringify({ id: TERMINAL_ID, notifyProtocol: TERMINAL.notifyProtocol }));`,
+					// The budget is passed in rather than left to the production
+					// default, because the contract under test is "a WezTerm
+					// client_termtype yields the wezterm profile" — not "the
+					// default budget survives a loaded machine". Reading the same
+					// module-level TERMINAL_ID a production caller reads would put
+					// a 500ms wall-clock race between this assertion and whatever
+					// else the suite is running, which is how the test became
+					// flaky in the first place.
+					`import { detectTerminalId, getTerminalInfo } from "@oh-my-pi/pi-tui/terminal-capabilities";
+const id = detectTerminalId(process.env, 30000);
+console.log(JSON.stringify({ id, notifyProtocol: getTerminalInfo(id).notifyProtocol }));`,
 				],
 				env,
 				stdout: "pipe",
 				stderr: "pipe",
 			});
+			const startedAt = performance.now();
 			const [stdout, stderr, exitCode] = await Promise.all([
 				new Response(proc.stdout).text(),
 				new Response(proc.stderr).text(),
 				proc.exited,
 			]);
+			const elapsedMs = Math.round(performance.now() - startedAt);
 
-			expect(stderr).toBe("");
-			expect(exitCode).toBe(0);
-			expect(stdout).toBe('{"id":"wezterm","notifyProtocol":"\\u001b]9;"}\n');
+			// One assertion, not three. As separate `expect`s a failure reports
+			// only that some value differed and leaves the other two unread —
+			// and on a flake that runs once in hundreds, whatever is not printed
+			// is lost for good. Together these four separate the branches: a
+			// non-zero exit with empty stderr and no stdout means the child
+			// itself failed, while exit 0 with the wrong stdout means the query
+			// succeeded and answered something other than WezTerm. Elapsed is
+			// carried too, because a duration alone cannot tell those apart —
+			// see epic-afrw.
+			expect({ exitCode, stderr, stdout, elapsedMs }).toEqual({
+				exitCode: 0,
+				stderr: "",
+				stdout: '{"id":"wezterm","notifyProtocol":"\\u001b]9;"}\n',
+				elapsedMs: expect.any(Number),
+			});
 		} finally {
 			await fs.rm(binDir, { force: true, recursive: true });
 		}
@@ -361,26 +387,108 @@ console.log(JSON.stringify({ id: TERMINAL_ID, imageProtocol: TERMINAL.imageProto
  * image-protocol pin, then applies the caller's overrides. Keeps the suite
  * independent of which terminal it runs inside (full-suite safe).
  */
-function subprocessEnv(overrides: Record<string, string | undefined>): Record<string, string | undefined> {
-	const env: Record<string, string | undefined> = { ...Bun.env };
-	for (const key of [
-		"PI_FORCE_IMAGE_PROTOCOL",
-		"PASEO_TERMINAL_ID",
-		"KITTY_WINDOW_ID",
-		"GHOSTTY_RESOURCES_DIR",
-		"HERDR_ENV",
-		"HERDR_PANE_ID",
-		"HERDR_TAB_ID",
-		"HERDR_WORKSPACE_ID",
-		"WEZTERM_PANE",
-		"ITERM_SESSION_ID",
-		"VSCODE_PID",
-		"ALACRITTY_WINDOW_ID",
-	]) {
-		delete env[key];
+/**
+ * Terminal-identification markers and image-protocol pins, matched by family
+ * rather than enumerated by name.
+ *
+ * Enumerating names cannot keep the promise in this function's docblock: a
+ * terminal that introduces a variable nobody listed is simply not stripped, and
+ * the suite's result then depends on the machine it ran on — the exact
+ * dependence "full-suite safe" rules out. Matching families means a new
+ * variable inside a known terminal's namespace is covered without anyone
+ * remembering to add it.
+ *
+ * `PI_` is deliberately broader than "terminal marker": it also cuts
+ * `PI_CODING_AGENT_DIR`, `PI_PROFILE`, `PI_CONFIG_DIR` and `PI_CONFIG_FILES`,
+ * which are config, not capability. That is the accepted trade — the narrower
+ * alternative lets through the very flags this list exists to stop
+ * (`PI_NO_HYPERLINKS` is read by `hyperlinksUserOverride` in
+ * `terminal-capabilities.ts`). The measured
+ * blast radius is 0 because this helper is file-local and its only callers
+ * spawn a child for terminal detection. **Do not use it to spawn a process
+ * that needs to read the user's config** — the cut would be silent.
+ */
+const TERMINAL_MARKER_PREFIXES = [
+	"TERM",
+	"COLORTERM",
+	"WEZTERM_",
+	"KITTY_",
+	"GHOSTTY_",
+	"ITERM_",
+	"ALACRITTY_",
+	"VSCODE_",
+	"CMUX_",
+	"ZELLIJ_",
+	"WT_",
+	"HERDR_",
+	"PASEO_",
+	"PI_",
+	"__CF",
+	"STY",
+	"TMUX",
+] as const;
+
+function isTerminalMarker(key: string): boolean {
+	return TERMINAL_MARKER_PREFIXES.some(prefix => key.startsWith(prefix));
+}
+
+function subprocessEnv(
+	overrides: Record<string, string | undefined>,
+	base: Record<string, string | undefined> = Bun.env,
+): Record<string, string | undefined> {
+	const env: Record<string, string | undefined> = {};
+	for (const [key, value] of Object.entries(base)) {
+		if (isTerminalMarker(key)) continue;
+		env[key] = value;
 	}
 	return { ...env, ...overrides };
 }
+
+describe("subprocessEnv keeps the suite independent of the terminal it runs in", () => {
+	// Driven through an explicit `base` rather than by mutating `Bun.env`: a
+	// marker that happens to be unset on this machine would make the assertion
+	// pass under the old enumerated list too, which is the one thing this test
+	// exists to rule out. Each key below is a real variable from a real
+	// terminal, and none of them was in that list.
+	it("strips markers from known families that no one enumerated", () => {
+		const env = subprocessEnv(
+			{},
+			{
+				COLORTERM: "truecolor",
+				WEZTERM_UNIX_SOCKET: "/tmp/wezterm",
+				KITTY_LISTEN_ON: "1",
+				CMUX_SURFACE_ID: "cmux-1",
+				TERM_FEATURES: "256color",
+				PI_FORCE_IMAGE_PROTOCOL: "kitty",
+				// These two are the ones that make the `PI_` prefix falsifiable.
+				// Neither matches the narrower `PI_FORCE_IMAGE` spelling, so
+				// narrowing the prefix back turns this test red instead of
+				// leaving it passing on the variable it happened to share.
+				PI_NO_TITLE: "1",
+				PI_TUI_RESIZE_IN_PLACE: "1",
+				SOME_UNRELATED_SETTING: "keep me",
+			},
+		);
+		expect(env.COLORTERM).toBeUndefined();
+		expect(env.WEZTERM_UNIX_SOCKET).toBeUndefined();
+		expect(env.KITTY_LISTEN_ON).toBeUndefined();
+		expect(env.CMUX_SURFACE_ID).toBeUndefined();
+		expect(env.TERM_FEATURES).toBeUndefined();
+		expect(env.PI_FORCE_IMAGE_PROTOCOL).toBeUndefined();
+		expect(env.PI_NO_TITLE).toBeUndefined();
+		expect(env.PI_TUI_RESIZE_IN_PLACE).toBeUndefined();
+		// Stripping is targeted: an unrelated variable still reaches the child.
+		expect(env.SOME_UNRELATED_SETTING).toBe("keep me");
+	});
+
+	// The overrides are what tests steer detection with, so they must survive the
+	// strip even when their key looks like a terminal marker.
+	it("applies overrides after stripping, so a steered marker is still steered", () => {
+		const env = subprocessEnv({ TERM_PROGRAM: "otty" }, { TERM_PROGRAM: "WezTerm", COLORTERM: "truecolor" });
+		expect(env.TERM_PROGRAM).toBe("otty");
+		expect(env.COLORTERM).toBeUndefined();
+	});
+});
 
 describe("otty terminal capabilities", () => {
 	it("recognizes TERM_PROGRAM=otty before the true-color fallback", () => {
@@ -757,5 +865,23 @@ describe("detectStyledUnderlineSupport", () => {
 		expect(detectStyledUnderlineSupport("ghostty", { STY: "1234.pts-0.host" })).toBe(false);
 		expect(detectStyledUnderlineSupport("wezterm", { TERM: "screen-256color" })).toBe(false);
 		expect(detectStyledUnderlineSupport("iterm2", { TERM_PROGRAM_VERSION: "3.5.0", ZELLIJ: "0" })).toBe(false);
+	});
+});
+
+describe("OSC 99 notification payloads carry the app name", () => {
+	it("base64-encodes APP_NAME as the source, and prefixes the generated id with it", () => {
+		// Two separate literals used to spell the app name here — the metadata
+		// value and the id prefix. Renaming one and not the other yields a
+		// notification attributed to a different app than the one that sent it,
+		// and nothing in the TUI notices.
+		setOsc99Supported(true);
+		const term = new TerminalInfo("base", null, true, true, NotifyProtocol.Osc99);
+
+		const sequence = term.formatNotification({ title: "Done", body: "ok" });
+
+		expect(sequence).toContain(`f=${Buffer.from(APP_NAME).toString("base64")}`);
+		// The counter is module-global and shared, so the ordinal is incidental;
+		// the prefix is the part that has to track the app name.
+		expect(sequence).toContain(`i=${APP_NAME}-`);
 	});
 });

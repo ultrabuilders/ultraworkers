@@ -1,0 +1,20 @@
+// NOTHING IN THIS REPO RUNS THIS FILE. Read that before trusting a green run.
+//
+// This project is not a workspace member: root package.json declares
+// `workspaces.packages = ["packages/*", "python/robomp/web"]`, and this directory matches
+// neither glob. `check:ts` typechecks via `bun run --filter './packages/*'`, a filter that
+// structurally cannot reach here — measured, not inferred: with
+// `const __probe: number = "not a number"` planted in engine/agentAdapter.ts, that exact
+// command still exits 0 and never reads the file.
+//
+// So this config exists so the tree CAN be typechecked, not because anything does it.
+// Its presence is the hazard: a tree with both a package.json and a tsconfig.json reads as
+// covered to anyone who runs `ls`, and no gate in this repo agrees.
+//
+// Until it is either added to `workspaces.packages` or given its own gate step, typecheck it
+// explicitly:  bunx tsc --noEmit -p tsconfig.json
+// (oxlint is not a substitute — it does not typecheck, so a type error is invisible to it.)
+{
+	"extends": "../../tsconfig.base.json",
+	"include": ["engine"]
+}

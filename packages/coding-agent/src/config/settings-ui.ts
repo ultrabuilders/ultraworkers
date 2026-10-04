@@ -3,6 +3,7 @@ import { SETTING_TABS, type SettingsDisplayEntry, type SettingsHost } from "@oh-
 import { isSettingsInitialized, Settings, settings } from "./settings";
 import { orderedSettings } from "./all-settings";
 import { type AnySetting, lookup } from "./registry";
+import { shadowingSource, writeGlobalSetting } from "./shadowing";
 
 import { cfgPlanAutosave, cfgPlanEnabled } from "../plan-mode/settings";
 import {
@@ -44,6 +45,17 @@ function envNote(setting: AnySetting): string {
 }
 
 /**
+ * Description suffix for whichever layer is shadowing this setting, not just
+ * the environment. Reuses `shadowingSource`'s released wording so the panel and
+ * `ultraworkers config set` describe the same shadowing identically.
+ */
+function provenanceNote(setting: AnySetting, scope: Settings): string {
+	if (!setting.envName || setting.envValue() !== undefined) return envNote(setting);
+	const shadow = shadowingSource(setting, scope);
+	return shadow ? ` ${shadow.message}` : "";
+}
+
+/**
  * Adapt the application schema and settings store to the terminal overlay. The panel shows and
  * edits the value of the settings layers, never an environment-supplied one (so an env credential
  * is never pre-filled or written to config); descriptions note an active environment variable.
@@ -54,7 +66,7 @@ export function createSettingsHost(): SettingsHost {
 		for (const setting of orderedSettings()) {
 			const ui = setting.ui;
 			if (ui?.tab !== tab) continue;
-			const note = envNote(setting);
+			const note = provenanceNote(setting, settings);
 			entries.push({
 				path: setting.id,
 				type: setting.type,
@@ -74,8 +86,20 @@ export function createSettingsHost(): SettingsHost {
 	return {
 		entries,
 		get: path => lookup(path)?.layered(settings),
-		set: (path, value) => resolve(path).set(settings, value),
+		set: (path, value) => {
+			// The post-write latch lives in `shadowing.ts`, shared with `ultraworkers config
+			// set` so the two surfaces cannot detect shadowing differently. The panel
+			// reverts: someone editing a value in a live session means the edit they
+			// are making now, and a value saved to the file that never takes effect
+			// is the case they cannot diagnose. `written: "reverted"` is what makes
+			// the TUI's own `SettingsWriteResult` claim true.
+			return writeGlobalSetting(resolve(path), settings, value, "revert");
+		},
 		unset: path => resolve(path).unset(settings),
+		// Not a cast: the declared return type is what forces coding-agent's
+		// `SettingProvenance` and the TUI's `SettingsProvenance` to stay the
+		// same union. Add a member to one and this stops type-checking.
+		provenance: path => resolve(path).provenance(settings),
 		normalizeProviderLimits: normalizeProviderMaxInFlightRequests,
 		validateProviderLimits: validateProviderMaxInFlightRequests,
 	};

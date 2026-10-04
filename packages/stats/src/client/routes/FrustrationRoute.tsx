@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -188,8 +189,12 @@ interface JudgePanelProps {
 	onRunChanged: () => void;
 }
 
-const UNAVAILABLE_HINT =
-	"Judging needs the omp host process: open the dashboard with omp stats and configure a judge model. Until then messages are classified by regex signals.";
+// Both readings use APP_NAME, and the reasoning is the same as ProvidersRoute's
+// SNAPSHOT_HINT, which carries the full note: `omp` exists only on the `bun run setup`
+// install path, so a published-package install has no such command. APP_NAME is also pinned
+// to the installed bin name by `bin-name-matches-app-name.test.ts`, so it cannot drift into
+// naming a command that does not exist — see that note for the measurement.
+const UNAVAILABLE_HINT = `Judging needs the ${APP_NAME} host process: open the dashboard with ${APP_NAME} stats and configure a judge model. Until then messages are classified by regex signals.`;
 
 function JudgePanel({ active, range, judgeAvailable, job, onRunStarted, onRunChanged }: JudgePanelProps) {
 	const [modalOpen, setModalOpen] = useState(false);

@@ -43,7 +43,7 @@ async function createHarness(sessionName: string): Promise<Harness> {
 		return harness;
 	}
 
-	const tempDir = TempDir.createSync("@pi-working-accent-");
+	const tempDir = TempDir.createSync("@ultraworkers-working-accent-");
 	await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	await initTheme(false);
 	const sessionManager = SessionManager.inMemory(tempDir.path());

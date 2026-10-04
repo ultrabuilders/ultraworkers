@@ -2,12 +2,76 @@ import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { $which } from "@oh-my-pi/pi-utils";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { $ } from "bun";
 
 const STATS_PROBE_TIMEOUT_MS = 500;
 const PROCESS_EXIT_POLL_MS = 50;
 const PROCESS_EXIT_POLLS = 10;
-const STATS_RUNTIME_IMAGES: Record<string, true> = { bun: true, node: true, omp: true, "omp-stats": true };
+
+/**
+ * Spellings of the installed main binary, current first.
+ *
+ * The pre-rebrand spelling stays a candidate because a port can still be held by
+ * a process from an older install, and this module's whole purpose is to refuse
+ * to act on a process it cannot positively identify. Dropping it would turn "I
+ * do not recognise this" into "I will not touch it" — which is the safe
+ * direction, but it also means a renamed dashboard holding the port would no
+ * longer be reclaimed, and the operator would get the refusal error forever.
+ *
+ * Built from `APP_NAME` rather than repeating the string so the name has exactly
+ * one source in this file; a second literal is a second thing to forget. Both
+ * entries are `[a-z0-9-]+`, which is what lets the alternation below be spliced
+ * into a RegExp without escaping — `server-port-conflict.test.ts` pins that shape
+ * so a name carrying a metacharacter fails there instead of matching wrongly here.
+ */
+const MAIN_BINARY_NAMES = ["omp", APP_NAME] as const;
+
+/** Alternation for use inside a RegExp source; see `MAIN_BINARY_NAMES` for why it is unescaped. */
+const MAIN_BINARY_ALTERNATION = MAIN_BINARY_NAMES.join("|");
+
+const STATS_RUNTIME_IMAGES: Record<string, true> = {
+	bun: true,
+	node: true,
+	"omp-stats": true,
+	...Object.fromEntries(MAIN_BINARY_NAMES.map(name => [name, true] as const)),
+};
+
+/** Process image name reduced to the form the tables here are keyed by. */
+export function normalizeImage(image: string): string {
+	return image
+		.toLowerCase()
+		.replace(/\.exe$/, "")
+		.replace(/ \(deleted\)$/, "");
+}
+
+/**
+ * Whether a process holding the port is one of ours.
+ *
+ * Exported because the alternative is untestable: reaching this through
+ * `prepareStatsPort` means spawning a real listener per spelling, and the case
+ * that matters — a name nobody renamed yet — is exactly the one an integration
+ * test on the current machine would not produce on its own.
+ *
+ * The rebrand moved the installed binary's name. This recognises both spellings
+ * on purpose: an install that has not been renamed still runs under the old one,
+ * and a port held by it must still be reclaimable rather than refused forever.
+ * That is why `MAIN_BINARY_NAMES` carries both, and why a change here must keep
+ * both — dropping the old name is not a cleanup, it silently stops this module
+ * doing its job for anyone on a previous install.
+ */
+export function isStatsDashboardProcess(image: string, commandLine: string): boolean {
+	const normalizedImage = normalizeImage(image);
+	const normalizedCommand = commandLine.toLowerCase().replaceAll("\\", "/");
+	return (
+		normalizedImage === "omp-stats" ||
+		/(?:^|[/"'\s])omp-stats(?:\.exe)?(?:["'\s]|$)/.test(normalizedCommand) ||
+		/\/packages\/stats\/src\/index\.ts(?:["'\s]|$)/.test(normalizedCommand) ||
+		(MAIN_BINARY_NAMES.includes(normalizedImage as (typeof MAIN_BINARY_NAMES)[number]) &&
+			/(?:^|\s)stats(?:\s|$)/.test(normalizedCommand)) ||
+		new RegExp(`(?:^|/)(?:${MAIN_BINARY_ALTERNATION})(?:\\.exe)?["'\\s]+stats(?:["'\\s]|$)`).test(normalizedCommand)
+	);
+}
 
 interface PortHolder {
 	pid: number;
@@ -236,20 +300,13 @@ async function reclaimStatsPort(port: number, hasDashboardIdentity = false): Pro
 		throw new Error(`Port ${port} is held by the current process (${holder.image}, PID ${holder.pid}).`);
 	}
 
-	const normalizedImage = holder.image
-		.toLowerCase()
-		.replace(/\.exe$/, "")
-		.replace(/ \(deleted\)$/, "");
-	const normalizedCommand = holder.commandLine.toLowerCase().replaceAll("\\", "/");
-	const hasStatsIdentity =
-		normalizedImage === "omp-stats" ||
-		/(?:^|[/"'\s])omp-stats(?:\.exe)?(?:["'\s]|$)/.test(normalizedCommand) ||
-		/\/packages\/stats\/src\/index\.ts(?:["'\s]|$)/.test(normalizedCommand) ||
-		(normalizedImage === "omp" && /(?:^|\s)stats(?:\s|$)/.test(normalizedCommand)) ||
-		/(?:^|\/)omp(?:\.exe)?["'\s]+stats(?:["'\s]|$)/.test(normalizedCommand);
-	if (!STATS_RUNTIME_IMAGES[normalizedImage] || (!hasStatsIdentity && !hasDashboardIdentity)) {
+	const normalizedImage = normalizeImage(holder.image);
+	if (
+		!STATS_RUNTIME_IMAGES[normalizedImage] ||
+		(!isStatsDashboardProcess(holder.image, holder.commandLine) && !hasDashboardIdentity)
+	) {
 		throw new Error(
-			`Port ${port} is in use by ${holder.image} (PID ${holder.pid}), which is not identifiable as an omp stats dashboard; refusing to stop it.`,
+			`Port ${port} is in use by ${holder.image} (PID ${holder.pid}), which is not identifiable as an ${APP_NAME} stats dashboard; refusing to stop it.`,
 		);
 	}
 

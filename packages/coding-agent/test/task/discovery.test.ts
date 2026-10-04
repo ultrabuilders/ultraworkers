@@ -260,13 +260,13 @@ describe("discoverAgents", () => {
 		// model selectors, so `model:` must survive discovery.
 		enableProvider("claude-plugins");
 		await writeOmpMarketplacePlugin(tempHome, {
-			agentName: "omp-probe",
+			agentName: "uw-probe",
 			model: '["@advisor", "@smol"]',
 			manifest: "none",
 		});
 
 		const { agents } = await discoverAgents(projectDir, tempHome);
-		const agent = agents.find(candidate => candidate.name === "omp-probe");
+		const agent = agents.find(candidate => candidate.name === "uw-probe");
 
 		expect(agent).toBeDefined();
 		expect(agent?.model).toEqual(["@advisor", "@smol"]);

@@ -2,6 +2,97 @@
 
 ## [Unreleased]
 
+### Added
+
+- `@oh-my-pi/pi-utils/brand` exports `APP_NAME` from a module that imports nothing. Browser-bundled code could previously not print the product name without importing `dirs`, which pulls `node:fs`, `node:os` and `node:path` into the client. There is still one definition: `dirs` re-exports it, so every existing import resolves unchanged.
+
+### Fixed
+
+- The archive size ceilings no longer claim to mirror a Rust type that is not in the tree. `ar/limits.ts` said it mirrored `Limits` in a crate named `omp-ar`, and no such crate exists at HEAD — the sentence pointed a reader at something they could not go and read, and invited the next person to keep a cross-language "mirror" in sync that was never written.
+
+- The Bun floor is now checked at every place it is written down, not only in the package manifests. `engines.bun` is read from exactly one manifest, but `scripts/install.sh` and the two npm-manifest generators each carry their own copy, and those were unchecked: a release raised the installer's floor while the manifest the runtime actually reads stayed behind, so the installer refused users the app ran fine on — with no error from any gate. The sources are compared against the manifest `dirs.ts` imports, so the next bump cannot be a silent no-op.
+
+- `sanitizeText` no longer truncates its input at a BEL-terminated escape sequence. Command output
+  is sanitized before it reaches the model, and a BEL-terminated DCS or APC — the shape a binary
+  dump, a terminal replay, or an inline-image escape takes — made the stripper treat the rest of
+  the text as the body of that sequence and delete it. The output came back short and looked
+  complete: nothing reported the truncation, and neither the user nor the model was told anything
+  was missing. A multi-line capture could lose every line after the sequence.
+
+### Added
+
+- A byte-equivalence harness makes "this change to the Markdown lexer did not alter rendering"
+  something you can check instead of assume:
+  `bun run packages/utils/scripts/marked-equivalence.ts <ref-a> [ref-b]`
+  renders every Markdown file in the repository plus a generated set of edge cases through two
+  revisions of the lexer inside a single process, and reports the first place their output
+  diverges. With one revision it compares against the working tree, so an uncommitted change can
+  be checked too. Every input is compared as rendered HTML; the token-stream comparison
+  additionally runs on inputs up to 64 KB, and the report prints how many inputs each level
+  covered, so the comparison count is never mistaken for "both, everywhere".
+
+### Changed
+
+- New config, sessions and settings are written to `~/.ultraworkers` instead of `~/.omp`, and existing installs are read from both. The two names are resolved from one ordered list rather than two that agree today by accident, so a home directory holding either spelling resolves without configuration. Nothing is moved for you: `omp config migrate` shows what would move and writes only with `--apply`. A project-local `.omp` directory is deliberately **not** renamed — that directory is normally committed to your repository, so renaming it would rewrite your working tree rather than this product, and it keeps its name regardless of what the home directory is called.
+
+- The installed command is now `ultraworkers` instead of `omp`, and the worker selector namespace moved with it (`__omp_worker_*` → `__ultraworkers_worker_*`). `WIRE_NAME` is the single constant every internal reference derives from, so the user-facing command, the `User-Agent` sent to integrations and the internal argv selectors now agree on one identity. The separate `omp-stats` command keeps its name.
+
+### Fixed
+
+- A run of backticks with no closing backtick is no longer quadratic. The lexer looked for the
+  closing run one backtick at a time, and every one of those steps re-matched the _whole_
+  remaining run to measure the opening delimiter, so the work grew with the square of the run.
+  A run that cannot possibly close is now recognised once and consumed in a single step.
+  Measured by counting rather than by the clock, which is not reliable on a loaded machine: a
+  65,536-character run went from 65,536 passes through the loop to 1. Output is unchanged — a
+  backtick run was already a single text token, because adjacent text is coalesced, so this is
+  the same result reached once instead of a character at a time. Code spans that do close are
+  untouched, as is a backtick run sitting next to text.
+
+- Long runs of Markdown containing a link, an email address, or a line break are no longer
+  quadratic in four more places. The inline lexer decided whether the text ahead held an `@` by
+  scanning everything left of the cursor on every single character, asked the same question of
+  the remaining text every time it reached a `[`, searched for a hard line break with a pattern
+  that retried from every position whenever the run contained no newline, and — on ordinary
+  prose, not just runs of punctuation — scanned the rest of the paragraph for an `@` on every
+  step, because prose always has a formatting character further ahead. All four facts are now
+  settled once per run instead of once per character, so the work grows with the length of the
+  text rather than with its square. Rendering is unchanged: the lexer produces byte-identical
+  output to the previous version across 28,786 inputs — every paragraph of every Markdown file
+  in this repository, plus targeted cases for each pattern.
+
+- A paragraph containing a single link is no longer quadratic. The entry above settled the
+  question "is there a URL ahead?" once for the whole run, which is exactly right for text with
+  no links — the check never runs — but one link anywhere keeps that answer true for the entire
+  paragraph, so the search re-read everything ahead of the cursor on every character. The check
+  now follows the next link position as the cursor advances, and is skipped entirely when the
+  paragraph holds none. Measured by counting rather than by the clock: a 121 kB paragraph with
+  one link went from 428 million characters scanned to a single pass over the text, and the work
+  now grows with the length of the paragraph on both link-free and link-bearing input. Output is
+  unchanged, verified against 40,219 inputs including links, addresses, and the case where the
+  cursor comes to rest exactly on a link.
+
+- Runs of ordinary inline Markdown get markedly cheaper as they grow. The lexer read the last character of the text token it was still building, and because that token is accumulated as a rope, reading either end of it forces the engine to flatten it — so every iteration of a run with nothing to format paid to flatten the whole run again. The read now happens only in the two branches that use the value, and it is gone for plain text. This entry originally stopped here, warning that `*` and `_` runs were still quadratic because the guard deliberately skips them — the value they need is the one that costs. That warning is now **out of date**: the cost it pointed at was found and removed by the entries above, and those runs measure linear.
+
+- The worker selector prefix is now derived from `WIRE_NAME` instead of being written out beside it. The two were independent literals, so renaming the wire identity moved one and left the other — a tree could hold `WIRE_NAME = "omp"` next to `__ultraworkers_worker_` with every test green, because the selector parity test asserts how selectors relate to the prefix rather than what the prefix spells. That drift already reverted a completed rename once, in c7c8da296e, where a commit about selector derivation silently carried three unrelated files back to their old names.
+
+### Added
+
+- `errorMessage(value)` — turns any thrown value into text and never throws, so it is safe
+  to call from inside a `catch`. The common one-liner it replaces
+  (`value instanceof Error ? value.message : String(value)`) is not total: a `message` getter
+  or a `toString`/`Symbol.toPrimitive` that throws escapes the `catch` meant to contain it,
+  so a value with broken coercion could take the process down from inside error handling.
+  A value that cannot be coerced at all now reports `<unprintable thrown value>` instead of
+  propagating, and an `Error` with an empty message reports its type name rather than an
+  empty string that used to flow into logs looking like a rendered value
+
+- `atomicWriteJson(filePath, data)` — writes JSON through a uniquely-named temp file and a single
+  rename, so a reader never sees a half-written file. Each temp name is unique per call, so
+  concurrent writers of one path need no external lock. A rename that keeps failing is retried and
+  then reported rather than worked around by deleting the target, which previously opened a window
+  where the file did not exist and a failed retry left the previous contents unrecoverable
+
 ### Fixed
 
 - A compiled binary that starts inside a sandbox no longer comes up with an empty environment: the

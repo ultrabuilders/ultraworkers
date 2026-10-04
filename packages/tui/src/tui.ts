@@ -20,7 +20,7 @@ import * as logger from "@oh-my-pi/pi-utils/logger";
 import * as postmortem from "@oh-my-pi/pi-utils/postmortem";
 import type { TspFrame, TspNode, TspText } from "@oh-my-pi/pi-wire";
 import { DEFAULT_MAX_INLINE_IMAGES, ImageBudget } from "./components/image";
-import { TuiDebugServer } from "./debug-server";
+import { resolveTuiDebugSocketPath, TuiDebugServer } from "./debug-server";
 import { isKeyRelease, matchesKey } from "./keys";
 import { KITTY_PLACEHOLDER } from "./kitty-graphics";
 import { LoopWatchdog } from "./loop-watchdog";
@@ -28,6 +28,7 @@ import { assumedTspHello, NativeBackend, type NativeHost } from "./native/backen
 import { col } from "./native/describe";
 import { TSP_PREFIX, type TspHello } from "./native/encode";
 import type { DescribeContext, NativeNode, NativeSurfaceProvider, NativeUiEvent } from "./native/node";
+import { resizeInPlaceEnvOverride, resolveInPlaceResize } from "./host-render-strategy";
 import { STDOUT_BACKLOG_CLEAR_BYTES, setAltScreenActive, type Terminal } from "./terminal";
 import {
 	encodeKittyDeleteAllImages,
@@ -37,6 +38,7 @@ import {
 	isImageProtocolForced,
 	isInsideHerdr,
 	isInsideTerminalMultiplexer,
+	isPaseoEmbedder,
 	parseKittyDirectPlacementLine,
 	setCellDimensions,
 	setTerminalImageProtocol,
@@ -102,18 +104,6 @@ const MOUSE_TRACKING_OFF = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 
 type MouseTrackingState = "off" | "inline" | "full";
 
-/**
- * `PI_TUI_RESIZE_IN_PLACE=1|true` forces in-place resize (no alt-buffer borrow).
- * `0|false` forces the alt-buffer path even on Warp. Unset defers to Warp detection:
- * Warp re-reports its size on CSI ?1049h / CSI ?1049l, which the resize alt-borrow
- * turns into a flicker loop.
- */
-function resizeInPlaceOverride(): boolean | null {
-	const override = Bun.env.PI_TUI_RESIZE_IN_PLACE;
-	if (override === "1" || override === "true") return true;
-	if (override === "0" || override === "false") return false;
-	return null;
-}
 type InputListenerResult = { consume?: boolean; data?: string } | undefined;
 type InputListener = (data: string) => InputListenerResult;
 type StartListener = () => void;
@@ -258,7 +248,7 @@ export interface Component {
 
 	/**
 	 * Props for the native `overlay` wrapper when this component is shown as
-	 * an overlay: the sheet's `role` (Tern styles `omp.overlay.*` roles as
+	 * an overlay: the sheet's `role` (Tern styles `ultraworkers.overlay.*` roles as
 	 * glass sheets, so the component's own root must not draw a second frame),
 	 * `head` spans for the sheet's title row, and `size`/`anchor` overriding
 	 * the ones derived from the overlay options.
@@ -1472,8 +1462,8 @@ export class TUI extends Container {
 		this.#debugPaint = undefined;
 		this.#debugServer?.stop();
 		this.#debugServer = undefined;
-		const debugPath = process.env.OMP_TUI_DEBUG;
-		if (debugPath !== undefined && debugPath.length > 0) {
+		const debugPath = resolveTuiDebugSocketPath(process.env);
+		if (debugPath !== undefined) {
 			this.#debugServer = new TuiDebugServer(this, debugPath);
 			this.#debugServer.start();
 		}
@@ -1792,10 +1782,15 @@ export class TUI extends Container {
 	 * {@link ResizeScrollbackMode} rebuild that erases conhost's stale copy.
 	 */
 	#resizeRepaintsInPlace(): boolean {
-		const override = resizeInPlaceOverride();
-		if (override !== null) return override;
-		if (isInsideTerminalMultiplexer() || this.terminal.hostOwnsGridOnResize === true) return false;
-		return Bun.env.TERM_PROGRAM?.toLowerCase() === "warpterminal";
+		// The precedence — env override, then core's multiplexer/ConPTY safety
+		// veto, then any extension strategy, then Warp detection — lives in
+		// `resolveInPlaceResize`, which is pure and takes the environment as an
+		// argument. See that module for why the veto outranks a strategy.
+		return resolveInPlaceResize({
+			env: Bun.env,
+			hostOwnsGridOnResize: this.terminal.hostOwnsGridOnResize === true,
+			platform: process.platform,
+		});
 	}
 
 	#noteAltBufferToggle(): void {
@@ -2022,7 +2017,7 @@ export class TUI extends Container {
 		if (
 			this.terminal.hostOwnsGridOnResize === true &&
 			!isInsideTerminalMultiplexer() &&
-			resizeInPlaceOverride() !== true
+			resizeInPlaceEnvOverride(Bun.env) !== true
 		) {
 			this.#resolveResizeAnchor(undefined);
 			return;
@@ -2330,6 +2325,12 @@ export class TUI extends Container {
 	#finishSixelProbe(supported: boolean): void {
 		this.#clearSixelProbeState();
 		if (!supported || TERMINAL.imageProtocol) return;
+		// The refusal these embedders get from `resolveImageProtocol` has to survive
+		// a probe. That layer answers null for renderers whose xterm.js draws neither
+		// Kitty APC nor placeholders — which is exactly the state this probe runs in,
+		// so without this check a positive reply installs a protocol the capability
+		// layer refused a moment earlier. Nothing downstream re-reads that refusal.
+		if (isPaseoEmbedder() || isInsideHerdr()) return;
 
 		setTerminalImageProtocol(ImageProtocol.Sixel);
 		this.#queryCellSize();

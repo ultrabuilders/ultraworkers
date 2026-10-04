@@ -6,9 +6,40 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import type { BenchmarkKind, RunRole } from "./store";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
+
+/**
+ * Where `scripts/ci-release-build-binaries.ts` writes compiled binaries.
+ *
+ * Not `dist/`: that is the host build (`bun run build` emits a single
+ * un-suffixed `${APP_NAME}` there, and `nix/package.nix` installs from it). The
+ * platform-suffixed release artifacts live here.
+ */
+export const PREBUILT_BINARIES_DIR = path.join(REPO_ROOT, "packages", "coding-agent", "binaries");
+
+/**
+ * `--binary` arguments for the compiled release binaries that exist in
+ * `binariesDir`, at most one per architecture.
+ *
+ * The runner infers the architecture from each filename and keeps a single path
+ * per arch, so a second build of the same arch — the musl variants — would
+ * silently replace the first rather than add to it. One per arch is the whole
+ * contract; `runner.ts` chooses the one matching the target platform.
+ *
+ * A directory with no binaries yields no arguments, which is the state every
+ * checkout without a release build is in.
+ */
+export function prebuiltBinaryArgs(binariesDir: string = PREBUILT_BINARIES_DIR): string[] {
+	const argv: string[] = [];
+	for (const name of [`${APP_NAME}-linux-arm64`, `${APP_NAME}-linux-x64`]) {
+		const binary = path.join(binariesDir, name);
+		if (fs.existsSync(binary)) argv.push("--binary", binary);
+	}
+	return argv;
+}
 
 /** POST /api/runs body. Mirrors the runner CLI surface we actually use. */
 export interface LaunchRequest {
@@ -38,7 +69,7 @@ export interface LaunchRequest {
 	note?: string;
 	/** Experiment goal; upserted for the run's experiment (job-name prefix). */
 	goal?: string;
-	/** Use prebuilt dist/omp-linux-* binaries instead of the default source mount. */
+	/** Use prebuilt release binaries instead of the default source mount. */
 	prebuiltBinaries?: boolean;
 	/** Extra raw runner args, appended verbatim. */
 	extraArgs?: string[];
@@ -74,10 +105,7 @@ export function harborRunnerArgs(
 		}
 	}
 	if (request.prebuiltBinaries) {
-		for (const name of ["omp-linux-arm64", "omp-linux-x64"]) {
-			const binary = path.join(REPO_ROOT, "packages", "coding-agent", "dist", name);
-			if (fs.existsSync(binary)) argv.push("--binary", binary);
-		}
+		argv.push(...prebuiltBinaryArgs());
 	}
 	argv.push(...(request.extraArgs ?? []));
 	return argv;

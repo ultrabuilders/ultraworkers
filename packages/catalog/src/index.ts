@@ -11,6 +11,7 @@ export * from "./model-tokenizer";
 export * from "./models";
 export * from "./provider-models";
 export * from "./types";
+export * from "./usage-merge";
 export * from "./utils";
 export * from "./wire/codex";
 export * from "./wire/coreweave";

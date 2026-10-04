@@ -3,7 +3,7 @@
  *
  * `connectSharedLspTransport` ensures the per-project mux daemon is running
  * under the daemon broker (same lifecycle as the shared Chromium: started on
- * first use, stopped when the last omp process in the project exits), dials
+ * first use, stopped when the last ultraworkers process in the project exits), dials
  * its socket, performs the `omp/muxConnect` handshake, and returns an
  * {@link LspTransport} the ordinary LSP client machinery drives exactly like
  * a locally spawned server. Every failure degrades to `null` so callers fall
@@ -13,14 +13,16 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { logger, ptree } from "@oh-my-pi/pi-utils";
+import type { DaemonSnapshot } from "@oh-my-pi/pi-tui/tools/daemon";
 import { MessageFramer } from "../../jsonrpc/message-framing";
-import { daemonClientForProject } from "../../launch/client";
+import { type DaemonBrokerClient, daemonClientForProject } from "../../launch/client";
 import { describeQuietly, stopQuietly, waitReady } from "../../launch/ensure";
 import { daemonRuntimeDir } from "../../launch/paths";
 import { resolveWorkerSpawnCmd, SMOKE_TEST_TIMEOUT_MS, workerEnvFromParent } from "../../subprocess/worker-client";
 import type { LspJsonRpcRequest, LspJsonRpcResponse, LspTransport, LspWriteSink } from "../types";
 import {
 	LSP_MUX_DAEMON_NAME,
+	LSP_MUX_DAEMON_NAME_LEGACY,
 	LSP_MUX_PROJECT_DIR_ENV,
 	LSP_MUX_READY_PATTERN,
 	LSP_MUX_SOCKET_ENV,
@@ -226,6 +228,37 @@ async function probeMux(endpoint: string): Promise<boolean> {
 }
 
 /**
+ * Find the broker record for this project's mux daemon, and the name it is
+ * registered under.
+ *
+ * The broker keeps a daemon's name as a directory under the project scope, so a
+ * mux started by the previous version is still registered under
+ * {@link LSP_MUX_DAEMON_NAME_LEGACY} after an upgrade. Consulting only
+ * {@link LSP_MUX_DAEMON_NAME} would read that as "no daemon here" and skip the
+ * wedged-daemon recovery — the stale record then survives forever, because the
+ * replacement spawns under the current name and never retires the old one.
+ *
+ * The current name wins when both are registered. When neither is, the current
+ * name is returned with no record so callers behave exactly as they did before
+ * the legacy fallback existed.
+ *
+ * Exported for tests: the name it returns is what the recovery path stops by, so
+ * a wrong name is a silent no-op that no end-to-end run exercises (the loop only
+ * reaches it with a live-but-wedged record, which needs a real broker).
+ */
+export async function describeRegisteredMux(
+	client: DaemonBrokerClient,
+	signal: AbortSignal | undefined,
+): Promise<{ name: string; record: DaemonSnapshot | undefined }> {
+	const current = await describeQuietly(client, LSP_MUX_DAEMON_NAME, "LSP mux", signal);
+	if (current) return { name: LSP_MUX_DAEMON_NAME, record: current };
+	const legacy = await describeQuietly(client, LSP_MUX_DAEMON_NAME_LEGACY, "LSP mux", signal);
+	return legacy
+		? { name: LSP_MUX_DAEMON_NAME_LEGACY, record: legacy }
+		: { name: LSP_MUX_DAEMON_NAME, record: undefined };
+}
+
+/**
  * Ensure the project's mux daemon is running under the broker and reachable.
  * Returns its endpoint, or null when the shared path is unavailable.
  */
@@ -240,14 +273,14 @@ async function ensureLspMuxDaemon(projectDir: string, signal?: AbortSignal): Pro
 		signal?.throwIfAborted();
 		// A concurrent start may have won since the last round; adopt it.
 		if (await probeMux(endpoint)) return endpoint;
-		const existing = await describeQuietly(client, LSP_MUX_DAEMON_NAME, "LSP mux", signal);
+		const { name: registeredName, record: existing } = await describeRegisteredMux(client, signal);
 		if (existing && existing.state !== "exited" && existing.state !== "failed") {
 			if (existing.readyAt === undefined) {
-				await waitReady(client, LSP_MUX_DAEMON_NAME, "LSP mux", signal, READY_TIMEOUT_MS);
+				await waitReady(client, registeredName, "LSP mux", signal, READY_TIMEOUT_MS);
 			}
 			if (await probeMux(endpoint)) return endpoint;
 			// Live record but nothing listening: replace the wedged daemon.
-			await stopQuietly(client, LSP_MUX_DAEMON_NAME, "LSP mux", signal);
+			await stopQuietly(client, registeredName, "LSP mux", signal);
 			continue;
 		}
 		try {
@@ -323,8 +356,8 @@ export async function connectSharedLspTransport(opts: {
 export async function smokeTestLspMux(): Promise<void> {
 	const endpoint =
 		process.platform === "win32"
-			? `\\\\.\\pipe\\omp-lsp-mux-smoke-${process.pid.toString(16)}`
-			: path.join(os.tmpdir(), `omp-lsp-mux-smoke-${process.pid.toString(36)}.sock`);
+			? `\\\\.\\pipe\\uw-lsp-mux-smoke-${process.pid.toString(16)}`
+			: path.join(os.tmpdir(), `uw-lsp-mux-smoke-${process.pid.toString(36)}.sock`);
 	const spawn = resolveWorkerSpawnCmd(LSP_MUX_WORKER_ARG);
 	const proc = ptree.spawn(spawn.cmd, {
 		cwd: spawn.cwd,

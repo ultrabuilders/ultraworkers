@@ -1,5 +1,5 @@
 /**
- * Resolve auth-broker connection configuration for the local omp client.
+ * Resolve auth-broker connection configuration for the local ultraworkers client.
  *
  * This is a thin coding-agent wrapper around the shared resolver in
  * `@oh-my-pi/pi-ai/auth-broker/discover` that preserves the process-lifetime
@@ -34,7 +34,7 @@ import {
 	resolveAuthBrokerConfig as resolveAuthBrokerConfigShared,
 } from "@oh-my-pi/pi-ai/auth-broker/discover";
 import { MissingApiKeyError } from "@oh-my-pi/pi-ai/error";
-import { getAgentDir, logger } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getAgentDir, logger } from "@oh-my-pi/pi-utils";
 import { combine, type ScopeLike } from "../config/registry";
 import { resolveConfigValue } from "../config/resolve-config-value";
 import { Settings } from "../config/settings";
@@ -248,9 +248,13 @@ export async function describeAuthBrokerStartupError(error: unknown): Promise<st
 	const target = url ? ` at ${url}` : "";
 	return (
 		`Auth broker${target} is unreachable (${error.message}). ` +
-		"omp is configured to use this broker for credentials and will not fall back to local credentials automatically.\n" +
-		"Start the broker with `omp auth-broker serve`, or disable it with " +
-		"`omp config reset auth.broker.url` and `omp config reset auth.broker.token` " +
+		`${APP_NAME} is configured to use this broker for credentials and will not fall back to local credentials automatically.\n` +
+		// Spelled from APP_NAME rather than written out, because the recovery routes are commands
+		// the user has to type: a name this package does not put on PATH is not a recovery route.
+		// `bin-name-matches-app-name.test.ts` pins the manifest against APP_NAME, so both the
+		// installed name and this message move together on a rename.
+		`Start the broker with \`${APP_NAME} auth-broker serve\`, or disable it with ` +
+		`\`${APP_NAME} config reset auth.broker.url\` and \`${APP_NAME} config reset auth.broker.token\` ` +
 		"(or unset OMP_AUTH_BROKER_URL / OMP_AUTH_BROKER_TOKEN)."
 	);
 }

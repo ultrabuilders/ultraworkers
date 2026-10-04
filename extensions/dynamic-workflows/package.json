@@ -1,0 +1,11 @@
+{
+	"name": "@ultraworkers/extension-dynamic-workflows",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "parseWorkflowScript + vm determinism sandbox, copied from @quintinshaw/pi-dynamic-workflows v3.13.1 (MIT) per epic-dynamic-workflows-259n.3. Copied code is unchanged except where a note says otherwise.",
+	"license": "MIT",
+	"dependencies": {
+		"acorn": "^8.15.0"
+	}
+}

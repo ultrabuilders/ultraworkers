@@ -27,7 +27,7 @@ function buildLocalModel(api: string): Model<Api> {
 }
 
 async function expectContextReload(reset: (session: AgentSession) => Promise<unknown>): Promise<void> {
-	using tempDir = TempDir.createSync("@pi-context-reload-");
+	using tempDir = TempDir.createSync("@ultraworkers-context-reload-");
 	const marker = Bun.nanoseconds().toString(36);
 	const original = `ORIGINAL_RULES_${marker}`;
 	const updated = `UPDATED_RULES_${marker}`;

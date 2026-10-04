@@ -614,7 +614,7 @@ export class Editor implements Component, Focusable {
 	 * TSP chrome around the `editor` node (the prompt composer's chips, mode
 	 * chip, send/stop): the root role, the children with `input` placed where
 	 * the layout wants it, and the input's keypath for the caret-anchored
-	 * autocomplete. Unset: a plain `omp.editor` column over the input.
+	 * autocomplete. Unset: a plain `ultraworkers.editor` column over the input.
 	 */
 	describeLayout: ((input: NativeNode, cx: DescribeContext) => NativeEditorLayout) | undefined;
 	/** TSP placeholder for the empty buffer; natively it replaces the rotating ANSI {@link placeholder} hints. */
@@ -1685,7 +1685,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		const layout = this.describeLayout?.(editor.node, cx) ?? {
-			role: "omp.editor",
+			role: "ultraworkers.editor",
 			children: [editor.node],
 			caret: "input",
 		};
@@ -1698,7 +1698,12 @@ export class Editor implements Component, Focusable {
 				this.#nativeOverlay = {
 					list,
 					caret: layout.caret,
-					node: node("overlay", { anchor: { caret: layout.caret }, role: "omp.autocomplete" }, [list], "complete"),
+					node: node(
+						"overlay",
+						{ anchor: { caret: layout.caret }, role: "ultraworkers.autocomplete" },
+						[list],
+						"complete",
+					),
 				};
 			}
 			children.push(this.#nativeOverlay!.node);

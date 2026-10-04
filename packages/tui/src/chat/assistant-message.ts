@@ -2,7 +2,12 @@ import type { AssistantMessage, ImageContent, TextContent } from "@oh-my-pi/pi-a
 import { type Component, Container } from "../tui";
 import { Image, type ImageBudget } from "../components/image";
 import { ImageProtocol, TERMINAL } from "../terminal-capabilities";
-import { Markdown, type MarkdownTheme } from "../components/markdown";
+import {
+	foldMarkdownTransforms,
+	Markdown,
+	type MarkdownRenderTransform,
+	type MarkdownTheme,
+} from "../components/markdown";
 import { Spacer } from "../components/spacer";
 import { Text } from "../components/text";
 import { formatDuration, formatNumber } from "@oh-my-pi/pi-utils";
@@ -454,6 +459,16 @@ export class AssistantMessageComponent extends Container {
 	#hideThinkingBlock: boolean;
 	readonly #onImageUpdate?: () => void;
 	readonly #thinkingRenderers: readonly AssistantThinkingRenderer[];
+	/**
+	 * Extension-registered Markdown transforms, applied at parse time.
+	 *
+	 * Empty by default, which is what keeps an extension's rewrite out of every
+	 * transcript that never registered one. Owned here rather than passed to each
+	 * `new Markdown` because this component builds several instances per frame and
+	 * threading a parameter through all of them would be the same fact stated many
+	 * times.
+	 */
+	readonly #markdownTransformers: readonly MarkdownRenderTransform[];
 	readonly #imageBudget?: ImageBudget;
 	#proseOnlyThinking: boolean;
 
@@ -465,11 +480,13 @@ export class AssistantMessageComponent extends Container {
 		imageBudget?: ImageBudget,
 		proseOnlyThinking = true,
 		linkTargets?: ReadonlyMap<string, string>,
+		markdownTransformers: readonly MarkdownRenderTransform[] = [],
 	) {
 		super();
 		this.#hideThinkingBlock = hideThinkingBlock;
 		this.#onImageUpdate = onImageUpdate;
 		this.#thinkingRenderers = thinkingRenderers;
+		this.#markdownTransformers = markdownTransformers;
 		this.#imageBudget = imageBudget;
 		this.#proseOnlyThinking = proseOnlyThinking;
 
@@ -707,7 +724,7 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	/**
-	 * A `col` (role `omp.assistant`) of `md` nodes keyed by content index, so
+	 * A `col` (role `ultraworkers.assistant`) of `md` nodes keyed by content index, so
 	 * streamed deltas reach the terminal as `text append` on the same node;
 	 * the tail block carries `stream: true` until the message finalizes.
 	 * Thinking blocks are quiet collapsible `section`s (collapsed per
@@ -812,7 +829,7 @@ export class AssistantMessageComponent extends Container {
 								"row",
 								{ gap: "sm", title },
 								[
-									node("spinner", { style: "starburst", role: "omp.thinking.spin" }),
+									node("spinner", { style: "starburst", role: "ultraworkers.thinking.spin" }),
 									text([span("Thinking…", "muted")]),
 									elapsed(performance.now() - (this.#thinkingClock.get(index)?.start ?? performance.now())),
 									...(rate >= 0.05 ? [node("rate", { value: rate, unit: "tok/s" })] : []),
@@ -828,10 +845,10 @@ export class AssistantMessageComponent extends Container {
 								// `.live` while streaming: the body clamps to its tail under a fade.
 								// `.ghost` while thinking is hidden (Ctrl+T): only a faint "Thought for 12s" stays.
 								role: thinkingLive
-									? "omp.thinking.live"
+									? "ultraworkers.thinking.live"
 									: this.#hideThinkingBlock
-										? "omp.thinking.ghost"
-										: "omp.thinking",
+										? "ultraworkers.thinking.ghost"
+										: "ultraworkers.thinking",
 								collapsible: true,
 								// Open while it streams; a finished thought folds to its "Thought for 12s" line.
 								collapsed: this.#thinkingCollapsed.get(index) ?? (this.#hideThinkingBlock || !thinkingLive),
@@ -863,7 +880,7 @@ export class AssistantMessageComponent extends Container {
 			children.push(
 				node(
 					"badge",
-					{ text: "↺ rewound", tone: "muted", role: "omp.assistant.rewound-tag" },
+					{ text: "↺ rewound", tone: "muted", role: "ultraworkers.assistant.rewound-tag" },
 					undefined,
 					"rewound",
 				),
@@ -874,7 +891,7 @@ export class AssistantMessageComponent extends Container {
 			children.push(
 				node(
 					"row",
-					{ role: "omp.turn.usage", gap: "xs", align: "center", title: usage.title },
+					{ role: "ultraworkers.turn.usage", gap: "xs", align: "center", title: usage.title },
 					[
 						node("icon", { name: "time" }, undefined, "icon"),
 						node("text", { text: usage.text }, undefined, "text"),
@@ -883,7 +900,7 @@ export class AssistantMessageComponent extends Container {
 				),
 			);
 		}
-		return col(children, { role: this.#rewound ? "omp.assistant.rewound" : "omp.assistant" });
+		return col(children, { role: this.#rewound ? "ultraworkers.assistant.rewound" : "ultraworkers.assistant" });
 	}
 
 	/**
@@ -903,7 +920,7 @@ export class AssistantMessageComponent extends Container {
 			return node(
 				"section",
 				{
-					role: "omp.assistant.recovered",
+					role: "ultraworkers.assistant.recovered",
 					head: [span(`↻ Recovered after ${attempt} ${attempt === 1 ? "retry" : "retries"}`, "muted")],
 					collapsible: true,
 					collapsed: true,
@@ -915,7 +932,11 @@ export class AssistantMessageComponent extends Container {
 		if (presentation.kind !== "full" || message.content.some(content => content.type === "toolCall"))
 			return undefined;
 		if (message.stopReason === "aborted") {
-			return text([span(presentation.text, "error")], { wrap: "word", key: "error", role: "omp.assistant.abort" });
+			return text([span(presentation.text, "error")], {
+				wrap: "word",
+				key: "error",
+				role: "ultraworkers.assistant.abort",
+			});
 		}
 		const lines = presentation.text
 			.split("\n")
@@ -933,14 +954,14 @@ export class AssistantMessageComponent extends Container {
 				{ gap: "sm" },
 				[
 					text([span("Request failed", "error strong")]),
-					...(code ? [node("badge", { text: code[1]!, tone: "error", role: "omp.error.code" })] : []),
+					...(code ? [node("badge", { text: code[1]!, tone: "error", role: "ultraworkers.error.code" })] : []),
 				],
 				"head",
 			),
 			text([span(errorText, "mono")], {
 				wrap: "word",
 				lines: this.#errorExpanded ? undefined : MAX_TRANSCRIPT_ERROR_ROWS,
-				role: "omp.error.message",
+				role: "ultraworkers.error.message",
 				key: "message",
 			}),
 		];
@@ -948,14 +969,14 @@ export class AssistantMessageComponent extends Container {
 			const button = (act: string, label: string, keys: readonly string[], title: string): NativeNode =>
 				node(
 					"row",
-					{ gap: "xs", role: "omp.error.action", actions: { click: act }, title },
+					{ gap: "xs", role: "ultraworkers.error.action", actions: { click: act }, title },
 					keys.length > 0 ? [text(label), node("kbd", { keys })] : [text(label)],
 					act,
 				);
 			children.push(
 				node(
 					"row",
-					{ gap: "sm", role: "omp.error.actions" },
+					{ gap: "sm", role: "ultraworkers.error.actions" },
 					[
 						button("retry", "Retry", ["F5"], "Retry the failed turn"),
 						button("copy-error", "Copy error", [], "Copy the error message"),
@@ -966,10 +987,10 @@ export class AssistantMessageComponent extends Container {
 			);
 		}
 		this.#errorText = errorText;
-		return card({ role: "omp.error", tone: "error", key: "error" }, children);
+		return card({ role: "ultraworkers.error", tone: "error", key: "error" }, children);
 	}
 
-	/** Error frame action clicks: omp's own retry, clipboard and model-picker paths. */
+	/** Error frame action clicks: ultraworkers' own retry, clipboard and model-picker paths. */
 	#handleErrorAction(act: string): void {
 		if (act === "retry") runTranscriptAction({ act: "retry" });
 		else if (act === "switch-model") runTranscriptAction({ act: "switch-model" });
@@ -1173,21 +1194,42 @@ export class AssistantMessageComponent extends Container {
 		return md.render(width);
 	}
 
+	/**
+	 * Apply the extension transforms to a Markdown about to be drawn.
+	 *
+	 * The messageType is "assistant" here and "assistant-thinking" for the thinking
+	 * block, so an extension can rewrite one without rewriting the other. The width
+	 * is threaded by `Markdown` itself, which is the only place that knows it.
+	 */
+	#applyMarkdownTransform(md: Markdown, messageType: "assistant" | "assistant-thinking"): Markdown {
+		if (this.#markdownTransformers.length === 0) return md;
+		return md.setTransform((markdown, availableWidth) =>
+			foldMarkdownTransforms(
+				markdown,
+				{ messageType, isStreaming: false, availableWidth },
+				this.#markdownTransformers,
+			),
+		);
+	}
+
 	/** Constructor args mirror the live child Markdown so stable rows prefix the block render. */
 	#createStableMarkdown(kind: StablePartKind, text: string): Markdown {
-		return kind === "text"
-			? new Markdown(
-					text,
-					1,
-					0,
-					this.#getProseTheme(),
-					this.#textColorTransform ? { color: this.#textColorTransform } : undefined,
-					0,
-				)
-			: new Markdown(text, 1, 0, getMarkdownTheme(), {
-					color: (value: string) => theme.fg("thinkingText", value),
-					italic: true,
-				});
+		return this.#applyMarkdownTransform(
+			kind === "text"
+				? new Markdown(
+						text,
+						1,
+						0,
+						this.#getProseTheme(),
+						this.#textColorTransform ? { color: this.#textColorTransform } : undefined,
+						0,
+					)
+				: new Markdown(text, 1, 0, getMarkdownTheme(), {
+						color: (value: string) => theme.fg("thinkingText", value),
+						italic: true,
+					}),
+			kind === "text" ? "assistant" : "assistant-thinking",
+		);
 	}
 
 	#stableLedger(width: number): StableRowLedger {
@@ -1603,7 +1645,10 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				const trimmed = content.text.trim();
 				const mdOptions = this.#textColorTransform ? { color: this.#textColorTransform } : undefined;
-				const md = new Markdown(trimmed, 1, 0, this.#getProseTheme(), mdOptions, 0);
+				const md = this.#applyMarkdownTransform(
+					new Markdown(trimmed, 1, 0, this.#getProseTheme(), mdOptions, 0),
+					"assistant",
+				);
 				this.#contentContainer.addChild(md);
 				this.#emergencyText = md;
 				captureItems?.push({ md, contentIndex: i, blockType: "text", lastText: trimmed });
@@ -1628,10 +1673,13 @@ export class AssistantMessageComponent extends Container {
 					);
 
 				// Thinking traces in thinkingText color, italic
-				const md = new Markdown(thinkingText, 1, 0, getMarkdownTheme(), {
-					color: (text: string) => theme.fg("thinkingText", text),
-					italic: true,
-				});
+				const md = this.#applyMarkdownTransform(
+					new Markdown(thinkingText, 1, 0, getMarkdownTheme(), {
+						color: (text: string) => theme.fg("thinkingText", text),
+						italic: true,
+					}),
+					"assistant-thinking",
+				);
 				md.transientRenderCache = this.#lastUpdateTransient;
 				this.#contentContainer.addChild(md);
 				captureItems?.push({ md, contentIndex: i, blockType: "thinking", lastText: thinkingText });

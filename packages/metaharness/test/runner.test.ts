@@ -8,7 +8,9 @@ import {
 	collectForwardEnv,
 	parseArgs,
 	readTrials,
+	transcriptFilename,
 	resolveResumeConfig,
+	resolveContainerDns,
 } from "../src/runner";
 
 describe("generic agent-arg / env passthrough", () => {
@@ -26,13 +28,13 @@ describe("generic agent-arg / env passthrough", () => {
 		expect(cfg.agentArgs).toEqual(["--prewalk", "--prewalk-into", "google/gemini-3.5-flash"]);
 
 		const env = buildHarborEnv(cfg, "/tmp/models.yml", null, "test");
-		expect(JSON.parse(env.OMP_BENCH_AGENT_ARGS ?? "[]")).toEqual(cfg.agentArgs);
+		expect(JSON.parse(env.ULTRAWORKERS_BENCH_AGENT_ARGS ?? "[]")).toEqual(cfg.agentArgs);
 	});
 
-	it("omits OMP_BENCH_AGENT_ARGS when no --agent-arg was passed", () => {
+	it("omits ULTRAWORKERS_BENCH_AGENT_ARGS when no --agent-arg was passed", () => {
 		const cfg = parseArgs(["--model", "anthropic/claude-opus-4-8"]);
 		const env = buildHarborEnv(cfg, "/tmp/models.yml", null, "test");
-		expect(env.OMP_BENCH_AGENT_ARGS).toBeUndefined();
+		expect(env.ULTRAWORKERS_BENCH_AGENT_ARGS).toBeUndefined();
 	});
 
 	it("explicit --providers is authoritative; the default derives from the model", () => {
@@ -41,11 +43,11 @@ describe("generic agent-arg / env passthrough", () => {
 		// while only e.g. oauth-only providers route through the gateway.
 		const explicit = parseArgs(["--model", "anthropic/claude-opus-4-8", "--providers", "google"]);
 		const envExplicit = buildHarborEnv(explicit, "/tmp/models.yml", null, "test");
-		expect(new Set(envExplicit.OMP_BENCH_GATEWAY_PROVIDERS?.split(","))).toEqual(new Set(["google"]));
+		expect(new Set(envExplicit.ULTRAWORKERS_BENCH_GATEWAY_PROVIDERS?.split(","))).toEqual(new Set(["google"]));
 		// No flag: the model's provider is gateway-routed by default.
 		const derived = parseArgs(["--model", "anthropic/claude-opus-4-8"]);
 		const envDerived = buildHarborEnv(derived, "/tmp/models.yml", null, "test");
-		expect(new Set(envDerived.OMP_BENCH_GATEWAY_PROVIDERS?.split(","))).toEqual(new Set(["anthropic"]));
+		expect(new Set(envDerived.ULTRAWORKERS_BENCH_GATEWAY_PROVIDERS?.split(","))).toEqual(new Set(["anthropic"]));
 	});
 
 	it("collects explicit --env pairs, with an explicit value winning over a bare host-forwarded key", () => {
@@ -72,22 +74,22 @@ describe("install modes", () => {
 			depsDir: "/tmp/deps",
 			nodeModules: ["node_modules"],
 		});
-		expect(env.OMP_BENCH_INSTALL).toBe("source");
-		expect(env.OMP_BENCH_SOURCE_DIR).toBe("/opt/omp/src");
-		expect(env.OMP_BENCH_SOURCE_BUN).toBe("/opt/omp/bin/bun");
-		expect(env.OMP_BENCH_SOURCE_ARCH).toBe("arm64");
+		expect(env.ULTRAWORKERS_BENCH_INSTALL).toBe("source");
+		expect(env.ULTRAWORKERS_BENCH_SOURCE_DIR).toBe("/opt/ultraworkers/src");
+		expect(env.ULTRAWORKERS_BENCH_SOURCE_BUN).toBe("/opt/ultraworkers/bin/bun");
+		expect(env.ULTRAWORKERS_BENCH_SOURCE_ARCH).toBe("arm64");
 	});
 
 	it("omits source mount env when no mount was prepared (binary/local runs)", () => {
 		const cfg = parseArgs(["--model", "anthropic/claude-opus-4-8", "--install", "local"]);
-		const env = buildHarborEnv(cfg, "/tmp/models.yml", "/tmp/omp.tgz", "test");
-		expect(env.OMP_BENCH_INSTALL).toBe("local");
-		expect(env.OMP_BENCH_SOURCE_DIR).toBeUndefined();
-		expect(env.OMP_BENCH_SOURCE_ARCH).toBeUndefined();
+		const env = buildHarborEnv(cfg, "/tmp/models.yml", "/tmp/ultraworkers.tgz", "test");
+		expect(env.ULTRAWORKERS_BENCH_INSTALL).toBe("local");
+		expect(env.ULTRAWORKERS_BENCH_SOURCE_DIR).toBeUndefined();
+		expect(env.ULTRAWORKERS_BENCH_SOURCE_ARCH).toBeUndefined();
 	});
 
 	it("--tarball implies a local (tarball) install", () => {
-		const cfg = parseArgs(["--model", "anthropic/claude-opus-4-8", "--tarball", "/tmp/omp.tgz"]);
+		const cfg = parseArgs(["--model", "anthropic/claude-opus-4-8", "--tarball", "/tmp/ultraworkers.tgz"]);
 		expect(cfg.install).toBe("local");
 		expect(cfg.build).toBe(false);
 	});
@@ -146,11 +148,11 @@ describe("live-trial cost probe", () => {
 		try {
 			const agentDir = path.join(jobDir, "task__abc", "agent");
 			fs.mkdirSync(agentDir, { recursive: true });
-			const log = path.join(agentDir, "omp.txt");
+			const log = path.join(agentDir, transcriptFilename("omp"));
 
 			// First flush: one complete event plus a partial line mid-write.
 			fs.writeFileSync(log, `${usageEvent(0.5, 100, 10)}{"type":"mess`);
-			let [trial] = readTrials(jobDir);
+			let [trial] = readTrials(jobDir, "omp");
 			expect(trial.status).toBe("running");
 			expect(trial.costUsd).toBeCloseTo(0.5);
 			expect(trial.tokIn).toBe(100);
@@ -158,7 +160,7 @@ describe("live-trial cost probe", () => {
 			// Second flush completes the partial line and appends another event.
 			// Only appended bytes are parsed: the first event must count once.
 			fs.appendFileSync(log, `age_end"}\n${usageEvent(0.25, 40, 4)}`);
-			[trial] = readTrials(jobDir);
+			[trial] = readTrials(jobDir, "omp");
 			expect(trial.costUsd).toBeCloseTo(0.75);
 			expect(trial.tokIn).toBe(140);
 			expect(trial.tokOut).toBe(14);
@@ -275,5 +277,36 @@ describe("resume", () => {
 		// No explicit filters → no -f flags: harbor's own default applies.
 		const bare = parseArgs(["--resume", "j"]);
 		expect(buildResumeArgs(bare, "/jobs/j")).toEqual(["job", "resume", "-p", "/jobs/j"]);
+	});
+});
+
+describe("resolveContainerDns", () => {
+	it("keeps an existing pre-rebrand export working, and lets the canonical variable win", () => {
+		// 75b20d7a13 renamed OMP_BENCH_CONTAINER_DNS -> ULTRAWORKERS_BENCH_CONTAINER_DNS with no
+		// fallback. The docblock advertises this as a user override ("overrides"), so a user who
+		// exported the old spelling silently fell back to 1.1.1.1 — a real resolver change, not a
+		// cosmetic rename.
+		expect(resolveContainerDns({})).toBe("1.1.1.1");
+		expect(resolveContainerDns({ OMP_BENCH_CONTAINER_DNS: "8.8.8.8" })).toBe("8.8.8.8");
+		// Canonical wins in both directions; the legacy value must not survive alongside it.
+		expect(
+			resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "9.9.9.9", OMP_BENCH_CONTAINER_DNS: "8.8.8.8" }),
+		).toBe("9.9.9.9");
+		expect(
+			resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "1.0.0.1", OMP_BENCH_CONTAINER_DNS: "8.8.8.8" }),
+		).toBe("1.0.0.1");
+	});
+
+	it("treats an explicitly-empty canonical value as the default, not as a request for the legacy one", () => {
+		// The distinction resolveProfileEnv draws for OMP_PROFILE/PI_PROFILE, and the reason this is
+		// not `canonical || legacy || default`: an operator who explicitly clears the new variable is
+		// asking for the default, and inheriting the old value back would silently re-enable a
+		// resolver they just retired.
+		expect(resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "", OMP_BENCH_CONTAINER_DNS: "8.8.8.8" })).toBe(
+			"1.1.1.1",
+		);
+		expect(resolveContainerDns({ ULTRAWORKERS_BENCH_CONTAINER_DNS: "" })).toBe("1.1.1.1");
+		// …while an empty legacy value still resolves to the default rather than to "".
+		expect(resolveContainerDns({ OMP_BENCH_CONTAINER_DNS: "" })).toBe("1.1.1.1");
 	});
 });

@@ -26,6 +26,8 @@ import {
 	toError,
 } from "@oh-my-pi/pi-utils";
 import type { StructuredSubagentSchemaMode } from "@oh-my-pi/pi-tui/tools/task";
+import { addUsageInto, emptyUsage } from "@oh-my-pi/pi-catalog/usage-merge";
+import { reportedToolUsage } from "../tools/usage-reporter";
 import { moveFileAcrossDevices } from "../utils/atomic-file";
 import { ArtifactManager } from "./artifacts";
 import { type BlobPutOptions, type BlobPutResult, BlobStore, lazyImageDataSync } from "./blob-store";
@@ -63,6 +65,11 @@ import {
 	type SessionTitleSource,
 	type SessionTreeNode,
 	type ThinkingLevelChangeEntry,
+	type ApprovalEntry,
+	type TurnEntry,
+	type SessionEntryBase,
+	APPROVAL_ENTRY_TYPE,
+	TURN_ENTRY_TYPE,
 	TITLE_CHANGE_ENTRY_TYPE,
 	type TitleChangeEntry,
 	type TtsrInjectionEntry,
@@ -337,25 +344,20 @@ function resolveBreadcrumbToInteractiveRoot(sessionFile: string): string {
 	return current;
 }
 
-function emptyUsageStatistics(): UsageStatistics {
-	return {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		totalTokens: 0,
-		orchestrationInput: 0,
-		orchestrationOutput: 0,
-		orchestrationCacheRead: 0,
-		premiumRequests: 0,
-		cost: 0,
-	};
+function emptyUsageTotal(): Usage {
+	return emptyUsage();
 }
 
-function taskUsageFrom(details: unknown): Usage | undefined {
-	if (details === null || typeof details !== "object") return undefined;
-	const maybeUsage = (details as Record<string, unknown>).usage;
-	return maybeUsage !== null && typeof maybeUsage === "object" ? (maybeUsage as Usage) : undefined;
+/**
+ * Extract the usage a tool result contributes, via the reporter seam.
+ *
+ * Before the seam this was `message.toolName === "task"` — the one tool whose
+ * sub-run spend the ledger could see. Now every tool that registers a reporter
+ * participates, and a host with no reporter registered returns `undefined`
+ * exactly as the pre-seam `=== "task"` branch did for every other tool name.
+ */
+function toolUsageFrom(toolName: string, details: unknown): Usage | undefined {
+	return reportedToolUsage(toolName, details);
 }
 
 function entryUsage(entry: SessionEntry): Usage | undefined {
@@ -363,7 +365,7 @@ function entryUsage(entry: SessionEntry): Usage | undefined {
 	if (entry.type !== "message") return undefined;
 	const message = entry.message;
 	if (message.role === "assistant") return message.usage;
-	if (message.role === "toolResult" && message.toolName === "task") return taskUsageFrom(message.details);
+	if (message.role === "toolResult") return toolUsageFrom(message.toolName, message.details);
 	return undefined;
 }
 
@@ -385,18 +387,41 @@ function repairMissingUsage(entry: SessionEntry): boolean {
 	return true;
 }
 
-function addUsage(target: UsageStatistics, usage: Usage | undefined): void {
-	if (!usage) return;
-	target.input += usage.input;
-	target.output += usage.output;
-	target.cacheRead += usage.cacheRead;
-	target.cacheWrite += usage.cacheWrite;
-	target.totalTokens += usage.totalTokens;
-	target.orchestrationInput += usage.orchestration?.input ?? 0;
-	target.orchestrationOutput += usage.orchestration?.output ?? 0;
-	target.orchestrationCacheRead += usage.orchestration?.cacheRead ?? 0;
-	target.premiumRequests += usage.premiumRequests ?? 0;
-	target.cost += usage.cost.total;
+/**
+ * Fold one usage record into the running {@link Usage} total.
+ *
+ * Every accumulator in the tree goes through the same canonical merge, so the
+ * conditional-inclusion rule that `Usage.reasoningTokens` documents — a field no
+ * provider reported stays ABSENT, never `0` — holds identically here, in the task
+ * executor, and in the sub-task totals.
+ */
+function addUsage(target: Usage, usage: Usage): void {
+	addUsageInto(target, usage);
+}
+
+/**
+ * Project a canonical {@link Usage} total onto the flat {@link UsageStatistics}
+ * the status line, `/usage`, and the ACP usage update read.
+ *
+ * Kept as a projection rather than accumulated field by field: the flat shape
+ * spells `orchestration` out into three required counters, which is exactly the
+ * place a hand-rolled accumulator silently drops a field the moment `Usage`
+ * grows one. The `?? 0`s here are the projection reading a total whose
+ * orchestration bucket is absent — not a guess about a turn's usage.
+ */
+function usageStatisticsFrom(total: Usage): UsageStatistics {
+	return {
+		input: total.input,
+		output: total.output,
+		cacheRead: total.cacheRead,
+		cacheWrite: total.cacheWrite,
+		totalTokens: total.totalTokens,
+		orchestrationInput: total.orchestration?.input ?? 0,
+		orchestrationOutput: total.orchestration?.output ?? 0,
+		orchestrationCacheRead: total.orchestration?.cacheRead ?? 0,
+		premiumRequests: total.premiumRequests ?? 0,
+		cost: total.cost.total,
+	};
 }
 
 /**
@@ -451,7 +476,7 @@ class SessionEntryIndex {
 	#children = new Map<string | null, SessionEntry[]>();
 	#labels = new Map<string, string>();
 	#leaf: string | null = null;
-	#usage = emptyUsageStatistics();
+	#usage = emptyUsageTotal();
 	// Branch memo: getBranch() walks leaf-to-root per call (array + Set +
 	// reverse) on per-frame/per-turn paths. The branch only changes on
 	// insert/rebuild/setLeaf, so cache the array keyed on (leaf, generation).
@@ -465,7 +490,7 @@ class SessionEntryIndex {
 		this.#children.clear();
 		this.#labels.clear();
 		this.#leaf = null;
-		this.#usage = emptyUsageStatistics();
+		this.#usage = emptyUsageTotal();
 		this.#generation++;
 		this.#branchCache = undefined;
 	}
@@ -490,7 +515,8 @@ class SessionEntryIndex {
 			else this.#labels.delete(entry.targetId);
 		}
 
-		addUsage(this.#usage, entryUsage(entry));
+		const entryTotal = entryUsage(entry);
+		if (entryTotal) addUsage(this.#usage, entryTotal);
 	}
 
 	has(id: string): boolean {
@@ -537,7 +563,7 @@ class SessionEntryIndex {
 	}
 
 	usageSnapshot(): UsageStatistics {
-		return { ...this.#usage };
+		return usageStatisticsFrom(this.#usage);
 	}
 
 	pathTo(id: string | null | undefined = this.#leaf): SessionEntry[] {
@@ -770,6 +796,12 @@ export class SessionManager {
 	 * in-memory (pre-blob-externalization) entry, so inline images survive.
 	 */
 	onEntryAppended?: (entry: SessionEntry) => void;
+
+	/**
+	 * Display-side taps on custom-entry appends. Separate from the single-slot
+	 * `onEntryAppended` above, which collab owns; see `appendCustomEntry`.
+	 */
+	#customEntryListeners: ((entry: CustomEntry) => void)[] = [];
 
 	#turnBudgetTotal: number | null = null;
 	#turnBudgetHard = false;
@@ -3020,6 +3052,61 @@ export class SessionManager {
 
 	appendCustomEntry(customType: string, data?: unknown): string {
 		const entry: CustomEntry = { type: "custom", customType, data, ...this.#freshEntryFields() };
+		this.#recordEntry(entry);
+		// A custom entry has no other route to the screen: `buildSessionContext` has
+		// no `case "custom"`, so the transcript rebuild never sees one. Without this
+		// notification a registered `EntryRenderer` has nothing to draw — which is
+		// what `pi` does with its `entry_appended` event (`core/agent-session.ts:204`).
+		//
+		// Separate from `onEntryAppended`: that is a single-slot callback collab owns
+		// (`collab/host.ts:454`), so reusing it would silently break replication the
+		// first time anything else subscribed.
+		for (const listener of this.#customEntryListeners) {
+			try {
+				listener(entry);
+			} catch (err) {
+				logger.warn("custom entry listener failed", { error: String(err) });
+			}
+		}
+		return entry.id;
+	}
+
+	/**
+	 * Subscribe to custom-entry appends. Multi-subscriber, and independent of the
+	 * collab tap, so a display listener and a replication listener can coexist.
+	 */
+	onCustomEntryAppended(listener: (entry: CustomEntry) => void): () => void {
+		this.#customEntryListeners.push(listener);
+		return () => {
+			const index = this.#customEntryListeners.indexOf(listener);
+			if (index !== -1) this.#customEntryListeners.splice(index, 1);
+		};
+	}
+
+	/**
+	 * Append one half of an approval audit pair.
+	 *
+	 * A dedicated method rather than a `appendCustomEntry("approval", ...)`
+	 * because that would produce a `CustomEntry`, leaving the `ApprovalEntry`
+	 * union member with no producer — a type that names a shape nothing can
+	 * create is a shape nothing can rely on when reading the log back.
+	 */
+	appendApprovalEntry(half: Omit<ApprovalEntry, keyof SessionEntryBase>): string {
+		const entry: ApprovalEntry = { ...half, type: APPROVAL_ENTRY_TYPE, ...this.#freshEntryFields() };
+		this.#recordEntry(entry);
+		return entry.id;
+	}
+
+	/**
+	 * Append one half of a turn's durable record.
+	 *
+	 * A dedicated method for the same reason `appendApprovalEntry` has one: an
+	 * `appendCustomEntry("turn", …)` would emit a `CustomEntry` and leave the
+	 * `TurnEntry` union member with no producer, which is a shape nothing can
+	 * rely on when reading the log back.
+	 */
+	appendTurnEntry(half: Omit<TurnEntry, keyof SessionEntryBase>): string {
+		const entry: TurnEntry = { ...half, type: TURN_ENTRY_TYPE, ...this.#freshEntryFields() };
 		this.#recordEntry(entry);
 		return entry.id;
 	}

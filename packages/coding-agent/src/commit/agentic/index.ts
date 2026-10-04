@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { createInterface } from "node:readline/promises";
+import type { VcsGitRepo } from "@oh-my-pi/pi-natives";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { $env, getProjectDir, isEnoent, prompt } from "@oh-my-pi/pi-utils";
 import { applyChangelogProposals } from "../../commit/changelog";
@@ -26,6 +27,57 @@ interface CommitExecutionContext {
 	push: boolean;
 }
 
+/**
+ * The paths a commit would cover.
+ *
+ * With nothing staged, a real run stages the whole tree first. A `--dry-run` must
+ * not: `stageFiles([])` is `git add -A`, so running it under a dry run would leave
+ * the index populated for the next bare `git commit` — on a shared tree, that is
+ * someone else's work. Every other write in this module already gates on the flag;
+ * this one did not.
+ *
+ * A dry run still has to REPORT what it would commit, or it reports "no changes"
+ * on a dirty tree — trading one wrong answer for the opposite wrong answer. So it
+ * reads the same set `stageFiles([])` would create, without writing it.
+ *
+ * `statusPorcelain` is the instrument that matches: `changedFiles({cached:false})`
+ * cannot be used, because gix's diff options have no untracked mode (see
+ * `impl From<VcsDiffOptions> for core::DiffOptions`), so it would omit every new
+ * file — a dry run that hides untracked work.
+ */
+export async function resolveStagedFiles(repo: VcsGitRepo, dryRun: boolean): Promise<string[]> {
+	const stagedFiles = await repo.changedFiles({ cached: true });
+	if (stagedFiles.length > 0) return stagedFiles;
+	if (dryRun) return reportablePaths(repo);
+	process.stdout.write("No staged changes detected, staging all changes...\n");
+	await repo.stageFiles([]);
+	return repo.changedFiles({ cached: true });
+}
+
+/** The working-tree paths `stageFiles([])` would stage, read without staging. */
+async function reportablePaths(repo: VcsGitRepo): Promise<string[]> {
+	// NUL-terminated, because the line-terminated form cannot carry a path intact:
+	// a newline in a filename splits one path into two fragments, each of which
+	// matches no pathspec. `git status -z` is the only form where a record is
+	// exactly one field.
+	//
+	// No rename handling is needed here. An unstaged rename is not reported as one
+	// — git emits the deletion and the new file separately — and the `R` record
+	// that the line-terminated form writes as `"old -> new"` only appears for a
+	// staged rename, which would have returned above: this is only reached when
+	// `changedFiles({cached:true})` is empty. `VcsStatusOptions` has no rename
+	// detection to ask for either, so the record cannot arrive on this branch.
+	const porcelain = await repo.statusPorcelain({ untracked: "all", nulTerminated: true });
+	const paths: string[] = [];
+	for (const field of porcelain.split("\0")) {
+		// Porcelain v1: two status characters, a space, then the path.
+		if (field.length < 4) continue;
+		if (field.slice(0, 2).trim() === "") continue;
+		paths.push(field.slice(3));
+	}
+	return paths;
+}
+
 export async function runAgenticCommit(args: CommitCommandArgs): Promise<{ usedFallback: boolean }> {
 	const cwd = getProjectDir();
 	const repo = vcs.requireGit(cwd);
@@ -36,15 +88,7 @@ export async function runAgenticCommit(args: CommitCommandArgs): Promise<{ usedF
 	const modelRegistry = new ModelRegistry(authStorage);
 	await modelRegistry.refresh();
 	await loadCliExtensionProviders(modelRegistry, settings, cwd);
-	const stagedFilesPromise = (async () => {
-		let stagedFiles = await repo.changedFiles({ cached: true });
-		if (stagedFiles.length === 0) {
-			process.stdout.write("No staged changes detected, staging all changes...\n");
-			await repo.stageFiles([]);
-			stagedFiles = await repo.changedFiles({ cached: true });
-		}
-		return stagedFiles;
-	})();
+	const stagedFilesPromise = resolveStagedFiles(repo, args.dryRun);
 
 	const primaryModelPromise = resolvePrimaryModel(args.model, settings, modelRegistry);
 	const [primaryModelResult, stagedFiles] = await Promise.all([primaryModelPromise, stagedFilesPromise]);

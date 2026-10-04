@@ -44,7 +44,7 @@ let startupDir: TempDir;
 let startupAuthStorage: AuthStorage;
 
 beforeAll(() => {
-	startupDir = TempDir.createSync("@omp-acp-startup-shared-");
+	startupDir = TempDir.createSync("@ultraworkers-acp-startup-shared-");
 	startupAuthStorage = createInMemoryAuthStorage();
 });
 
@@ -396,7 +396,7 @@ describe("ACP lazy startup", () => {
 	});
 
 	it("applies CLI runtime API keys after ACP lazy session creation resolves extension models", async () => {
-		using tempDir = TempDir.createSync("@omp-acp-lazy-api-key-");
+		using tempDir = TempDir.createSync("@ultraworkers-acp-lazy-api-key-");
 		const cwd = tempDir.path();
 
 		await Bun.write(

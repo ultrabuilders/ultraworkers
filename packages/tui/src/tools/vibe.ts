@@ -324,7 +324,10 @@ function vibeNativeLabel(op: VibeOp, args: VibeRenderArgs | undefined): string {
 function vibeComposer(message: string): NativeNode | undefined {
 	const trimmed = plainText(message).trim();
 	if (!trimmed) return undefined;
-	return text([span("> ", "accent"), span(trimmed, "toolOutput")], { wrap: "word", role: "omp.vibe.composer" });
+	return text([span("> ", "accent"), span(trimmed, "toolOutput")], {
+		wrap: "word",
+		role: "ultraworkers.vibe.composer",
+	});
 }
 
 function vibeScreenStatus(
@@ -403,7 +406,7 @@ function describeVibeScreen(
 	return node(
 		"card",
 		{
-			role: "omp.vibe.screen",
+			role: "ultraworkers.vibe.screen",
 			status,
 			tone,
 			head,

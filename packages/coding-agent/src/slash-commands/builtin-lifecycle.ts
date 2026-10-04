@@ -1,3 +1,10 @@
+import {
+	buildBugReportBundle,
+	hasSessionOptIn,
+	pendingCrashNotice,
+	reportWritten,
+	writeBundleArchive,
+} from "./helpers/bug-report";
 import { clearSubmittedText } from "./helpers/draft";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -24,6 +31,7 @@ import { isLowSignalTitleInput } from "../tiny/text";
 import { resolveToCwd } from "../tools/path-utils";
 import { commandConsumed, errorMessage, usage } from "./helpers/parse";
 import { handleSshAcp } from "./helpers/ssh";
+import { tuiRuntimeAsSlashCommand } from "./helpers/tui-runtime";
 import type {
 	ParsedSlashCommand,
 	SlashCommandResult,
@@ -553,6 +561,28 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 		},
 	},
 	{
+		name: "bug-report",
+		icon: "bug",
+		description: "Build a redacted bug report and archive it locally",
+		handle: async (command, runtime) => {
+			const bundle = await buildBugReportBundle(runtime, {
+				includeSession: hasSessionOptIn(command),
+				...(command.args ? { hint: command.args } : {}),
+			});
+			const destination = await writeBundleArchive(bundle);
+			const crash = pendingCrashNotice();
+			if (crash) await runtime.output(crash);
+			if (!destination) {
+				await runtime.output("Could not write the bug report archive.");
+				return commandConsumed();
+			}
+			await runtime.output(
+				`${reportWritten(destination)}\nSession transcript included: ${bundle.sessionJsonl !== undefined}`,
+			);
+			return commandConsumed();
+		},
+	},
+	{
 		name: "memory",
 		icon: "memory",
 		description: "Inspect and operate memory maintenance",
@@ -862,13 +892,158 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 	{
 		name: "restart",
 		icon: "restart",
-		description: "Restart omp with the same launch flags, resuming this session",
+		description: "Restart ultraworkers with the same launch flags, resuming this session",
 		handleTui: async (_command, runtime) => {
 			clearSubmittedText(runtime);
 			await runtime.ctx.restart();
 		},
 	},
+	{
+		name: "reload-extensions",
+		icon: "restart",
+		description: "Reload extensions, skills and plugin state in place",
+		getTuiAutocompleteDescription: runtime => {
+			const live = liveExtensionCount(runtime.ctx.session);
+			return live > 0
+				? `Reload extensions: ${live} active, their running state is discarded`
+				: "Reload extensions: no active extensions, nothing to lose";
+		},
+		handle: async (_command, runtime) => {
+			// The headless tier cannot ask. `SlashCommandRuntime` carries no UI handle
+			// and an `ExtensionUIContext` is a TUI concept, so there is nothing to
+			// present a dialog with here — this tier does what the command says and
+			// reports what it discarded, and `handleTui` below is where the question
+			// gets asked. Saying so beats silently guessing what the operator wanted.
+			const live = liveExtensionCount(runtime.session);
+			const contributed = await reloadExtensionState(runtime);
+			await runtime.output(reloadReport(live, "not confirmed — no dialog is reachable from this mode", contributed));
+			return commandConsumed();
+		},
+		handleTui: async (_command, runtime) => {
+			clearSubmittedText(runtime);
+			const live = liveExtensionCount(runtime.ctx.session);
+
+			// Ask only when something is actually lost. A dialog on a session with no
+			// extensions trains the operator to dismiss dialogs unread — and the one
+			// time it matters, they dismiss this one too.
+			if (live > 0) {
+				const ui = runtime.ctx.getToolUIContext();
+				if (ui) {
+					const confirmed = await ui
+						.confirm(
+							"Reload extensions",
+							`${live} active extension${live === 1 ? "" : "s"} will be unloaded and loaded again. ` +
+								"Timers, registered tools and provider registrations they hold are discarded, and a turn in flight is interrupted. Reload?",
+						)
+						.catch(() => false);
+					if (!confirmed) {
+						runtime.ctx.showHookNotify("Reload cancelled.", "info");
+						return;
+					}
+				} else {
+					// No UI primitives yet — hooks not initialised. Reloading is still
+					// what the command was asked for, so do it rather than fail, but
+					// say plainly that nobody was asked first.
+					runtime.ctx.showHookNotify(
+						`Reloading ${live} active extension${live === 1 ? "" : "s"} without confirmation: no dialog is available yet.`,
+						"warning",
+					);
+				}
+			}
+
+			// Same body as the headless tier, on the same shared adapter the TUI
+			// dispatcher uses for `handle`-only specs. One reload path, not two.
+			const contributed = await reloadExtensionState(tuiRuntimeAsSlashCommand(runtime.ctx));
+			runtime.ctx.showHookNotify(reloadReport(live, "confirmed", contributed), "info");
+		},
+	},
 ];
+
+/**
+ * Extensions loaded AND not suspended.
+ *
+ * `getLoadedExtensions()` alone would over-count: it returns `#loadOrder`, which
+ * keeps every extension ever bound, so a SUSPENDED extension is in that list even
+ * though reloading cannot lose anything it holds. Filtering through
+ * `isExtensionActive` asks the question the dialog actually needs answered — is
+ * there running state to discard.
+ */
+function liveExtensionCount(session: AgentSession): number {
+	const runner = session.extensionRunner;
+	if (!runner) return 0;
+	return runner.getLoadedExtensions().filter(extension => runner.isExtensionActive(extension.path)).length;
+}
+
+/**
+ * What `resources_discover` handlers contributed during a reload, counted per channel.
+ *
+ * The payload is collected by the runner and then dropped: `emitResourcesDiscover`
+ * returns file paths, while the only consumers of resources — `loadSkills` and
+ * `loadSlashCommands` — take extension *roots*, so there is no channel for a
+ * contributed path to enter. That gap is why this is a count and not a merge, and
+ * it is why every channel is counted: a tally naming only the channels a future fix
+ * consumes would read as coverage that does not exist.
+ */
+interface ContributedResourcePaths {
+	readonly skill: number;
+	readonly prompt: number;
+	readonly theme: number;
+}
+
+const NO_CONTRIBUTED_PATHS: ContributedResourcePaths = { skill: 0, prompt: 0, theme: 0 };
+
+/**
+ * The reload body, shared by both dispatchers.
+ *
+ * `rescopeHeadlessToCwd` IS the existing reload tier — settings for the cwd, the
+ * memory backend rebind, prompt roots, skills/commands, plugin reload — and it
+ * already has four call sites. Calling it with the cwd the session is already at
+ * is "re-rescope to where I am", so this adds no tier beside it.
+ *
+ * Returns what extensions contributed, so the caller can disclose it. Disclosing is
+ * the whole of this change: the contribution still reaches nothing, and a report
+ * that implied otherwise would be worse than the silence it replaced.
+ */
+async function reloadExtensionState(runtime: SlashCommandRuntime): Promise<ContributedResourcePaths> {
+	await rescopeHeadlessToCwd(runtime, runtime.cwd);
+
+	// What that tier does NOT do: tell extensions to re-contribute their resources.
+	// `emitResourcesDiscover` was written, typed and wired into the runner with a
+	// `reason` of "startup" | "reload", and had no call site at all — so the
+	// `"reload"` arm was unreachable code that read as a finished feature. This is
+	// the call site that makes it live.
+	const runner = runtime.session.extensionRunner;
+	if (!runner) return NO_CONTRIBUTED_PATHS;
+	const contributed = await runner.emitResourcesDiscover(runtime.cwd, "reload");
+	return {
+		skill: contributed.skillPaths.length,
+		prompt: contributed.promptPaths.length,
+		theme: contributed.themePaths.length,
+	};
+}
+
+/**
+ * One line naming what the reload discarded, so the operator is not guessing.
+ *
+ * All three `resources_discover` channels are named even when two of them are zero.
+ * A line that counted only the channels this reload consumes would report "nothing
+ * contributed" for a session where extensions did contribute — which is the same
+ * silence this line exists to end, wearing a count as a disguise.
+ */
+function reloadReport(live: number, consent: string, contributed: ContributedResourcePaths): string {
+	const lost =
+		live > 0
+			? `${live} active extension${live === 1 ? "" : "s"} unloaded and loaded again (${consent}).`
+			: "No active extensions to reload.";
+	const total = contributed.skill + contributed.prompt + contributed.theme;
+	const dropped =
+		total === 0
+			? "No extension contributed extra resource paths."
+			: `Extensions contributed ${total} resource path${total === 1 ? "" : "s"} via resources_discover ` +
+				`(${contributed.skill} skill, ${contributed.prompt} prompt, ${contributed.theme} theme); ` +
+				`this reload does not add ${total === 1 ? "it" : "them"} to the session.`;
+	return `Reloaded extensions, skills and plugin state. ${lost} ${dropped}`;
+}
 async function rescopeHeadlessToCwd(runtime: SlashCommandRuntime, cwd: string): Promise<void> {
 	setProjectDir(cwd);
 	await runtime.settings.reloadForCwd(cwd);

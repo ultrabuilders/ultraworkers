@@ -1,7 +1,7 @@
 /**
- * Tern mode: when omp runs inside a Tern pane (Tern exports `TERN_PANE_SOCKET`
+ * Tern mode: when ultraworkers runs inside a Tern pane (Tern exports `TERN_PANE_SOCKET`
  * and `TERN_PANE` into every pane), browser tabs open as browser
- * picture-in-pictures floating over omp's own pane and every tab helper drives
+ * picture-in-pictures floating over ultraworkers' own pane and every tab helper drives
  * that PiP's native web view through the Tern daemon (`wire.ts`).
  */
 import { parseFlag } from "@oh-my-pi/pi-utils";
@@ -11,7 +11,7 @@ export interface TernKind {
 	kind: "tern";
 	/** The Tern daemon socket (`TERN_PANE_SOCKET`). */
 	socketPath: string;
-	/** The pane omp runs in (`TERN_PANE`), which owns the PiPs. */
+	/** The pane ultraworkers runs in (`TERN_PANE`), which owns the PiPs. */
 	pane: number;
 }
 
@@ -22,7 +22,7 @@ export interface ResolveTernKindOptions {
 }
 
 /**
- * Resolve the Tern browser kind, or null when omp is not in a Tern pane or
+ * Resolve the Tern browser kind, or null when ultraworkers is not in a Tern pane or
  * Tern mode is off. Mirrors `resolveCmuxKind`: the setting opts in, the env
  * var is the final override in both directions.
  */

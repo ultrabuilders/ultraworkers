@@ -3,7 +3,7 @@ import type { Agent, AgentTool, AgentToolContext } from "@oh-my-pi/pi-agent-core
 import type { Model } from "@oh-my-pi/pi-ai";
 import { resolveDelegationBias } from "@oh-my-pi/pi-catalog/compat/delegation";
 import { isRecord, logger, prompt, stringProperty, structuredCloneJSON, untilAborted } from "@oh-my-pi/pi-utils";
-import { reset as resetCapabilities } from "../capability";
+import { invalidateAllCaches } from "../capability";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import type { ModelRegistry } from "../config/model-registry";
 import { formatModelString } from "../config/model-resolver";
@@ -17,6 +17,7 @@ import { loadSkills, type Skill, type SkillWarning, setActiveSkills } from "../e
 import { type LocalProtocolOptions } from "../internal-urls";
 import { stripXdUrlPrefix, XD_URL_PREFIX } from "@oh-my-pi/pi-tui/tools/xd-url";
 import { deduplicateMCPToolsByName, resolveMCPToolAlias } from "../mcp/tool-bridge";
+import type { McpCatalogRefreshReason } from "../mcp/types";
 import { resolveMemoryBackend } from "../memory-backend/resolve";
 import { MEMORY_BACKEND_TOOL_NAMES } from "../memory-backend/tool-names";
 import { invalidateToolSchemaMetadata } from "@oh-my-pi/pi-tui/status-line/context-usage";
@@ -38,7 +39,8 @@ import { resolveEditMode } from "../utils/edit-mode";
 import {
 	extractPermissionLocations,
 	getPermissionIntent,
-	PERMISSION_OPTIONS,
+	permissionOptions,
+	describeApprovalScope,
 	PERMISSION_OPTIONS_BY_ID,
 	PERMISSION_REQUIRED_TOOLS,
 } from "./acp-permission-gate";
@@ -949,6 +951,16 @@ export class SessionTools {
 					type PermissionRaceResult =
 						| { kind: "permission"; outcome: ClientBridgePermissionOutcome }
 						| { kind: "aborted" };
+					// Audit half one, written before the prompt leaves: a crash while the
+					// prompt is open must leave "asked" behind, or the log cannot tell a
+					// denial from a process that died mid-question.
+					this.#host.sessionManager.appendApprovalEntry({
+						requestId: toolCallId,
+						phase: "asked",
+						toolName: target.name,
+						policyKey: permissionIntent.cacheKey,
+						source: "acp",
+					});
 					const { promise: abortPromise, resolve: resolveAbort } = Promise.withResolvers<PermissionRaceResult>();
 					const onAbort = () => resolveAbort({ kind: "aborted" });
 					signal?.addEventListener("abort", onAbort, { once: true });
@@ -969,7 +981,7 @@ export class SessionTools {
 									permissionIntent.paths,
 								),
 							},
-							PERMISSION_OPTIONS,
+							permissionOptions(describeApprovalScope(target.name, args)),
 							signal,
 						).then(outcome => ({ kind: "permission" as const, outcome }));
 						raced = await Promise.race([permissionPromise, abortPromise]);
@@ -983,10 +995,23 @@ export class SessionTools {
 					if (outcome.outcome === "cancelled") {
 						throw new ToolAbortError("Permission request cancelled");
 					}
+
 					const selectedOption = PERMISSION_OPTIONS_BY_ID.get(outcome.optionId);
 					if (!selectedOption) {
 						throw new ToolError(`Tool permission response used unknown option ID: ${outcome.optionId}`);
 					}
+					const selectedKind = selectedOption.kind;
+					// Audit half two. `selectedOption.kind` is the decision that was
+					// applied, so a replay of the log answers "was this allowed" without
+					// re-running the gate.
+					this.#host.sessionManager.appendApprovalEntry({
+						requestId: toolCallId,
+						phase: "answered",
+						toolName: target.name,
+						policyKey: permissionIntent.cacheKey,
+						decision: selectedKind,
+						source: "acp",
+					});
 					if (selectedOption.kind === "allow_always") {
 						this.#acpPermissionDecisions.set(permissionIntent.cacheKey, "allow_always");
 					} else if (selectedOption.kind === "reject_always") {
@@ -1227,7 +1252,15 @@ export class SessionTools {
 					this.#host.agent.state.messages.some(message => message.role === "assistant");
 				if (freezeImplicitPromptRefresh) {
 					frozenSignature = triggerSignature;
-				} else if (forcePromptRefresh || triggerSignature !== this.#lastAppliedToolSignature) {
+				} else if (
+					// Disposal rolls this whole frame back at the commit guard below, so a
+					// rebuild started here is work whose result is thrown away. The prompt
+					// surface scope publishes nothing until that commit, so skipping the
+					// render leaves the committed snapshot exactly as the rollback would
+					// have restored it, without paying for the render.
+					!this.#host.isDisposed() &&
+					(forcePromptRefresh || triggerSignature !== this.#lastAppliedToolSignature)
+				) {
 					const signature = computeSignature(candidate);
 					const built = await untilAborted(
 						signal,
@@ -1709,7 +1742,7 @@ export class SessionTools {
 
 	/** Rediscovers reloadable skills and refreshes prompt metadata. */
 	async refreshSkills(): Promise<void> {
-		resetCapabilities();
+		invalidateAllCaches();
 		if (this.#skillsReloadable) {
 			const skillsSettings = cfgSkills.get(this.#host.settings);
 			const discovered = await loadSkills({
@@ -2161,26 +2194,39 @@ export class SessionTools {
 	 * after a newer catalog snapshot. Every connected MCP tool becomes available
 	 * (mounted under `xd://` when that transport is active, else top-level).
 	 */
-	refreshMCPTools(mcpTools: CustomTool[]): Promise<void> {
+	refreshMCPTools(mcpTools: CustomTool[], reason?: McpCatalogRefreshReason): Promise<void> {
 		const snapshot = [...mcpTools];
 		return this.runToolRegistryMutation(() =>
-			this.#host.isDisposed() ? Promise.resolve() : this.#applyMCPToolRefresh(snapshot),
+			this.#host.isDisposed() ? Promise.resolve() : this.#applyMCPToolRefresh(snapshot, reason),
 		);
 	}
 
-	async #applyMCPToolRefresh(mcpTools: CustomTool[]): Promise<void> {
+	async #applyMCPToolRefresh(mcpTools: CustomTool[], reason?: McpCatalogRefreshReason): Promise<void> {
 		const previousMcpTools = new Map<string, AgentTool>();
 		for (const [name, tool] of this.#toolRegistry) {
 			if (isMCPToolName(name)) previousMcpTools.set(name, tool);
 		}
 		const previousMcpManagerToolNames = new Set(this.#mcpManagerToolNames);
 		const previousActiveMcpToolNames = this.getEnabledToolNames().filter(isMCPToolName);
+		// The WHOLE active set, not just its MCP half. Rollback has to restore this
+		// too: `#applyActiveToolsByName` is what commits the new selection, so a throw
+		// partway through leaves the session running the set the previous generation
+		// asked for. Restoring only the registry would leave the active set a blend
+		// of pre- and post-refresh — tools vanishing mid-turn with no error and no
+		// warning. Harmless while the refresh activated everything; a live regression
+		// now that the refresh computes a conditional set.
+		const previousActiveToolNames = this.getEnabledToolNames();
 		const restorePreviousMcpTools = () => {
 			for (const name of this.#toolRegistry.keys()) {
 				if (isMCPToolName(name)) this.#toolRegistry.delete(name);
 			}
 			for (const [name, tool] of previousMcpTools) this.#toolRegistry.set(name, tool);
 			this.#mcpManagerToolNames = previousMcpManagerToolNames;
+			// Restoring the active set is itself an async mutation, so this cannot
+			// stay a synchronous disposer. The callers already await the rejected
+			// promise; they must await the repair too, or a caller that immediately
+			// retried would race the rollback and win with a blend.
+			return this.#applyActiveToolsByName(previousActiveToolNames);
 		};
 
 		const extensionRunner = this.#host.extensionRunner();
@@ -2202,29 +2248,60 @@ export class SessionTools {
 			if (managerToolSet.has(tool)) this.#mcpManagerToolNames.add(tool.name);
 		}
 
-		// Connected manager tools become active immediately. Extension-owned MCP
-		// tools retain their prior selection while both sets share one registry.
+		// A manager tool keeps its selection across a refresh, but a tool the server
+		// only just pushed does NOT get one. Trusting the server was extended is the
+		// rug-pull: a connected, already-trusted server can widen its own reach at any
+		// moment via `notifications/tools/list_changed`, and the user was never asked
+		// about the new tool. So the arriving catalog is registered in full — the model
+		// can still see it, and the user can still enable it — while the ACTIVE set
+		// carries over only what was already active.
+		//
+		// Note this gates activation, not registration: `#mcpManagerToolNames` below is
+		// the full new catalog, which is what makes `beta` visible-but-off rather than
+		// absent. Asserting "the registry has it" would pass on the unpatched tree —
+		// the boundary that matters is registered ≠ active.
+		//
+		// The manager DECLARES why the catalog changed, because the reason cannot be
+		// recovered from the argument: a connect, a `notifications/tools/list_changed`
+		// push and a disconnect all arrive as the same array of tools. Guessing it here
+		// — as `previousMcpTools.size === 0` did — cannot tell a second server
+		// connecting from a push onto an established one, so a deliberately connected
+		// tool stayed registered but never activated: invisible to the model and absent
+		// from the xd:// route guidance.
+		//
+		// Only `connect` activates the arriving catalog, because that is the one case
+		// where the user connected the server. `push` is the trust boundary: a trusted
+		// server widening its own reach after the user approved the connection. A
+		// `disconnect` retracts, and likewise keeps only what was already active. An
+		// ABSENT reason is handled as `push` — a caller that cannot state its intent
+		// must not widen anything.
+		const activateArrivingCatalog = reason === "connect";
+		const retainedActiveManagerToolNames = activateArrivingCatalog
+			? [...this.#mcpManagerToolNames]
+			: previousActiveMcpToolNames.filter(name => this.#mcpManagerToolNames.has(name));
+		// Extension-owned MCP tools retain their prior selection unchanged: they do not
+		// arrive through the manager path and are not subject to its gate.
 		const retainedActiveExtensionToolNames = previousActiveMcpToolNames.filter(
 			name => this.#extensionMcpTools.has(name) && this.#toolRegistry.has(name),
 		);
 		const nextActive = [
 			...new Set([
 				...this.#getActiveNonMCPToolNames(),
-				...this.#mcpManagerToolNames,
+				...retainedActiveManagerToolNames,
 				...retainedActiveExtensionToolNames,
 			]),
 		];
 		try {
 			await this.#applyActiveToolsByName(nextActive);
 			if (this.#host.isDisposed()) {
-				restorePreviousMcpTools();
+				await restorePreviousMcpTools();
 			} else {
 				// The settled mutation promise may retain this async frame; drop
 				// rollback references as soon as the new generation commits.
 				previousMcpTools.clear();
 			}
 		} catch (error) {
-			restorePreviousMcpTools();
+			await restorePreviousMcpTools();
 			throw error;
 		}
 	}

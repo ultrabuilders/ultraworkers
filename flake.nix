@@ -100,20 +100,27 @@
       packages = forAllSystems (
         system:
         let
-          omp = packageFor system;
+          ultraworkers = packageFor system;
         in
         {
-          inherit omp;
-          default = omp;
+          inherit ultraworkers;
+          default = ultraworkers;
+          # Deprecated alias: this flake attribute was published under `omp`
+          # before the binary was renamed. Removing it breaks every downstream
+          # `inputs.<this>.packages.${system}.omp`, so it keeps pointing at the
+          # same derivation until the removal can be announced as a breaking change.
+          omp = ultraworkers;
         }
       );
 
       apps = forAllSystems (system: {
         default = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/omp";
-          meta.description = "Run OMP";
+          program = "${self.packages.${system}.default}/bin/ultraworkers";
+          meta.description = "Run ultraworkers";
         };
+        ultraworkers = self.apps.${system}.default;
+        # Deprecated alias — see the note on `packages.omp`.
         omp = self.apps.${system}.default;
       });
 
@@ -171,10 +178,10 @@
             assert homeManagerEvaluation.config.home.activation ? ompConfig;
             assert builtins.elem self.packages.${system}.default
               nixosEvaluation.config.environment.systemPackages;
-            pkgs.runCommand "omp-module-evaluation" { } "touch $out";
+            pkgs.runCommand "ultraworkers-module-evaluation" { } "touch $out";
         in
         {
-          bun-lock = pkgs.runCommand "omp-bun-lock" { nativeBuildInputs = [ bun2nix ]; } ''
+          bun-lock = pkgs.runCommand "ultraworkers-bun-lock" { nativeBuildInputs = [ bun2nix ]; } ''
             cp -R ${self.outPath} source
             chmod -R u+w source
             cd source
@@ -186,6 +193,7 @@
           '';
           modules = modulesEvaluate;
           omp = self.packages.${system}.default;
+          ultraworkers = self.packages.${system}.default;
         }
       );
 
@@ -193,11 +201,15 @@
 
       overlays.default = _final: previous: {
         omp = self.packages.${previous.stdenv.hostPlatform.system}.default;
+        ultraworkers = self.packages.${previous.stdenv.hostPlatform.system}.default;
       };
 
       homeManagerModules.default = import ./nix/home-manager.nix { inherit self; };
+      # Deprecated aliases — see the note on `packages.omp`.
       homeManagerModules.omp = self.homeManagerModules.default;
+      homeManagerModules.ultraworkers = self.homeManagerModules.default;
       nixosModules.default = import ./nix/nixos-module.nix { inherit self; };
       nixosModules.omp = self.nixosModules.default;
+      nixosModules.ultraworkers = self.nixosModules.default;
     };
 }

@@ -32,7 +32,7 @@ describe.skipIf(!e2eApiKey("ANTHROPIC_API_KEY"))("Compaction hooks", () => {
 	let capturedEvents: SessionEvent[];
 
 	beforeEach(() => {
-		tempDir = path.join(os.tmpdir(), `omp-compaction-hooks-test-${Snowflake.next()}`);
+		tempDir = path.join(os.tmpdir(), `ultraworkers-compaction-hooks-test-${Snowflake.next()}`);
 		fs.mkdirSync(tempDir, { recursive: true });
 		capturedEvents = [];
 	});
@@ -77,6 +77,7 @@ describe.skipIf(!e2eApiKey("ANTHROPIC_API_KEY"))("Compaction hooks", () => {
 			resolvedPath: "/test/test-hook.ts",
 			handlers,
 			messageRenderers: new Map(),
+			entryRenderers: new Map(),
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
@@ -248,6 +249,7 @@ describe.skipIf(!e2eApiKey("ANTHROPIC_API_KEY"))("Compaction hooks", () => {
 				],
 			]),
 			messageRenderers: new Map(),
+			entryRenderers: new Map(),
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
@@ -294,6 +296,7 @@ describe.skipIf(!e2eApiKey("ANTHROPIC_API_KEY"))("Compaction hooks", () => {
 				],
 			]),
 			messageRenderers: new Map(),
+			entryRenderers: new Map(),
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
@@ -323,6 +326,7 @@ describe.skipIf(!e2eApiKey("ANTHROPIC_API_KEY"))("Compaction hooks", () => {
 				],
 			]),
 			messageRenderers: new Map(),
+			entryRenderers: new Map(),
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},

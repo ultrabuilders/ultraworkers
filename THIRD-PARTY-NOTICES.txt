@@ -22899,3 +22899,433 @@ the following restrictions:
     misrepresented as being the original software.
 
 3.  This notice may not be removed or altered from any source distribution.
+
+-------------------------------------------------------------------------------
+packages/chord/NOTICE
+
+This package is a port of the `chord` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below and listed per file.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every file: relative specifiers no longer carry a `.ts` suffix, as this
+     repository's `check-ts-relative-imports` invariant requires.
+  2. Formatting: oxfmt is the only formatter here, so arrow-function bodies are
+     parenthesized (`key => ...` becomes `(key) => ...`) and other upstream
+     layout differences are normalized.
+  3. Entry points: `src/index.ts`, `src/node.ts` and `src/bundler.ts` are
+     re-exported through this package's export map, and `src/types.ts` no longer
+     separately re-exports `RemoteServiceError`/`RemoteServiceProvider`, which
+     the barrel star already carries.
+  4. Runtime: `src/context/index.ts` uses `Promise.withResolvers()` instead of a
+     hand-rolled Promise constructor; `src/node/bundle.ts` and
+     `src/node/package.ts` replace `Awaited<ReturnType<typeof ...>>` with the
+     named esbuild `BuildResult` and the `Stats` type from `node:fs`, since this
+     repository forbids `ReturnType<>`.
+  5. Naming: esbuild externals in `src/node/bundle.ts` match this repository's
+     package scope, `@oh-my-pi/chord`, rather than upstream's
+     `@earendil-works/chord`.
+
+Adapted files:
+  src/api.ts
+  src/bundler.ts
+  src/context/index.ts
+  src/delta/apply-immutable-trusted.ts
+  src/delta/diff.ts
+  src/delta/index.ts
+  src/delta/revision-validator.ts
+  src/delta/tracker.ts
+  src/facets/host.ts
+  src/facets/loader.ts
+  src/index.ts
+  src/json.ts
+  src/node.ts
+  src/node/bundle-loader.ts
+  src/node/bundle.ts
+  src/node/package.ts
+  src/services/consumer.ts
+  src/services/instances.ts
+  src/services/loopback.ts
+  src/services/provider.ts
+  src/services/state-codec.ts
+  src/services/state-internals.ts
+  src/services/state.ts
+  src/services/wire.ts
+  src/types.ts
+
+Copied verbatim:
+  src/delta/draft.ts
+  src/node/manifest.ts
+  src/services/errors.ts
+  src/services/handle.ts
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+packages/codemode/NOTICE
+
+This package is a port of the `codemode` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae. Upstream license: MIT (see LICENSE).
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below and listed per file.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every source and test file: relative specifiers no longer carry a `.ts`
+     suffix, as this repository's `check-ts-relative-imports` invariant requires.
+  2. Test runner: the three test files import `describe`/`it`/`expect`/`afterEach`
+     from `bun:test` instead of `vitest`, and the package's `test` script is
+     `bun test --parallel`. The upstream suite uses only five matchers
+     (`toBe`, `toEqual`, `toContain`, `toMatch`, `toMatchObject`), none of which
+     is vitest-specific, and it never touches `vi`. The vitest-specific
+     `vitest.config.ts` is therefore not carried over.
+  3. Package metadata: `package.json` follows this repository's package
+     conventions — `@oh-my-pi/pi-codemode` in the `@oh-my-pi` scope, `catalog:`
+     devDependencies, `oxlint`/`oxfmt`/`tsgo` scripts, `main`/`types`/`exports`
+     pointing at `./src` rather than a build `dist`, and the repository's own
+     author, repository, bugs and homepage fields.
+  4. Formatting: oxfmt is the only formatter here, so arrow-function bodies are
+     parenthesized and other upstream layout differences are normalized.
+  5. `tsconfig.json` extends this repository's `packages/tsconfig.workspace.json`;
+     upstream's `tsconfig.build.json` is not carried over, because this
+     repository's packages publish from source rather than from a build output.
+
+No behavioral change was made to the runtime. `src/` is otherwise byte-identical
+to upstream modulo adaptations 1 and 4.
+
+Adapted files:
+  src/declarations.ts
+  src/identifier.ts
+  src/index.ts
+  src/runtime/host.ts
+  src/runtime/prelude-source.ts
+  src/runtime/protocol.ts
+  src/runtime/worker.ts
+  src/source.ts
+  src/types.ts
+  src/wasm.ts
+  test/declarations.test.ts
+  test/sandbox.test.ts
+  test/source.test.ts
+
+Not carried over:
+  vitest.config.ts        (adaptation 2)
+  tsconfig.build.json     (adaptation 5)
+  CHANGELOG.md            (replaced with this repository's changelog format)
+
+-------------------------------------------------------------------------------
+packages/evals/NOTICE
+
+This package is a port of the `evals` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+d6af72e1857cfb10b41d8ff8e69f0d72b4cf6d31.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, each listed below.
+
+Adapted files:
+  src/plan.ts                    copied verbatim; no adaptation needed yet
+  src/harness.ts                 copied verbatim except two type-level
+                                 adaptations: the model-selection environment
+                                 parameter gained an index signature (the copied
+                                 weak type is rejected by TypeScript as a
+                                 default for process.env), and
+                                 verifySystemPrompt takes the two option fields
+                                 it reads instead of a Pick<> from the unported
+                                 harness options type. No behavioural change.
+                                 The harness RUNNERS are not ported: they depend
+                                 on vitest-evals, which this repository does not
+                                 use.
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+packages/protocol/NOTICE
+
+This package is a port of the `protocol` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below and listed per file.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every file: relative specifiers no longer carry a `.ts` suffix, as this
+     repository's `check-ts-relative-imports` invariant requires.
+  2. Class privacy: 30 `private` members across four files became ES `#private`
+     fields, with their `this.<name>` references rewritten to `this.#<name>`.
+  3. Validation: upstream used `typebox` (`Type` builders plus `Check` from
+     `typebox/value`). That dependency is not carried over; schemas are built
+     from `@oh-my-pi/omptype/typebox` instead. Two call-shape changes follow:
+     `Type.Unsafe<JsonValue>(Type.Unknown())` becomes `Type.Unsafe<JsonValue>()`,
+     because the facade's `Unsafe` takes an optional raw JSON Schema and ignores
+     it; and `Check(schema, value)` becomes a discriminant test against the
+     facade's `__validator`, which returns either the validated value or a
+     failure carrying `message`. `codec.ts` routes both parse functions through
+     one `isValid` helper, which also supplies the narrowing that `Check` used to
+     provide implicitly.
+  4. Tests: the runner moved from `vitest` to `bun:test`. The CBOR vectors,
+     framing byte-loop cases and protocol fixtures are otherwise unchanged.
+
+Added by this port, with no upstream counterpart: `src/index.ts` and
+`src/protocol.ts` keep their upstream export lists; `LICENSE`, `NOTICE`,
+`CHANGELOG.md`, `tsconfig.json` and `package.json` were rewritten for this
+repository. Upstream's `vitest.config.ts`, `tsconfig.build.json` and
+`tsconfig.test.json` were dropped — the runner change removes the first, and
+AGENTS.md forbids the `tsc -p tsconfig.build.json` build the other two served.
+
+Adapted files:
+  src/cbor/decoder.ts
+  src/cbor/encoder.ts
+  src/cbor/index.ts
+  src/codec.ts
+  src/framing.ts
+  src/index.ts
+  src/protocol.ts
+
+Copied verbatim:
+  src/cbor/options.ts
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+packages/server/NOTICE
+
+This package is a port of the `server` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below.
+
+The execution plan for this milestone pins `d6af72e`. That commit exists and is
+an ancestor of the tree above, but it is not the tree these files were copied
+from, so the pin recorded here is the one that describes the actual source. A
+provenance line naming a commit nobody read is worse than a stale one.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every file: relative specifiers no longer carry a `.ts` suffix, as this
+     repository's `check-ts-relative-imports` invariant requires.
+  2. Class privacy: 86 `private` members across five files became ES `#private`
+     fields, with their `this.<name>` references rewritten to `this.#<name>`.
+     The public `get closed()` on `UnixByteConnection` is deliberately left
+     public: it is a required member of the `ByteConnection` interface.
+  3. Promise constructors: eight of the nine `new Promise` sites became
+     `Promise.withResolvers()`. `ProtocolTestClient.nextFrom()` keeps its
+     constructor and says why in a comment — it resolves a value derived from a
+     predicate by the waiter loop in `receive()`, which a deferred cannot
+     express.
+  4. Node builtins: named imports from `node:crypto`, `node:fs/promises`,
+     `node:net`, `node:path`, `node:events` became namespace imports with
+     qualified call sites. Three functions took a parameter named `path`, which
+     the module import then shadowed; those parameters are renamed.
+  5. Types shared with packages this repository does not have:
+     `Context`, `BACKGROUND_CONTEXT`, `TODO_CONTEXT` and `withAbortSignal` come
+     from `@oh-my-pi/chord/context` instead of `pi-agent-core`, which is a pure
+     re-export upstream. `SessionMetadata` is declared in `src/types.ts` with
+     all six upstream fields verbatim, including `legacyParentSessionPath`,
+     which nothing here reads. `MaybePromise` is re-exported from
+     `@oh-my-pi/pi-utils/acp/protocol` so it has one owner.
+  6. `NodeJS.Timeout` became `Timer` by this repository's convention. This is
+     not a typecheck requirement: `NodeJS.Timeout` compiles here too.
+  7. Tests: the runner moved from `vitest` to `bun:test`, which `bun:test` has
+     no `vi.waitFor` for; `test/helpers.ts` supplies one polling helper in its
+     place. Two conformance cases were additionally rewritten because Bun
+     1.3.14's `expect(p).rejects` does not settle when the rejection arrives
+     after the expectation was created. Both cases assert the same contract as
+     upstream — see bead `epic-j0yo` for the minimal reproduction.
+
+Every `src/` file differs from its upstream counterpart, so none is listed as
+copied verbatim. The `#private` conversion alone touches all seventeen.
+
+Added by this port, with no upstream counterpart: `LICENSE`, `NOTICE`,
+`CHANGELOG.md`, `tsconfig.json` and `package.json` were rewritten for this
+repository, and `test/helpers.ts` plus `src/testing/memory-session-repo.ts`
+are new. Upstream's `vitest.config.ts`, `tsconfig.build.json` and
+`tsconfig.test.json` were dropped — the runner change removes the first, and
+AGENTS.md forbids the `tsc -p tsconfig.build.json` build the other two served.
+
+The `package.json` `exports` map also gained explicit `./testing` and `./unix`
+entries. The wildcard `./*` entry maps `./unix` to `./src/unix.ts`, which does
+not exist, so both documented subpaths were unreachable until they were named.
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+packages/telemetry/NOTICE
+
+This package is a port of the `telemetry` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below.
+
+Adaptations, in order of how widely they apply:
+
+  1. Relative specifiers no longer carry a `.ts` suffix, per this repository's
+     `check-ts-relative-imports` invariant. Sixteen specifiers across the eight
+     copied files.
+  2. Barrels use star re-exports: `src/index.ts` re-exports `./noop` and
+     `./memory` as stars, and `src/testing/index.ts` is two stars over
+     `./conformance` and `./types`. The symbol sets are unchanged — the copied
+     modules export 1 + 3 names and 3 + 1 names respectively — so this is a
+     formatting change with no effect on what either entry point resolves.
+  3. Class privacy: one field, `InMemoryTelemetryContext.state`, became an ES
+     `#state` field, since AGENTS.md bans the `private` keyword. The public
+     `startSpan` and `getSpans` methods stay bare.
+  4. Tests moved from `vitest` to `bun:test`. No other vitest API was in use —
+     no `vi`, no mocks, no globals — so this is the whole runner migration.
+     `expectTypeOf` is provided by `bun:test`.
+
+No `src/` file is byte-identical to its upstream counterpart, so none is listed
+as copied verbatim.
+
+Test assertions were replaced where the upstream form could not fail. Two
+`expectTypeOf(compileTimeFailures).toBeFunction()` statements asserted only that
+a function is a function; the contract they stood in for is the nine
+`@ts-expect-error` comments inside those closures, which `tsgo` enforces, and
+the bindings are kept so it keeps doing so. Five bare `not.toThrow()` statements
+became assertions on observable results: the serialised schema is compared
+against its exact JSON, a starter built from unreadable schemas is bound and a
+later span is shown to still resolve, and the no-op context's callback returns a
+sentinel that is asserted after each write call.
+
+Added by this port, with no upstream counterpart: `LICENSE`, `NOTICE`,
+`CHANGELOG.md`, `tsconfig.json` and `package.json` were rewritten for this
+repository. Upstream's `tsconfig.build.json` was dropped — this repository sets
+`noEmit` and forbids the `tsc -p tsconfig.build.json` build it served. The
+version is `18.4.3`, this repository's release line; upstream's `0.87.1` is not
+carried into the manifest.
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -23,7 +23,18 @@ import {
 	type ExtensionUISelectItem,
 	type ExtensionWidgetOptions,
 	getExtensionUISelectOptionLabel,
+	unavailableFrameMessage,
+	unsupportedSurfaceMessage,
+	type FramelessGuard,
 } from "../../extensibility/extensions";
+
+/**
+ * `RpcExtensionUIContext.hasUI` is `true` on every value, so it cannot be the guard the
+ * frameless message names — an author checking it is always let through to the throw.
+ * Header and footer route to `unsupportedSurfaceMessage`, which never claimed
+ * otherwise; `custom` and the component-factory arm of `setWidget` reach this builder.
+ */
+const RPC_FRAMELESS_GUARD = "hasUI-does-not-block-the-call" satisfies FramelessGuard;
 import {
 	type BuiltSkillPromptMessage,
 	buildSkillPromptMessage,
@@ -769,6 +780,218 @@ export interface RpcModeOptions {
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
+export class RpcExtensionUIContext implements ExtensionUIContext {
+	// A real UI surface, reached over RPC: the client renders the dialog, the
+	// agent blocks. So this is UI, and reporting otherwise would tell a
+	// handler to skip work it can in fact do.
+	readonly hasUI = true;
+
+	// The clearest case in the codebase of why this is not derived from `hasUI`:
+	// the two answers are permanently opposed here. `hasUI` is `true` because
+	// dialogs round-trip to a client, and all three of these still throw below,
+	// because an RPC frame has no header band, no footer band and nowhere to put
+	// a focused overlay.
+	canMount(): boolean {
+		return false;
+	}
+
+	constructor(
+		private pendingRequests: Map<string, PendingExtensionRequest>,
+		private output: (obj: RpcResponse | RpcExtensionUIRequest | object) => void,
+		private emitRpcTitles: boolean,
+	) {}
+
+	select(
+		title: string,
+		options: ExtensionUISelectItem[],
+		dialogOptions?: ExtensionUIDialogOptions,
+	): Promise<string | undefined> {
+		return requestRpcSelect(this.pendingRequests, this.output, title, options, dialogOptions);
+	}
+
+	confirm(title: string, message: string, dialogOptions?: ExtensionUIDialogOptions): Promise<boolean> {
+		return requestRpcDialog(
+			this.pendingRequests,
+			this.output,
+			dialogOptions,
+			false,
+			{ method: "confirm", title, message, timeout: dialogOptions?.timeout },
+			response => {
+				if ("cancelled" in response && response.cancelled) {
+					if (response.timedOut) dialogOptions?.onTimeout?.();
+					return false;
+				}
+				if ("confirmed" in response) return response.confirmed;
+				return false;
+			},
+		);
+	}
+
+	input(title: string, placeholder?: string, dialogOptions?: ExtensionUIDialogOptions): Promise<string | undefined> {
+		return requestRpcDialog(
+			this.pendingRequests,
+			this.output,
+			dialogOptions,
+			undefined,
+			{ method: "input", title, placeholder, timeout: dialogOptions?.timeout },
+			response => parseValueDialogResponse(response, dialogOptions),
+		);
+	}
+
+	onTerminalInput(): () => void {
+		// Raw terminal input not supported in RPC mode
+		return () => {};
+	}
+
+	notify(message: string, type?: "info" | "warning" | "error"): void {
+		// Fire and forget - no response needed
+		this.output({
+			type: "extension_ui_request",
+			id: Snowflake.next() as string,
+			method: "notify",
+			message,
+			notifyType: type,
+		} as RpcExtensionUIRequest);
+	}
+
+	setStatus(key: string, text: string | undefined): void {
+		// Fire and forget - no response needed
+		this.output({
+			type: "extension_ui_request",
+			id: Snowflake.next() as string,
+			method: "setStatus",
+			statusKey: key,
+			statusText: text,
+		} as RpcExtensionUIRequest);
+	}
+
+	setWorkingMessage(_message?: string): void {
+		// Not supported in RPC mode
+	}
+
+	setWorkingIndicator(_indicator?: { frames?: string[]; intervalMs?: number }): void {
+		// The remote client renders its own indicator, so there is nothing for
+		// this side to animate.
+	}
+
+	setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
+		// Only string arrays cross an RPC frame — it renders lines, not components.
+		// A component factory is unsupported rather than ignored: it throws, below.
+		if (content === undefined || Array.isArray(content)) {
+			this.output({
+				type: "extension_ui_request",
+				id: Snowflake.next() as string,
+				method: "setWidget",
+				widgetKey: key,
+				widgetLines: content as string[] | undefined,
+				widgetPlacement: options?.placement,
+			} as RpcExtensionUIRequest);
+			return;
+		}
+		// A component factory used to fall out of this method silently, and that is the
+		// same lie `custom` stopped telling: the author got no frame, no error, and no
+		// factory run, so a widget that never appears looks exactly like one that did.
+		// The frame is not missing — it renders lines — so it is the component that
+		// cannot cross it, and `RPC_FRAMELESS_GUARD` is the guard that does not block the
+		// call, which is why the message must not tell the author to check `hasUI`.
+		throw new Error(unavailableFrameMessage("setWidget", "RPC mode", RPC_FRAMELESS_GUARD));
+	}
+
+	setFooter(_factory: unknown): void {
+		throw new Error(unsupportedSurfaceMessage("setFooter", "RPC mode"));
+	}
+
+	setHeader(_factory: unknown): void {
+		throw new Error(unsupportedSurfaceMessage("setHeader", "RPC mode"));
+	}
+
+	setTitle(title: string): void {
+		// Title updates are low-value noise for most RPC hosts; opt in via PI_RPC_EMIT_TITLE=1.
+		if (!this.emitRpcTitles) return;
+		this.output({
+			type: "extension_ui_request",
+			id: Snowflake.next() as string,
+			method: "setTitle",
+			title,
+		} as RpcExtensionUIRequest);
+	}
+
+	custom(): Promise<never> {
+		// The comment this replaces said "not supported" and returned `undefined as
+		// never` anyway — which is not a missing feature but a false report of one:
+		// the declared return is `Promise<T>`, so an author awaiting a result got
+		// `undefined`, no error, and no factory run. Same fix as `noOpUIContext`.
+		// (`never` is assignable to `Promise<T>`, so the signature still checks.)
+		throw new Error(unavailableFrameMessage("custom", "RPC mode", RPC_FRAMELESS_GUARD));
+	}
+
+	pasteToEditor(text: string): void {
+		// Paste handling not supported in RPC mode - falls back to setEditorText
+		this.setEditorText(text);
+	}
+
+	setEditorText(text: string): void {
+		// Fire and forget - host can implement editor control
+		this.output({
+			type: "extension_ui_request",
+			id: Snowflake.next() as string,
+			method: "set_editor_text",
+			text,
+		} as RpcExtensionUIRequest);
+	}
+
+	getEditorText(): string {
+		// Synchronous method can't wait for RPC response
+		// Host should track editor state locally if needed
+		return "";
+	}
+
+	async editor(
+		title: string,
+		prefill?: string,
+		dialogOptions?: ExtensionUIDialogOptions,
+		editorOptions?: { promptStyle?: boolean },
+	): Promise<string | undefined> {
+		return requestRpcEditor(this.pendingRequests, this.output, title, prefill, dialogOptions, editorOptions);
+	}
+
+	addAutocompleteProvider(): void {
+		// Autocomplete provider composition is not supported in RPC mode
+	}
+
+	get theme(): Theme {
+		return theme;
+	}
+
+	getAllThemes(): Promise<{ name: string; path: string | undefined }[]> {
+		// Was a stub returning []. A client driving the TUI over RPC had no way
+		// to see the built-in themes, let alone one an extension registered.
+		return getAvailableThemesWithPaths();
+	}
+
+	getTheme(_name: string): Promise<Theme | undefined> {
+		return Promise.resolve(undefined);
+	}
+
+	setTheme(_theme: string | Theme): Promise<{ success: boolean; error?: string }> {
+		// Theme switching not supported in RPC mode
+		return Promise.resolve({ success: false, error: "Theme switching not supported in RPC mode" });
+	}
+
+	getToolsExpanded() {
+		// Tool expansion not supported in RPC mode - no TUI
+		return false;
+	}
+
+	setToolsExpanded(_expanded: boolean) {
+		// Tool expansion not supported in RPC mode - no TUI
+	}
+
+	setEditorComponent(): void {
+		// Custom editor components not supported in RPC mode
+	}
+}
+
 export async function runRpcMode(session: AgentSession, options: RpcModeOptions = {}): Promise<never> {
 	const { setToolUIContext, headless = false, subagentEventBus, input = claimRpcInput() } = options;
 	// Signal to RPC clients that the server is ready to accept commands
@@ -830,203 +1053,10 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	/**
 	 * Extension UI context that uses the RPC protocol.
 	 */
-	class RpcExtensionUIContext implements ExtensionUIContext {
-		// A real UI surface, reached over RPC: the client renders the dialog, the
-		// agent blocks. So this is UI, and reporting otherwise would tell a
-		// handler to skip work it can in fact do.
-		readonly hasUI = true;
-		constructor(
-			private pendingRequests: Map<string, PendingExtensionRequest>,
-			private output: (obj: RpcResponse | RpcExtensionUIRequest | object) => void,
-		) {}
-
-		select(
-			title: string,
-			options: ExtensionUISelectItem[],
-			dialogOptions?: ExtensionUIDialogOptions,
-		): Promise<string | undefined> {
-			return requestRpcSelect(this.pendingRequests, this.output, title, options, dialogOptions);
-		}
-
-		confirm(title: string, message: string, dialogOptions?: ExtensionUIDialogOptions): Promise<boolean> {
-			return requestRpcDialog(
-				this.pendingRequests,
-				this.output,
-				dialogOptions,
-				false,
-				{ method: "confirm", title, message, timeout: dialogOptions?.timeout },
-				response => {
-					if ("cancelled" in response && response.cancelled) {
-						if (response.timedOut) dialogOptions?.onTimeout?.();
-						return false;
-					}
-					if ("confirmed" in response) return response.confirmed;
-					return false;
-				},
-			);
-		}
-
-		input(
-			title: string,
-			placeholder?: string,
-			dialogOptions?: ExtensionUIDialogOptions,
-		): Promise<string | undefined> {
-			return requestRpcDialog(
-				this.pendingRequests,
-				this.output,
-				dialogOptions,
-				undefined,
-				{ method: "input", title, placeholder, timeout: dialogOptions?.timeout },
-				response => parseValueDialogResponse(response, dialogOptions),
-			);
-		}
-
-		onTerminalInput(): () => void {
-			// Raw terminal input not supported in RPC mode
-			return () => {};
-		}
-
-		notify(message: string, type?: "info" | "warning" | "error"): void {
-			// Fire and forget - no response needed
-			this.output({
-				type: "extension_ui_request",
-				id: Snowflake.next() as string,
-				method: "notify",
-				message,
-				notifyType: type,
-			} as RpcExtensionUIRequest);
-		}
-
-		setStatus(key: string, text: string | undefined): void {
-			// Fire and forget - no response needed
-			this.output({
-				type: "extension_ui_request",
-				id: Snowflake.next() as string,
-				method: "setStatus",
-				statusKey: key,
-				statusText: text,
-			} as RpcExtensionUIRequest);
-		}
-
-		setWorkingMessage(_message?: string): void {
-			// Not supported in RPC mode
-		}
-
-		setWorkingIndicator(_indicator?: { frames?: string[]; intervalMs?: number }): void {
-			// The remote client renders its own indicator, so there is nothing for
-			// this side to animate.
-		}
-
-		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
-			// Only support string arrays in RPC mode - factory functions are ignored
-			if (content === undefined || Array.isArray(content)) {
-				this.output({
-					type: "extension_ui_request",
-					id: Snowflake.next() as string,
-					method: "setWidget",
-					widgetKey: key,
-					widgetLines: content as string[] | undefined,
-					widgetPlacement: options?.placement,
-				} as RpcExtensionUIRequest);
-			}
-			// Component factories are not supported in RPC mode - would need TUI access
-		}
-
-		setFooter(_factory: unknown): void {
-			// Custom footer not supported in RPC mode - requires TUI access
-		}
-
-		setHeader(_factory: unknown): void {
-			// Custom header not supported in RPC mode - requires TUI access
-		}
-
-		setTitle(title: string): void {
-			// Title updates are low-value noise for most RPC hosts; opt in via PI_RPC_EMIT_TITLE=1.
-			if (!emitRpcTitles) return;
-			this.output({
-				type: "extension_ui_request",
-				id: Snowflake.next() as string,
-				method: "setTitle",
-				title,
-			} as RpcExtensionUIRequest);
-		}
-
-		async custom(): Promise<never> {
-			// Custom UI not supported in RPC mode
-			return undefined as never;
-		}
-
-		pasteToEditor(text: string): void {
-			// Paste handling not supported in RPC mode - falls back to setEditorText
-			this.setEditorText(text);
-		}
-
-		setEditorText(text: string): void {
-			// Fire and forget - host can implement editor control
-			this.output({
-				type: "extension_ui_request",
-				id: Snowflake.next() as string,
-				method: "set_editor_text",
-				text,
-			} as RpcExtensionUIRequest);
-		}
-
-		getEditorText(): string {
-			// Synchronous method can't wait for RPC response
-			// Host should track editor state locally if needed
-			return "";
-		}
-
-		async editor(
-			title: string,
-			prefill?: string,
-			dialogOptions?: ExtensionUIDialogOptions,
-			editorOptions?: { promptStyle?: boolean },
-		): Promise<string | undefined> {
-			return requestRpcEditor(this.pendingRequests, this.output, title, prefill, dialogOptions, editorOptions);
-		}
-
-		addAutocompleteProvider(): void {
-			// Autocomplete provider composition is not supported in RPC mode
-		}
-
-		get theme(): Theme {
-			return theme;
-		}
-
-		getAllThemes(): Promise<{ name: string; path: string | undefined }[]> {
-			// Was a stub returning []. A client driving the TUI over RPC had no way
-			// to see the built-in themes, let alone one an extension registered.
-			return getAvailableThemesWithPaths();
-		}
-
-		getTheme(_name: string): Promise<Theme | undefined> {
-			return Promise.resolve(undefined);
-		}
-
-		setTheme(_theme: string | Theme): Promise<{ success: boolean; error?: string }> {
-			// Theme switching not supported in RPC mode
-			return Promise.resolve({ success: false, error: "Theme switching not supported in RPC mode" });
-		}
-
-		getToolsExpanded() {
-			// Tool expansion not supported in RPC mode - no TUI
-			return false;
-		}
-
-		setToolsExpanded(_expanded: boolean) {
-			// Tool expansion not supported in RPC mode - no TUI
-		}
-
-		setEditorComponent(): void {
-			// Custom editor components not supported in RPC mode
-		}
-	}
-
 	// Wire up UI context for tool execution (ask tool, etc.) and extensions.
 	// A single shared instance routes all responses received on stdin to the
 	// correct waiting promise regardless of which code path created the request.
-	const rpcUiContext = new RpcExtensionUIContext(pendingExtensionRequests, output);
+	const rpcUiContext = new RpcExtensionUIContext(pendingExtensionRequests, output, emitRpcTitles);
 	setToolUIContext?.(rpcUiContext, true);
 	const onPromptError = (id: string | undefined, command: string) => (promptError: Error) =>
 		output(error(id, command, promptError.message));
@@ -1575,7 +1605,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			}
 
 			case "export_html": {
-				const path = await session.exportToHtml({ outputPath: command.outputPath });
+				const path = await session.exportToHtml({ outputPath: command.outputPath, formatId: command.formatId });
 				return success(id, "export_html", { path });
 			}
 
@@ -1667,7 +1697,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				if (!knownProvider) {
 					return error(id, "login", `Unknown OAuth provider: ${command.providerId}`);
 				}
-				const uiCtx = new RpcExtensionUIContext(pendingExtensionRequests, output);
+				const uiCtx = new RpcExtensionUIContext(pendingExtensionRequests, output, emitRpcTitles);
 				// Track whether onAuth has fired. Providers that require interactive
 				// input before a browser URL cannot be satisfied headlessly; after
 				// onAuth, prompt input is the pasted OAuth code/redirect URL path.

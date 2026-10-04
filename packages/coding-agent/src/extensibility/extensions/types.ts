@@ -1,3 +1,14 @@
+import type { CompactionTransactionObserver } from "../../session/compaction-transaction";
+export type { CompactionTransactionObserver };
+import type { PeerLockBackend, PeerTransport } from "../../irc/peer-transport";
+import type { InboundFenceRegistration } from "../../irc/inbound-fence";
+import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
+import type { pluginSettingId } from "../settings";
+// Extension surface -> config layer, never the reverse: `Settings` must not have to
+// know the extension API exists, which is the same reason the registry itself lives
+// in `reload-observer.ts` rather than on `Settings`.
+import type { ConfigReloadAppliedHandler, ConfigReloadHandler } from "../../config/reload-observer";
+import type { ExtensionDiagnostic } from "./diagnostics";
 /**
  * Extension system types.
  *
@@ -67,9 +78,20 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 } from "@oh-my-pi/pi-tui";
+import type { Usage } from "@oh-my-pi/pi-catalog/usage-merge";
+import type { RawToolArgs } from "@oh-my-pi/pi-tui/tools/renderer";
 import type { logger as PiLogger } from "@oh-my-pi/pi-utils";
 import type { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
+import type { ThemeJson } from "@oh-my-pi/pi-tui/theme/schema";
+import type { HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
+export type { HostRenderStrategy, HostRenderDecision, HostRenderContext } from "@oh-my-pi/pi-tui/host-render-strategy";
+export type {
+	CopyTargetProvider,
+	CopyTargetBlock,
+	CopyTargetContext,
+} from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
 export type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type { ModelRegistry } from "../../config/model-registry";
 import type { EditToolDetails } from "@oh-my-pi/pi-tui/tools/edit";
@@ -87,15 +109,19 @@ import type { EphemeralTurnOptions, EphemeralTurnResult } from "../../session/ag
 import type { CompactMode } from "../../session/compact-modes";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { ReadonlySessionManager, SessionManager } from "../../session/session-manager";
-import type { SessionEntry } from "../../session/session-entries";
+import type { CustomEntry, SessionEntry } from "../../session/session-entries";
 import type { BashToolInput, GlobToolInput, GrepToolInput, ReadToolInput, WriteToolInput } from "../../tools";
 import type { GlobToolDetails } from "@oh-my-pi/pi-tui/tools/glob";
 import type { GrepToolDetails } from "@oh-my-pi/pi-tui/tools/grep";
 import type { ReadToolDetails } from "@oh-my-pi/pi-tui/tools/read";
 import type { ApprovalMode } from "../../tools/approval";
+import type { ToolEffect } from "../../tools/effects";
 import type { BashToolDetails } from "@oh-my-pi/pi-tui/tools/bash";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
+import type { CompactionProtection } from "../../tools/compaction-protection";
+import type { ContextTransform } from "../../tools/compaction-transforms";
 import type { EventBus } from "../../utils/event-bus";
+import type { ModeDefinition } from "../../modes/mode-registry";
 import type {
 	AgentEndEvent,
 	AgentStartEvent,
@@ -130,6 +156,7 @@ import type {
 	SessionTreeEvent,
 	TodoReminderEvent,
 	ToolCallEventResult,
+	ToolApprovalRequestedEventResult,
 	ToolResultEventResult,
 	TtsrTriggeredEvent,
 	TurnEndEvent,
@@ -213,6 +240,57 @@ export type WidgetPlacement = "aboveEditor" | "belowEditor";
 
 export interface ExtensionWidgetOptions {
 	placement?: WidgetPlacement;
+	/**
+	 * Which extension placed this widget.
+	 *
+	 * Set by the runner when it hands an extension its `ui`, never by the
+	 * extension itself: an owner an extension can name for itself is an owner
+	 * that proves nothing, and this is what decides whose widget survives a
+	 * session switch and whose is disposed with its author.
+	 */
+	owner?: string;
+}
+
+/** Options for `setHeader` / `setFooter`. */
+export interface ExtensionSurfaceOptions {
+	/**
+	 * The name this surface is registered under. Defaults to the calling
+	 * extension's path.
+	 *
+	 * This is a label, not a claim on a single slot. Two extensions that pass
+	 * the same key both keep their surface: the later one is registered under
+	 * `key~2` and a warning names both, which is the collision policy skills
+	 * already use (`extensibility/skills.ts`). Silently letting the second
+	 * `Map.set` evict the first would take away a surface its author can still
+	 * see and never asked to give up.
+	 */
+	key?: string;
+	/**
+	 * Which extension placed this surface.
+	 *
+	 * Stamped by the runner, never by the extension itself, for the same reason
+	 * as {@link ExtensionWidgetOptions.owner}.
+	 */
+	owner?: string;
+}
+
+/** Which of the two page-level bands a surface lives in. */
+export type ExtensionSurfaceBand = "header" | "footer";
+
+/**
+ * One surface an extension declared at LOAD time, kept so unload can withdraw
+ * exactly what this extension declared.
+ *
+ * The same record shape {@link ExtensionUIContext.setHeader} takes, minus the
+ * `undefined` arm: a load-time declaration cannot withdraw itself, because the
+ * only way to withdraw a surface is to have a context, and a context exists
+ * only once a hook has run. Withdrawal is {@link ExtensionAPI.registerSurface}'s
+ * counterpart and happens at unload, by owner.
+ */
+export interface RegisteredExtensionSurface {
+	readonly band: ExtensionSurfaceBand;
+	readonly factory: ExtensionUiComponentFactory;
+	readonly options: ExtensionSurfaceOptions;
 }
 
 /** Options for `ExtensionUIContext.custom()` (overlay rendering of a custom component). */
@@ -247,6 +325,24 @@ export interface ExtensionUIContext {
 	 * exists — and one did. A handler now reads the same object it was handed.
 	 */
 	readonly hasUI: boolean;
+	/**
+	 * Whether calling `setHeader` / `setFooter` / `custom` on this context would
+	 * actually mount the component, as opposed to throwing for want of a frame.
+	 *
+	 * This is the question `hasUI` cannot answer, which is why it exists rather than
+	 * a rename of it. `hasUI` reports whether *dialogs* round-trip: it is `true` in
+	 * RPC and `true` in ACP whenever the client supports `elicitation.form`, yet both
+	 * of those contexts throw on every call here. An implementation that answered
+	 * this question by reading `hasUI` would therefore be wrong in exactly the places
+	 * an author most needs an answer, so the value is stated per context instead of
+	 * derived — and the two disagree on purpose.
+	 *
+	 * Scoped to the three surfaces that need a frame and nothing else. `setWidget` is
+	 * excluded because its answer depends on the *content* — RPC renders a string
+	 * array and silently ignores a component factory — and `setStatus` because it
+	 * never throws anywhere, so "will this be seen" has no boolean answer at all.
+	 */
+	canMount(surface: "header" | "footer" | "custom"): boolean;
 	/** True when selector timeouts start only after the dialog is presented. */
 	timeoutStartsOnPresentation?: boolean;
 	/** Show a selector and return the selected label, even when an option also includes a description. */
@@ -293,11 +389,32 @@ export interface ExtensionUIContext {
 	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
 	setWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void;
 
-	/** Set a custom footer component, or undefined to restore the built-in footer. */
-	setFooter(factory: ExtensionUiComponentFactory | undefined): void;
+	/**
+	 * Mount a component in the band below the prompt surface, or pass
+	 * `undefined` to withdraw this extension's footer.
+	 *
+	 * Needs an interactive frame, so it mounts in interactive mode and throws
+	 * everywhere else — headless, print, subagent, ACP and RPC.
+	 *
+	 * `hasUI` does not predict which. It is `false` on the frameless context, but
+	 * `true` in RPC and in ACP whenever the client supports `elicitation.form` —
+	 * there it answers "do dialogs round-trip?", not "is there a frame?". Guarding
+	 * on it therefore passes and then throws. `canMount("footer")` is the check
+	 * that does answer it.
+	 *
+	 * The fallbacks are no safer to reach for: `setWidget` throws on the frameless
+	 * context too, and `setStatus` is a silent no-op there. The thrown error names
+	 * what the calling mode can do instead.
+	 */
+	setFooter(factory: ExtensionUiComponentFactory | undefined, options?: ExtensionSurfaceOptions): void;
 
-	/** Set a custom header component, or undefined to restore the built-in header. */
-	setHeader(factory: ExtensionUiComponentFactory | undefined): void;
+	/**
+	 * Mount a component in the band above the prompt surface, or pass
+	 * `undefined` to withdraw this extension's header.
+	 *
+	 * Throws wherever `setFooter` does, for the same reason.
+	 */
+	setHeader(factory: ExtensionUiComponentFactory | undefined, options?: ExtensionSurfaceOptions): void;
 
 	/** Set the terminal window/tab title. */
 	setTitle(title: string): void;
@@ -511,11 +628,22 @@ export interface ExtensionContext {
 	/** Identity of the agent this session runs: the top-level session or a subagent. */
 	agent: ExtensionAgentIdentity;
 	/**
-	 * Whether the current project/workspace is trusted. OMP performs no
-	 * project-trust gating — project-level settings and extensions load
-	 * unconditionally — so this always returns `true`. Exposed for
-	 * compatibility with extensions authored against upstream Pi, whose
-	 * `SettingsManager` accepts a `projectTrusted` flag.
+	 * Whether the current project/workspace is trusted, as recorded by the user.
+	 *
+	 * Reads the project's `projectTrust` setting — `yes`, `no`, or `undecided`
+	 * (`config/project-trust.ts`), defaulting to `undecided` — so this answers
+	 * `false` until somebody decides. It was the literal `() => true` before
+	 * `m2-wi-20-049`, so an extension branching on it used to take a branch that
+	 * could not be false; it is now falsifiable.
+	 *
+	 * Branching on it does **not** gate anything. Project-local extensions and
+	 * settings still load unconditionally, and `ctx.exec` is outside the
+	 * decision by choice: no load path consults it yet. Read this as "has this
+	 * project been decided", not "will my extension run". The decision and its
+	 * open questions are in `docs/extension-trust-model.md`.
+	 *
+	 * Still exposed for compatibility with extensions authored against upstream
+	 * Pi, whose `SettingsManager` accepts a `projectTrusted` flag.
 	 */
 	isProjectTrusted(): boolean;
 	/** Get the current effective system prompt. */
@@ -578,11 +706,15 @@ export interface ExtensionContext {
 	 * here; extensions written against that API (e.g. Plannotator) feature-detect this method to
 	 * decide whether project-local config is safe to load, and warn when it is absent.
 	 *
-	 * OMP has no equivalent per-directory trust gate: `.omp/extensions`, `.omp/config.yml`, and
-	 * other project-local inputs are already discovered and loaded unconditionally (see
-	 * `docs/extension-loading.md`). This method exists for compatibility with that upstream surface
-	 * and always returns `true`, truthfully reflecting that OMP already trusts project-local inputs
-	 * by default -- it does not narrow or widen OMP's own security model.
+	 * OMP keeps that surface and now answers it honestly: the value is the project's recorded
+	 * `projectTrust` setting, and `undecided` answers `false`. What OMP does **not** yet have is
+	 * the upstream per-directory *gate* — `.omp/extensions`, `.omp/config.yml`, and other
+	 * project-local inputs are still discovered and loaded unconditionally, so this reports a
+	 * decision without enforcing it. Do not read a `false` here as "this project is blocked".
+	 *
+	 * See `docs/extension-trust-model.md` for the decision, what it does not assert, and the
+	 * execution item that closes the gap; `docs/extension-loading.md` for the path resolution
+	 * rules this decision is expressed over.
 	 */
 	isProjectTrusted(): boolean;
 }
@@ -606,22 +738,49 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	newSession(options?: {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
+		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }>;
 
 	/** Branch from a specific entry, creating a new session file. */
-	branch(entryId: string): Promise<{ cancelled: boolean }>;
+	branch(
+		entryId: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	): Promise<{
+		cancelled: boolean;
+	}>;
 
 	/** Navigate to a different point in the session tree. */
 	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
 
 	/** Switch to a different session file. */
-	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
+	switchSession(
+		sessionPath: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	): Promise<{
+		cancelled: boolean;
+	}>;
 
 	/** Reload the current session/runtime state. */
 	reload(): Promise<void>;
 
 	/** Compact the session context (interactive mode shows UI). */
 	compact(instructionsOrOptions?: string | CompactOptions): Promise<void>;
+}
+
+/**
+ * Command-capable context minted after a session was replaced.
+ *
+ * Passed to the `withSession` callback of `newSession`, `branch`, and
+ * `switchSession`. It is the sanctioned way to do work that belongs to the NEW
+ * session: the context a command captured before the replacement still refers to
+ * the session that was torn down, and it carries `sendMessage` /
+ * `sendUserMessage` so post-replacement work does not have to reach for a
+ * different object to speak to the session it is now driving.
+ */
+export interface ReplacedSessionContext extends ExtensionCommandContext {
+	/** Declared as the handler types rather than restated, so this cannot drift from what the runtime actually accepts. */
+	sendMessage: SendMessageHandler;
+	sendUserMessage: SendUserMessageHandler;
 }
 
 // ============================================================================
@@ -636,6 +795,21 @@ export interface ToolRenderResultOptions {
 	isPartial: boolean;
 	/** Current spinner frame index for animated elements (optional) */
 	spinnerFrame?: number;
+	/**
+	 * True once the arguments are final (`message_end`). An exclusive tool can
+	 * sit here while an earlier call is still running.
+	 */
+	argsComplete?: boolean;
+	/** True once this specific call has begun executing. */
+	executionStarted?: boolean;
+	/**
+	 * The unparsed argument stream, when there is one. Declared here so an
+	 * extension can read it without reaching into the decoded args for a magic
+	 * `__partialJson` key — that spelling is a producer convention, not a
+	 * contract, and a renderer that depends on it breaks when a producer
+	 * changes.
+	 */
+	rawArgs?: RawToolArgs;
 }
 
 /**
@@ -698,6 +872,15 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	/** Tool approval tier. Defaults to `"exec"` when omitted.
 	 *  `"read"`: read-only operations. `"write"`: mutations. `"exec"`: code execution. */
 	approval?: ToolApproval;
+	/**
+	 * What this tool reaches, so a user's per-effect policy can apply to it without
+	 * anyone writing a command pattern for it.
+	 *
+	 * A declaration, never containment: it can only raise the approval floor, and
+	 * the resource it names is not the resource it is confined to. Omit it and the
+	 * tool is gated only by its `approval` tier.
+	 */
+	effects?: ToolEffect[];
 	/** Structured-output strict grammar opt-in/out. `false` is meaningful: OpenAI-family
 	 *  serializers preserve an explicit `strict: false` on the wire (#4336/#4340). */
 	strict?: boolean;
@@ -831,6 +1014,7 @@ export type { ContextEvent } from "../shared-events";
 // ============================================================================
 
 export type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult } from "../shared-events";
+export type { ToolApprovalRequestedEventResult } from "../shared-events";
 export type {
 	CacheWarmingAction,
 	CacheWarmingDecision,
@@ -1379,6 +1563,20 @@ export interface ExtensionAPI {
 	/** Injected Zod-compatible omptype builder for extension tools. */
 	zod: typeof zod;
 
+	/**
+	 * Builds the `plugins.<id>.<key>` setting id an extension-owned setting must use.
+	 *
+	 * Injected beside {@link zod} so a registration needs no import of its own — the
+	 * same shape every other builder on this interface uses, and it keeps the reserved
+	 * prefix in one place next to the call that enforces it.
+	 *
+	 * It is NOT injected because the specifier is unreachable: an installed extension
+	 * CAN resolve `@oh-my-pi/pi-coding-agent/extensibility/settings`, because the host
+	 * installs a `Bun.plugin` that resolves its specifiers from the host's own
+	 * directory. Measured through the loader — see `epic-ibg4`.
+	 */
+	pluginSettingId: typeof pluginSettingId;
+
 	/** Injected pi-coding-agent exports for accessing SDK utilities */
 	pi: typeof PiCodingAgent;
 
@@ -1460,7 +1658,10 @@ export interface ExtensionAPI {
 	on(event: "goal_updated", handler: ExtensionHandler<GoalUpdatedEvent>): () => void;
 	on(event: "credential_disabled", handler: ExtensionHandler<CredentialDisabledEvent>): () => void;
 	on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): () => void;
-	on(event: "tool_approval_requested", handler: ExtensionHandler<ToolApprovalRequestedEvent>): () => void;
+	on(
+		event: "tool_approval_requested",
+		handler: ExtensionHandler<ToolApprovalRequestedEvent, ToolApprovalRequestedEventResult>,
+	): () => void;
 	on(event: "tool_approval_resolved", handler: ExtensionHandler<ToolApprovalResolvedEvent>): () => void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): () => void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): () => void;
@@ -1508,6 +1709,220 @@ export interface ExtensionAPI {
 	registerFileWriteFallback(handler: FileWriteFallbackHandler): void;
 
 	/**
+	 * Replace the channel peer messages travel over.
+	 *
+	 * **Provider-shaped**, like {@link registerProvider}: registering an override
+	 * and then {@link unregisterPeerTransport} restores the built-in, so "full
+	 * custom" has a defined exit rather than a permanent takeover.
+	 *
+	 * Call during extension load, like the other `register*` methods — transports
+	 * are installed when the runner initialises, so one registered later never
+	 * takes effect.
+	 *
+	 * @throws {PeerTransportProtocolMismatch} when `impl.protocolVersion` is not
+	 * the version this build speaks. Refused HERE rather than at send: skew
+	 * otherwise surfaces as an unknown message type and a dead socket, long after
+	 * the cause.
+	 */
+	registerPeerTransport(impl: PeerTransport): void;
+
+	/** Remove one transport override. The built-in transport returns. */
+	unregisterPeerTransport(id: string): void;
+
+	/**
+	 * Register a lock backend consulted **only after core has refused a claim** —
+	 * fallback-shaped, like {@link registerFileWriteFallback}. Core keeps
+	 * ownership: the backend says "this path is fine on my host", it does not take
+	 * over locking.
+	 */
+	registerPeerLockBackend(impl: PeerLockBackend): void;
+
+	/**
+	 * Install the trust fence that decides whether an inbound peer message is acted
+	 * on at all.
+	 *
+	 * **Provider-shaped**, like {@link registerPeerTransport}, and the only reason
+	 * this surface exists: the fence's implementation lives in `@ultraworkers/peer`,
+	 * which already depends on this package, so core cannot import it. The peer
+	 * hands it over at load instead — which is what closed a gap where
+	 * `crossSessionInbound` had a full settings UI and zero readers, and every
+	 * production send went through `IrcBus.global()` unfenced.
+	 *
+	 * Register during extension load. Unloading the extension restores the unfenced
+	 * state, which is a real state rather than a silent hole: a host with no peer
+	 * extension has no peer messages to fence.
+	 *
+	 * Process-wide, not per-extension: two extensions declaring a fence is legal and
+	 * the last loaded wins, because a fence answers "may this message be acted on",
+	 * which is one decision for the process.
+	 */
+	registerPeerFence(registration: InboundFenceRegistration): void;
+
+	/**
+	 * Contribute protection to the context prune pass, so results an extension owns
+	 * are not dropped out from under it as the context fills.
+	 *
+	 * Until this seam existed both prune extension points were core-only:
+	 * `PruneConfig.protectedTools` had exactly one producer (`#withPlanProtection`,
+	 * the plan-file read matcher) and `PruneConfig.supersedeKey` had exactly one
+	 * implementation (`readToolSupersedeKey`, hardcoded to `read`). An extension with
+	 * its own stateful tool could not keep that tool's results alive, nor declare
+	 * that a second call supersedes a first, without a core edit.
+	 *
+	 * ```ts
+	 * pi.registerCompactionProtection({
+	 *   protectedTools: [ctx => ctx.toolCall?.name === "mytool" && ctx.toolResult?.isError !== true],
+	 *   supersedeKey: (name, args) => (name === "mytool" ? String(args?.id) : undefined),
+	 * });
+	 * ```
+	 *
+	 * The registry is PROCESS-WIDE, so protection applies to every session in the
+	 * process, not only this extension's own — a protected result is a property of
+	 * the tool rather than of the session that happened to produce it.
+	 *
+	 * Call this during extension load, like the other `register*` methods: the
+	 * contribution is installed when the runner initializes, and removing it again
+	 * (suspend, unload, reload) restores the pre-seam behaviour exactly.
+	 *
+	 * @throws when the contribution cannot be honoured — a matcher that is neither
+	 * a tool name nor a predicate, a matcher that protects EVERY result (which
+	 * would pin the whole context and defeat compaction), or a non-callable
+	 * `supersedeKey`. The error names this extension. A rejected registration is
+	 * reported rather than dropped in silence, because an ignored one is
+	 * indistinguishable from one that was never made.
+	 */
+	registerCompactionProtection(protection: CompactionProtection): void;
+
+	/**
+	 * Register a context-reduction transform that runs in the compaction prune
+	 * pass, before summarization.
+	 *
+	 * Core's prune pass decides what may leave the context, and until this seam
+	 * it offered extensions exactly two extension points — which results are
+	 * protected, and which supersede which — both of which say what to KEEP.
+	 * Neither lets an extension reduce the context in its own way, so the two
+	 * transforms an extension is most likely to want had no home: collapsing runs
+	 * of same-kind results into a one-line label, and truncating long assistant
+	 * text. Both were reachable only by editing core.
+	 *
+	 * The transform gets the same contract the two core transforms use —
+	 * `(entries, tokenizer) => PruneResult` — so it composes with them rather
+	 * than replacing them. Mutate `entries` in place and report what you did.
+	 *
+	 * ```ts
+	 * pi.registerContextTransform({
+	 *   name: "collapse-mytool-runs",
+	 *   transform: (entries, tokenizer) => { /* … *\/ },
+	 * });
+	 * ```
+	 *
+	 * The registry is PROCESS-WIDE, so the transform runs for every session in the
+	 * process. It is installed when the runner initializes and removed again on
+	 * unload, restoring the pre-seam behaviour exactly.
+	 *
+	 * @throws when `name` is not a non-empty string, when `transform` is not
+	 * callable, or when this extension already registered that name. The error
+	 * names this extension.
+	 */
+	registerContextTransform(transform: ContextTransform): void;
+
+	/**
+	 * Observe a config edit before it lands, and hold it by returning a reason.
+	 *
+	 * The watcher, the debounce and keep-last-good were core's long before this
+	 * seam: a long-lived host applies a user's on-disk edit inside `Settings`,
+	 * and an extension had exactly two ways to hear about it afterwards. Anything
+	 * that must stay consistent *across* the edit — an open dialog, a running
+	 * tool, a cached value the extension already rendered — learned about it when
+	 * it was too late to do anything.
+	 *
+	 * ```ts
+	 * const stop = pi.onBeforeConfigReload(info => {
+	 *   if (dialogOpen) return "a modal is open";   // holds; previous values stay
+	 * });
+	 * ```
+	 *
+	 * **Returning a reason defers, it never discards.** The previous values stay
+	 * in force, the watcher stays armed, and the next qualifying edit retries, so
+	 * something the user typed is never thrown away. Returning `undefined` — or a
+	 * blank string — is not a deferral.
+	 *
+	 * Every registered handler is consulted even after one has deferred, so two
+	 * extensions cannot hide from each other by ordering.
+	 *
+	 * @returns a disposer. The registry is process-global, so an extension that
+	 * wants its veto withdrawn on unload should let the runner do it, or call
+	 * this — a handler left behind holds reloads nobody is on hand to release.
+	 */
+	onBeforeConfigReload(handler: ConfigReloadHandler): () => void;
+
+	/**
+	 * Learn that a config edit has been applied.
+	 *
+	 * "Hold it" and "it landed" are different questions, and only the first one
+	 * had an answer. An extension that reconciles cached state — re-reading a
+	 * setting, re-rendering a panel, dropping a value derived from the old
+	 * config — otherwise had to poll or guess, and a *previous* invocation of
+	 * {@link onBeforeConfigReload} cannot tell it whether its own deferral was
+	 * the one that eventually cleared.
+	 *
+	 * ```ts
+	 * pi.onAfterConfigReload(() => reReadConfigDerivedState());
+	 * ```
+	 *
+	 * Runs only after the apply has actually succeeded, and reports the same
+	 * merged source list the before-handlers were given.
+	 *
+	 * @returns a disposer, on the same terms as {@link onBeforeConfigReload}.
+	 */
+	onAfterConfigReload(handler: ConfigReloadAppliedHandler): () => void;
+
+	/**
+	 * Claim the double-Escape gesture for an action of your own.
+	 *
+	 * Double-Escape — two Escapes inside 500 ms with an empty editor — used to be
+	 * a closed enum (`rewind` | `tree` | `none`) dispatched by a hardcoded branch,
+	 * so an extension could neither add a third action nor answer the gesture in
+	 * the place core answers it. `registerShortcut` was the only alternative, and
+	 * it binds a different key rather than this one.
+	 *
+	 * ```ts
+	 * pi.registerDoubleEscapeAction({
+	 *   id: "bookmarks",
+	 *   description: "Jump to a bookmarked message",
+	 *   handler: async ctx => {
+	 *     const pick = await ctx.ui.select("Bookmarks", items);
+	 *     if (pick) void ctx.sessionManager.jumpTo(pick);
+	 *   },
+	 * });
+	 * ```
+	 *
+	 * Registered actions are consulted BEFORE core's own branch, so yours runs
+	 * *instead of* `rewind`/`tree` rather than after it. When more than one
+	 * extension registers one, the first in load order wins — the gesture names a
+	 * single action, so running them all would stack overlays.
+	 *
+	 * Three things stay core-owned and are deliberately not negotiable here: the
+	 * 500 ms gesture recogniser, the rewind *target set* (which transcript entries
+	 * are rewindable), and the `"none"` setting — an explicit user opt-out that
+	 * suppresses extension actions too, because a user who turned double-Escape
+	 * off does not expect a third party to answer it anyway.
+	 *
+	 * The contribution lives on the extension, so suspending or unloading the
+	 * extension restores core's behaviour exactly, with no unwiring.
+	 *
+	 * @throws when `id` is not a non-empty string, when `handler` is not
+	 * callable, or when the same extension registers that `id` twice — each
+	 * naming this extension, because a gesture that silently stopped responding
+	 * is the worst failure report this seam could give.
+	 */
+	registerDoubleEscapeAction(action: {
+		id: string;
+		description?: string;
+		handler: (ctx: ExtensionContext) => Promise<void> | void;
+	}): void;
+
+	/**
 	 * Register a fallback deleter consulted when a native `edit`/`apply_patch` unlink is
 	 * denied with a permission error (`EPERM`/`EACCES`/`EROFS`). Covers `edit`'s `REM`,
 	 * the source side of a hashline `MV`, and `apply_patch`'s delete op. Return `true`
@@ -1546,6 +1961,95 @@ export interface ExtensionAPI {
 		},
 	): void;
 
+	/**
+	 * Declare an interactive mode: a tool set, an optional `enter`/`exit`, a write
+	 * policy, and a chip on the status line.
+	 *
+	 * This is the seam the mode registry was built for — a mode arrives as one
+	 * record rather than as a boolean per built-in, so an out-of-repo extension can
+	 * add one without touching core.
+	 *
+	 * The registry is single-active deliberately: it describes a *mutually
+	 * exclusive* interaction mode, which is what an extension registers. It is not
+	 * a home for orthogonal drivers like `/loop`, which changes no tool set and
+	 * consults no other mode.
+	 *
+	 * Ids are unique across the whole program, not per extension. Registering the
+	 * same id twice throws, so a conflict surfaces at load instead of silently
+	 * displacing whichever mode was there first.
+	 *
+	 * Known limit: a registered mode is not removed when its extension unloads,
+	 * because the registry has no removal operation yet. That is a gap in the
+	 * registry, not a licence to leak — noted here so nobody reads reload as safe.
+	 */
+	registerMode(definition: ModeDefinition): void;
+
+	/**
+	 * Register a top-level `ultraworkers <verb>` command, so `ultraworkers <verb> …` routes to this
+	 * extension instead of being forwarded to the model as a prompt.
+	 *
+	 * Distinct from {@link registerCommand}, which registers a *slash* command
+	 * inside a session. Naming a slash command here does not create a top-level
+	 * verb, and registering a verb here does not add a slash command — the two
+	 * registries stay separate on purpose.
+	 *
+	 * Routing is decided in `cli-commands.ts` before extensions load, so the CLI
+	 * primes this registry before routing whenever the first argv token could be
+	 * a verb, and re-reads it per call rather than from a snapshot. A verb
+	 * colliding with one already claimed — or with a built-in command name — is
+	 * reported through `subcommandCollisionDiagnostics()` with both owners named,
+	 * and the first registration keeps routing.
+	 *
+	 * `handler` receives the argv that follows the verb, so `ultraworkers deploy staging`
+	 * arrives as `["staging"]`. It runs in the CLI process before any session
+	 * exists: close over what you captured here, and use it for work that is
+	 * genuinely top-level. Anything needing a session belongs in
+	 * {@link registerCommand}.
+	 */
+	registerSubcommand(name: string, handler: (argv: string[]) => Promise<void>): void;
+
+	/**
+	 * Contribute a named theme, returning whether it was accepted.
+	 *
+	 * The registry already existed in `@oh-my-pi/pi-tui` with the whole policy — a
+	 * registered theme wins over nothing, a built-in wins over a registration, and
+	 * every rejection is logged rather than swallowed. What it did not have was a
+	 * way in: `registerTheme` had no caller outside its own module and its own
+	 * test, so an extension could not reach it and the registry was an empty seam —
+	 * the exact shape WI-B was raised to eliminate. This is that way in; the policy
+	 * is not re-implemented here.
+	 *
+	 * Selection reads the registry: `resolveThemeJson` and the `loadTheme*` family
+	 * consult a registered theme before falling back to the built-ins, so a theme
+	 * accepted here is selectable by name with nothing else to wire.
+	 *
+	 * `false` means the name was taken — by a built-in, or by an earlier
+	 * registration, in which case the first one is kept. It never means "rejected
+	 * for quality". The built-in winning is deliberate: renaming a user's
+	 * `dark` would silently change what every other tool on the machine expects,
+	 * whereas a colliding extension theme is one this extension can rename. Both
+	 * are logged, because a theme that never appears is otherwise
+	 * indistinguishable from one the author mistyped.
+	 */
+	registerTheme(name: string, theme: ThemeJson): boolean;
+
+	/**
+	 * The keys core currently owns — built-in defaults and the user's remaps
+	 * together.
+	 *
+	 * `registerShortcut` cannot take a key in this set: core wins, the
+	 * registration is dropped, and the only trace is a line in the log. That is
+	 * invisible to the person writing the extension and unrecoverable from the
+	 * message their key did nothing, so this is the way to find out first.
+	 *
+	 * Live, not the default table: a key core holds only until the user remaps it
+	 * is one an extension may then take, and a table frozen at startup would
+	 * report the opposite of what the dispatcher does. Returns an empty set
+	 * before keybindings are resolved, which reads as "nothing is claimed" rather
+	 * than failing.
+	 */
+	getClaimedKeyIds(): ReadonlySet<KeyId>;
+
 	/** Register a keyboard shortcut. */
 	registerShortcut(
 		shortcut: KeyId,
@@ -1554,6 +2058,19 @@ export interface ExtensionAPI {
 			handler: (ctx: ExtensionContext) => Promise<void> | void;
 		},
 	): void;
+
+	/**
+	 * Declare a typed setting owned by this extension, returning its handle.
+	 *
+	 * The setting is registered in the same table as core's, so it reads back
+	 * through the settings API and appears in the settings panel alongside
+	 * everything else — the point being that an extension does not need a core
+	 * edit to own a configuration key.
+	 *
+	 * Unloading the extension removes its settings, so a reload starts clean
+	 * rather than colliding with its own previous registration.
+	 */
+	registerSetting<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]>;
 
 	/** Register a CLI flag. */
 	registerFlag(
@@ -1592,6 +2109,77 @@ export interface ExtensionAPI {
 	 */
 	registerToolNameResolver(resolver: ToolNameResolver): void;
 
+	/**
+	 * Register a copy-target provider for the `/copy` picker.
+	 *
+	 * The picker's target set was core-owned: a tool this extension registers
+	 * produced only the generic `<toolName> result` block, and there was no way to
+	 * add a copy kind, a label, or a preview language. A provider is asked per
+	 * transcript entry and returns blocks for the ones it owns.
+	 *
+	 * Core's own extraction runs first and is never displaced — a provider appends.
+	 * A block that cannot be a copy target (empty content, blank label, a
+	 * non-string `href`) is dropped rather than shown broken, and a provider that
+	 * throws is skipped without taking the picker's built-in targets with it.
+	 */
+	registerCopyTargetProvider(provider: CopyTargetProvider): void;
+
+	/**
+	 * Register a usage reporter for one of this extension's tools.
+	 *
+	 * A tool that makes a nested model call spends tokens the parent transcript
+	 * never shows: the sub-run's assistant messages live in the child's own
+	 * session, so without a reporter that spend is invisible to `/usage`, the
+	 * status line, the ACP usage update, and `packages/stats`.
+	 *
+	 * The reporter is called with the tool result's `details` payload — the part
+	 * that survives into the persisted `toolResult` message — so a resumed session
+	 * attributes exactly what the live one did.
+	 *
+	 * **Throws** when the tool name is not a non-empty trimmed string, when
+	 * `reporter` is not callable, or when that tool name already has a reporter.
+	 * Two reporters folding one tool would count the same tokens twice, and a
+	 * registration that is merely ignored is indistinguishable from one that never
+	 * happened.
+	 *
+	 * @example
+	 * ```typescript
+	 * pi.registerUsageReporter("summarize", details => details?.usage);
+	 * ```
+	 */
+	registerUsageReporter(toolName: string, reporter: UsageReporter): void;
+
+	/**
+	 * Contribute a check to `ultraworkers plugin doctor`.
+	 *
+	 * The surface for reporting on an extension's own state — a half-loaded
+	 * resource, a dependency that resolved but is unusable, a repair the user can
+	 * make. The check joins the ones the plugin manager builds for itself; it
+	 * cannot displace them, because a doctor whose own findings an extension can
+	 * suppress is not a doctor.
+	 *
+	 * `run` is called when the doctor runs rather than now, so a check describes
+	 * current state instead of the state at load time.
+	 *
+	 * @throws when `id` is empty or untrimmed, when `label` is blank, when `run`
+	 * is not callable, or when that id is already registered in this extension —
+	 * a rejected registration is reported rather than dropped in silence, because
+	 * an ignored one is indistinguishable from one that never happened.
+	 *
+	 * @example
+	 * ```typescript
+	 * pi.registerDiagnostic({
+	 *   id: "model-cache",
+	 *   label: "model cache is writable",
+	 *   run: async () =>
+	 *     (await writable(CACHE_DIR))
+	 *       ? { status: "ok", message: "writable" }
+	 *       : { status: "error", message: "run: rm the cache and retry" },
+	 * });
+	 * ```
+	 */
+	registerDiagnostic(diagnostic: ExtensionDiagnostic): void;
+
 	/** Set the display label for this extension, or set a label on a specific entry. */
 	setLabel(entryIdOrLabel: string, label?: string | undefined): void;
 
@@ -1605,6 +2193,25 @@ export interface ExtensionAPI {
 	/** Register a custom renderer for CustomMessageEntry. */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
 
+	/**
+	 * Register a transformer for user and assistant Markdown before it is drawn in
+	 * the interactive transcript.
+	 *
+	 * TUI-only by construction, and that boundary is load-bearing rather than
+	 * documented: a transformer is reachable from the interactive message
+	 * components and from nothing else, so the RPC/JSON transcript a client reads
+	 * stays raw data. A Markdown transform that ran on the RPC path would break
+	 * transcript-reading clients silently, on their side, with no ultraworkers stack trace
+	 * to point at.
+	 */
+	registerMarkdownTransformer(transformer: MarkdownTransformer): void;
+
+	/**
+	 * Register a renderer for `custom` session entries. Custom entries do not
+	 * participate in LLM context — this draws them in the transcript only.
+	 */
+	registerEntryRenderer<T = unknown>(customType: string, renderer: EntryRenderer<T>): void;
+
 	/** Register a renderer for assistant thinking blocks. Rendered after the original thinking text. */
 	registerAssistantThinkingRenderer(renderer: AssistantThinkingRenderer): void;
 
@@ -1615,6 +2222,63 @@ export interface ExtensionAPI {
 	 * replaced; when extensions reuse an id, the later extension wins.
 	 */
 	registerComposerShape(definition: ComposerShapeDefinition): void;
+
+	/**
+	 * Contribute a rule for how a terminal resize should repaint: in place, or by
+	 * borrowing the alternate screen and replaying the transcript.
+	 *
+	 * Core already has an opinion, and it is a closed one — a private gate that
+	 * reads `Bun.env`, a hardcoded multiplexer classifier, and `TERM_PROGRAM`. An
+	 * extension whose terminal none of those recognise had no way in, and
+	 * `ExtensionTUISurface` does not expose the TUI itself, so it could not reach
+	 * `setResizeScrollback` either.
+	 *
+	 * ```ts
+	 * pi.registerHostRenderStrategy({
+	 *   id: "myterm",
+	 *   label: "MyTerminal repaints in place",
+	 *   decide: ({ env }) => (env.TERM_PROGRAM === "MyTerm" ? "in-place" : "defer"),
+	 * });
+	 * ```
+	 *
+	 * Precedence, in order: the user's `PI_TUI_RESIZE_IN_PLACE`, then core's
+	 * multiplexer/ConPTY safety veto, then the first strategy that does not
+	 * `defer`, then core's Warp default. A strategy may claim a host core has
+	 * never seen and may force the conservative borrow path, but it **cannot**
+	 * override the safety veto — those hosts are measurably broken for in-place
+	 * repaint, and a vendor's opinion does not change that.
+	 *
+	 * Call this during extension load, like the other `register*` methods: the
+	 * contribution is installed when the runner initializes, and removing it
+	 * again restores the pre-seam behaviour exactly.
+	 *
+	 * @throws when `id` is empty or untrimmed, when `label` is blank, when
+	 * `decide` is not callable, or when that id is already registered — a rejected
+	 * registration is reported rather than dropped in silence, because an ignored
+	 * one is indistinguishable from one that was never made.
+	 */
+	registerHostRenderStrategy(strategy: HostRenderStrategy): void;
+
+	/**
+	 * Declare a component in the composer's header or footer band at LOAD time.
+	 *
+	 * `ctx.ui.setHeader` / `setFooter` already reach a band, and what they mount
+	 * outlives the hook that registered it — the controller owns the component,
+	 * not the context. What they cannot do is exist *before* an event fires:
+	 * `ExtensionAPI` exposes no `ui`, and a context is built per hook, so a
+	 * panel meant to be on screen from the first frame had no seam to declare
+	 * itself through. This is that seam.
+	 *
+	 * The component still reaches the screen through the same
+	 * `setExtensionSurface` path a hook uses, so collisions, owner-scoped
+	 * withdrawal and disposal keep the single implementation they already have.
+	 * This adds a place to *declare*, not a second way to mount.
+	 */
+	registerSurface(
+		band: ExtensionSurfaceBand,
+		factory: ExtensionUiComponentFactory,
+		options?: ExtensionSurfaceOptions,
+	): void;
 
 	// =========================================================================
 	// Actions
@@ -1648,6 +2312,20 @@ export interface ExtensionAPI {
 
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
+
+	/**
+	 * Observe compaction as a log-bracketed transaction.
+	 *
+	 * `opened` fires synchronously before the durable rewrite and `closed` once
+	 * after it settles, carrying the same transaction id — write those two moments
+	 * as custom entries and an interrupted compaction stays visible in the log on
+	 * the next replay, instead of vanishing with no record that it ever started.
+	 * `findUnclosedCompactionTransaction` reads them back.
+	 *
+	 * Returns the unregister function. With nothing registered, no transaction is
+	 * announced and no entry is written: the session log is unchanged.
+	 */
+	registerCompactionTransactionObserver(observer: CompactionTransactionObserver): () => void;
 
 	/** Execute a shell command. */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
@@ -1851,6 +2529,22 @@ export interface RegisteredTool<TParams extends TSchema = TSchema, TDetails = un
 	sourceInfo: SourceInfo;
 }
 
+/** A registration conflict surfaced by the extension runner. */
+export interface ExtensionRegistrationDiagnostic {
+	/** `"warning"` for both current producers; lets a future one be filtered. */
+	type: string;
+	/**
+	 * Human-readable text naming EVERY conflicting side, so a consumer that only
+	 * reads `message` -- a log line, a crash dump -- still sees the full picture
+	 * without having to learn the record shape.
+	 */
+	message: string;
+	/** The winning side under last-extension-wins, or the single side when unconflicted. */
+	path: string;
+	/** Every conflicting side in load order; the last element is the winner. */
+	paths: string[];
+}
+
 /** Internal observer invoked when an already-loaded extension registers or replaces a tool. */
 export type ToolRegistrationListener = (toolName: string) => void;
 
@@ -1860,6 +2554,16 @@ export interface ExtensionFlag {
 	type: "boolean" | "string";
 	default?: boolean | string;
 	extensionPath: string;
+	/**
+	 * The value `getFlag` returns: `default` until a CLI flag overrides it.
+	 *
+	 * Carried HERE rather than in a map shared by every extension. The declaration
+	 * was always per-extension — it carries `extensionPath` — so a shared value map
+	 * let the last extension to register a name decide what all the others read.
+	 * Two extensions declaring `--verbose` with different defaults meant one of them
+	 * silently got the other's answer, with no error to notice it by.
+	 */
+	value: boolean | string | undefined;
 }
 
 /**
@@ -1878,6 +2582,22 @@ export interface ExtensionFlag {
  * registration order and stops at the first hit, so a resolver that fires on a
  * guess shadows every later one.
  */
+/**
+ * Extract the usage a tool result contributes to session totals.
+ *
+ * Return `undefined` for a result that spent nothing — "no opinion" is the normal
+ * answer and leaves the fold untouched rather than adding a zero. See
+ * `tools/usage-reporter.ts` for why this reads the PERSISTED `details` payload
+ * rather than the live result object.
+ */
+export type UsageReporter = (details: unknown) => Usage | undefined;
+
+/** One extension's usage reporter, as stored on {@link Extension}. */
+export interface UsageReporterRegistration {
+	toolName: string;
+	reporter: UsageReporter;
+}
+
 export type ToolNameResolver = (
 	name: string,
 	advertised: readonly { readonly name: string }[],
@@ -1912,6 +2632,27 @@ export interface OutputFormatContext {
 
 export interface ExtensionShortcut {
 	shortcut: KeyId;
+	description?: string;
+	handler: (ctx: ExtensionContext) => Promise<void> | void;
+	extensionPath: string;
+}
+
+/**
+ * One action an extension claims for the double-Escape gesture.
+ *
+ * Registered through `registerDoubleEscapeAction` and consulted by the input
+ * controller BEFORE core's own `rewind`/`tree` dispatch, so a registered action
+ * runs instead of the hardcoded branch rather than after it.
+ *
+ * The gesture itself — two Escapes inside a 500 ms window on an empty editor —
+ * is core-owned and is not re-implemented here. An extension that wants the same
+ * effect on its own key can already use `registerShortcut`; what it could not do
+ * is answer "the user pressed double-Escape" in the place core answers it.
+ */
+export interface DoubleEscapeAction {
+	/** Stable id, unique within the extension. Named in diagnostics when the handler throws. */
+	id: string;
+	/** What this action does, shown wherever double-Escape actions are listed. */
 	description?: string;
 	handler: (ctx: ExtensionContext) => Promise<void> | void;
 	extensionPath: string;
@@ -1960,13 +2701,29 @@ export type SetServiceTierHandler = (family: ServiceTierFamily, tier: ServiceTie
 
 /** Shared state created by loader, used during registration and runtime. */
 export interface ExtensionRuntimeState {
-	flagValues: Map<string, boolean | string>;
 	/** Provider registrations queued during extension loading, processed during session initialization */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; sourceId: string }>;
 	/** Queue a provider registration until initialization, then apply it immediately. */
 	registerProvider(name: string, config: ProviderConfig, sourceId: string): void;
 	/** Remove a queued or initialized provider registration. */
 	unregisterProvider(name: string, sourceId: string): void;
+	/**
+	 * Throw if this runtime has been invalidated, otherwise return.
+	 *
+	 * Additive by construction: nothing calls this on a path an extension can
+	 * already reach, so an extension that keeps using a captured context across a
+	 * session replacement behaves exactly as it did before this existed. That
+	 * matters because the alternative — asserting on every action — is a breaking
+	 * change for any extension already published against the old behaviour, which
+	 * this repo's own programme forbids without the owner deciding it first.
+	 */
+	assertActive(): void;
+	/**
+	 * Mark every context minted from this runtime as stale, and record why.
+	 *
+	 * First message wins, so the original cause survives later, vaguer calls.
+	 */
+	invalidate(message?: string): void;
 }
 
 /** Action implementations for ExtensionAPI methods. */
@@ -1974,6 +2731,8 @@ export interface ExtensionActions {
 	sendMessage: SendMessageHandler;
 	sendUserMessage: SendUserMessageHandler;
 	appendEntry: AppendEntryHandler;
+	/** Optional: the runner falls back to the module's own process-global registry. */
+	registerCompactionTransactionObserver?: (observer: CompactionTransactionObserver) => () => void;
 	setLabel: (targetId: string, label: string | undefined) => void;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
@@ -2008,11 +2767,22 @@ export interface ExtensionCommandContextActions {
 	newSession: (options?: {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
+		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
-	branch: (entryId: string) => Promise<{ cancelled: boolean }>;
+	branch: (
+		entryId: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	) => Promise<{
+		cancelled: boolean;
+	}>;
 	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
 	compact: (instructionsOrOptions?: string | CompactOptions) => Promise<void>;
-	switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+	switchSession: (
+		sessionPath: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	) => Promise<{
+		cancelled: boolean;
+	}>;
 	reload: () => Promise<void>;
 }
 
@@ -2021,6 +2791,24 @@ export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionAction
 	getServiceTiers: GetServiceTiersHandler;
 	setServiceTier: SetServiceTierHandler;
 }
+
+export interface MarkdownTransformContext {
+	messageType: "user" | "assistant" | "assistant-thinking";
+	isStreaming: boolean;
+	availableWidth: number;
+}
+
+export type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext) => string;
+
+export interface EntryRenderOptions {
+	expanded: boolean;
+}
+
+export type EntryRenderer<T = unknown> = (
+	entry: CustomEntry<T>,
+	options: EntryRenderOptions,
+	theme: Theme,
+) => Component | undefined;
 
 /** Loaded extension with all registered items. */
 export interface Extension {
@@ -2048,17 +2836,68 @@ export interface Extension {
 	assistantThinkingRenderers: AssistantThinkingRenderer[];
 	fileWriteFallbackHandlers: FileWriteFallbackHandler[];
 	fileDeleteFallbackHandlers: FileDeleteFallbackHandler[];
+	peerTransports: PeerTransport[];
+	peerLockBackends: PeerLockBackend[];
+	/**
+	 * Fence declarations, installed process-wide by the runner at load.
+	 *
+	 * A bucket despite being process-wide, because the runner is the only place that
+	 * writes the global registry and this carries the declaration there. Two extensions
+	 * declaring a fence is legal; the last one loaded wins, which is why the runner
+	 * installs under a disposer rather than letting the last call leak.
+	 */
+	peerFences: InboundFenceRegistration[];
+	compactionProtections: CompactionProtection[];
+	contextTransforms: ContextTransform[];
 	messageRenderers: Map<string, MessageRenderer>;
+	/**
+	 * Display-only Markdown rewrite, one per extension: a second registration is
+	 * the author overwriting their own, which is refused rather than applied.
+	 */
+	markdownTransformer?: MarkdownTransformer;
+	/** Per-extension renderer for `custom` entries, keyed by customType. */
+	entryRenderers: Map<string, EntryRenderer>;
 	composerShapes: Map<string, ComposerShapeDefinition>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	doubleEscapeActions: DoubleEscapeAction[];
+	/**
+	 * Modes this extension registered, kept only so unload can withdraw exactly
+	 * those. The registry itself is process-global, so without this record an
+	 * unloaded extension's mode would outlive it and collide with its own
+	 * replacement on reload.
+	 */
+	modes: ModeDefinition[];
+	/**
+	 * Disposers for this extension's config-reload registrations, kept only so
+	 * unload can withdraw exactly those. The reload registry is process-global,
+	 * so without this an unloaded extension's handler would outlive it and keep
+	 * holding — or observing — reloads on behalf of an extension that is gone.
+	 */
+	configReloadDisposers: Array<() => void>;
 	outputFormats: Map<string, OutputFormat>;
+	/**
+	 * Setting ids this extension declared, so unloading can remove exactly those.
+	 *
+	 * Recorded rather than derived from the id string: the id prefix is a
+	 * convention the author can get wrong, and a stale setting outliving its
+	 * extension is worse than a name collision.
+	 */
+	settingIds: string[];
 	/**
 	 * Tool-name resolvers in registration order. The first to return a tool wins,
 	 * so a resolver that guesses shadows every later one.
 	 */
 	toolNameResolvers: ToolNameResolver[];
+	usageReporters: UsageReporterRegistration[];
+	/** Host render strategies, in registration order. First opinion wins. */
+	hostRenderStrategies: HostRenderStrategy[];
+	/** Bands declared at load time via {@link ExtensionAPI.registerSurface}, in registration order. */
+	surfaces: RegisteredExtensionSurface[];
+	copyTargetProviders: CopyTargetProvider[];
+	/** Diagnostics contributed to `ultraworkers plugin doctor`, in registration order. */
+	diagnostics: ExtensionDiagnostic[];
 }
 
 /**
@@ -2091,4 +2930,20 @@ export interface ExtensionError {
 	event: string;
 	error: string;
 	stack?: string;
+	/**
+	 * Stable machine-readable classification, when the host recognised the failure
+	 * rather than merely reporting it.
+	 *
+	 * Optional because most errors are a handler throwing, which the host can only
+	 * describe, not classify. It is set when the host rejected a value or a state
+	 * on purpose. Codes are stable: host control flow and tests branch on them, so
+	 * add one rather than repurposing one.
+	 */
+	code?: string;
+	/**
+	 * The classified detail, kept out of `error` so a consumer can read it without
+	 * parsing the human-readable sentence. `error` carries the same text prefixed
+	 * with the code, because `error` is what a log line shows.
+	 */
+	detail?: string;
 }

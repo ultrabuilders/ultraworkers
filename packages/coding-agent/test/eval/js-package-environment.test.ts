@@ -51,7 +51,7 @@ describe("persistent JavaScript package environments", () => {
 	});
 
 	it("refuses an implicit managed environment bootstrap when auto-provisioning is disabled", async () => {
-		using workspace = TempDir.createSync("@omp-js-package-policy-");
+		using workspace = TempDir.createSync("@ultraworkers-js-package-policy-");
 		const sessionId = `js-package-policy:${crypto.randomUUID()}`;
 		const session = makeSession(workspace.path(), sessionId, { autoProvision: false });
 		const environment = resolveJsPackageEnvironment(workspace.path());
@@ -67,8 +67,8 @@ describe("persistent JavaScript package environments", () => {
 	});
 
 	it("resolves file imports from the filename while preserving cwd and repeat execution", async () => {
-		using workspace = TempDir.createSync("@omp-js-file-workspace-");
-		using scriptDir = TempDir.createSync("@omp-js-file-script-");
+		using workspace = TempDir.createSync("@ultraworkers-js-file-workspace-");
+		using scriptDir = TempDir.createSync("@ultraworkers-js-file-script-");
 		const filename = path.join(scriptDir.path(), "loaded.ts");
 		const source = [
 			'import { amount } from "./sibling.ts";',
@@ -103,7 +103,7 @@ describe("persistent JavaScript package environments", () => {
 	it("does not resolve a missing project package from OMP's own dependencies", async () => {
 		// Dynamic import is the behavior under test: a static import would be
 		// resolved by this test module's own dependency graph.
-		using workspace = TempDir.createSync("@omp-js-package-missing-");
+		using workspace = TempDir.createSync("@ultraworkers-js-package-missing-");
 		const sessionId = `js-package-missing:${crypto.randomUUID()}`;
 		const session = makeSession(workspace.path(), sessionId);
 		const result = await executeJs('await import("@babel/parser")', executorOptions(session, sessionId));

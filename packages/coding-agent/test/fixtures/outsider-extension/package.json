@@ -1,0 +1,10 @@
+{
+	"name": "outsider-extension",
+	"version": "1.0.0",
+	"private": true,
+	"omp": {
+		"extensions": [
+			"./index.ts"
+		]
+	}
+}

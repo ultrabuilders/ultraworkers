@@ -28,7 +28,7 @@ describe("advisor advise-only turn terminates the review", () => {
 	let session: AgentSession | undefined;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-advisor-advise-terminal-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-advise-terminal-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");
 	});

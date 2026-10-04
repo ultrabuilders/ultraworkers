@@ -27,6 +27,7 @@ import {
 	cfgHindsightRetainMission,
 	cfgHindsightScoping,
 } from "@oh-my-pi/pi-coding-agent/hindsight/settings";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 
 interface FakeSessionDeps {
 	sessionId: string | null;
@@ -662,14 +663,14 @@ describe("hindsightBackend live bank routing", () => {
 		});
 
 		const initial = session.getHindsightSessionState();
-		expect(initial?.bankId).toBe("omp");
+		expect(initial?.bankId).toBe(WIRE_NAME);
 		expect(initial?.retainTags).toBeUndefined();
 
 		cfgHindsightScoping.set(settings, "per-project");
 		await hindsightBackend.applySettings!(session as never, ["hindsight.scoping"]);
 
 		const next = session.getHindsightSessionState();
-		expect(next?.bankId).toBe("omp-proj");
+		expect(next?.bankId).toBe(`${WIRE_NAME}-proj`);
 		expect(next).not.toBe(initial);
 	});
 
@@ -759,15 +760,16 @@ describe("hindsightBackend live bank routing", () => {
 
 		const next = session.getHindsightSessionState();
 		expect(next).not.toBe(initial);
-		// With scoping=per-project the base falls back to the default ("omp"),
-		// so the reset bank id picks up the project suffix from cwd.
-		expect(next?.bankId).toBe("omp-_new_xengamekit");
+		// With scoping=per-project the base falls back to the default
+		// (`WIRE_NAME`), so the reset bank id picks up the project suffix
+		// from cwd.
+		expect(next?.bankId).toBe(`${WIRE_NAME}-_new_xengamekit`);
 
 		next!.enqueueRetain("post-reset fact", "reset routing");
 		await next!.flushRetainQueue();
 
 		expect(retainBatchSpy).toHaveBeenCalledTimes(1);
-		expect(retainBatchSpy.mock.calls[0][0]).toBe("omp-_new_xengamekit");
+		expect(retainBatchSpy.mock.calls[0][0]).toBe(`${WIRE_NAME}-_new_xengamekit`);
 	});
 
 	// Companion case: when `hindsight.scoping` is `global`, clearing the
@@ -797,13 +799,13 @@ describe("hindsightBackend live bank routing", () => {
 		await hindsightBackend.applySettings!(session as never, ["hindsight.bankId"]);
 
 		const next = session.getHindsightSessionState();
-		expect(next?.bankId).toBe("omp");
+		expect(next?.bankId).toBe(WIRE_NAME);
 
 		next!.enqueueRetain("post-reset global fact");
 		await next!.flushRetainQueue();
 
 		expect(retainBatchSpy).toHaveBeenCalledTimes(1);
-		expect(retainBatchSpy.mock.calls[0][0]).toBe("omp");
+		expect(retainBatchSpy.mock.calls[0][0]).toBe(WIRE_NAME);
 	});
 
 	it("coalesces synchronous routing edits so rebuilt states do not leak agent listeners", async () => {
@@ -936,18 +938,18 @@ describe("hindsightBackend cwd rebind", () => {
 			agentDir: "/tmp",
 			taskDepth: 0,
 		});
-		expect(session.getHindsightSessionState()?.bankId).toBe("omp-source");
+		expect(session.getHindsightSessionState()?.bankId).toBe(`${WIRE_NAME}-source`);
 
 		deps.cwd = "/work/destination";
 		await rebindMemoryBackendForCwd(session as never);
 
 		const next = session.getHindsightSessionState();
-		expect(next?.bankId).toBe("omp-destination");
+		expect(next?.bankId).toBe(`${WIRE_NAME}-destination`);
 
 		next!.enqueueRetain("fact from the destination project");
 		await next!.flushRetainQueue();
 		expect(retainBatchSpy).toHaveBeenCalledTimes(1);
-		expect(retainBatchSpy.mock.calls[0][0]).toBe("omp-destination");
+		expect(retainBatchSpy.mock.calls[0][0]).toBe(`${WIRE_NAME}-destination`);
 	});
 
 	it.each([

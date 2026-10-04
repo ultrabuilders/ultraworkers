@@ -67,7 +67,7 @@ describe("AgentSession plan-mode compaction hook contract (issue #4359)", () => 
 	const cleanups: Array<() => Promise<void>> = [];
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-agent-session-plan-compact-hook-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-session-plan-compact-hook-");
 		cleanups.length = 0;
 	});
 

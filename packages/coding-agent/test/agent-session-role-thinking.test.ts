@@ -25,7 +25,7 @@ describe("AgentSession role model thinking behavior", () => {
 	let sessionSettings: Settings;
 
 	beforeAll(async () => {
-		fixtureDir = TempDir.createSync("@pi-role-thinking-fixture-");
+		fixtureDir = TempDir.createSync("@ultraworkers-role-thinking-fixture-");
 		authStorage = await AuthStorage.create(path.join(fixtureDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		authStorage.keys.setRuntime("openai", "test-key");
@@ -33,7 +33,7 @@ describe("AgentSession role model thinking behavior", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-role-thinking-");
+		tempDir = TempDir.createSync("@ultraworkers-role-thinking-");
 	});
 
 	afterEach(async () => {

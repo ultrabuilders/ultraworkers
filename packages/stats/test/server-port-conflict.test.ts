@@ -8,9 +8,10 @@ import {
 	STATS_DASHBOARD_SECURITY_VERSION,
 } from "../src/port-conflict";
 import { startServer } from "../src/server";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { installStatsTestIsolation } from "./helpers/temp-agent";
 
-installStatsTestIsolation("@pi-stats-port-conflict-");
+installStatsTestIsolation("@ultraworkers-stats-port-conflict-");
 
 /**
  * Directly probe a TCP endpoint, bypassing any configured HTTP proxy so the
@@ -209,14 +210,14 @@ describe("startServer port conflicts", () => {
 			`Response.json([], { headers: { "${STATS_DASHBOARD_HEADER}": "${newerVersion}" } })`,
 		);
 
-		await expect(startServer(holder.port)).rejects.toThrow("not identifiable as an omp stats dashboard");
+		await expect(startServer(holder.port)).rejects.toThrow(`not identifiable as an ${APP_NAME} stats dashboard`);
 		expect(holder.child.exitCode).toBeNull();
 	});
 
 	it("refuses to stop a foreign 200 responder", async () => {
 		const holder = await startBunHolder('Response.json({ app: "spa" })');
 
-		await expect(startServer(holder.port)).rejects.toThrow("not identifiable as an omp stats dashboard");
+		await expect(startServer(holder.port)).rejects.toThrow(`not identifiable as an ${APP_NAME} stats dashboard`);
 		expect(holder.child.exitCode).toBeNull();
 		const response = await fetch(`http://${STATS_DASHBOARD_HOSTNAME}:${holder.port}/api/stats/models`);
 		expect(await response.json()).toEqual({ app: "spa" });
@@ -225,7 +226,7 @@ describe("startServer port conflicts", () => {
 	it("refuses to stop an unrelated Bun listener that fails the probe", async () => {
 		const holder = await startBunHolder('new Response("foreign", { status: 404 })');
 
-		await expect(startServer(holder.port)).rejects.toThrow("not identifiable as an omp stats dashboard");
+		await expect(startServer(holder.port)).rejects.toThrow(`not identifiable as an ${APP_NAME} stats dashboard`);
 		expect(holder.child.exitCode).toBeNull();
 	});
 

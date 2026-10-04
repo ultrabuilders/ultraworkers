@@ -17,12 +17,15 @@ import type {
 	ExtensionUIDialogOptions,
 	ExtensionUISelectItem,
 	ExtensionUiComponent,
+	ExtensionSurfaceBand,
+	ExtensionSurfaceOptions,
 	ExtensionWidgetContent,
 	ExtensionWidgetOptions,
 	SendUserMessageHandler,
 	TerminalInputHandler,
 } from "../../extensibility/extensions";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
+import { extensionSurfaceRegistry } from "../../extensibility/extensions/surface-registry";
 import {
 	type AskDialogPromptValue,
 	AskDialogComponent,
@@ -33,9 +36,12 @@ import { installExtensionComposerShape } from "@oh-my-pi/pi-tui/overlays/compose
 import { EditorTopGap } from "@oh-my-pi/pi-tui/prompt/editor-top-gap";
 import { HookEditorComponent, type HookEditorOptions } from "@oh-my-pi/pi-tui/overlays/hook-editor";
 import { HookInputComponent } from "@oh-my-pi/pi-tui/overlays/hook-input";
+import { McpElicitationFormComponent } from "@oh-my-pi/pi-tui/overlays/mcp-elicitation-form";
+import { TIMEOUT_ACTION, type MCPElicitOutcome, type MCPElicitRequest } from "../../mcp/types";
 import { HookSelectorComponent, type HookSelectorSlider } from "@oh-my-pi/pi-tui/overlays/hook-selector";
 import { getAvailableThemesWithPaths, getThemeByName, setTheme, type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext, InteractiveSelectorDialogOptions } from "../../modes/types";
+import { logger } from "@oh-my-pi/pi-utils";
 import { normalizeCustomMessagePayload, USER_INTERRUPT_LABEL } from "../../session/messages";
 import { disambiguateDisplayLabels, sanitizeCarriageReturns } from "@oh-my-pi/pi-tui/render/render-utils";
 import { setExtensionTerminalTitle, setSessionTerminalTitle } from "../../utils/title-generator";
@@ -86,11 +92,42 @@ function toWireSelectOptions(options: ExtensionUISelectItem[]): CollabUiSelectIt
 	);
 }
 
+/**
+ * One mounted hook widget, and the extension that placed it.
+ *
+ * `owner` is the extension's resolved path, supplied by the runner when it hands
+ * an extension its `ui` (see `ExtensionRunner#uiContextFor`). It is `undefined`
+ * for a widget placed through a `ui` that had no extension behind it — a bare
+ * tool call's own context — and such a widget is treated as unowned: it cannot be
+ * traced to anyone, so it survives a switch rather than being disposed on the
+ * strength of a guess.
+ */
+interface HookWidgetEntry {
+	owner: string | undefined;
+	component: ExtensionUiComponent;
+}
+
+type HookWidgetMap = Map<string, HookWidgetEntry>;
+
+/**
+ * One mounted extension header or footer, and the extension that placed it.
+ *
+ * Same provenance rule as {@link HookWidgetEntry}: `owner` is stamped by the
+ * runner, and `undefined` means nobody claimed it (a bare tool call's own `ui`),
+ * which is why withdrawal falls back to the key rather than to an owner match.
+ */
+interface ExtensionSurfaceEntry {
+	owner: string | undefined;
+	component: ExtensionUiComponent;
+}
+
 export class ExtensionUiController {
 	#extensionTerminalInputUnsubscribers = new Set<() => void>();
 	#composerShapeDisposers: Array<() => void> = [];
-	#hookWidgetsAbove = new Map<string, ExtensionUiComponent>();
-	#hookWidgetsBelow = new Map<string, ExtensionUiComponent>();
+	#hookWidgetsAbove = new Map<string, HookWidgetEntry>();
+	#hookWidgetsBelow = new Map<string, HookWidgetEntry>();
+	#extensionHeaders = new Map<string, ExtensionSurfaceEntry>();
+	#extensionFooters = new Map<string, ExtensionSurfaceEntry>();
 	// Single-file dialog surface (`editorContainer` + focus) is shared by the
 	// selector / input / editor modals, so only one may be presented at a time;
 	// the rest queue. See `#presentDialog`.
@@ -121,10 +158,34 @@ export class ExtensionUiController {
 	 * Initialize the hook system with TUI-based UI context.
 	 */
 	async initHooksAndCustomTools(): Promise<void> {
+		// Surfaces declared at LOAD time, mounted before a single hook runs.
+		//
+		// Drained here rather than on demand because that is the gap this closes:
+		// `ctx.ui.setHeader` is reachable only from a hook, so a panel meant to be on
+		// screen from the first frame had no earlier seam. Extension load finishes
+		// before this runs — extensions load in `main.ts`, this runs from
+		// `InteractiveMode.init` — so a drain here sees every declaration, and unlike
+		// a subscription it cannot miss one made between load and init.
+		//
+		// Mounted through `setExtensionSurface`, so a key two extensions share is
+		// settled by the collision policy that already governs it rather than by a
+		// second rule written here.
+		for (const surface of extensionSurfaceRegistry.list()) {
+			this.setExtensionSurface(surface.band, surface.factory, surface.options);
+		}
+
 		// Create and set hook & tool UI context
 		const uiContext: ExtensionUIContext = {
 			// The TUI itself: this context renders into the terminal.
 			hasUI: true,
+			// The only context that answers `true`, and the reason the query is worth
+			// having: this one owns `extensionHeaderContainer` and
+			// `extensionFooterContainer`, which are the composer's own objects rather
+			// than copies, and `setExtensionSurface` mounts into them below. The other
+			// three implementations answer `false` with the containers they do not
+			// have — so this is not a restatement of `hasUI`, which is also `true` in
+			// RPC and ACP.
+			canMount: () => true,
 			timeoutStartsOnPresentation: true,
 			select: (title, options, dialogOptions) => this.showCollabAwareSelector(title, options, dialogOptions),
 			confirm: (title, message, dialogOptions) => this.showHookConfirm(title, message, dialogOptions),
@@ -162,8 +223,8 @@ export class ExtensionUiController {
 				// Theme object passed directly - not supported in current implementation
 				return Promise.resolve({ success: false, error: "Direct theme object not supported" });
 			},
-			setFooter: () => {},
-			setHeader: () => {},
+			setFooter: (factory, options) => this.setExtensionSurface("footer", factory, options),
+			setHeader: (factory, options) => this.setExtensionSurface("header", factory, options),
 			setEditorComponent: factory => this.ctx.setEditorComponent(factory),
 			getToolsExpanded: () => this.ctx.toolOutputExpanded,
 			setToolsExpanded: expanded => this.ctx.setToolsExpanded(expanded),
@@ -251,7 +312,7 @@ export class ExtensionUiController {
 
 				// Create new session
 				this.clearExtensionTerminalInputListeners();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const success = await this.ctx.session.newSession({ parentSession: options?.parentSession });
 				if (!success) {
 					return { cancelled: true };
@@ -312,7 +373,7 @@ export class ExtensionUiController {
 			compact: async instructionsOrOptions => this.#handleInteractiveCompact(instructionsOrOptions),
 			switchSession: async sessionPath => {
 				await this.ctx.prepareSessionSwitch();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const result = await this.ctx.session.switchSession(sessionPath);
 				if (!result) {
 					return { cancelled: true };
@@ -350,23 +411,67 @@ export class ExtensionUiController {
 
 	setHookWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void {
 		const placement = options?.placement ?? "aboveEditor";
-		this.#removeHookWidget(this.#hookWidgetsAbove, key);
-		this.#removeHookWidget(this.#hookWidgetsBelow, key);
 
 		if (content === undefined) {
+			// Withdrawal is scoped by owner, never by key alone. Two extensions can
+			// hold the same key, so a key-scoped removal would let the second one's
+			// cleanup take the first one's widget with it. This is the same rule
+			// `setExtensionSurface` already applies, and for the same reason.
+			this.#removeHookWidget(this.#hookWidgetsAbove, key, options?.owner);
+			this.#removeHookWidget(this.#hookWidgetsBelow, key, options?.owner);
 			this.#rebuildHookWidgets();
 			return;
 		}
 
 		const target = placement === "belowEditor" ? this.#hookWidgetsBelow : this.#hookWidgetsAbove;
-		target.set(key, this.#createHookWidget(content));
+		// Moving a widget between placements is a move, not a collision: clear the
+		// other side first so the entry does not exist twice.
+		const other = placement === "belowEditor" ? this.#hookWidgetsAbove : this.#hookWidgetsBelow;
+		this.#removeHookWidget(other, key, options?.owner);
+
+		// A key already held by ANOTHER owner is namespaced rather than overwritten.
+		// The previous behaviour was last-writer-wins with nothing said, which is
+		// indistinguishable from the widget never having been placed — the first
+		// extension's author sees their widget vanish and has no way to learn why.
+		// Both are kept, both are named in the warning, and the second is reachable
+		// under a suffixed key. This mirrors `setExtensionSurface` exactly; the two
+		// are the same kind of surface exposed by the same API.
+		const holder = target.get(key);
+		let resolved = key;
+		if (holder && holder.owner !== options?.owner) {
+			let n = 2;
+			while (target.has(`${key}~${n}`)) n++;
+			resolved = `${key}~${n}`;
+			logger.warn("Extension widget key collision; both widgets kept", {
+				key,
+				availableAs: resolved,
+				placement,
+				heldBy: holder.owner ?? "(unowned)",
+				claimedBy: options?.owner ?? "(unowned)",
+			});
+		}
+
+		// Same owner re-registering: this is the update path, so the old component is
+		// retired rather than left mounted beside its replacement. A holder belonging
+		// to ANOTHER owner is NOT disposed — its entry stays mounted under `key` while
+		// this one takes `resolved`, and disposing here would leave that map pointing
+		// at a torn-down component. Caught by the two-extensions-one-key test, which
+		// is the only case that reaches this line with a foreign holder.
+		if (holder && holder.owner === options?.owner) holder.component.dispose?.();
+		target.set(resolved, { owner: options?.owner, component: this.#createHookWidget(content) });
 		this.#rebuildHookWidgets();
 	}
 
-	#removeHookWidget(widgets: Map<string, ExtensionUiComponent>, key: string): void {
-		const existing = widgets.get(key);
-		existing?.dispose?.();
-		widgets.delete(key);
+	#removeHookWidget(widgets: HookWidgetMap, key: string, owner?: string): void {
+		for (const [candidate, entry] of widgets) {
+			// A suffixed key belongs to whichever owner lost the collision, so an
+			// owner withdrawing its own widget has to match the suffixed form too.
+			const base = candidate.split("~")[0] ?? candidate;
+			const isMine = owner !== undefined ? entry.owner === owner : base === key;
+			if (!isMine) continue;
+			entry.component.dispose?.();
+			widgets.delete(candidate);
+		}
 	}
 
 	#createHookWidget(content: ExtensionWidgetContent): ExtensionUiComponent {
@@ -394,7 +499,7 @@ export class ExtensionUiController {
 
 	#renderHookWidgetContainer(
 		container: Container,
-		widgets: Map<string, ExtensionUiComponent>,
+		widgets: HookWidgetMap,
 		spacerWhenEmpty: boolean,
 		leadingSpacer: boolean,
 	): void {
@@ -411,8 +516,74 @@ export class ExtensionUiController {
 			container.addChild(new Spacer(1));
 		}
 		for (const widget of widgets.values()) {
-			container.addChild(widget);
+			container.addChild(widget.component);
 		}
+	}
+
+	/**
+	 * Mount, replace or withdraw an extension-owned component in one of the two
+	 * page-level bands the composer owns.
+	 *
+	 * Keyed and many-owned, like {@link setHookWidget}: two extensions that pass
+	 * the same key both keep their surface. The obvious `Map.set` would evict the
+	 * first one, which is the silent-loss failure this surface exists to end — an
+	 * author would watch its header disappear with no error and no way to tell the
+	 * call was dropped. So a colliding key is registered as `key~2` and both
+	 * render, which is how `extensibility/skills.ts` already settles a name clash:
+	 * nobody loses what they registered, and the clash stays visible.
+	 */
+	setExtensionSurface(
+		band: ExtensionSurfaceBand,
+		factory: Parameters<ExtensionUIContext["setHeader"]>[0],
+		options?: ExtensionSurfaceOptions,
+	): void {
+		const surfaces = band === "header" ? this.#extensionHeaders : this.#extensionFooters;
+
+		if (factory === undefined) {
+			for (const [key, entry] of surfaces) {
+				// Owner scopes the withdrawal, never the key: two extensions can hold
+				// the same key, and matching on it would let the second one's cleanup
+				// take the first one's surface with it. Key is only the fallback for a
+				// caller with no owner to be scoped by.
+				const mine = options?.owner !== undefined ? entry.owner === options.owner : key === options?.key;
+				if (!mine) continue;
+				entry.component.dispose?.();
+				surfaces.delete(key);
+			}
+			this.#renderExtensionSurfaces(band);
+			return;
+		}
+
+		const requested = options?.key ?? options?.owner ?? "extension";
+		const holder = surfaces.get(requested);
+		let key = requested;
+		if (holder && holder.owner !== options?.owner) {
+			let n = 2;
+			while (surfaces.has(`${requested}~${n}`)) n++;
+			key = `${requested}~${n}`;
+			logger.warn("Extension surface name collision; both surfaces kept", {
+				surface: band,
+				name: requested,
+				availableAs: key,
+				heldBy: holder.owner ?? "(unowned)",
+				claimedBy: options?.owner ?? "(unowned)",
+			});
+		}
+		// Same owner re-registering: this is the update path, so the old component
+		// is retired rather than left mounted beside its replacement.
+		holder?.component.dispose?.();
+		surfaces.set(key, { owner: options?.owner, component: factory(this.ctx.ui, theme) });
+		this.#renderExtensionSurfaces(band);
+	}
+
+	#renderExtensionSurfaces(band: ExtensionSurfaceBand): void {
+		const container = band === "header" ? this.ctx.extensionHeaderContainer : this.ctx.extensionFooterContainer;
+		const surfaces = band === "header" ? this.#extensionHeaders : this.#extensionFooters;
+		container.clear();
+		for (const entry of surfaces.values()) {
+			container.addChild(entry.component);
+		}
+		this.ctx.ui.requestRender();
 	}
 
 	initializeHookRunner(uiContext: ExtensionUIContext, _hasUI: boolean): void {
@@ -483,7 +654,7 @@ export class ExtensionUiController {
 
 				// Create new session
 				this.clearExtensionTerminalInputListeners();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const success = await this.ctx.session.newSession({ parentSession: options?.parentSession });
 				if (!success) {
 					return { cancelled: true };
@@ -541,7 +712,7 @@ export class ExtensionUiController {
 			compact: async instructionsOrOptions => this.#handleInteractiveCompact(instructionsOrOptions),
 			switchSession: async sessionPath => {
 				await this.ctx.prepareSessionSwitch();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const result = await this.ctx.session.switchSession(sessionPath);
 				if (!result) {
 					return { cancelled: true };
@@ -1060,6 +1231,45 @@ export class ExtensionUiController {
 	}
 
 	/**
+	 * Present an MCP `elicitation/create` request and answer it on the wire.
+	 *
+	 * Routed through {@link #presentDialog} rather than drawn straight into the
+	 * editor container, because a server may elicit at any moment — including
+	 * while a permission prompt holds the single-file dialog surface. Presenting
+	 * directly would put two overlays on one surface and fight for focus, and the
+	 * loser would be the user mid-answer. The queue decides the order instead.
+	 *
+	 * A timeout resolves to {@link TIMEOUT_ACTION} rather than to `undefined`:
+	 * the MCP union has no arm for "unanswered", and resolving to nothing would
+	 * put a value on the wire that no server can read as an answer.
+	 */
+	async showElicitationForm(serverName: string, request: MCPElicitRequest): Promise<MCPElicitOutcome> {
+		const fields = Object.entries(request.requestedSchema.properties).map(([name, schema]) => ({
+			name,
+			title: schema.title ?? name,
+			...(schema.description ? { description: schema.description } : {}),
+			required: schema.required === true,
+			writeOnly: schema.writeOnly === true,
+		}));
+
+		return this.#presentDialog<MCPElicitOutcome>(undefined, settle => {
+			this.ctx.hookInput = new McpElicitationFormComponent({
+				title: `${serverName} is asking`,
+				message: request.message,
+				fields,
+				onAccept: content => settle({ action: "accept", content }),
+				onDecline: () => settle({ action: "decline" }),
+				onCancel: () => settle({ action: "cancel" }),
+			});
+			this.ctx.editorContainer.clear();
+			this.ctx.editorContainer.addChild(this.ctx.hookInput);
+			this.ctx.ui.setFocus(this.ctx.hookInput);
+			this.ctx.ui.requestRender();
+			return () => this.hideHookInput();
+		}).then(outcome => outcome ?? { action: TIMEOUT_ACTION });
+	}
+
+	/**
 	 * Show a multi-line editor for hooks (with Ctrl+G support).
 	 */
 	showHookEditor(
@@ -1207,15 +1417,34 @@ export class ExtensionUiController {
 		};
 	}
 
-	clearHookWidgets(): void {
-		for (const widget of this.#hookWidgetsAbove.values()) {
-			widget.dispose?.();
+	/**
+	 * Re-seat every widget after a session switch, keeping the ones that still
+	 * have an author.
+	 *
+	 * This replaces a global wipe at the five session-switch sites. A switch is
+	 * not an unload: wiping took down the widget of an extension that was not
+	 * involved and had not gone anywhere, and the extension only got it back if
+	 * it happened to re-register on `session_start`. Anything owned by an
+	 * extension that is genuinely gone is disposed here — that is the part a
+	 * blanket `clear()` was doing correctly and had no other way to do.
+	 *
+	 * There is deliberately no "wipe everything" counterpart any more. Every
+	 * caller wanted a re-seat, and a second method nothing calls would be the
+	 * same unreachable seam this change exists to close.
+	 *
+	 * Unowned widgets are kept. They were placed through a `ui` with no extension
+	 * behind it, so nobody can be named as their author; disposing them would be
+	 * guessing, and the guess is the same silent data loss this replaces.
+	 */
+	remountHookWidgets(): void {
+		const live = new Set(this.ctx.session.extensionRunner?.getExtensionPaths() ?? []);
+		for (const widgets of [this.#hookWidgetsAbove, this.#hookWidgetsBelow]) {
+			for (const [key, entry] of widgets) {
+				if (entry.owner === undefined || live.has(entry.owner)) continue;
+				entry.component.dispose?.();
+				widgets.delete(key);
+			}
 		}
-		for (const widget of this.#hookWidgetsBelow.values()) {
-			widget.dispose?.();
-		}
-		this.#hookWidgetsAbove.clear();
-		this.#hookWidgetsBelow.clear();
 		this.#rebuildHookWidgets();
 	}
 

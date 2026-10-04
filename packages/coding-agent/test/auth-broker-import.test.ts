@@ -25,20 +25,20 @@ describe("auth-broker import (CLIProxyAPI)", () => {
 	const savedEnv: Record<string, string | undefined> = {};
 
 	beforeEach(async () => {
-		originalAgentDir = process.env.OMP_AGENT_DIR;
+		originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 		savedEnv.OMP_AUTH_BROKER_URL = process.env.OMP_AUTH_BROKER_URL;
 		savedEnv.OMP_AUTH_BROKER_TOKEN = process.env.OMP_AUTH_BROKER_TOKEN;
 		delete process.env.OMP_AUTH_BROKER_URL;
 		delete process.env.OMP_AUTH_BROKER_TOKEN;
-		agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-import-agent-"));
-		cliproxyDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-import-cliproxy-"));
+		agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-import-agent-"));
+		cliproxyDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-import-cliproxy-"));
 		setAgentDir(agentDir);
 	});
 
 	afterEach(async () => {
 		process.stdout.write = ORIGINAL_STDOUT_WRITE;
-		if (originalAgentDir === undefined) delete process.env.OMP_AGENT_DIR;
-		else process.env.OMP_AGENT_DIR = originalAgentDir;
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
 		await removeWithRetries(agentDir);
 		await removeWithRetries(cliproxyDir);
 		for (const key of ["OMP_AUTH_BROKER_URL", "OMP_AUTH_BROKER_TOKEN"] as const) {
@@ -53,7 +53,7 @@ describe("auth-broker import (CLIProxyAPI)", () => {
 		return file;
 	}
 
-	test("imports a directory of CLIProxyAPI JSONs and maps types to omp providers", async () => {
+	test("imports a directory of CLIProxyAPI JSONs and maps types to ultraworkers providers", async () => {
 		await writeCliProxyJson("claude-sample.json", {
 			type: "claude",
 			access_token: "claude-access-1",
@@ -209,9 +209,9 @@ describe("auth-broker import (broker-routed)", () => {
 	beforeEach(async () => {
 		savedEnv.OMP_AUTH_BROKER_URL = process.env.OMP_AUTH_BROKER_URL;
 		savedEnv.OMP_AUTH_BROKER_TOKEN = process.env.OMP_AUTH_BROKER_TOKEN;
-		agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-import-client-"));
-		brokerAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-import-broker-"));
-		cliproxyDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-import-cliproxy-broker-"));
+		agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-import-client-"));
+		brokerAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-import-broker-"));
+		cliproxyDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-import-cliproxy-broker-"));
 		setAgentDir(agentDir);
 
 		brokerStore = await SqliteAuthCredentialStore.open(path.join(brokerAgentDir, "agent.db"));

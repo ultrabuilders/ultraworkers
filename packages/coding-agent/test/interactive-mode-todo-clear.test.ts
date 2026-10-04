@@ -55,7 +55,7 @@ describe("InteractiveMode todo HUD persistence", () => {
 	beforeAll(async () => {
 		await initTheme();
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-todo-clear-");
+		tempDir = TempDir.createSync("@ultraworkers-todo-clear-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
@@ -156,7 +156,7 @@ describe("InteractiveMode todo HUD persistence", () => {
 
 	it("reloads the visible HUD from the explicitly attached session", async () => {
 		setTodoClearDelay(-1);
-		const focusedDir = TempDir.createSync("@pi-focused-todo-");
+		const focusedDir = TempDir.createSync("@ultraworkers-focused-todo-");
 		const model = modelRegistry.find("anthropic", "claude-sonnet-4-5");
 		if (!model) throw new Error("Expected claude-sonnet-4-5 to exist in registry");
 		const focusedSession = new AgentSession({
@@ -253,7 +253,7 @@ describe("InteractiveMode todo HUD persistence", () => {
 		mode.setTodos(session.getTodoPhases());
 		await mode.init();
 
-		const focusedDir = TempDir.createSync("@pi-focused-reconcile-");
+		const focusedDir = TempDir.createSync("@ultraworkers-focused-reconcile-");
 		const model = modelRegistry.find("anthropic", "claude-sonnet-4-5");
 		if (!model) throw new Error("Expected claude-sonnet-4-5 to exist in registry");
 		const focusedSession = new AgentSession({
@@ -329,7 +329,7 @@ describe("InteractiveMode todo HUD persistence", () => {
 		mode.setTodos(session.getTodoPhases());
 		await mode.init();
 
-		const workerDir = TempDir.createSync("@pi-owner-reconcile-");
+		const workerDir = TempDir.createSync("@ultraworkers-owner-reconcile-");
 		const model = modelRegistry.find("anthropic", "claude-sonnet-4-5");
 		if (!model) throw new Error("Expected claude-sonnet-4-5 to exist in registry");
 		const workerSession = new AgentSession({
@@ -589,7 +589,7 @@ describe("InteractiveMode todo HUD anchor", () => {
 	beforeAll(async () => {
 		await initTheme();
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-todo-hud-");
+		tempDir = TempDir.createSync("@ultraworkers-todo-hud-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

@@ -49,6 +49,39 @@ describe("sanitizeChildEnv", () => {
 		expect(env.LD_PRELOAD).toBe("/tmp/evil.so");
 	});
 
+	it("strips macOS loader hijack variables, not just the Linux ones", () => {
+		// ultraworkers ships on macOS more than any other platform, and DYLD_* is the same
+		// hijack under a different prefix. Enumerating only LD_* left the most common
+		// target unprotected while the guard looked present.
+		const env = {
+			PATH: "/usr/bin",
+			DYLD_INSERT_LIBRARIES: "/tmp/evil.dylib",
+			DYLD_LIBRARY_PATH: "/tmp",
+		};
+		const result = sanitizeChildEnv(env);
+		expect(result.DYLD_INSERT_LIBRARIES).toBeUndefined();
+		expect(result.DYLD_LIBRARY_PATH).toBeUndefined();
+		expect(result.PATH).toBe("/usr/bin");
+	});
+
+	it("strips an unenumerated variable in a loader family", () => {
+		// The prefix rule is what covers names nobody wrote down. A new loader
+		// variable should be blocked by default, not wait for someone to add it.
+		const env = { PATH: "/usr/bin", LD_SOMETHING_NEW: "x", DYLD_SOMETHING_NEW: "y" };
+		const result = sanitizeChildEnv(env);
+		expect(result.LD_SOMETHING_NEW).toBeUndefined();
+		expect(result.DYLD_SOMETHING_NEW).toBeUndefined();
+	});
+
+	it("keeps variables that merely resemble a loader family", () => {
+		// The prefix is anchored at the start, so a user variable that happens to
+		// contain "LD_" survives. A substring match would strip it.
+		const env = { PATH: "/usr/bin", MY_LD_PATH: "/opt/thing", OLD_LD_PRELOAD: "/opt/x" };
+		const result = sanitizeChildEnv(env);
+		expect(result.MY_LD_PATH).toBe("/opt/thing");
+		expect(result.OLD_LD_PRELOAD).toBe("/opt/x");
+	});
+
 	it("returns the SAME object when nothing needs stripping", () => {
 		// Identity, not just equality: callers compare `env === callerEnv`, so copying
 		// unconditionally would be a behaviour change dressed as a refactor. This is

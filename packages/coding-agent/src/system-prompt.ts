@@ -215,6 +215,33 @@ function renderActiveRepoContextPrompt(activeRepoContext: ActiveRepoContext | nu
 }
 
 const SYSTEM_PROMPT_PREP_TIMEOUT_MS = 5000;
+
+/**
+ * How many skills may be listed in the rendered system prompt.
+ *
+ * The `<skills>` block is one `- name: description` line per skill, and it grows
+ * with whatever the user has installed. Past this many, the block costs more
+ * prompt budget than it earns: the tail entries are the least likely to be the
+ * ones being matched, while the head keeps full prefix-cache stability.
+ *
+ * One number, not a table — the only knob that matters is how many lines the
+ * block may occupy. Skills past the cap are not lost: they stay reachable via
+ * `skill://<name>` and `manage_skill action: "list"`, which is why dropping them
+ * from the prompt costs recall rather than capability.
+ *
+ * Below the cap the rendered prompt is byte-identical to having no cap at all.
+ */
+export const MAX_PROMPT_SKILLS = 20;
+
+/**
+ * Keep the first `MAX_PROMPT_SKILLS` skills in declaration order and report how
+ * many were held back, so the prompt can say so rather than silently dropping
+ * entries the author expected to see.
+ */
+function capPromptSkills<T>(skills: readonly T[]): { skills: readonly T[]; omitted: number } {
+	const omitted = Math.max(0, skills.length - MAX_PROMPT_SKILLS);
+	return { skills: omitted === 0 ? skills : skills.slice(0, MAX_PROMPT_SKILLS), omitted };
+}
 /** Workstation facts the model needs to pick commands and paths: platform/release and CPU architecture. */
 function getEnvironmentInfo(): Array<{ label: string; value: string }> {
 	return [
@@ -934,8 +961,10 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		securityEnabled,
 		settingsApproval,
 	};
-	const filteredSkills = (options.skillDescriptions ?? new SkillDescriptionCatalog()).render(
-		hasSkillReader ? skills.filter(skill => skill.hide !== true) : [],
+	const filteredSkills = capPromptSkills(
+		(options.skillDescriptions ?? new SkillDescriptionCatalog()).render(
+			hasSkillReader ? skills.filter(skill => skill.hide !== true) : [],
+		),
 	);
 
 	const effectiveSystemPromptCustomization = dedupePromptSource(systemPromptCustomization, [
@@ -968,7 +997,8 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		workspaceTree,
 		hasSkillUriAccess,
 		internalUrls: InternalUrlRouter.instance().describe(schemeHost),
-		skills: filteredSkills,
+		skills: filteredSkills.skills,
+		skillsOmitted: filteredSkills.omitted,
 		rules: rules ?? [],
 		alwaysApplyRules: injectedAlwaysApplyRules,
 		cwd: promptCwd,

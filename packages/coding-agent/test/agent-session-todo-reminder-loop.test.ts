@@ -109,7 +109,7 @@ describe("AgentSession todo reminder self-continuation suppression", () => {
 	}
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-todo-reminder-loop-");
+		tempDir = TempDir.createSync("@ultraworkers-todo-reminder-loop-");
 		sessionManager = SessionManager.inMemory(tempDir.path());
 
 		const model = getBundledModel("anthropic", "claude-sonnet-4-5");

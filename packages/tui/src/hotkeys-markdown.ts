@@ -13,6 +13,30 @@ import type { Component } from "./tui";
 /** Effective keybinding operations used to render the hotkey reference. */
 export interface HotkeysMarkdownBindings {
 	keybindings: Pick<KeybindingsManager, "getDisplayString" | "getKeys" | "matchesCanonical">;
+	/**
+	 * Groups contributed from outside core, rendered after the built-in ones.
+	 *
+	 * The seam an extension's own shortcuts reach `/hotkeys` through. Core's
+	 * action vocabulary is the closed `AppKeybindings` interface, so a shortcut
+	 * an extension registered can never be one of the rows above — it can only be
+	 * named here, by whoever registered it. Absent means core alone, which is
+	 * exactly what this rendered before the seam existed.
+	 */
+	extraGroups?: readonly HotkeyGroupContribution[];
+}
+
+/**
+ * A shortcut group contributed from outside core — one extension's own rows.
+ *
+ * Deliberately the plain data a registrant already has (a key id and a
+ * description) rather than the internal `HotkeyPart` shape: an extension knows
+ * neither platform keycaps nor the `Disabled` fallback, and giving it a way to
+ * name a row is the whole point. Key ids are carried unformatted so the native
+ * sheet still draws them as keycaps.
+ */
+export interface HotkeyGroupContribution {
+	readonly title: string;
+	readonly rows: readonly { readonly keys: readonly KeyName[]; readonly action: string }[];
 }
 
 /**
@@ -132,6 +156,7 @@ function hotkeyGroups(bindings: HotkeysMarkdownBindings): HotkeyGroup[] {
 				{ keys: [act("app.model.select")], action: "Select model (set roles)" },
 				{ keys: [act("app.plan.toggle")], action: "Toggle plan mode" },
 				{ keys: [act("app.history.search")], action: "Search prompt history" },
+				{ keys: [act("app.transcript.search")], action: "Search transcript" },
 				{ keys: [act("app.tools.expand")], action: "Toggle tool output expansion" },
 				{ keys: [act("app.tools.toggleVisibility")], action: "Toggle tool activity visibility" },
 				{ keys: [act("app.thinking.toggle")], action: "Toggle thinking block visibility" },
@@ -167,7 +192,15 @@ function hotkeyGroups(bindings: HotkeysMarkdownBindings): HotkeyGroup[] {
 			],
 		},
 	];
-	return groups;
+	return [...groups, ...contributedGroups(bindings)];
+}
+
+/** Outside-core groups, rendered with the same key formatting as built-in rows. */
+function contributedGroups(bindings: HotkeysMarkdownBindings): HotkeyGroup[] {
+	return (bindings.extraGroups ?? []).map(group => ({
+		title: group.title,
+		rows: group.rows.map(row => ({ keys: [hints(row.keys)], action: row.action })),
+	}));
 }
 
 /** Build the platform-aware Markdown reference for effective application hotkeys. */
@@ -219,7 +252,7 @@ function actionSpans(action: string): TspSpan[] {
  * without the native surface get the transcript markdown panel instead.
  */
 export class HotkeysSheetComponent implements Component {
-	readonly nativeOverlay = { role: "omp.overlay.hotkeys", size: "lg", head: "Keyboard shortcuts" } as const;
+	readonly nativeOverlay = { role: "ultraworkers.overlay.hotkeys", size: "lg", head: "Keyboard shortcuts" } as const;
 	readonly #bindings: HotkeysMarkdownBindings;
 	readonly #onClose: () => void;
 	#native: NativeNode | undefined;
@@ -235,10 +268,10 @@ export class HotkeysSheetComponent implements Component {
 		const sections = hotkeyGroups(this.#bindings).map((group, index) =>
 			node(
 				"section",
-				{ head: group.title, role: "omp.hotkeys.group" },
+				{ head: group.title, role: "ultraworkers.hotkeys.group" },
 				[
 					node("table", {
-						role: "omp.hotkeys.table",
+						role: "ultraworkers.hotkeys.table",
 						cols: [
 							{ id: "keys", head: "Key" },
 							{ id: "action", head: "Action", grow: 1 },

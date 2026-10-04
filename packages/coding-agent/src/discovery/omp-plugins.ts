@@ -1,15 +1,15 @@
 /**
- * OMP extension-package sub-discovery provider.
+ * ultraworkers extension-package sub-discovery provider.
  *
  * When a user configures an extension via `extensions:` (in settings) or
  * `--extension`/`-e` (on the CLI), the docs promise that the package's
  * sibling directories — `skills/`, `hooks/pre|post/`, `tools/`, `commands/`,
- * `rules/`, `prompts/`, and `.mcp.json` — are picked up by omp's standard
- * discovery surfaces. The native `omp` provider in `builtin.ts` only walks
+ * `rules/`, `prompts/`, and `.mcp.json` — are picked up by ultraworkers' standard
+ * discovery surfaces. The `native` provider in `builtin.ts` only walks
  * `.omp/` and `~/.omp/agent/`, so without this provider those sub-trees are
  * silently ignored.
  *
- * Provider priority is set below the native `omp` provider (100) so an
+ * Provider priority is set below the `native` provider (100) so an
  * extension package never shadows the user's own `.omp/` configuration on
  * dedup.
  *
@@ -41,7 +41,7 @@ import { listOmpExtensionRoots, type OmpExtensionRoot } from "./omp-extension-ro
 import { resolvePluginStdioPaths } from "./substitute-plugin-root";
 
 const PROVIDER_ID = "omp-plugins";
-const DISPLAY_NAME = "OMP Extension Packages";
+const DISPLAY_NAME = "ultraworkers Extension Packages";
 const DESCRIPTION =
 	"Sub-discovery (skills, hooks, tools, commands, rules, prompts, .mcp.json) inside extension packages";
 const PRIORITY = 90;
@@ -318,6 +318,7 @@ async function loadMCPServers(ctx: LoadContext): Promise<LoadResult<MCPServer>> 
 		const servers = expandEnvVarsDeep(parsed.mcpServers, {
 			CLAUDE_PLUGIN_ROOT: root.path,
 			OMP_PLUGIN_ROOT: root.path,
+			ULTRAWORKERS_PLUGIN_ROOT: root.path,
 		});
 		if (!servers || typeof servers !== "object" || Array.isArray(servers)) continue;
 

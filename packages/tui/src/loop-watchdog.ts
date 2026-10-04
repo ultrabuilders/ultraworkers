@@ -66,6 +66,10 @@ export class LoopWatchdog {
 	#wasBlocked = false;
 	// When the most recent late tick ran — the moment a detected block ended.
 	#stallEndedAt = Number.NEGATIVE_INFINITY;
+	// Phase name of the stall currently being reported, or undefined when the loop
+	// is not stalled. Set alongside `#stallEndedAt` and cleared with it, so the two
+	// agree: a name can never outlive the stall that produced it.
+	#stallPhase: string | undefined;
 	#running = false;
 	// Bumped by stop(); each scheduled tick captures the generation it was armed
 	// under and no-ops if it no longer matches, so a start()→stop()→start() cycle
@@ -97,6 +101,7 @@ export class LoopWatchdog {
 		this.#running = true;
 		this.#wasBlocked = false;
 		this.#stallEndedAt = Number.NEGATIVE_INFINITY;
+		this.#stallPhase = undefined;
 		this.#armTick();
 	}
 
@@ -104,6 +109,7 @@ export class LoopWatchdog {
 		this.#running = false;
 		this.#wasBlocked = false;
 		this.#stallEndedAt = Number.NEGATIVE_INFINITY;
+		this.#stallPhase = undefined;
 		this.#generation++;
 		this.#handle?.cancel?.();
 		this.#handle = undefined;
@@ -123,6 +129,24 @@ export class LoopWatchdog {
 		if (now - this.#stallEndedAt <= this.#thresholdMs) return true;
 		const overdueMs = now - this.#expected;
 		return overdueMs > this.#thresholdMs && !this.#isSuspension(overdueMs, this.#cpuNow() - this.#expectedCpu);
+	}
+
+	/**
+	 * Phase name of the stall being reported right now, or undefined when the
+	 * loop is not stalled.
+	 *
+	 * The tick already learns the phase to log it; this exposes the same value
+	 * to the surface, so a spinner can name the phase it is stuck in instead of
+	 * turning with no explanation.
+	 *
+	 * Correctness rests on the tick clearing `#stallPhase` on every path that
+	 * ends a block, not on a guard here. That is deliberate: a guard would mask
+	 * a missed clear, so the "stops naming the phase" half of the contract
+	 * would hold only while both happened to agree — and a missed clear is
+	 * exactly the regression worth catching.
+	 */
+	get stallPhase(): string | undefined {
+		return this.#stallPhase;
 	}
 
 	/** A long gap the process spent negligible CPU on: it was suspended, not blocked. */
@@ -150,8 +174,14 @@ export class LoopWatchdog {
 		if (blockedMs > this.#thresholdMs) {
 			if (this.#isSuspension(blockedMs, cpuMs)) {
 				this.#wasBlocked = false;
+				this.#stallPhase = undefined;
 			} else {
 				this.#stallEndedAt = now;
+				// Recorded on every stall tick, not only the first: a block that
+				// outlives one phase and settles into another must report the
+				// phase it is in now, and `#wasBlocked` suppresses the log line
+				// that would otherwise have carried the new name.
+				this.#stallPhase = phase;
 				if (!this.#wasBlocked) {
 					this.#wasBlocked = true;
 					logger.warn("ui.loop-blocked", {
@@ -163,6 +193,10 @@ export class LoopWatchdog {
 			}
 		} else {
 			this.#wasBlocked = false;
+			// Cleared together with the block it described. Leaving it set is the
+			// regression this accessor exists to make impossible: the row would
+			// keep naming a phase the loop left long ago.
+			this.#stallPhase = undefined;
 		}
 		this.#armTick();
 	}

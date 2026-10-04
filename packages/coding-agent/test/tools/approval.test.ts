@@ -368,7 +368,12 @@ describe("tool-owned dynamic approval declarations", () => {
 			"rm -rf -i /",
 			"rm -v -rf /",
 		]) {
-			expect(bashApproval(command)).toEqual({ tier: "exec", override: true, reason: "Critical pattern detected" });
+			expect(bashApproval(command)).toEqual({
+				tier: "exec",
+				override: true,
+				policy: "deny",
+				reason: "Critical pattern detected",
+			});
 		}
 	});
 
@@ -423,7 +428,13 @@ describe("tool-owned dynamic approval declarations", () => {
 		});
 	});
 
-	it("keeps critical bash patterns prompt-gated unless explicitly denied", () => {
+	// This test used to be named "keeps critical bash patterns prompt-gated unless
+	// explicitly denied", and it asserted the shape W6 removes: a critical pattern
+	// produced an `override` with no policy, which `yolo` resolved to `allow`. The
+	// contract changed on purpose — the critical branch now returns `policy: "deny"`,
+	// which `resolveApproval` short-circuits ahead of the mode branch — so the
+	// assertion below states the new contract rather than the old one.
+	it("denies a critical bash pattern even when a user pattern allows everything", () => {
 		const settingsOverrides = {
 			"bash.patterns": [{ match: "*", approval: "allow" }],
 		};
@@ -431,6 +442,7 @@ describe("tool-owned dynamic approval declarations", () => {
 		expect(bashApproval("rm -rf /", settingsOverrides)).toEqual({
 			tier: "exec",
 			override: true,
+			policy: "deny",
 			reason: "Critical pattern detected",
 		});
 		expect(bashApproval("echo hello", settingsOverrides)).toEqual({
@@ -438,6 +450,23 @@ describe("tool-owned dynamic approval declarations", () => {
 			policy: "allow",
 		});
 		expect(bashApproval("echo hello && rm file.txt", settingsOverrides)).toBe("exec");
+	});
+
+	// The escape this closes, stated as what a user observes: `yolo` allows every
+	// tier, and it used to allow this one too, because the critical branch spoke in
+	// overrides rather than in policy. Both compound spellings are covered because
+	// the per-segment loop is a separate branch from the top-level one.
+	it("refuses a critical bash command in yolo instead of auto-approving it", () => {
+		const bash = createBashTool({
+			"bash.allowCompoundCommands": true,
+			"bash.patterns": [{ match: "*", approval: "allow" }],
+		});
+
+		for (const command of ["rm -rf /", "echo hi && rm -rf /"]) {
+			const decision = resolveApproval(bash, { command }, "yolo");
+			expect(decision.policy).toBe("deny");
+			expect(decision.reason).toBe("Critical pattern detected");
+		}
 	});
 
 	it("applies the first matching bash approval pattern", () => {
@@ -814,7 +843,7 @@ describe("tool-owned dynamic approval declarations", () => {
 		const args = { command: "pwd && cmp before after && rm -rf /" };
 
 		expect(resolveApproval(bash, args, "write", { bash: "allow" })).toMatchObject({
-			policy: "prompt",
+			policy: "deny",
 			source: "tool",
 			tier: "exec",
 			override: true,
@@ -831,7 +860,7 @@ describe("tool-owned dynamic approval declarations", () => {
 		});
 		for (const command of ["pwd && true && rm -rf '/'", "pwd && true && r\\m -rf /"]) {
 			expect(resolveApproval(bash, { command }, "write", { bash: "allow" })).toMatchObject({
-				policy: "prompt",
+				policy: "deny",
 				source: "tool",
 				override: true,
 			});

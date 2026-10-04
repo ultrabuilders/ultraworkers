@@ -27,6 +27,10 @@ describe("HTML export themes", () => {
 		expect(parseExportArgs("--themes export.html")).toEqual({ outputPath: "export.html", useUserThemes: true });
 		expect(parseExportArgs("export.html --themes")).toEqual({ outputPath: "export.html", useUserThemes: true });
 		expect(parseExportArgs("")).toEqual({ outputPath: undefined, useUserThemes: false });
-		expect(() => parseExportArgs("one.html two.html")).toThrow("Usage: /export [--themes] [path]");
+		// The usage string is the only place a user learns `--format` exists, so it
+		// is asserted exactly rather than as a substring: it changed when the flag
+		// was added, and a stale copy here would be how the flag silently becomes
+		// undiscoverable.
+		expect(() => parseExportArgs("one.html two.html")).toThrow("Usage: /export [--themes] [--format <id>] [path]");
 	});
 });

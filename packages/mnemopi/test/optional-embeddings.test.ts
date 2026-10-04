@@ -10,8 +10,7 @@ import {
 } from "@oh-my-pi/pi-mnemopi/core/embeddings";
 import { Mnemopi } from "@oh-my-pi/pi-mnemopi/core/memory";
 import { withMnemopiRuntimeOptions } from "@oh-my-pi/pi-mnemopi/core/runtime-options";
-import { getFastembedCacheDir } from "@oh-my-pi/pi-utils";
-import packageJson from "../package.json" with { type: "json" };
+import { APP_NAME, APP_URL, getFastembedCacheDir, USER_AGENT } from "@oh-my-pi/pi-utils";
 
 const ENV_KEYS = [
 	"NODE_ENV",
@@ -132,9 +131,13 @@ describe("optional embeddings", () => {
 			fetch: async request => {
 				requests += 1;
 				expect(request.headers.get("content-type")).toBe("application/json");
-				expect(request.headers.get("user-agent")).toBe(`omp/${packageJson.version}`);
-				expect(request.headers.get("http-referer")).toBe("https://omp.sh/");
-				expect(request.headers.get("x-openrouter-title")).toBe("omp");
+				// Header NAMES are the third-party contract and stay literal. Only the
+				// VALUES are ours — getOpenRouterHeaders() derives all three from the
+				// brand constants (packages/ai/src/utils/openrouter-headers.ts:5-7), so
+				// asserting literals here would track nothing the product actually sends.
+				expect(request.headers.get("user-agent")).toBe(USER_AGENT);
+				expect(request.headers.get("http-referer")).toBe(APP_URL);
+				expect(request.headers.get("x-openrouter-title")).toBe(APP_NAME);
 				expect(request.headers.get("x-openrouter-categories")).toBe("cli-agent");
 				expect(request.headers.get("x-title")).toBeNull();
 				expect(request.headers.get("authorization")).toBeNull();

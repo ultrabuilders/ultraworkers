@@ -16,7 +16,7 @@ afterEach(async () => {
 
 describe("prepared extension rebinding", () => {
 	it("binds a fresh session extension without evaluating the module again", async () => {
-		const directory = await fs.mkdtemp(path.join(os.tmpdir(), "omp-prepared-extension-"));
+		const directory = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-prepared-extension-"));
 		temporaryDirectories.push(directory);
 		const parentDirectory = path.join(directory, "parent");
 		const childDirectory = path.join(directory, "child");
@@ -60,7 +60,7 @@ describe("prepared extension rebinding", () => {
 		// belongs to an extension — becomes ambiguous with two Extensions on one
 		// path, and one extension's teardown would reach another's handlers and
 		// timers. Refusing the second keeps "a path names one extension" true.
-		const directory = await fs.mkdtemp(path.join(os.tmpdir(), "omp-dup-extension-"));
+		const directory = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-dup-extension-"));
 		temporaryDirectories.push(directory);
 		const extensionPath = path.join(directory, "dup.ts");
 		await Bun.write(extensionPath, "export default function dupExtension() {}\n");

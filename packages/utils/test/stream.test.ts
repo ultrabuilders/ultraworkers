@@ -7,6 +7,7 @@ import {
 	readSseEvents,
 	readSseJson,
 	readSseJsonOrText,
+	StreamBufferOverflowError,
 	type ServerSentEvent,
 } from "@oh-my-pi/pi-utils/stream";
 
@@ -593,5 +594,46 @@ describe("readSseEvents", () => {
 		expect(events[1999].data).toBe("1999");
 		// Generous bound: the previous quadratic implementation needed >5s here.
 		expect(elapsed).toBeLessThan(2000);
+	});
+});
+
+describe("ConcatSink byte cap", () => {
+	it("refuses a record that never arrives with a delimiter", () => {
+		// The threat is a peer that never sends a newline: without a ceiling the
+		// buffer grows with every chunk, so the cap has to trip on the append that
+		// crosses it rather than on a parse that never happens.
+		const sink = new ConcatSink({ maxBytes: 8 });
+		sink.append(encoder.encode("12345"));
+		expect(() => sink.append(encoder.encode("6789"))).toThrow(StreamBufferOverflowError);
+	});
+
+	it("leaves the sink usable so a later well-formed record still parses", () => {
+		// Failing closed has to mean "drop the poisoned record", not "the sink is
+		// now permanently broken" — otherwise one oversized frame takes the rest
+		// of the session with it.
+		const sink = new ConcatSink({ maxBytes: 16 });
+		expect(() => sink.append(encoder.encode("x".repeat(64)))).toThrow(StreamBufferOverflowError);
+		expect(sink.isEmpty).toBe(true);
+		sink.append(encoder.encode('{"ok":1}\n'));
+		expect(sink.flush()).toBeDefined();
+	});
+
+	it("reports the limit it refused, so a caller need not re-derive it", () => {
+		const sink = new ConcatSink({ maxBytes: 4 });
+		try {
+			sink.append(encoder.encode("way too long"));
+			expect.unreachable();
+		} catch (error) {
+			expect(error).toBeInstanceOf(StreamBufferOverflowError);
+			expect((error as StreamBufferOverflowError).maxBytes).toBe(4);
+		}
+	});
+
+	it("stays unbounded when no cap is configured", () => {
+		// Every pre-existing caller omits the option; if that changed behaviour the
+		// whole suite would shift, so pin it rather than assume it.
+		const sink = new ConcatSink();
+		sink.append(encoder.encode("z".repeat(1024 * 1024)));
+		expect(sink.flush()).toHaveLength(1024 * 1024);
 	});
 });

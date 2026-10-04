@@ -59,7 +59,7 @@ describe("issue #6516 — tool output appears twice", () => {
 	beforeAll(async () => {
 		initTheme();
 		resetSettingsForTest();
-		settingsDir = TempDir.createSync("@pi-issue-6516-settings-");
+		settingsDir = TempDir.createSync("@ultraworkers-issue-6516-settings-");
 		await Settings.init({ inMemory: true, cwd: settingsDir.path() });
 		authStorage = await AuthStorage.create(":memory:");
 		modelRegistry = new ModelRegistry(authStorage);
@@ -74,7 +74,7 @@ describe("issue #6516 — tool output appears twice", () => {
 			vi.spyOn(process.stdin, "setRawMode").mockReturnValue(process.stdin);
 		}
 
-		tempDir = TempDir.createSync("@pi-issue-6516-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-6516-");
 		const model = modelRegistry.find("anthropic", "claude-sonnet-4-5");
 		if (!model) throw new Error("Expected claude-sonnet-4-5 test model");
 

@@ -6,6 +6,7 @@ import {
 	type FetchImpl,
 } from "../src/blob-broker/uploader-runtime";
 import { createCloudDriveUploader } from "../src/blob-broker/uploaders-cloud-drives";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 
 const uploadRequest: BlobUploadRequest = {
 	bytes: new TextEncoder().encode("cloud-drive-payload"),
@@ -330,7 +331,7 @@ describe("cloud-drive blob uploaders", () => {
 			device_iden: "device-id",
 			type: "file",
 			file_url: publicFileUrl,
-			body: "Sent via omp",
+			body: `Sent via ${APP_NAME}`,
 			file_type: "image/png",
 		});
 		expect(publication).toEqual({

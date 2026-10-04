@@ -34,7 +34,7 @@ describe("InteractiveMode plan mode exit", () => {
 
 	beforeAll(async () => {
 		await initTheme();
-		tempDir = TempDir.createSync("@pi-plan-exit-");
+		tempDir = TempDir.createSync("@ultraworkers-plan-exit-");
 		authStorage = createInMemoryAuthStorage();
 		modelRegistry = new ModelRegistry(authStorage);
 	});

@@ -1,12 +1,12 @@
 /**
- * Centralized logger for omp.
+ * Centralized logger for ultraworkers.
  *
- * Default: rotating `~/.omp/logs/omp.<DATE>.<PID>.log`, no console output (writing
+ * Default: rotating `<logs dir>/<APP_NAME>.<DATE>.<PID>.log`, no console output (writing
  * to stdout/stderr would corrupt the TUI). Long-running headless services
  * (the auth broker, etc.) call {@link setTransports} to swap in a console
  * transport so a process supervisor (pm2, journald, k8s) captures the logs.
  *
- * Each entry includes `process.pid` so concurrent omp instances stay
+ * Each entry includes `process.pid` so concurrent ultraworkers instances stay
  * traceable.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -14,7 +14,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isPromise } from "node:util/types";
-import { getLogsDir, localDay } from "./dirs";
+import { APP_NAME, getLogsDir, localDay } from "./dirs";
+import { normalizeErrorMessage } from "./normalize-error";
 import { RotatingFileSink } from "./logger/rotating-file";
 import { setStderrRedirectTarget } from "./stderr-guard";
 import { drainModuleLoadEvents } from "./timing-buffer";
@@ -54,8 +55,14 @@ function emitToSinks(level: LogLevel, message: string, context: Record<string, u
 	}
 }
 
-const PROCESS_LOG_PATTERN = /^omp\.(\d{4}-\d{2}-\d{2})\.(\d+)\.log(?:\.(\d+))?$/;
-const PROCESS_AUDIT_PATTERN = /^\.omp\.(\d+)-audit\.json$/;
+// The two prune patterns and the sink's own filename have to agree on the same
+// name. Deriving both from `APP_NAME` is what keeps them agreeing: hardcoding
+// `ultraworkers` here while the sink writes a differently-named prefix means
+// `pruneStaleProcessLogs` never matches a file it just created, so logs
+// accumulate without bound and nothing reports an error.
+const APP_NAME_RE = APP_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PROCESS_LOG_PATTERN = new RegExp(`^${APP_NAME_RE}\\.(\\d{4}-\\d{2}-\\d{2})\\.(\\d+)\\.log(?:\\.(\\d+))?$`);
+const PROCESS_AUDIT_PATTERN = new RegExp(`^\\.${APP_NAME_RE}\\.(\\d+)-audit\\.json$`);
 const RETAINED_STALE_LOGS_PER_PROCESS_DAY = 1;
 const RETAINED_STALE_AUDIT_FILES = 0;
 const RETAINED_STALE_LOG_DAYS = 5;
@@ -162,11 +169,28 @@ function schedulePruneStaleProcessLogs(dir: string): void {
 	immediate.unref();
 }
 
-/** Ensure a logs directory exists; return the resolved path. */
+/**
+ * Ensure a logs directory exists; return the resolved path.
+ *
+ * `0o700`, not the default `0o777` masked by umask. A log line can carry a request
+ * header, a resolved URL, or a tool argument, and the logs directory sits inside the
+ * user's home directory where every other local account can list it. `recursive`
+ * is kept deliberately: it creates intermediate directories too, and `mode`
+ * applies to every one of them.
+ */
 function ensureDir(dir: string): string {
 	if (!fs.existsSync(dir)) {
-		fs.mkdirSync(dir, { recursive: true });
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	}
+	// `mode` applies ONLY to a directory this call creates. With `recursive`, an
+	// existing directory is a silent success, so anyone who ran ultraworkers before this
+	// landed keeps a 0755 log directory forever — and they are the group with the
+	// most accumulated transcripts in it. Measured: new dir 0700, pre-existing dir
+	// 0755 both before and after without this line.
+	//
+	// Windows has no POSIX mode bits, and `chmod` there is a no-op that throws on
+	// some paths, so it is skipped rather than wrapped.
+	if (process.platform !== "win32") fs.chmodSync(dir, 0o700);
 	return dir;
 }
 
@@ -177,10 +201,11 @@ function ensureDir(dir: string): string {
  * forensic logs showed only an opaque empty object.
  */
 function jsonReplacer(_key: string, value: unknown): unknown {
-	if (value instanceof Error) {
+	if (!(value instanceof Error)) return value;
+	try {
 		const out: Record<string, unknown> = {
 			name: value.name,
-			message: value.message,
+			message: normalizeErrorMessage(value),
 			stack: value.stack,
 		};
 		// Preserve `.cause` and any custom enumerable fields the caller attached.
@@ -188,8 +213,23 @@ function jsonReplacer(_key: string, value: unknown): unknown {
 		for (const k in errAsRecord) out[k] = errAsRecord[k];
 		if (value.cause !== undefined) out.cause = value.cause;
 		return out;
+	} catch {
+		// A subclass with a throwing `name`/`stack` getter, or a revoked Proxy.
+		// This runs INSIDE `JSON.stringify`, so letting it escape would abort the
+		// whole log record — losing every other field of the entry, not just this
+		// one. Degrade to the fields that can still be read.
+		return { name: safeErrorField(value, "name"), message: normalizeErrorMessage(value) };
 	}
-	return value;
+}
+
+/** Read one Error field without letting a throwing getter abort the log line. */
+function safeErrorField(error: Error, key: "name" | "stack"): string | undefined {
+	try {
+		const raw = error[key];
+		return typeof raw === "string" ? raw : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 interface NormalizedLogInfo extends Record<string, unknown> {
@@ -250,11 +290,11 @@ function makeFileTransport(dir?: string): RotatingFileSink {
 	schedulePruneStaleProcessLogs(logsDir);
 	return new RotatingFileSink({
 		directory: logsDir,
-		filenamePrefix: "omp",
+		filenamePrefix: APP_NAME,
 		filenameSuffix: String(process.pid),
 		maxBytes: 10 * 1024 * 1024,
 		maxFiles: 5,
-		auditFile: path.join(logsDir, `.omp.${process.pid}-audit.json`),
+		auditFile: path.join(logsDir, `.${APP_NAME}.${process.pid}-audit.json`),
 		// Keep the stderr guard's fd 2 on the file this sink is writing.
 		onRotate: setStderrRedirectTarget,
 	});

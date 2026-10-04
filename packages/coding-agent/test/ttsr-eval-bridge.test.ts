@@ -53,7 +53,7 @@ describe("TTSR eval bridge enforcement", () => {
 		["regex", "never", false],
 		["ast", "never", false],
 	] as const)("%s %s rule on a write issued inside eval", async (kind, interruptMode, blocks) => {
-		using tempDir = TempDir.createSync(`@pi-ttsr-${kind}-bridge-`);
+		using tempDir = TempDir.createSync(`@ultraworkers-ttsr-${kind}-bridge-`);
 		const target = `${tempDir.path()}/probe.ts`;
 		const content = kind === "regex" ? "FORBIDDEN_TOKEN\n" : 'console.log("FORBIDDEN_TOKEN");\n';
 		const manager = SessionManager.inMemory(tempDir.path());

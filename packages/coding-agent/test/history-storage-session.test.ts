@@ -5,7 +5,9 @@ import { TempDir } from "@oh-my-pi/pi-utils";
 
 let tempDir: TempDir | null = null;
 
-async function freshStorage(prefix = "omp-history-session-"): Promise<{ storage: HistoryStorage; dbPath: string }> {
+async function freshStorage(
+	prefix = "ultraworkers-history-session-",
+): Promise<{ storage: HistoryStorage; dbPath: string }> {
 	tempDir = TempDir.createSync(`@${prefix}`);
 	const dbPath = tempDir.join("history.db");
 	HistoryStorage.close();
@@ -83,7 +85,7 @@ describe("HistoryStorage session linkage", () => {
 	});
 
 	it("adds session_id to a pre-existing schema and leaves legacy rows unstamped", async () => {
-		tempDir = TempDir.createSync("@omp-history-session-migrate-");
+		tempDir = TempDir.createSync("@ultraworkers-history-session-migrate-");
 		const dbPath = tempDir.join("history.db");
 		const legacyDb = new Database(dbPath);
 		legacyDb.exec(`

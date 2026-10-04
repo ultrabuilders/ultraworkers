@@ -31,7 +31,7 @@ describe("headless advisor drain with a fallback reviewer", () => {
 	let authStorage: AuthStorage | undefined;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-advisor-fallback-drain-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-fallback-drain-");
 	});
 
 	afterEach(async () => {

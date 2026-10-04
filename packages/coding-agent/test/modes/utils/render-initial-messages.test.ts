@@ -5,7 +5,7 @@
  * `sessionManager.buildSessionContext()` — the LLM-context builder — must not be
  * consulted for display.
  *
- * Also guards the cold-launch terminal cleanup: `omp` / `omp -c` leave the
+ * Also guards the cold-launch terminal cleanup: `ultraworkers` / `ultraworkers -c` leave the
  * previous run's transcript in native scrollback because the TUI's initial
  * paint preserves it, so the cold-launch render must request a
  * scrollback-clearing repaint (`clearTerminalHistory`).
@@ -459,7 +459,7 @@ describe("UiHelpers.renderInitialMessages — image replay", () => {
 	it("replays reopened session image blocks through the cold-start rebuild path", async () => {
 		await Settings.init({ inMemory: true, overrides: { "terminal.showImages": true } });
 		setTerminalImageProtocol(ImageProtocol.Sixel);
-		using tempDir = TempDir.createSync("@pi-render-initial-image-replay-");
+		using tempDir = TempDir.createSync("@ultraworkers-render-initial-image-replay-");
 		const session = SessionManager.create(tempDir.path(), tempDir.path());
 		session.appendMessage(assistantToolCall("read-reopened", "read", { path: "reopened.png" }));
 		session.appendMessage({

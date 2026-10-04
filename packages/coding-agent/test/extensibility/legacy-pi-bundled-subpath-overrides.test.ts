@@ -16,11 +16,11 @@ const bundledModuleKeys = new Set(bundledEntries.map(entry => entry.key));
 // `rewriteLegacyPiImports` catch left the original specifier in place and
 // Bun's native resolver couldn't find a peer install. The build plugin now
 // derives every module key from current package exports, so subpaths route to
-// the same `omp-legacy-pi-bundled:` virtual namespace as package roots without
+// the same `uw-legacy-pi-bundled:` virtual namespace as package roots without
 // a generated registry or duplicate key list.
 describe("legacy pi compat compiled-mode subpath overrides (issue #3442)", () => {
 	it("does not evaluate unrelated host modules while loading the registry", async () => {
-		using tempDir = TempDir.createSync("@omp-legacy-pi-loaders-");
+		using tempDir = TempDir.createSync("@ultraworkers-legacy-pi-loaders-");
 		const alphaPath = path.join(tempDir.path(), "alpha.ts");
 		const betaPath = path.join(tempDir.path(), "beta.ts");
 		const registryPath = path.join(tempDir.path(), "registry.ts");
@@ -64,7 +64,7 @@ export const finalBeta = Reflect.get(globalThis, "__betaLoads") ?? 0;
 
 	it("serves @oh-my-pi/pi-ai/oauth through the bundled virtual namespace in compiled mode", () => {
 		const overrides = __buildLegacyPiPackageRootOverrides(true, bundledModuleKeys);
-		expect(overrides["@oh-my-pi/pi-ai/oauth"]).toBe("omp-legacy-pi-bundled:@oh-my-pi/pi-ai/oauth");
+		expect(overrides["@oh-my-pi/pi-ai/oauth"]).toBe("uw-legacy-pi-bundled:@oh-my-pi/pi-ai/oauth");
 	});
 
 	it("expands wildcard exports for concrete on-disk targets (issue #3442 follow-up)", () => {
@@ -75,9 +75,7 @@ export const finalBeta = Reflect.get(globalThis, "__betaLoads") ?? 0;
 		// fall-through. The generator now globs each wildcard's source pattern
 		// and registers every concrete `.ts` match against the virtual namespace.
 		const overrides = __buildLegacyPiPackageRootOverrides(true, bundledModuleKeys);
-		expect(overrides["@oh-my-pi/pi-ai/oauth/anthropic"]).toBe(
-			"omp-legacy-pi-bundled:@oh-my-pi/pi-ai/oauth/anthropic",
-		);
+		expect(overrides["@oh-my-pi/pi-ai/oauth/anthropic"]).toBe("uw-legacy-pi-bundled:@oh-my-pi/pi-ai/oauth/anthropic");
 		// Sanity: the wildcard expansion also reaches deeper subroots so plugins
 		// pinned to e.g. `@oh-my-pi/pi-ai/providers/openai` keep resolving.
 		expect(bundledModuleKeys.has("@oh-my-pi/pi-ai/oauth/anthropic")).toBe(true);
@@ -121,7 +119,7 @@ export const observed = [
 		}
 
 		const overrides = __buildLegacyPiPackageRootOverrides(true, bundledModuleKeys);
-		expect(overrides[key]).toBe(`omp-legacy-pi-bundled:${key}`);
+		expect(overrides[key]).toBe(`uw-legacy-pi-bundled:${key}`);
 	});
 
 	it("expands web search provider wildcard exports for compiled plugin imports", () => {
@@ -135,7 +133,7 @@ export const observed = [
 
 		for (const key of providerKeys) {
 			expect(bundledModuleKeys.has(key)).toBe(true);
-			expect(overrides[key]).toBe(`omp-legacy-pi-bundled:${key}`);
+			expect(overrides[key]).toBe(`uw-legacy-pi-bundled:${key}`);
 		}
 	});
 
@@ -143,17 +141,56 @@ export const observed = [
 		const key = "@oh-my-pi/pi-coding-agent/registry/agent-registry";
 		const overrides = __buildLegacyPiPackageRootOverrides(true, bundledModuleKeys);
 		expect(bundledModuleKeys.has(key)).toBe(true);
-		expect(overrides[key]).toBe(`omp-legacy-pi-bundled:${key}`);
+		expect(overrides[key]).toBe(`uw-legacy-pi-bundled:${key}`);
 	});
 
-	it("does not enumerate root catch-all wildcards (./* / ./*.js)", () => {
-		// Root `./*` / `./*.js` patterns would static-import top-level files
-		// like the package's own `cli.ts` and explode the bundle through the
-		// binary entry's transitive graph. Plugins almost never import top-level
-		// pi-* files directly, so we keep those routed via `Bun.resolveSync`.
-		// Concrete check: `@oh-my-pi/pi-coding-agent/cli` is NOT bundled.
+	it("serves subpaths that only a root catch-all (./*) declares", async () => {
+		// `epic-idj1`: a subpath served ONLY by `./*` was absent from the compiled
+		// registry, so the import resolved from source and failed inside a binary —
+		// the same shape as #3442, one level down. The module is picked from disk
+		// rather than hardcoded, so renaming a file cannot silently un-assert this.
+		const srcDir = path.join(import.meta.dir, "../../../tui/src");
+		const candidates = (await fs.readdir(srcDir))
+			.filter(name => name.endsWith(".ts") && !["index.ts", "cli.ts", "main.ts"].includes(name))
+			.sort();
+		expect(candidates.length).toBeGreaterThan(0);
+		const picked = candidates[0]!;
+		expect(bundledModuleKeys.has(`@oh-my-pi/pi-tui/${picked.slice(0, -3)}`)).toBe(true);
+	});
+
+	it("does not enumerate the binary's own entrypoints through a root catch-all", () => {
+		// Root `./*` / `./*.js` reach the package's own `cli.ts` and `main.ts`, and
+		// importing either drags the whole application's transitive graph into the
+		// compiled registry — issue #3442, where root catch-alls "exploded the
+		// bundle through the binary entry's transitive graph". Those two stay out
+		// even though every other top-level module is now served.
 		expect(bundledModuleKeys.has("@oh-my-pi/pi-coding-agent/cli")).toBe(false);
 		expect(bundledModuleKeys.has("@oh-my-pi/pi-coding-agent/main")).toBe(false);
+	});
+
+	it("renders a module that parses, with one binding per key", () => {
+		// The registry is consumed as generated source, so a key set that is
+		// perfectly correct can still emit `const bundled…Foo.js = …` — a dot inside
+		// an identifier, which does not parse. Serving `./*.js` first produced
+		// exactly that and broke `compileCodingAgent`; asserting on keys alone
+		// passed while the binary could not be built.
+		const source = __renderLegacyPiVirtualModule(bundledEntries);
+		const declarations = [...source.matchAll(/^\s*const\s+([A-Za-z_$][\w$]*)\s*=/gm)].map(m => m[1]!);
+		expect(new Set(declarations).size).toBe(declarations.length);
+		for (const name of declarations) {
+			expect(() => new Function(`let ${name};`)).not.toThrow();
+		}
+		expect(() => new Function(source.replace(/^\s*export\s+/gm, ""))).not.toThrow();
+	});
+
+	it("serves no key that resolves into a build output or dependency tree", () => {
+		// A root catch-all has the whole package as its source, so the failure this
+		// guards is serving `dist/`, `node_modules/` or tests as importable
+		// extensions. Enumerating those would be a new leak, not a new capability.
+		const leaked = bundledEntries.filter(entry =>
+			/(^|\/)(dist|node_modules|__tests__)(\/|$)/.test(entry.importSpecifier),
+		);
+		expect(leaked.map(entry => entry.key)).toEqual([]);
 	});
 
 	it("does not bundle main-thread-unsafe worker entrypoints", () => {
@@ -179,7 +216,7 @@ export const observed = [
 				key === "typebox"
 			)
 				continue;
-			if (overrides[key] !== `omp-legacy-pi-bundled:${key}`) {
+			if (overrides[key] !== `uw-legacy-pi-bundled:${key}`) {
 				missing.push(key);
 			}
 		}

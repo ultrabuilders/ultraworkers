@@ -60,8 +60,17 @@ describe("coworkFetch response cancellation", () => {
 // session with no retry. It must reach the reader as a retryable socket close,
 // while a caller abort keeps its own error.
 describe("coworkFetch premature response close", () => {
+	// The message must ride a real connected socket the peer holds open. An
+	// `IncomingMessage` over a bare `new net.Socket()` is already finished when the
+	// first chunk lands — `end` fires before any drop — so the reader resolves
+	// `done` and there is no mid-body close left to observe.
 	async function streamingResponse(signal?: AbortSignal) {
-		const message = new http.IncomingMessage(new net.Socket());
+		const server = net.createServer(() => {});
+		await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+		const client = net.connect((server.address() as net.AddressInfo).port, "127.0.0.1");
+		await new Promise<void>(resolve => client.once("connect", resolve));
+
+		const message = new http.IncomingMessage(client);
 		message.statusCode = 200;
 		message.statusMessage = "OK";
 		message.headers = { "content-type": "text/event-stream" };
@@ -78,7 +87,14 @@ describe("coworkFetch premature response close", () => {
 		if (!response.body) throw new Error("Expected a streaming response body.");
 		const reader = response.body.getReader();
 		await reader.read();
-		return { message, reader };
+		return {
+			message,
+			reader,
+			release: () => {
+				client.destroy();
+				server.close();
+			},
+		};
 	}
 
 	function cutOff(message: http.IncomingMessage): void {
@@ -86,29 +102,31 @@ describe("coworkFetch premature response close", () => {
 	}
 
 	it("surfaces a mid-body connection drop as a retryable socket close", async () => {
-		const { message, reader } = await streamingResponse();
+		const { message, reader, release } = await streamingResponse();
 		cutOff(message);
 		const error = await reader.read().then(
 			() => undefined,
 			(reason: unknown) => reason,
 		);
+		release();
 
 		expect(error).toBeInstanceOf(Error);
 		expect((error as Error).message).toContain("socket connection was closed unexpectedly");
-		const finalized = await AIError.finalize(error, { api: "anthropic-messages", provider: "anthropic" });
+		const finalized = await AIError.finalize(error as Error, { api: "anthropic-messages", provider: "anthropic" });
 		expect(finalized.stopReason).toBe("error");
 		expect(AIError.retriable(finalized.id)).toBe(true);
 	});
 
 	it("keeps the original error when the caller aborted the request", async () => {
 		const controller = new AbortController();
-		const { message, reader } = await streamingResponse(controller.signal);
+		const { message, reader, release } = await streamingResponse(controller.signal);
 		controller.abort();
 		cutOff(message);
 		const error = await reader.read().then(
 			() => undefined,
 			(reason: unknown) => reason,
 		);
+		release();
 
 		expect((error as Error).message).toBe("aborted");
 	});

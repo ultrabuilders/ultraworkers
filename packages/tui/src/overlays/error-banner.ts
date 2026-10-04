@@ -69,7 +69,7 @@ export class ErrorBannerComponent extends Container {
 		}
 		this.#native = node(
 			"row",
-			{ role: "omp.errorBanner", tone: "error", gap: "sm", align: this.#expanded ? "start" : "center" },
+			{ role: "ultraworkers.errorBanner", tone: "error", gap: "sm", align: this.#expanded ? "start" : "center" },
 			children,
 		);
 		return this.#native;

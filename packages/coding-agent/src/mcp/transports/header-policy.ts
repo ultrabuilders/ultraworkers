@@ -13,6 +13,30 @@
  *    origin. Method-changing redirects of non-GET requests are refused.
  */
 
+import { assertUrlAllowed } from "../network-policy";
+
+/**
+ * Apply the `configured` network-policy level to one URL.
+ *
+ * Loopback is allowed at this layer on purpose: the URL came from the user's own
+ * config, and local MCP servers are a normal setup.
+ *
+ * Enforcement here is deliberately SILENT. This runs per request, so a loopback
+ * server would emit one warning per MCP call — a log line nobody reads, repeated
+ * as fast as the model can call tools, which is the worst of both halves of a
+ * warning.
+ *
+ * There is currently NO user-visible channel for the loopback notice, so GAP-D1's
+ * "loopback qua kèm cảnh báo" is enforced-then-silent today. The two obvious
+ * homes do not work: `validateServerConfig` drops a server on any non-empty
+ * result (`manager.ts:719`) and throws in `config-writer.ts:121`, so a warning
+ * pushed there would refuse the very local server (d) exists to allow; and
+ * `LoadMCPConfigsResult` has no warnings field. Tracked on m6-gap-m6-12-081.
+ */
+function assertMcpUrlAllowed(url: string): void {
+	assertUrlAllowed(url, "configured", "MCP url");
+}
+
 /** Header buckets for one MCP HTTP request. */
 interface MCPHeaderSources {
 	/** Client-generated HTTP/MCP/authorization headers; win case-insensitively. */
@@ -100,6 +124,16 @@ export interface MCPFetchInit {
  * `OMP_MCP_TIMEOUT_MS=0`). Deadlines and cancellation stay with `init.signal`,
  * which each transport composes from the configured per-request deadline,
  * caller cancellation, and transport close.
+ *
+ * Every hop is checked against the `configured` level of the MCP network policy
+ * (`../network-policy.ts`), including each redirect target. This is the layer
+ * BELOW `origin-lock`, not a replacement for it: origin-lock decides whether
+ * configured headers survive a cross-origin hop, and says nothing about where
+ * the hop goes. A server that answers with `302 Location: http://169.254.169.254/`
+ * passes origin-lock untouched — the origin changed and the headers were
+ * stripped correctly — while the request now aims at a cloud metadata endpoint.
+ * Loopback stays allowed here because the URL came from the user's own config;
+ * a plugin bundle's servers are held to the stricter level when they are declared.
  */
 export async function mcpFetch(
 	url: string,
@@ -107,6 +141,7 @@ export async function mcpFetch(
 	sources: MCPHeaderSources,
 	originLocked: boolean,
 ): Promise<Response> {
+	assertMcpUrlAllowed(url);
 	if (!originLocked) {
 		return fetch(url, { ...init, headers: mergeMCPHeaders(sources), timeout: false });
 	}
@@ -126,6 +161,9 @@ export async function mcpFetch(
 			throw new Error(`HTTP ${response.status}: server redirected a ${init.method} request; refusing to follow`);
 		}
 		currentUrl = new URL(location, currentUrl).href;
+		// Checked after resolving against the previous URL, so a relative Location
+		// is judged as the absolute address it actually becomes.
+		assertMcpUrlAllowed(currentUrl);
 	}
 	throw new Error(`Too many redirects (> ${MAX_REDIRECT_HOPS}) fetching ${url}`);
 }

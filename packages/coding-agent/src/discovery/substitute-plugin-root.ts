@@ -1,16 +1,30 @@
 import * as path from "node:path";
 
 /**
- * Recursively substitute ${CLAUDE_PLUGIN_ROOT} and ${OMP_PLUGIN_ROOT}
- * with the actual plugin root path in strings, arrays, and plain objects.
+ * Recursively substitute the plugin-root placeholder with the actual plugin root
+ * path in strings, arrays, and plain objects.
+ *
+ * Three spellings resolve to the same root, so there is no precedence to get
+ * wrong — the legacy spellings are not fallbacks, they are aliases:
+ *
+ * - `${ULTRAWORKERS_PLUGIN_ROOT}` — canonical.
+ * - `${OMP_PLUGIN_ROOT}` — pre-rebrand. **Must keep working.** The placeholder is
+ *   authored in plugin manifests published by third parties, so dropping it
+ *   leaves a raw `${OMP_PLUGIN_ROOT}` as argv[0] and fails ENOENT at spawn time,
+ *   with nothing failing earlier.
+ * - `${CLAUDE_PLUGIN_ROOT}` — the spelling Claude Code's own marketplace uses.
  */
 // Use concatenation to avoid noTemplateCurlyInString lint rule on literal placeholder names
 const CLAUDE_VAR = "$" + "{CLAUDE_PLUGIN_ROOT}";
 const OMP_VAR = "$" + "{OMP_PLUGIN_ROOT}";
+const ULTRAWORKERS_VAR = "$" + "{ULTRAWORKERS_PLUGIN_ROOT}";
 
 export function substitutePluginRoot<T>(value: T, rootPath: string): T {
 	if (typeof value === "string") {
-		return value.replaceAll(CLAUDE_VAR, rootPath).replaceAll(OMP_VAR, rootPath) as T;
+		return value
+			.replaceAll(CLAUDE_VAR, rootPath)
+			.replaceAll(OMP_VAR, rootPath)
+			.replaceAll(ULTRAWORKERS_VAR, rootPath) as T;
 	}
 	if (Array.isArray(value)) {
 		return value.map(v => substitutePluginRoot(v, rootPath)) as T;

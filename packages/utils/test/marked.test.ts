@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test, vi } from "bun:test";
 import { Lexer, Marked, type TokenizerAndRendererExtension } from "../src/marked";
 import goldens from "./fixtures/marked/goldens.json";
 
@@ -198,4 +198,306 @@ describe("marked compatibility", () => {
 			expect(new Marked().parse(`[text][${label}]`)).not.toContain("<a ");
 		});
 	}
+});
+
+// Regression: lexing a long inline run was O(n²), so a large markdown file with no
+// inline punctuation (a long prose line, a big base64 blob, a minified asset) hung
+// the renderer — 128 KB cost ~10 s. Two independent causes, both in `inlineTokens`:
+//   1. `[A-Za-z0-9._+-]+@` backtracks at every start position when no `@` follows.
+//   2. Both scans re-ran over the whole remainder on every loop iteration.
+describe("marked inline lexing is linear in input size", () => {
+	// Doubling the input must not much more than double the time. A quadratic
+	// implementation grows ~4x per doubling; the ratio below fails that loudly
+	// while leaving ample room for timer noise on a loaded machine.
+	const timed = (source: string): number => {
+		const start = performance.now();
+		const tokens = [...Lexer.lex(source)];
+		const elapsed = performance.now() - start;
+		// Guard against a vacuous pass: an empty result means nothing was lexed.
+		expect(tokens.length).toBeGreaterThan(0);
+		return elapsed;
+	};
+
+	for (const [label, char] of [["plain characters", "a"]] as const) {
+		test(`does not super-linearly scale on long runs of ${label}`, () => {
+			const small = timed(char.repeat(32_000));
+			const large = timed(char.repeat(64_000));
+			// Warm-up: the first lex pays JIT and regex-compile costs.
+			timed(char.repeat(1_000));
+			const ratio = large / Math.max(small, 0.5);
+			// A quadratic implementation grows ~4x per doubling of the input.
+			expect(ratio).toBeLessThan(3);
+		}, 60_000);
+	}
+
+	// Runs made entirely of stop characters are a separate, still-quadratic cost: the
+	// loop advances one character at a time and re-runs nine `indexOf` scans over the
+	// shrinking remainder each time. That is bounded by the number of stop characters,
+	// not by the input length, so it stays acceptable — but it is NOT covered by the
+	// linear guarantee above, and is asserted here only as a ceiling so a regression
+	// that makes it worse is visible.
+	test("stop-character runs stay within a sane ceiling", () => {
+		timed("!".repeat(1_000));
+		expect(timed("!".repeat(32_000))).toBeLessThan(1_000);
+	}, 60_000);
+
+	// The fix must not change what is tokenized. `next <= 1` skips both scans, and a
+	// match starting before `next` can still extend past it — a hard break's `\n`
+	// sits exactly at `next`, so the window cannot simply be truncated.
+	test("keeps hard breaks, links and emails tokenized as before", () => {
+		const paragraphTokens = (source: string) => {
+			const [first] = [...Lexer.lex(source)];
+			if (first?.type !== "paragraph") throw new Error(`expected a paragraph, got ${first?.type}`);
+			return first.tokens;
+		};
+		expect(paragraphTokens("hard break here  \nnext line")).toEqual([
+			{ type: "text", raw: "hard break here", text: "hard break here", escaped: false },
+			{ type: "br", raw: "  \n" },
+			{ type: "text", raw: "next line", text: "next line", escaped: false },
+		]);
+		// Regression: an earlier attempt bounded the local-part to `{1,64}`, which made
+		// the quadratic go away but silently truncated every address longer than 64
+		// characters — and only when the address was preceded by text, so an
+		// offset-0 check passed. The bound bought speed by discarding data; the fix
+		// scans backwards from `@` instead and places no limit at all.
+		for (const length of [1, 63, 64, 65, 66, 200]) {
+			const address = `${"a".repeat(length)}@x.io`;
+			expect(paragraphTokens(`write to ${address}`)).toContainEqual({
+				type: "link",
+				raw: address,
+				text: address,
+				href: `mailto:${address}`,
+				tokens: [{ type: "text", raw: address, text: address }],
+			});
+			// Same address at offset 0, where the bounded version happened to agree.
+			expect(paragraphTokens(address)).toContainEqual({
+				type: "link",
+				raw: address,
+				text: address,
+				href: `mailto:${address}`,
+				tokens: [{ type: "text", raw: address, text: address }],
+			});
+		}
+
+		// A bare `@` with no local-part character before it is not an email, so the
+		// scan must advance to the NEXT `@` rather than give up — the leftmost-match
+		// regex did exactly that. An early version stopped at the first `@` and lost
+		// the link entirely on `@@a@b.co`.
+		// Mỗi ca ghi kỳ vọng riêng: địa chỉ khớp ở `@` ĐẦU TIÊN có local-part đứng
+		// trước, tức là `@` cuối cùng mà phần trước nó là ký tự local-part.
+		for (const [source, address] of [
+			["@@a@b.co", "a@b.co"],
+			["(@@a@b.co)", "a@b.co"],
+			["x @y@z.co", "y@z.co"],
+			["a@b@c.co", "b@c.co"],
+			["see @y@z.co", "y@z.co"],
+		] as const) {
+			expect(paragraphTokens(source)).toContainEqual({
+				type: "link",
+				raw: address,
+				text: address,
+				href: `mailto:${address}`,
+				tokens: [{ type: "text", raw: address, text: address }],
+			});
+		}
+
+		expect(paragraphTokens("mail a.b+c@co.io now")).toEqual([
+			{ type: "text", raw: "mail ", text: "mail ", escaped: false },
+			{
+				type: "link",
+				raw: "a.b+c@co.io",
+				text: "a.b+c@co.io",
+				href: "mailto:a.b+c@co.io",
+				tokens: [{ type: "text", raw: "a.b+c@co.io", text: "a.b+c@co.io" }],
+			},
+			{ type: "text", raw: " now", text: " now", escaped: false },
+		]);
+	});
+});
+
+/**
+ * Hard-break detection was a quadratic regex (`/(?: {2,}|\\)\n/`) and is now a linear
+ * scan. The rewrite is only allowed to be faster, never narrower — and the obvious
+ * way to make that regex linear is to bound the quantifier, which silently changes
+ * what a hard break *consumes*:
+ *
+ *     "a     \nb"   →  text "a", br "     \n"   (the whole run)
+ *
+ * Bounded to `{2,3}` the same input yields br "   \n" and leaves two spaces as a
+ * separate text token. Every pre-existing test still passes — not because the
+ * rendered HTML is invariant, which it is not, but because none of them lex a run
+ * of four or more spaces before a newline that is followed by inline content. The
+ * HTML does move: at width 4 the mutation renders `<p>a <br>b</p>` where the real
+ * lexer renders `<p>a<br>b</p>`, and the leftover spaces accumulate from there.
+ * Both defences are asserted below — the token boundary directly, and the rendered
+ * output — so neither alone has to be trusted.
+ */
+describe("a hard break consumes its whole run of spaces", () => {
+	for (const width of [2, 3, 5, 8, 17]) {
+		test(`${width} spaces before a newline form one br spanning all ${width}`, () => {
+			const spaces = " ".repeat(width);
+			expect([...Lexer.lexInline(`a${spaces}\nb`)]).toEqual([
+				{ type: "text", raw: "a", text: "a", escaped: false },
+				{ type: "br", raw: `${spaces}\n` },
+				{ type: "text", raw: "b", text: "b", escaped: false },
+			]);
+		});
+	}
+
+	test("the rendered output swallows the run too, not just the token stream", () => {
+		// The second defence. The token assertions above pin the boundary directly; this
+		// one pins what a reader actually sees, and it fails for a different reason — a
+		// refactor that keeps the token stream but changes the renderer would pass the
+		// first block and fail here.
+		//
+		// Width 5, where the bounded mutation leaves two stray spaces and renders
+		// "<p>a  <br>b</p>". Widths 2 and 3 are included because they must NOT change:
+		// a fix that widened the match the other way would leave them alone and still
+		// be wrong.
+		const marked = new Marked();
+		expect(marked.parse("a  \nb")).toBe("<p>a<br>b</p>\n");
+		expect(marked.parse("a   \nb")).toBe("<p>a<br>b</p>\n");
+		expect(marked.parse("a     \nb")).toBe("<p>a<br>b</p>\n");
+	});
+
+	test("a single space is not a hard break", () => {
+		// The other side of the `{2,}` boundary: one space must not be promoted, or the
+		// scan has grown a match the regex never had.
+		expect([...Lexer.lexInline("a \nb")]).toEqual([{ type: "text", raw: "a \nb", text: "a \nb", escaped: false }]);
+	});
+
+	test("a backslash before a newline is a hard break", () => {
+		expect([...Lexer.lexInline("a\\\nb")]).toEqual([
+			{ type: "text", raw: "a", text: "a", escaped: false },
+			{ type: "br", raw: "\\\n" },
+			{ type: "text", raw: "b", text: "b", escaped: false },
+		]);
+	});
+});
+
+/**
+ * The token assertions below cannot tell the fix from its absence. A backtick run was
+ * already one text token before the change and still is after it, so every
+ * output-comparing test passes identically on both trees — including a tree with the
+ * consuming branch deleted outright. Those tests defend the *shape of the output*,
+ * which is worth having, but they are not evidence the fix is present.
+ *
+ * This block is the evidence. It counts how many times the lexer evaluates the
+ * opening-delimiter pattern, which is observable from outside the module and does not
+ * depend on the clock — the machine this runs on is too contended for a timing
+ * assertion to mean anything. Against the unfixed lexer the count equals the run
+ * length; with the fix it is one, and it does not move when the run grows.
+ */
+describe("a backtick run costs one delimiter scan, not one per backtick", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	function countOpenerScans(input: string): number {
+		const original = RegExp.prototype.exec;
+		let count = 0;
+		// Delegating to the original keeps `lastIndex` handling intact for the `g`
+		// regexes the lexer uses, so this observes rather than perturbs.
+		const spy = vi.spyOn(RegExp.prototype, "exec").mockImplementation(function (this: RegExp, s: string) {
+			if (this.source === "^`+") count++;
+			return original.call(this, s);
+		});
+		try {
+			Lexer.lexInline(input);
+		} finally {
+			spy.mockRestore();
+		}
+		return count;
+	}
+
+	test("does not grow with the length of the run", () => {
+		// 1024 and 4096 separate one pass from one-per-character cheaply. The
+		// unfixed lexer returns 1024 and 4096 here, so the equality is the assertion
+		// that dies when the fix is removed.
+		const small = countOpenerScans("`".repeat(1024));
+		const large = countOpenerScans("`".repeat(4096));
+		expect(small, "the run should be examined once, not once per backtick").toBeLessThanOrEqual(2);
+		expect(large, "the count grew with the run, so the work is still per-character").toBe(small);
+	});
+
+	test("still scans once per backtick when a span does close", () => {
+		// The negative control, and the reason the count above is not simply always 1:
+		// many separate spans in one input are each opened, and that is correct.
+		const spans = countOpenerScans("`a` and `b` and `c`");
+		expect(spans).toBeGreaterThan(1);
+	});
+});
+/**
+ * The output half of the same contract. A backtick run is one text token, and it was
+ * one before the fix too — `appendText` coalesces adjacent text, which is exactly what
+ * makes consuming the run in a single step safe rather than a new merge. The block
+ * above is what proves the fix is present; this one pins the result it produces.
+ */
+describe("a backtick run with no closer is one text token", () => {
+	for (const width of [1, 2, 3, 4, 5, 8, 17, 64]) {
+		test(`${width} backticks lex as a single text token`, () => {
+			const run = "`".repeat(width);
+			const tokens = [...Lexer.lexInline(run)];
+			expect(tokens).toHaveLength(1);
+			expect(tokens[0]).toMatchObject({ type: "text", raw: run });
+		});
+	}
+
+	test("a run next to text is still coalesced, not split", () => {
+		// The adjacency case: `appendText` merges into the preceding text token, so
+		// consuming the run early must not leave a boundary the old path did not have.
+		const tokens = [...Lexer.lexInline("a`b`c")];
+		expect(tokens.map(t => [t.type, t.raw])).toEqual([
+			["text", "a"],
+			["codespan", "`b`"],
+			["text", "c"],
+		]);
+	});
+
+	test("spans that do close are unaffected", () => {
+		for (const [source, expected] of [
+			["`a`", 1],
+			["`a` and `b`", 2],
+			["``a`b``", 1],
+		] as const) {
+			const spans = [...Lexer.lexInline(source)].filter(t => t.type === "codespan");
+			expect(spans, source).toHaveLength(expected);
+		}
+	});
+});
+describe("the bare-link email branch still matches when an @ is present", () => {
+	test("a local part made only of the quadratic trigger characters links", () => {
+		expect([...Lexer.lexInline("_@a.co")]).toEqual([
+			{
+				type: "link",
+				raw: "_@a.co",
+				text: "_@a.co",
+				href: "mailto:_@a.co",
+				tokens: [{ type: "text", raw: "_@a.co", text: "_@a.co" }],
+			},
+		]);
+	});
+
+	test("a long underscore run followed by an address still links", () => {
+		const run = "_".repeat(64);
+		// Not "the link spans all 64": the leading run is partly consumed as emphasis
+		// first, so the address that survives is shorter. The contract is the one the
+		// `@` gate could break — that an address containing the quadratic trigger
+		// characters is still recognised, not silently left as text.
+		const links = [...Lexer.lexInline(`${run}@a.co`)].filter(
+			// A predicate, not a bare comparison: `filter(t => t.type === "link")` leaves
+			// the result as `Token[]`, so `href` below would not typecheck even though it
+			// is present at runtime. `bun test` passes either way — only `tsgo` sees it.
+			(t): t is Extract<typeof t, { type: "link" }> => t.type === "link",
+		);
+		expect(links).toHaveLength(1);
+		expect(links[0]!.raw).toEndWith("@a.co");
+		expect(links[0]!.href.startsWith("mailto:")).toBe(true);
+	});
+
+	test("without an @ the same characters stay text", () => {
+		// The negative contract for the gate: skipping the branch must skip it, not
+		// reinterpret the run.
+		expect([...Lexer.lexInline("a_b")]).toEqual([{ type: "text", raw: "a_b", text: "a_b", escaped: false }]);
+	});
 });

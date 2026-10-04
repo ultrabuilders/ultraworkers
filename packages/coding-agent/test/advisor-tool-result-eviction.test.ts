@@ -25,7 +25,7 @@ describe("advisor stale tool-result eviction", () => {
 	let session: AgentSession | undefined;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-advisor-tool-result-eviction-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-tool-result-eviction-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");
 	});

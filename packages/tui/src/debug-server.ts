@@ -205,7 +205,34 @@ function mouseSequence(x: number, y: number, action: string): string {
 	}
 }
 
-/** NDJSON debug and input server enabled by the `OMP_TUI_DEBUG` socket path. */
+/** Socket path that enables the NDJSON debug and input server. */
+export const TUI_DEBUG_ENV = "ULTRAWORKERS_TUI_DEBUG";
+
+/**
+ * The pre-rebrand spelling, still read when {@link TUI_DEBUG_ENV} is unset so an
+ * existing export keeps working — the same canonical-then-legacy pair
+ * `resolve_legacy_filters` uses in `crates/pi-shell/src/minimizer/config.rs`, and
+ * the same shape as `LSP_MUX_DAEMON_NAME_LEGACY`.
+ *
+ * This variable was the odd one out: it had **no** canonical spelling at all, so
+ * a user who exported it had no way to move onto the new name — there was
+ * nothing to move to. The other migrated variables all gained a canonical name
+ * alongside the fallback; this one needed the canonical name first.
+ */
+export const TUI_DEBUG_ENV_LEGACY = "OMP_TUI_DEBUG";
+
+/**
+ * Resolve the debug socket path from an environment.
+ *
+ * Empty means "off", matching the caller's previous `length > 0` guard — an
+ * exported-but-empty variable must not open a server on an empty path.
+ */
+export function resolveTuiDebugSocketPath(env: Record<string, string | undefined>): string | undefined {
+	const path = env[TUI_DEBUG_ENV] ?? env[TUI_DEBUG_ENV_LEGACY];
+	return path !== undefined && path.length > 0 ? path : undefined;
+}
+
+/** NDJSON debug and input server enabled by the {@link TUI_DEBUG_ENV} socket path. */
 export class TuiDebugServer {
 	readonly #tui: TUI;
 	readonly #path: string;

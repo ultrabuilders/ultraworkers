@@ -15,7 +15,7 @@ import type { AgentMessage, AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { Usage } from "@oh-my-pi/pi-ai";
 import { type Component, type ExtensionTUISurface } from "../tui";
 import type { AdvisorMessageDetails } from "./messages";
-import { COLLAB_PROMPT_MESSAGE_TYPE, type CollabPromptDetails } from "./messages";
+import { COLLAB_PROMPT_MESSAGE_TYPE, PEER_INCOMING_MESSAGE_TYPE, type CollabPromptDetails } from "./messages";
 import { chatTranscriptDisplayPreferences as displayPreferences } from "./display-preferences";
 import type { MessageRenderer } from "./extension-types";
 import { LAUNCH_COMPLETION_MESSAGE_TYPE } from "./messages";
@@ -64,7 +64,7 @@ import {
 	LateDiagnosticsMessageComponent,
 	routeLateDiagnostics,
 } from "./late-diagnostics-message";
-import { groupedReadUsageCallIds, ReadToolGroupComponent, readArgsCollapseIntoGroup } from "./read-tool-group";
+import { groupedReadUsageCallIds, isReadToolGroupMember, ReadToolGroupComponent } from "./read-tool-group";
 import { SkillMessageComponent } from "./skill-message";
 import { ToolExecutionComponent } from "./tool-execution";
 import { TranscriptContainer } from "../chrome/transcript-container";
@@ -463,7 +463,7 @@ export class ChatTranscriptBuilder {
 			this.#resolveWaitingPoll(content.name);
 
 			const afterToolSegment = timeline.afterToolCalls.get(content.id);
-			if (content.name === "read" && readArgsCollapseIntoGroup(content.arguments)) {
+			if (isReadToolGroupMember(content.name, content.arguments)) {
 				if (hasErrorStop && errorMessage) {
 					const group = this.#ensureReadGroup();
 					group.updateArgs(content.arguments, content.id);
@@ -588,7 +588,7 @@ export class ChatTranscriptBuilder {
 			return;
 		}
 		if (
-			message.customType === "irc:incoming" ||
+			message.customType === PEER_INCOMING_MESSAGE_TYPE ||
 			message.customType === "irc:autoreply" ||
 			message.customType === "irc:relay" ||
 			message.customType === "irc:workpool"

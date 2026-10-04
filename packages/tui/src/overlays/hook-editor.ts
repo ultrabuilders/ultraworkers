@@ -88,7 +88,7 @@ export class HookEditorComponent extends OverlayPanel implements Focusable {
 		// bounded ask question under "◆ Other (type your own)") stay as body rows
 		// so they are never truncated into the one-row border.
 		const [titleLine = "", ...detailLines] = title.split("\n");
-		super(titleLine, "omp.overlay.hook-editor");
+		super(titleLine, "ultraworkers.overlay.hook-editor");
 
 		this.#tui = tui;
 		this.#onSubmitCallback = onSubmit;

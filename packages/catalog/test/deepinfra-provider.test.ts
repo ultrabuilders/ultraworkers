@@ -8,7 +8,14 @@ import { getBundledModels } from "@oh-my-pi/pi-catalog/models";
 import { DEEPINFRA_BASE_URL, deepinfraModelManagerOptions } from "@oh-my-pi/pi-catalog/provider-models/openai-compat";
 import type { ModelSpec } from "@oh-my-pi/pi-catalog/types";
 
-const DISCOVERY_URL = "https://api.deepinfra.com/v1/openai/models?filter=with_meta&sort_by=omp";
+// Spelled out, NOT derived from the source constant. Deriving it is the obvious
+// fix for a duplicated literal, and it is wrong here: the expectation then moves
+// with whatever the fetcher sends, so the assertion cannot fail. Verified — a
+// regression of the constant to `sort_by=stale` left this file 6/6 green.
+//
+// `sort_by` is a client-stamped namespace (free-form string on /v1/models), so
+// the value is part of the request contract and belongs in the assertion.
+const DISCOVERY_URL = "https://api.deepinfra.com/v1/openai/models?filter=with_meta&sort_by=ultraworkers";
 
 function catalogFixture(): Response {
 	return Response.json({

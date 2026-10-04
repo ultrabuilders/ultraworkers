@@ -1,7 +1,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { isRecord, untilAborted } from "@oh-my-pi/pi-utils";
+import { getConfigReadRootName, isRecord, untilAborted } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import type { Cookie, CookieParam, Page } from "puppeteer-core";
 import { resolveToCwd } from "../path-utils";
@@ -72,7 +72,7 @@ export interface ClearCookiesOptions {
 	names?: string[];
 }
 
-/** One origin's Web Storage entries in an omp storage state file. */
+/** One origin's Web Storage entries in an ultraworkers storage state file. */
 export interface StorageStateOrigin {
 	/** Serialized origin. */
 	origin: string;
@@ -82,7 +82,7 @@ export interface StorageStateOrigin {
 	sessionStorage?: Array<{ name: string; value: string }>;
 }
 
-/** Playwright-compatible browser state with sessionStorage as an omp extension. */
+/** Playwright-compatible browser state with sessionStorage as an ultraworkers extension. */
 export interface BrowserStorageState {
 	/** Serialized browser cookies. */
 	cookies: BrowserCookie[];
@@ -461,13 +461,25 @@ export async function clearPageStorage(page: Page, kind: string, signal?: AbortS
 	await untilAborted(signal, () => page.evaluate(clearStorageInPage, kind));
 }
 
-/** Where `tab.saveState()` writes: the requested path, else `~/.omp/browser-state/<tab>.json`. */
+/**
+ * Where `tab.saveState()` writes: the requested path, else
+ * `~/<config-root>/browser-state/<tab>.json`.
+ *
+ * The directory name comes from `getConfigReadRootName()`, not a literal and not
+ * the write root. Browser state is *existing* state: a user who installed under
+ * the legacy root already has `browser-state/` on disk, and writing it to the
+ * write root instead would silently orphan every state file they had — the
+ * symptom appears only on a machine that predates the rebrand, so nothing in a
+ * fresh checkout reproduces it. The read root scans the candidates in order and
+ * falls back to the write root, so a new install still lands in the canonical
+ * place.
+ */
 export function storageStatePath(tabName: string, requestedPath: string | undefined, cwd: string): string {
 	const safeName = tabName.replace(/[^A-Za-z0-9._-]/g, "_");
 	const fileName = safeName === "." || safeName === ".." ? "_" : safeName || "main";
 	return requestedPath
 		? resolveToCwd(requestedPath, cwd)
-		: path.join(os.homedir(), ".omp", "browser-state", `${fileName}.json`);
+		: path.join(os.homedir(), getConfigReadRootName(), "browser-state", `${fileName}.json`);
 }
 
 /** Save cookies and current-origin Web Storage to a Playwright-compatible state file. */

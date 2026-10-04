@@ -32,7 +32,7 @@ import { withCredentialRedaction } from "@oh-my-pi/pi-ai/providers/transform-mes
 import { FALLBACK_DIALECT, preferredDialect } from "@oh-my-pi/pi-catalog/identity";
 import type { Component } from "@oh-my-pi/pi-tui";
 import { $env } from "@oh-my-pi/pi-utils/env";
-import { getAgentDir, getModelDbPath, getProjectDir } from "@oh-my-pi/pi-utils/dirs";
+import { APP_NAME, getAgentDir, getModelDbPath, getProjectDir } from "@oh-my-pi/pi-utils/dirs";
 import * as logger from "@oh-my-pi/pi-utils/logger";
 import * as postmortem from "@oh-my-pi/pi-utils/postmortem";
 import * as prompt from "@oh-my-pi/pi-utils/prompt";
@@ -48,7 +48,7 @@ import {
 import { AsyncJobManager } from "./async";
 import { AutoLearnController, buildAutoLearnInstructions } from "./autolearn/controller";
 import { createAutoresearchExtension } from "./autoresearch";
-import { loadCapability, reset as resetCapabilities } from "./capability";
+import { invalidateAllCaches, loadCapability, unregisterProvidersForSource } from "./capability";
 import {
 	MAIN_AGENT_RULE_NAME,
 	type Rule,
@@ -1015,13 +1015,13 @@ export async function loadSessionExtensions(
 /**
  * Load discovered/configured extensions and register their providers into
  * `modelRegistry`, then discover the dynamic provider catalogs. One-shot CLIs
- * (`omp bench`, dry-balance) build a bare {@link ModelRegistry} that only knows
+ * (`ultraworkers bench`, dry-balance) build a bare {@link ModelRegistry} that only knows
  * built-in catalog providers; without this, providers contributed by an
  * extension (e.g. a custom OpenAI-compatible provider under
  * `~/.omp/agent/extensions/`) never reach model resolution. Mirrors the
- * session / `omp models` path: drain the queued provider registrations, then
+ * session / `ultraworkers models` path: drain the queued provider registrations, then
  * `refreshRuntimeProviders` so dynamically-discovered models exist before
- * selectors are resolved, unless `discoverModels: false` (e.g. `omp usage`,
+ * selectors are resolved, unless `discoverModels: false` (e.g. `ultraworkers usage`,
  * which needs only registered usage providers).
  */
 export async function loadCliExtensionProviders(
@@ -1336,11 +1336,9 @@ export function customToolToDefinition(tool: CustomTool, sourcePath?: string): T
 		renderCall: tool.renderCall,
 		renderResult: tool.renderResult
 			? (result, options, theme): Component => {
-					const component = tool.renderResult?.(
-						result,
-						{ expanded: options.expanded, isPartial: options.isPartial, spinnerFrame: options.spinnerFrame },
-						theme,
-					);
+					// Forwarded whole, matching renderCall above. Re-listing the
+					// fields meant a new one reached renderCall and stopped here.
+					const component = tool.renderResult?.(result, options, theme);
 					// Return empty component if undefined to match Component type requirement
 					return component ?? ({ render: () => [] } as unknown as Component);
 				}
@@ -2632,7 +2630,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// Hydrate cached runtime (extension) provider catalogs before model
 		// resolution. Dynamic-only providers have no synchronous registration side
 		// effect, so a cold --model/provider resume must see the same fresh SQLite
-		// cache that `omp models find` uses before the online refresh continues in
+		// cache that `ultraworkers models find` uses before the online refresh continues in
 		// the background.
 		await modelRegistry.refreshRuntimeProviders("offline");
 		// Online runtime discovery must not steal the event loop from the first UI
@@ -3116,7 +3114,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				// so on a cache-cold boot the configured default stays unresolved
 				// and `pick` silently degrades to an unrelated authed provider's
 				// default (#6162) or "No models available" (#6114) — even though
-				// `omp models` (which awaits discovery) lists the model. Await one
+				// `ultraworkers models` (which awaits discovery) lists the model. Await one
 				// cache-aware discovery pass and retry when a default role is
 				// configured (must win over `pick`) or nothing resolved at all.
 				// The common path — role already resolved, or a `pick` with no
@@ -3332,7 +3330,32 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				nativeToolsByName.set(goalTool.name, wrapped);
 			}
 		}
+		// An extension registering a built-in's name wins: this writes the
+		// extension's tool over the built-in and drops the built-in's name. That
+		// asymmetry is an open owner decision, and the sibling registry takes the
+		// opposite policy — `registerSubcommand` in `extensions/loader.ts` refuses
+		// the collision and warns, naming both claimants. Nothing here changes who
+		// wins; it only makes the collision observable instead of silent. Without
+		// it, an extension written outside this repo has no signal at all that its
+		// `bash` is no longer the built-in `bash` — the shadowed tool stays
+		// reachable only through the native-tool resolver set below.
+		const extensionOwners = new Map(allCustomTools.map(entry => [entry.definition.name, entry.extensionPath]));
+		// Snapshot the built-in names BEFORE the loop mutates them. `delete` below
+		// keeps a shadowed built-in out of the active set, which is the policy —
+		// but reading the same set to decide whether to warn made the warning a
+		// function of position: the first extension to claim `bash` warned and
+		// deleted the name, so the second one claiming `bash` matched nothing and
+		// stayed silent about a shadow just as real. Two extensions registering the
+		// same tool name is the ordinary outcome of `deduplicateMCPToolsByName`
+		// picking a winner rather than an error, so the silent half was the half
+		// most likely to occur.
+		const builtInNamesBeforeExtensions = new Set(builtInRegistryToolNames);
 		for (const tool of wrappedExtensionTools) {
+			if (builtInNamesBeforeExtensions.has(tool.name)) {
+				logger.warn(
+					`Extension ${extensionOwners.get(tool.name) ?? "unknown"}: tool "${tool.name}" shadows a built-in tool of the same name — the extension's tool is the one that will run; the built-in stays reachable only through ctx.invokeTool`,
+				);
+			}
 			toolRegistry.set(tool.name, tool);
 			builtInRegistryToolNames.delete(tool.name);
 		}
@@ -3681,9 +3704,9 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			}
 			// Re-discover rules from disk on every session-scoped rebuild, mirroring the
 			// context-file refresh above. The rule buckets are otherwise frozen at
-			// session creation, so a `RULES.md` (or any rule) created or edited while omp
+			// session creation, so a `RULES.md` (or any rule) created or edited while ultraworkers
 			// runs never reaches the prompt on /clear or /new until restart (issue #10940).
-			// resetCapabilities() clears the fs cache at those boundaries, so this observes
+			// invalidateAllCaches() clears the fs cache at those boundaries, so this observes
 			// the current file. TTSR registrations are replaced from the new snapshot while
 			// injection state is retained only for rule names that remain registered.
 			// Sessions handed an explicit rule set (subagents inherit the parent's) keep it
@@ -4426,13 +4449,24 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			advisorToolBuilds.push(BUILTIN_TOOLS[name as keyof typeof BUILTIN_TOOLS](advisorToolSession));
 		}
 		const built = await Promise.all(advisorToolBuilds);
+		// Extension-registered tools, built the way the primary builds them
+		// (`createTools`, above): same adapter, same wrapping, no ToolSession of its
+		// own — `wrapRegisteredTool` resolves context through the runner. The advisor
+		// iterates `BUILTIN_TOOLS` alone, so without this a plugin's tool could be
+		// named in `WATCHDOG.yml`, survive config validation, and then match nothing
+		// at the intersection. Mirrors the primary's `restrictToolNames` guard: under
+		// it the runner never loads extensions, so this is empty anyway, and the
+		// guard keeps the two call sites honest about the same rule.
+		const advisorRegisteredTools = restrictToolNames
+			? []
+			: wrapRegisteredTools(extensionRunner.getAllRegisteredTools(), extensionRunner);
 		// Wrapped like every registry tool: `ExtensionToolWrapper` is where the
 		// approval mode, per-tool `tools.approval.<tool>` policies and
 		// `autoApprove` are enforced. The advisor's loop and its Cursor exec
 		// bridge both run these instances directly, so a raw one would execute a
 		// `bash`/`write` the user configured as `ask` or `deny`. Meta-notice
 		// first, matching the registry's wrap order.
-		const advisorTools: Tool[] = built
+		const advisorTools: Tool[] = [...built.filter((tool): tool is Tool => tool != null), ...advisorRegisteredTools]
 			.filter((tool): tool is Tool => tool != null)
 			.map(tool => new ExtensionToolWrapper(wrapToolWithMetaNotice(tool), extensionRunner) as Tool);
 
@@ -4776,7 +4810,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				// Explicit-only sessions (`--no-extensions`, trusted allowlists) ignore both settings.
 				if (roots.mode === "explicit-only") return;
 				for (const configured of roots.configured) seenConfiguredExtensions.add(configured);
-				resetCapabilities();
+				invalidateAllCaches();
 				const cwdNow = sessionManager.getCwd();
 				const [governedPaths, enabledPaths] = await Promise.all([
 					discoverExtensionPaths([...roots.explicit, ...seenConfiguredExtensions], cwdNow, []),
@@ -4805,6 +4839,12 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 						if (modelRegistry.providerSource(name) !== extension.path) continue;
 						modelRegistry.unregisterProvider(name);
 					}
+					// Capability providers withdraw on the same signal, keyed by the
+					// same `path` the model registry uses as a source id. This is inert
+					// today — nothing registers a capability provider with a `sourceId`
+					// yet — and it is here so that WI-10 has the seam rather than
+					// having to add the call site at the same time it adds the caller.
+					unregisterProvidersForSource(extension.path);
 				}
 				for (const extension of resumed) {
 					for (const { name, config } of extension.registeredProviders) {
@@ -4820,7 +4860,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 					for (const extensionPath of unloaded) announcedUnloadedExtensions.add(extensionPath);
 					session.emitNotice(
 						"warning",
-						`Restart omp to load newly enabled extensions: ${unloaded.join(", ")}`,
+						`Restart ${APP_NAME} to load newly enabled extensions: ${unloaded.join(", ")}`,
 						"extensions",
 					);
 				}
@@ -4978,7 +5018,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		}
 
 		// Broker-shared language servers: one server per project, multiplexed
-		// across omp instances by the LSP mux daemon. Session-level because the
+		// across ultraworkers instances by the LSP mux daemon. Session-level because the
 		// flag lives in module state consulted on every client cold-start.
 		// Re-applied live on `lsp.shared` changes: servers cold-started after the
 		// change use the new mode; already-running clients keep their transport
@@ -5167,9 +5207,9 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		//     `extensionRunner` so extensions loaded in that session receive frames.
 		//     Guarded only by `mcpManager` (see the second `if` below).
 		if (mcpManager && !options.mcpManager) {
-			mcpManager.setOnToolsChanged(async tools => {
+			mcpManager.setOnToolsChanged(async (tools, reason) => {
 				try {
-					await session.refreshMCPTools(tools);
+					await session.refreshMCPTools(tools, reason);
 				} catch (error) {
 					logger.warn("MCP tool refresh failed", {
 						error: error instanceof Error ? error.message : String(error),

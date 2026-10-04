@@ -6,6 +6,7 @@ import { registerOAuthProvider, unregisterOAuthProvider, unregisterOAuthProvider
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@oh-my-pi/pi-ai/oauth/types";
 import { setCodexAttestationProvider } from "@oh-my-pi/pi-ai/providers/openai-codex-attestation";
 import { getProviderDefinition } from "@oh-my-pi/pi-ai/registry";
+import type { ProviderDefinition } from "@oh-my-pi/pi-ai/registry";
 import type {
 	Api,
 	Context,
@@ -221,7 +222,7 @@ function isExtendedContextEnabledFromSettings(settingsInstance?: Settings): bool
  * Online discovery (`strategy: "online"`) is independent of credential minting:
  * opening `/models` and hovering a provider fetch catalogs without re-running
  * `!command` helpers. Pass `refreshCommandCredentials` only for explicit user
- * refresh (`omp models refresh`, TUI F5).
+ * refresh (`ultraworkers models refresh`, TUI F5).
  */
 export interface ModelRegistryRefreshOptions {
 	refreshCommandCredentials?: boolean;
@@ -303,6 +304,14 @@ export class ModelRegistry {
 	#lastModelModifierWarnings: Map<string, string> = new Map();
 	#runtimeProvidersBySource: Map<string, Set<string>> = new Map();
 	#runtimeProviderSourceByName: Map<string, string> = new Map();
+	/**
+	 * The config each extension-registered provider was handed, kept so
+	 * {@link getRegisteredProviderConfig} can answer. `registerProvider` receives this
+	 * argument and otherwise only forwards its pieces into the catalog; nothing retained
+	 * the whole, which is why `pi`'s method had no counterpart here despite the concept
+	 * existing on both sides.
+	 */
+	#registeredProviderConfigs: Map<string, ProviderConfigInput> = new Map();
 	// Runtime model managers registered by extensions via fetchDynamicModels.
 	// Keyed by provider name; use the same SQLite cache path as builtins.
 	#runtimeModelManagers: Map<string, { options: ModelManagerOptions<Api>; sourceId: string }> = new Map();
@@ -2747,7 +2756,7 @@ export class ModelRegistry {
 
 	/**
 	 * Whether a config-declared discovery provider has not yet produced a
-	 * catalog in this process. A cold discovery cache (e.g. after `omp update`
+	 * catalog in this process. A cold discovery cache (e.g. after `ultraworkers update`
 	 * bumps the cache namespace) leaves the provider in its initial `idle`
 	 * state with no models, so a selector the provider will supply looks
 	 * unknown until background discovery lands (#10048).
@@ -2786,11 +2795,107 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * The provider's descriptor — its id, display name, auth policy, transports —
+	 * or `undefined` when the id is not one the registry knows.
+	 *
+	 * A delegation, deliberately. The catalogue already compiles every provider into
+	 * a `ProviderDefinition` and `getProviderDefinition` looks it up by id; this is
+	 * the same answer reached through the registry object that extensions hold. It
+	 * is here because `pi-background-tasks` calls `registry.getProvider(...)`, and
+	 * without it the call fails as `registry.getProvider is not a function` — which
+	 * an extension cannot catch or work around, since the registry it is handed is
+	 * this class.
+	 *
+	 * This returns the *static* definition. It deliberately does not fold in the
+	 * runtime overrides that {@link getProviderBaseUrl} consults: a caller asking
+	 * "which provider is this" wants the provider as the catalogue declares it, and
+	 * silently returning a merged object would make the answer depend on whether
+	 * the registry had been refreshed.
+	 */
+	getProvider(provider: string): ProviderDefinition | undefined {
+		return getProviderDefinition(provider);
+	}
+
+	/**
+	 * The provider's display name, falling back to the raw id for an unknown one.
+	 *
+	 * `getProvider(provider)?.name ?? provider` rather than an empty string: a
+	 * provider this build does not ship still has to render somewhere, and a blank
+	 * column is harder to act on than the id that was typed.
+	 *
+	 * Routed through {@link getProvider} rather than the catalogue lookup directly,
+	 * so the two cannot answer differently about the same id.
+	 */
+	getProviderDisplayName(provider: string): string {
+		return this.getProvider(provider)?.name ?? provider;
+	}
+
+	/**
+	 * The runtime config an extension registered for this provider, if any.
+	 *
+	 * Ported from `pi`'s `ModelRuntime.getRegisteredProviderConfig`
+	 * (`core/model-runtime.ts:514`), which reads its `extensionProviders` map. This
+	 * tree records the same thing in the opposite direction — `#runtimeProviderSourceByName`
+	 * maps a provider name to the extension that registered it — so the answer is "is this
+	 * provider ours, and who owns it" rather than "what config was it handed".
+	 *
+	 * That direction is the reason the two fields exist separately: `unregisterProvider`
+	 * resolves ownership from the NAME, so reading the name back here is what lets a caller
+	 * holding a stale per-extension record notice the provider has moved on. See
+	 * {@link providerSource}.
+	 */
+	getRegisteredProviderConfig(providerId: string): ProviderConfigInput | undefined {
+		const sourceId = this.#runtimeProviderSourceByName.get(providerId);
+		if (sourceId === undefined) return undefined;
+		const config = this.#registeredProviderConfigs.get(providerId);
+		return config;
+	}
+
+	/**
+	 * Every provider an extension registered, in registration order.
+	 *
+	 * Ported from `pi`'s `ModelRuntime.getRegisteredProviderIds`
+	 * (`core/model-runtime.ts:518`), which unions its extension and native-extension
+	 * provider maps. ultraworkers has one registry rather than two — `#runtimeProviderSourceByName`
+	 * covers both, because a native provider still arrives through `registerProvider` —
+	 * so the union pi needs is a single map's keys here.
+	 *
+	 * Measured, so the next reader does not assume more than is true: of the three
+	 * registered-provider accessors, this is the ONLY one with a production caller in `pi`
+	 * (`core/bug-report.ts:123`, asking whether a provider came from an extension). The other
+	 * two — `getRegisteredProviderConfig` and `getRegisteredNativeProvider` — are reached only
+	 * by `pi`'s own thin facade, and this group therefore rests on facade parity plus the
+	 * staleness contract its test pins, NOT on a measured consumer. `hasRegisteredProvider`
+	 * below is not a `pi` method at all and has no caller in either tree.
+	 */
+	getRegisteredProviderIds(): readonly string[] {
+		return [...this.#runtimeProviderSourceByName.keys()];
+	}
+
+	/**
+	 * True when this provider was registered by an extension rather than shipped.
+	 *
+	 * The counterpart to {@link getRegisteredProviderIds} for callers that need the
+	 * provenance of ONE id. It reads the source map, so it agrees with
+	 * {@link providerSource} by construction: a provider whose ownership moved to another
+	 * extension answers the same way from both.
+	 *
+	 * There is no `pi` counterpart to this method — it is the per-id form of
+	 * {@link getRegisteredProviderIds}, and it has no production caller in either tree. It is
+	 * kept as facade surface so a `pi` extension's per-id question has somewhere to land, not
+	 * because anything here calls it. See {@link getRegisteredProviderIds} for the counted
+	 * justification of this group.
+	 */
+	hasRegisteredProvider(providerId: string): boolean {
+		return this.#runtimeProviderSourceByName.has(providerId);
+	}
+
+	/**
 	 * Provider-level base URL: explicit runtime/config overrides first, then any
 	 * discovered model that defines one.
 	 *
 	 * The overrides lead because a model-derived answer is only available once
-	 * discovery has populated the registry. `omp usage` builds a `ModelRegistry`
+	 * discovery has populated the registry. `ultraworkers usage` builds a `ModelRegistry`
 	 * and probes credentials immediately, and providers whose roster is
 	 * discovery-only (no bundled rows) have no model to read a URL from at that
 	 * point — so deriving solely from models returned `undefined` cache-cold and
@@ -2941,6 +3046,12 @@ export class ModelRegistry {
 		this.#runtimeModelManagers.delete(providerName);
 		this.#runtimeModelModifiers.delete(providerName);
 		this.#lastModelModifierWarnings.delete(providerName);
+		// Here rather than in each unregister path: every path that drops a provider
+		// already calls this, and a per-path delete is a leak waiting for the next one.
+		// It also removes the temptation to read the map without consulting
+		// #runtimeProviderSourceByName first — the accessor guards on that map, so a
+		// config left behind here is unreachable but still retained.
+		this.#registeredProviderConfigs.delete(providerName);
 		// A credential-scoped built-in provider (e.g. opencode-go) populates its
 		// slice of #runtimeDiscoveredModels from startup cache hydration, not from
 		// this extension. #reloadStaticModels excludes credential-scoped providers
@@ -3091,6 +3202,7 @@ export class ModelRegistry {
 			sourceProviders.add(providerName);
 			this.#runtimeProvidersBySource.set(sourceId, sourceProviders);
 			this.#runtimeProviderSourceByName.set(providerName, sourceId);
+			this.#registeredProviderConfigs.set(providerName, config);
 		}
 		if (sourceHandoff) {
 			this.#reloadStaticModels({ force: true, preserveRuntimeDiscovery: true });

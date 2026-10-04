@@ -87,14 +87,14 @@ describe("AgentSession plan-reference delivery tracking (issue #4094)", () => {
 	const cleanups: Array<() => Promise<void>> = [];
 
 	beforeAll(async () => {
-		fixtureDir = TempDir.createSync("@pi-agent-session-plan-ref-setup-bail-fixture-");
+		fixtureDir = TempDir.createSync("@ultraworkers-agent-session-plan-ref-setup-bail-fixture-");
 		authStorage = await AuthStorage.create(path.join(fixtureDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage, path.join(fixtureDir.path(), "models.yml"));
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-agent-session-plan-ref-setup-bail-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-session-plan-ref-setup-bail-");
 		cleanups.length = 0;
 	});
 

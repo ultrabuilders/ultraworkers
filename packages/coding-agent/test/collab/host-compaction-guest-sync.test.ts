@@ -69,7 +69,7 @@ interface GuestHarness {
  * (and rebuilt-on-compaction) model context.
  */
 function makeGuestHarness(model: Model, modelRegistry: ModelRegistry): GuestHarness {
-	const tempDir = TempDir.createSync("@pi-collab-guest-sync-");
+	const tempDir = TempDir.createSync("@ultraworkers-collab-guest-sync-");
 	const manager = SessionManager.create(tempDir.path(), tempDir.path());
 	const agent = new Agent({
 		initialState: { model, systemPrompt: ["Test"], tools: [], messages: [] },
@@ -148,7 +148,7 @@ let modelRegistry: ModelRegistry;
 let model: Model;
 
 beforeAll(() => {
-	homeDir = TempDir.createSync("@pi-collab-guest-home-");
+	homeDir = TempDir.createSync("@ultraworkers-collab-guest-home-");
 	homedirSpy = spyOn(os, "homedir").mockReturnValue(homeDir.path());
 	refreshDirsFromEnv();
 	installInMemoryRelay();

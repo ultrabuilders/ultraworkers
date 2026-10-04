@@ -949,9 +949,11 @@ def sync_reference_fixtures(fixtures_dir: Path) -> None:
 def resolve_omp_bin(raw: str | None) -> str:
     if raw:
         return raw
-    found = shutil.which("omp")
+    found = shutil.which("ultraworkers") or shutil.which("omp")
     if not found:
-        raise SystemExit("Could not find `omp` on PATH. Set --omp-bin or OMP_BIN.")
+        raise SystemExit(
+            "Could not find `ultraworkers` (or the legacy `omp`) on PATH. Set --omp-bin or OMP_BIN."
+        )
     return found
 
 
@@ -1410,7 +1412,7 @@ def run_oracle_review_sync(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run OpenRouter fixture evaluations through omp RPC mode."
+        description="Run OpenRouter fixture evaluations through the CLI's RPC mode."
     )
     parser.add_argument("--omp-bin", default=os.environ.get("OMP_BIN"))
     parser.add_argument("--fixtures-dir", default=os.path.expanduser("~/tmp/fixtures"))
@@ -1495,7 +1497,7 @@ async def run_all(args: argparse.Namespace) -> int:
     results_dir = (
         Path(args.results_dir)
         if args.results_dir
-        else tmp_root / f"omp-fixture-runs-{timestamp}"
+        else tmp_root / f"ultraworkers-fixture-runs-{timestamp}"
     )
     results_dir.mkdir(parents=True, exist_ok=True)
     workspace_root = tmp_root / f"rate-edit-tool-workspaces-{timestamp}"

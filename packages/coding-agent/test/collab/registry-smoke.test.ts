@@ -93,7 +93,7 @@ afterEach(async () => {
 
 describe("collab host registry (two-process smoke)", () => {
 	it("discovers a separately-spawned host without a URL and prunes it after a crash", async () => {
-		const dir = await tempDir("omp-collab-smoke-seam-");
+		const dir = await tempDir("uw-collab-smoke-seam-");
 		const marker = `seam-${Date.now().toString(36)}`;
 		const instanceId = "seam-host";
 		const { child, stderr } = spawnHelper([dir, marker, instanceId]);
@@ -122,16 +122,24 @@ describe("collab host registry (two-process smoke)", () => {
 	}, 40_000);
 
 	it("lists metadata and explicitly retrieves control or view links through the real CLI under a fake HOME", async () => {
-		const home = await tempDir("omp-collab-smoke-home-");
+		const home = await tempDir("uw-collab-smoke-home-");
 		const marker = `cli-${Date.now().toString(36)}`;
 		const instanceId = "cli-host";
 		const controlUrl = `https://collab.example/control/${marker}`;
 		const viewUrl = `https://collab.example/view/${marker}`;
+		// Pin the config root instead of leaning on the fresh-install fallback.
+		// `getConfigDirName()` resolves override → read-root-if-it-exists → write-root
+		// name, and a fake HOME contains neither candidate, so it lands on
+		// CONFIG_DIR_NAME_NEXT. Naming the root keeps the helper, the CLI, and the
+		// read below on one directory without restating whichever name the rebrand
+		// currently prefers — the previous hardcoded `.omp` matched none of them.
+		const configDirName = "collab-smoke-config";
 		// Clear every override that could redirect the registry outside the fake HOME.
 		const env: Record<string, string | undefined> = {
 			...process.env,
 			HOME: home,
 			USERPROFILE: home,
+			ULTRAWORKERS_CONFIG_DIR: configDirName,
 			NO_COLOR: "1",
 			OMP_SMOKE_MARKER: marker,
 			OMP_SMOKE_INSTANCE_ID: instanceId,
@@ -165,7 +173,7 @@ describe("collab host registry (two-process smoke)", () => {
 		const listed = await runCli(["list", "--json"]);
 		expect({ code: listed.code, stderr: listed.stderr }).toEqual({ code: 0, stderr: "" });
 		const listJson: CollabListJsonOutput = JSON.parse(listed.stdout);
-		const hosts = await listCollabHosts({ dir: path.join(home, ".omp", "run", "collab-hosts") });
+		const hosts = await listCollabHosts({ dir: path.join(home, configDirName, "run", "collab-hosts") });
 		expect(listJson).toEqual({ version: COLLAB_REGISTRY_VERSION, hosts });
 		expect(listJson.hosts).toHaveLength(1);
 		expect(listJson.hosts[0]).toMatchObject({ instanceId, pid: child.pid });

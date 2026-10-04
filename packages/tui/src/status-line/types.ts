@@ -224,16 +224,16 @@ export interface SegmentView {
  * and branch, and the composer the rest.
  */
 export interface ComposerFacts {
-	/** `meter` (role `omp.composer.context`): context usage along the composer's top edge. */
+	/** `meter` (role `ultraworkers.composer.context`): context usage along the composer's top edge. */
 	readonly context: NativeNode;
 	/** The model chip's label: name plus the advisor, fast-mode and slow-mode marks. */
 	readonly model: SegmentView;
 	/**
-	 * `status` (role `omp.composer.extras`, `grow: 1`) of the other configured
+	 * `status` (role `ultraworkers.composer.extras`, `grow: 1`) of the other configured
 	 * segments as `seg`s; the bar's flexible space, so present even when empty.
 	 */
 	readonly extras: NativeNode;
-	/** `text` (role `omp.composer.usage`): the context share of the window and the session cost. */
+	/** `text` (role `ultraworkers.composer.usage`): the context share of the window and the session cost. */
 	readonly usage: NativeNode;
 }
 

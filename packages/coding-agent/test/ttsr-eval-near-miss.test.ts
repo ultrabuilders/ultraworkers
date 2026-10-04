@@ -31,7 +31,7 @@ afterEach(async () => {
 
 describe("TTSR eval near-miss controls", () => {
 	it.each(["regex", "ast"] as const)("allows %s near-miss source through eval", async kind => {
-		using tempDir = TempDir.createSync(`@pi-ttsr-${kind}-near-miss-`);
+		using tempDir = TempDir.createSync(`@ultraworkers-ttsr-${kind}-near-miss-`);
 		const files = [
 			{ path: `${tempDir.path()}/string.ts`, content: `const marker = "console.log(";\n` },
 			{ path: `${tempDir.path()}/comment.ts`, content: "// console.log(\nexport const ok = true;\n" },

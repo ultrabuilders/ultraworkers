@@ -23,7 +23,7 @@ async function writeSessionWithoutUsage(dir: string): Promise<string> {
 
 describe("assistant messages persisted without usage", () => {
 	it("load as zero usage instead of crashing the transcript", async () => {
-		using tempDir = TempDir.createSync("@pi-missing-usage-");
+		using tempDir = TempDir.createSync("@ultraworkers-missing-usage-");
 		const session = await SessionManager.open(await writeSessionWithoutUsage(tempDir.path()), tempDir.path());
 
 		const [message] = session.buildSessionContext().messages;

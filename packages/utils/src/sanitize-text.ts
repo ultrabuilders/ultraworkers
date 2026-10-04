@@ -18,6 +18,19 @@ const ESC_CHAR = "\x1b";
 // CR, DEL, and C1. ESC (0x1B) is in \x0B-\x1F.
 const CONTROL_RE = /[\x00-\x08\x0B-\x1F\x7F-\x9F]/g;
 
+/**
+ * A string-introduced escape sequence closed by BEL rather than ST.
+ *
+ * `Bun.stripANSI` ends OSC/APC/DCS only at ST (`ESC \`). Handed a BEL it treats
+ * the rest of the input as the body of the sequence and deletes it, so a command
+ * whose stdout contained one of these — a binary dump, a terminal replay, an
+ * inline-image escape — came back silently truncated, with nothing reporting the
+ * loss. Rewriting the terminator to ST hands the stripper the one it
+ * understands; this does not re-implement stripping.
+ */
+const BEL_STRING_SEQUENCE = /\x1b[\]P^_][^\x1b\x07]*\x07/g;
+const ST_TERMINATOR = "\x1b\\";
+
 const REPLACEMENT_CHAR = "\ufffd";
 
 export function sanitizeText(text: string): string {
@@ -32,7 +45,14 @@ function sanitizeWellFormedText(text: string): string {
 	CONTROL_RE.lastIndex = 0;
 	if (CONTROL_RE.exec(text) === null) return text;
 
-	const stripped = text.indexOf(ESC_CHAR) === -1 ? text : Bun.stripANSI(text);
+	const stripped =
+		text.indexOf(ESC_CHAR) === -1
+			? text
+			: Bun.stripANSI(
+					BEL_STRING_SEQUENCE.test(text)
+						? text.replace(BEL_STRING_SEQUENCE, sequence => `${sequence.slice(0, -1)}${ST_TERMINATOR}`)
+						: text,
+				);
 	CONTROL_RE.lastIndex = 0;
 	return stripped.replace(CONTROL_RE, "");
 }

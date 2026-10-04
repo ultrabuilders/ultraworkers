@@ -1,11 +1,11 @@
 /**
- * `omp completions <bash|zsh|fish>` — print a shell completion script.
+ * `ultraworkers completions <bash|zsh|fish>` — print a shell completion script.
  *
  * The script is derived entirely from the declarative command/flag metadata
  * (see `cli/completion-gen.ts`), so it never drifts from the actual CLI surface.
  */
 
-import { APP_NAME, postmortem, VERSION } from "@oh-my-pi/pi-utils";
+import { APP_NAME, postmortem, VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { Args, type CliConfig, Command, type CommandCtor } from "@oh-my-pi/pi-utils/cli";
 import { completionsHelp as commandHelp } from "../cli/command-help";
 import { buildSpec, generateCompletion, type Shell } from "../cli/completion-gen";
@@ -26,7 +26,10 @@ export async function generateLiveCompletion(shell: Shell): Promise<string> {
 		aliasMap.set(entry.name, [...merged]);
 	}
 
-	const config: CliConfig = { bin: APP_NAME, version: VERSION, commands: map };
+	// `bin` is the brand and goes on nothing here: every APP_NAME below is either a
+	// command the reader must type or a filename their shell matches against the
+	// command they typed. Both are the invocable name.
+	const config: CliConfig = { bin: APP_NAME, command: WIRE_NAME, version: VERSION, commands: map };
 	return generateCompletion(shell, buildSpec(config, ROOT_COMMAND, aliasMap));
 }
 
@@ -41,15 +44,15 @@ export default class Completions extends Command {
 	};
 
 	static examples = [
-		`# zsh — eval at startup, or write to a file in $fpath\n  eval "$(${APP_NAME} completions zsh)"`,
-		`# bash\n  eval "$(${APP_NAME} completions bash)"`,
-		`# fish\n  ${APP_NAME} completions fish > ~/.config/fish/completions/${APP_NAME}.fish`,
+		`# zsh — eval at startup, or write to a file in $fpath\n  eval "$(${WIRE_NAME} completions zsh)"`,
+		`# bash\n  eval "$(${WIRE_NAME} completions bash)"`,
+		`# fish\n  ${WIRE_NAME} completions fish > ~/.config/fish/completions/${WIRE_NAME}.fish`,
 	];
 
 	async run(): Promise<void> {
 		const shell = this.argv[0];
 		if (!isShell(shell)) {
-			process.stderr.write(`Usage: ${APP_NAME} completions <${SHELLS.join("|")}>\n`);
+			process.stderr.write(`Usage: ${WIRE_NAME} completions <${SHELLS.join("|")}>\n`);
 			process.exitCode = 1;
 			return;
 		}

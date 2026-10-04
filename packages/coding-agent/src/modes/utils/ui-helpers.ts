@@ -1,10 +1,12 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent, Usage } from "@oh-my-pi/pi-ai";
 import { getStreamingPartialJson } from "@oh-my-pi/pi-ai/utils/block-symbols";
+import { PEER_INCOMING_MESSAGE_TYPE } from "@oh-my-pi/pi-wire";
 import { type Component, Spacer, Text } from "@oh-my-pi/pi-tui";
+import { customEntryInsertionPoints, mountCustomEntry } from "./mount-custom-entry";
 import { StatusNotice } from "@oh-my-pi/pi-tui/chrome/status-notice";
 import { QueuedMessagesBand } from "@oh-my-pi/pi-tui/prompt/queued-messages";
-import { logger } from "@oh-my-pi/pi-utils";
+import { APP_NAME, logger } from "@oh-my-pi/pi-utils";
 import type { AdvisorMessageDetails } from "../../advisor";
 import { COLLAB_PROMPT_MESSAGE_TYPE, type CollabPromptDetails } from "../../collab/protocol";
 import { settings } from "../../config/settings";
@@ -31,7 +33,7 @@ import {
 import {
 	groupedReadUsageCallIds,
 	ReadToolGroupComponent,
-	readArgsCollapseIntoGroup,
+	isReadToolGroupMember,
 } from "@oh-my-pi/pi-tui/chat/read-tool-group";
 import { SkillMessageComponent } from "@oh-my-pi/pi-tui/chat/skill-message";
 import { StrippedToolCallsPlaceholder } from "@oh-my-pi/pi-tui/chat/stripped-tool-calls-placeholder";
@@ -45,7 +47,13 @@ import { decodeStreamedToolArgs, streamingStringKeysForTool } from "../../modes/
 import { materializeImageReferenceLinksSync } from "@oh-my-pi/pi-tui/prompt/image-references";
 import { imageAttachmentSource } from "@oh-my-pi/pi-tui/prompt/image-source";
 import { theme } from "@oh-my-pi/pi-tui/theme";
-import type { CompactionQueuedMessage, InteractiveModeContext, RenderSessionContextOptions } from "../../modes/types";
+import type {
+	CompactionQueuedMessage,
+	InteractiveModeContext,
+	RenderSessionContextOptions,
+	ShowStatusOptions,
+	StatusLineEntry,
+} from "../../modes/types";
 import { LAUNCH_COMPLETION_MESSAGE_TYPE } from "../../session/launch-completion";
 import {
 	BACKGROUND_TAN_DISPATCH_MESSAGE_TYPE,
@@ -135,14 +143,26 @@ export class UiHelpers {
 	 *
 	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
 	 * we update the previous status line instead of appending new ones to avoid log spam.
+	 *
+	 * A message carrying `key` is a keyed line: it goes to `noticeContainer` and can
+	 * be replaced, invalidated, or folded by a later notice. A message without one is
+	 * unchanged from before keyed notices existed — same container, same fold-into-
+	 * previous behaviour, same bytes — because 337 call sites pass no options and
+	 * they are the contract, not an implementation detail.
 	 */
-	showStatus(message: string, options?: { dim?: boolean }): void {
-		const children = this.ctx.chatContainer.children;
-		const last = children.length > 0 ? children[children.length - 1] : undefined;
+	showStatus(message: string, options?: ShowStatusOptions): void {
 		const useDim = options?.dim ?? true;
 		// Resolve the dim color lazily so a later theme change re-shapes the line
 		// instead of leaving the palette that was active when it was presented.
 		const styleFn = useDim ? (t: string) => theme.fg("dim", t) : undefined;
+
+		if (options?.key !== undefined) {
+			this.#showKeyedStatus(message, options.key, styleFn, options);
+			return;
+		}
+
+		const children = this.ctx.chatContainer.children;
+		const last = children.length > 0 ? children[children.length - 1] : undefined;
 
 		if (last && last === this.ctx.lastStatus) {
 			this.ctx.lastStatus.setMessage(message, styleFn);
@@ -153,6 +173,115 @@ export class UiHelpers {
 		const notice = new StatusNotice(message, styleFn);
 		this.ctx.present([notice]);
 		this.ctx.lastStatus = notice;
+	}
+
+	/**
+	 * The keyed half of {@link showStatus}.
+	 *
+	 * Order matters and is not interchangeable: an invalidation is applied before the
+	 * incoming line is placed, so a notice can invalidate the line it is replacing
+	 * without the removal racing the add. Folding reads the line being folded INTO,
+	 * so `fold: "x"` on a message that is itself keyed `x` merges with itself and is
+	 * ignored rather than doubling the count.
+	 */
+	#showKeyedStatus(
+		message: string,
+		key: string,
+		styleFn: ((text: string) => string) | undefined,
+		options: ShowStatusOptions,
+	): void {
+		const lines = this.ctx.keyedStatusLines;
+
+		if (options.invalidates !== undefined) {
+			this.#removeKeyedLine(options.invalidates);
+		}
+
+		// Fold first: merging into an existing line is the one case where the
+		// incoming message does not become a component of its own. Naming the
+		// message's OWN key is the ordinary case, not a degenerate one — a status
+		// that re-emits per token passes `fold` with the key it already uses, and
+		// skipping that would grow the container by one line per emission.
+		if (options.fold !== undefined) {
+			const target = lines.find(entry => entry.key === options.fold && !entry.removed);
+			if (target) {
+				target.count += 1;
+				target.notice.setMessage(`${message} (${target.count})`, styleFn);
+				this.ctx.ui.requestRender();
+				return;
+			}
+		}
+
+		const existing = lines.find(entry => entry.key === key && !entry.removed);
+		if (existing) {
+			// A repeat of a key already showing updates that line in place. Appending a
+			// second line for the same key would make "which one is current" unanswerable.
+			existing.notice.setMessage(message, styleFn);
+			this.ctx.ui.requestRender();
+			return;
+		}
+
+		const notice = new StatusNotice(message, styleFn);
+		const entry: StatusLineEntry = {
+			key,
+			notice,
+			count: 1,
+			immediate: options.immediate ?? false,
+			removed: false,
+		};
+		lines.push(entry);
+
+		if (entry.immediate) {
+			// `immediate` means this line supersedes whatever is showing rather than
+			// queueing under it, so the lines it displaces are dropped, not hidden.
+			//
+			// Over a COPY. `#removeKeyedLine` splices `lines`, so walking `lines`
+			// directly would shift everything left one slot while the iterator
+			// advances one — skipping every other entry, which is invisible at one
+			// displaced line and leaks half the queue at two.
+			for (const other of [...lines]) {
+				if (other !== entry) this.#removeKeyedLine(other.key);
+			}
+		}
+
+		this.ctx.noticeContainer.addChild(notice);
+		this.ctx.ui.requestRender();
+	}
+
+	/**
+	 * Drop a keyed line from the queue and the container.
+	 *
+	 * Marked `removed` before the child is detached so a rebuild racing this call
+	 * cannot re-present a line that is on its way out. A no-op for an unknown key:
+	 * invalidating something that is not showing is not an error, it is the common
+	 * case when a keyed notice is emitted once per attempt.
+	 */
+	#removeKeyedLine(key: string): void {
+		const lines = this.ctx.keyedStatusLines;
+		const index = lines.findIndex(entry => entry.key === key && !entry.removed);
+		if (index < 0) return;
+		const [entry] = lines.splice(index, 1);
+		if (!entry) return;
+		entry.removed = true;
+		this.ctx.noticeContainer.removeChild(entry.notice);
+	}
+
+	/**
+	 * The extension-facing transformers, mapped to the renderer's contract.
+	 *
+	 * `MarkdownTransformer` receives a context object and the renderer receives the
+	 * content width directly, so the two are not the same function type. Mapping
+	 * here keeps that difference in one place instead of at each component that
+	 * happens to build a transcript.
+	 */
+	#markdownRenderTransforms(messageType: "user" | "assistant" = "assistant") {
+		return (this.ctx.viewSession.extensionRunner?.getMarkdownTransformers() ?? []).map(
+			transformer => (markdown: string, availableWidth: number) =>
+				transformer(markdown, {
+					messageType,
+					isStreaming: false,
+					availableWidth,
+				}),
+		);
 	}
 
 	addMessageToChat(message: AgentMessage, options?: AddMessageOptions): Component[] {
@@ -221,7 +350,7 @@ export class UiHelpers {
 						break;
 					}
 					if (
-						message.customType === "irc:incoming" ||
+						message.customType === PEER_INCOMING_MESSAGE_TYPE ||
 						message.customType === "irc:autoreply" ||
 						message.customType === "irc:relay" ||
 						message.customType === "irc:workpool"
@@ -300,6 +429,7 @@ export class UiHelpers {
 							images,
 							liveSteered: message.role === "user" && message.liveSteered === true,
 							timestamp: message.timestamp,
+							markdownTransformers: this.#markdownRenderTransforms("user"),
 						});
 						this.ctx.transcriptMessageComponents.set(message, userComponent);
 					}
@@ -318,6 +448,7 @@ export class UiHelpers {
 								this.ctx,
 								splitAssistantMessageToolTimeline(message).beforeTools,
 								getAssistantMessageLinkTargets(this.ctx),
+								this.#markdownRenderTransforms(),
 							);
 				if (cached !== assistantComponent) {
 					this.ctx.transcriptMessageComponents.set(message, assistantComponent);
@@ -485,7 +616,17 @@ export class UiHelpers {
 		const backgroundTaskCallIds = new Set<string>();
 		const messages = sessionContext.messages;
 		const count = messages.length;
+		// Custom entries never enter `messages` (they must not reach the provider),
+		// so the transcript's ordered list says where each one belongs. Derived into
+		// insertion points rather than replacing `messages` as the loop source,
+		// because the body indexes `cacheMissExplainedAt?.[i]` by message position.
+		const customEntryPoints = sessionContext.displayItems
+			? customEntryInsertionPoints(sessionContext.displayItems)
+			: undefined;
 		for (let i = 0; i < count; i++) {
+			if (customEntryPoints) {
+				for (const entry of customEntryPoints.get(i) ?? []) mountCustomEntry(this.ctx, entry);
+			}
 			// Yield BEFORE each message (except the first) rather than after: the
 			// per-message body has several early `continue` paths (preserved live
 			// results, image-only and grouped `read` results), and a trailing yield
@@ -530,6 +671,7 @@ export class UiHelpers {
 						this.ctx,
 						segment,
 						getAssistantMessageLinkTargets(this.ctx),
+						this.#markdownRenderTransforms(),
 					);
 					this.ctx.chatContainer.addChild(component);
 				};
@@ -548,7 +690,7 @@ export class UiHelpers {
 					const renderToolName = toolRenderName(content.name, tool);
 					resolveWaitingPoll(renderToolName);
 
-					if (renderToolName === "read" && readArgsCollapseIntoGroup(content.arguments)) {
+					if (isReadToolGroupMember(renderToolName, content.arguments)) {
 						if (hasErrorStop && errorMessage) {
 							if (!readGroup) {
 								readGroup = new ReadToolGroupComponent({
@@ -612,6 +754,13 @@ export class UiHelpers {
 						{
 							useBuiltInRenderer: this.ctx.viewSession.hasBuiltInTool(renderToolName),
 							showImages: cfgTerminalShowImages.get(settings),
+							// A card rebuilt from transcript history has no live stream to
+							// publish through, so the raw buffer it was rebuilt from is
+							// handed over here. That is what keeps a rebuilt card and a
+							// live one showing the same thing mid-parse. A surviving
+							// buffer is by definition not final — once the JSON closes
+							// the reveal drops it and the final-args render wins.
+							...(partialJson ? { rawArgs: { json: partialJson, complete: false } } : {}),
 						},
 						tool,
 						this.ctx.ui,
@@ -1074,7 +1223,7 @@ export class UiHelpers {
 		block.addChild(new DynamicBorder(text => theme.fg("warning", text)));
 		const title = "Update Available";
 		const prefix = `New version ${newVersion} is available. Run: `;
-		const command = "omp update";
+		const command = `${APP_NAME} update`;
 		block.addChild(
 			new Text(`${title}\n${prefix}${command}`, 1, 0).setStyleFn(
 				() =>

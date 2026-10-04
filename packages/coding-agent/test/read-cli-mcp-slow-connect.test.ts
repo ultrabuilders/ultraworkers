@@ -13,17 +13,33 @@ const FIXTURE_PATH = path.join(import.meta.dir, "fixtures", "resources-no-templa
 // still handshaking when `connectServers` returns and the read begins.
 const HANDSHAKE_DELAY_MS = 700;
 
-describe("omp read MCP resource with a slow-connecting server", () => {
+describe("ultraworkers read MCP resource with a slow-connecting server", () => {
 	let root: string;
 	let projectDir: string;
 	let agentDir: string;
 	let probePath: string;
 
 	beforeEach(async () => {
-		root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-read-mcp-slow-"));
+		root = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-read-mcp-slow-"));
 		projectDir = path.join(root, "project");
 		agentDir = path.join(root, "agent");
 		await Promise.all([fs.mkdir(projectDir), fs.mkdir(agentDir)]);
+		// The server is declared in a PROJECT `.mcp.json`, and
+		// `mcp.enableProjectConfig` defaults to FALSE — honouring a project-scope
+		// config means running code that arrived with a cloned repo (commit
+		// a183f4957d, the RCE fix). Without this opt-in the file is never read and
+		// this test fails with "No MCP server has resource" for a reason that has
+		// nothing to do with the pending-connect race it exists to cover.
+		//
+		// This is what made both this test and its sibling red at HEAD: the RCE fix
+		// landed with its own red-test proof, but these two were still written
+		// against the old default-true behaviour. The delay below is the subject;
+		// the setting is only the precondition.
+		//
+		// `config.yml`, not `settings.json` — the CLI migrates a `settings.json` it
+		// finds to `config.yml` at startup, so writing the former leaves the value
+		// somewhere this test no longer controls.
+		await Bun.write(path.join(agentDir, "config.yml"), "mcp:\n  enableProjectConfig: true\n");
 		await Bun.write(
 			path.join(projectDir, ".mcp.json"),
 			JSON.stringify({

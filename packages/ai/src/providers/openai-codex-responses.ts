@@ -147,6 +147,11 @@ import {
 } from "./openai-shared";
 import { redactSensitiveInObject, transformMessages } from "./transform-messages";
 
+export const OPENAI_CODEX_FIRST_EVENT_TIMEOUT_MESSAGE =
+	"OpenAI Codex SSE stream timed out while waiting for the first event";
+export const OPENAI_CODEX_STREAM_IDLE_TIMEOUT_MESSAGE =
+	"OpenAI Codex SSE stream stalled while waiting for the next event";
+
 export interface OpenAICodexResponsesOptions extends StreamOptions {
 	reasoning?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 	reasoningSummary?: "auto" | "concise" | "detailed" | null;
@@ -1388,8 +1393,8 @@ function createRequestSetup(options: OpenAICodexResponsesOptions | undefined): C
 		iterateWithIdleTimeout(source, {
 			idleTimeoutMs,
 			firstItemTimeoutMs: firstEventTimeoutMs,
-			firstItemErrorMessage: "OpenAI Codex SSE stream timed out while waiting for the first event",
-			errorMessage: "OpenAI Codex SSE stream stalled while waiting for the next event",
+			firstItemErrorMessage: OPENAI_CODEX_FIRST_EVENT_TIMEOUT_MESSAGE,
+			errorMessage: OPENAI_CODEX_STREAM_IDLE_TIMEOUT_MESSAGE,
 			onIdle: () => requestAbortController.abort(),
 			onFirstItemTimeout: () => requestAbortController.abort(),
 			abortSignal: options?.signal,

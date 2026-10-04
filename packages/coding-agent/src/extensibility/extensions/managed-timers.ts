@@ -103,10 +103,19 @@ export class ManagedTimers {
 	 * rather than being a caveat; if that dedupe is ever relaxed, this comment is
 	 * the thing to re-check first.
 	 */
-	clearFor(owner: Extension): number {
+	/**
+	 * Release every timer held by one extension path.
+	 *
+	 * Takes the path rather than the owner so a caller that has only a path — an
+	 * unload, where the extension object is spliced out of the active list before
+	 * the release runs — cannot pass `undefined` into an API that dereferences it.
+	 */
+	clearForPath(path: string): number {
 		let cleared = 0;
-		for (const [timer, holder] of [...this.#timers]) {
-			if (holder?.path !== owner.path) continue;
+		// Deleting from a Map while iterating it is specified, not accidental: entries
+		// removed before the cursor is reached are simply not visited.
+		for (const [timer, holder] of this.#timers) {
+			if (holder?.path !== path) continue;
 			this.#timers.delete(timer);
 			clearInterval(timer);
 			clearTimeout(timer);

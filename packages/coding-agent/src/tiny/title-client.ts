@@ -36,7 +36,7 @@ import { getTinyLocalModelSpec, isTinyLocalModelKey, type TinyLocalModelKey } fr
 import { normalizeGeneratedTitle } from "./text";
 import {
 	TINY_WORKER_ARG,
-	TINY_WORKER_IDLE_MS_ENV,
+	readTinyWorkerIdleMsEnv,
 	TINY_WORKER_MODEL_ENV,
 	TINY_WORKER_SOCKET_ENV,
 	TINY_WORKER_TAG_ENV,
@@ -113,7 +113,7 @@ function normalizeTinyTitleGenerateOptions(
 
 // ── Device / dtype resolution ────────────────────────────────────────
 
-/** Setting value (its env var included); only the env var when settings are uninitialized (e.g. `omp --smoke-test`). */
+/** Setting value (its env var included); only the env var when settings are uninitialized (e.g. `ultraworkers --smoke-test`). */
 function readTinyModelSetting(setting: Setting<string>): string | undefined {
 	return isSettingsInitialized() ? setting.get(settings) : setting.envValue();
 }
@@ -349,7 +349,7 @@ export interface WorkerLaunch {
 	spawn(endpoint: string, logPath: string): Promise<SpawnedWorker>;
 }
 
-/** Detach a worker so it outlives this omp process; its output goes to a per-worker log file. */
+/** Detach a worker so it outlives this ultraworkers process; its output goes to a per-worker log file. */
 function spawnDetached(
 	cmd: string[],
 	cwd: string | undefined,
@@ -405,7 +405,7 @@ function mlxLaunch(modelKey: TinyLocalModelKey, emitProgress: (event: TinyTitleP
 			const python = await ensureTinyMlxRuntime(phase =>
 				emitProgress({ modelKey, status: phase, name: `mlx-lm@${MLX_LM_VERSION}` }),
 			);
-			const script = await stageRunnerScript("omp-tiny-mlx", "py", MLX_SERVER_SCRIPT);
+			const script = await stageRunnerScript("uw-tiny-mlx", "py", MLX_SERVER_SCRIPT);
 			const env = inferenceWorkerEnv({
 				PYTHONUNBUFFERED: "1",
 				PYTHONIOENCODING: "utf-8",
@@ -413,7 +413,7 @@ function mlxLaunch(modelKey: TinyLocalModelKey, emitProgress: (event: TinyTitleP
 				HF_HUB_DISABLE_PROGRESS_BARS: "1",
 				TOKENIZERS_PARALLELISM: "false",
 			});
-			const idleSeconds = Number($env[TINY_WORKER_IDLE_MS_ENV]) / 1000 || MLX_IDLE_SECONDS;
+			const idleSeconds = Number(readTinyWorkerIdleMsEnv($env)) / 1000 || MLX_IDLE_SECONDS;
 			const cmd = [
 				python,
 				"-u",
@@ -450,7 +450,7 @@ async function logTail(logPath: string): Promise<string> {
 		const text = await Bun.file(logPath).text();
 		return text
 			.split("\n")
-			.filter(line => !line.startsWith("omp tiny worker listening on "))
+			.filter(line => !line.startsWith("ultraworkers tiny worker listening on "))
 			.join("\n")
 			.trim()
 			.slice(-500);
@@ -461,7 +461,7 @@ async function logTail(logPath: string): Promise<string> {
 
 /**
  * Connect to the worker serving `modelKey`, spawning it when absent or
- * replacing it when its launch tag is stale. A concurrent omp process may win
+ * replacing it when its launch tag is stale. A concurrent ultraworkers process may win
  * the spawn race; our child then fails to bind and exits while the probe
  * adopts the winner.
  */
@@ -482,7 +482,7 @@ export async function connectTinyWorker(
 		const result = await probeTinyWorker(endpoint, launch.tag);
 		if (result.kind === "live") return createSocketWorkerHandle(result.socket, logPath);
 		if (spawned.proc.exitCode !== null) {
-			// Our child is gone: either it lost the bind race to a sibling omp
+			// Our child is gone: either it lost the bind race to a sibling ultraworkers
 			// (already adopted above if so) or it crashed.
 			const tail = await logTail(spawned.logPath);
 			throw new Error(

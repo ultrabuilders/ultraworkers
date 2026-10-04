@@ -2,6 +2,7 @@
  * Check for and install updates.
  */
 
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { Command, Flags } from "@oh-my-pi/pi-utils/cli";
 import { updateHelp as commandHelp } from "../cli/command-help";
 import * as pluginCli from "../cli/plugin-cli";
@@ -19,11 +20,16 @@ export default class Update extends Command {
 		stable: Flags.boolean({ description: "Switch back to the stable channel", default: false }),
 	};
 
+	// Examples are rendered verbatim into `ultraworkers update --help` and are the one part of
+	// help text the reader is expected to copy and paste, so they name the INVOCABLE
+	// command (WIRE_NAME, pinned by `wire-name.test.ts` and matching `package.json#bin`),
+	// never the brand. A literal `ultraworkers` here is a copy that stays green after the binary
+	// it names is renamed — the same defect as `BUNDLED_PACKAGES` and `cacheKey`.
 	static examples = [
-		"omp update",
-		"omp update --check",
-		"omp update --canary",
-		"# If GitHub rate-limits release metadata, set GITHUB_TOKEN or GH_TOKEN\n  GITHUB_TOKEN=... omp update",
+		`${WIRE_NAME} update`,
+		`${WIRE_NAME} update --check`,
+		`${WIRE_NAME} update --canary`,
+		`# If GitHub rate-limits release metadata, set GITHUB_TOKEN or GH_TOKEN\n  GITHUB_TOKEN=... ${WIRE_NAME} update`,
 	];
 
 	async run(): Promise<void> {

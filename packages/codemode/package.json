@@ -1,0 +1,65 @@
+{
+  "type": "module",
+  "name": "@ultraworkers/pi-codemode",
+  "version": "18.4.3",
+  "description": "Sandboxed JavaScript execution where the only capability is calling injected tools",
+  "homepage": "https://omp.sh",
+  "author": { "name": "Stencil Labs, Inc.", "url": "https://stencil.so" },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/can1357/oh-my-pi.git",
+    "directory": "packages/codemode"
+  },
+  "bugs": {
+    "url": "https://github.com/can1357/oh-my-pi/issues"
+  },
+  "keywords": [
+    "codemode",
+    "sandbox",
+    "quickjs",
+    "wasm"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "check": "oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts' && bun run check:types",
+    "check:types": "tsgo -p tsconfig.json --noEmit",
+    "lint": "oxlint .",
+    "test": "bun test --parallel",
+    "fix": "oxlint --fix --fix-suggestions . && bun run fmt",
+    "fmt": "oxfmt --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts'"
+  },
+  "dependencies": {
+    "quickjs-wasi": "3.6.2"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./declarations": {
+      "types": "./src/declarations.ts",
+      "import": "./src/declarations.ts"
+    },
+    "./source": {
+      "types": "./src/source.ts",
+      "import": "./src/source.ts"
+    },
+    "./worker": {
+      "types": "./src/runtime/worker.ts",
+      "import": "./src/runtime/worker.ts"
+    }
+  }
+}

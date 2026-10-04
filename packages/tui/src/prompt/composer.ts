@@ -82,7 +82,7 @@ export interface ComposerStatusCache {
 /** Optional dependencies and initial state for a standalone composer. */
 export interface ComposerOptions {
 	readonly terminal?: Terminal;
-	/** Extra TUI construction options (render scheduler injection for tests and `omp render`). */
+	/** Extra TUI construction options (render scheduler injection for tests and `ultraworkers render`). */
 	readonly tuiOptions?: TUIOptions;
 	readonly preferences?: Partial<ComposerPreferences>;
 	readonly welcome?: ComposerWelcomeUpdate;
@@ -175,7 +175,7 @@ export function routeViewportClick(spans: readonly ViewportClickSpan[], index: n
  * any registry lookup: its `@…:…` charset cannot collide with generated agent
  * ids (word names, numeric and `-N` suffixes, dotted nesting).
  */
-export const PINNED_HUD_TOGGLE_ID = "@omp:toggle-pinned-hud";
+export const PINNED_HUD_TOGGLE_ID = "@ultraworkers:toggle-pinned-hud";
 
 /**
  * Nested background opens inside a hovered row. The band wraps the line, so a
@@ -208,6 +208,23 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	readonly #header = new Container();
 	readonly #bootstrapInputGap = new Spacer(1);
 	readonly #statusHost = new StatusHost();
+	/**
+	 * Page-level slots for extension-owned chrome, one above the prompt surface
+	 * and one below it.
+	 *
+	 * Deliberately siblings of `editor` rather than children of {@link #header}:
+	 * `#rebuildHeader` clears and re-does `#header` on every model change, resize
+	 * and quiet-mode toggle, so anything attached straight to it disappears on the
+	 * next rebuild with no error. `#header` also stops rendering for good once it
+	 * retires into native history, which happens as soon as the welcome intro
+	 * settles — long before most extensions activate — so a header living there
+	 * would be invisible in an ordinary session.
+	 *
+	 * Public because InteractiveMode seats the header below the dock and the
+	 * extension controller fills both — the same split as `hookWidgetContainerAbove`.
+	 */
+	readonly extensionHeader = new Container();
+	readonly extensionFooter = new Container();
 	readonly #exit: (code: number) => void;
 	readonly #now: () => number;
 	#preferences: ComposerPreferences;
@@ -338,9 +355,11 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 
 		if (!this.#preferences.quiet) this.#ensureWelcome();
 		this.#rebuildHeader();
+		this.ui.addChild(this.extensionHeader);
 		this.ui.addChild(this.#header);
 		this.ui.addChild(this.#bootstrapInputGap);
 		this.ui.addChild(this.editor);
+		this.ui.addChild(this.extensionFooter);
 		this.ui.addChild(this.#statusHost);
 		this.ui.setFocus(this.editor);
 	}
@@ -355,8 +374,15 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		}
 		this.#lastNormalRows = rows;
 		const roots = this.#runtimeMounted
-			? [...this.#runtimeChildren, this.#statusHost]
-			: [this.#header, this.#bootstrapInputGap, this.editor, this.#statusHost];
+			? [this.extensionHeader, ...this.#runtimeChildren, this.extensionFooter, this.#statusHost]
+			: [
+					this.extensionHeader,
+					this.#header,
+					this.#bootstrapInputGap,
+					this.editor,
+					this.extensionFooter,
+					this.#statusHost,
+				];
 		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
 		if (transcriptIndex < 0) {
 			this.#lastClickSpans = [];
@@ -441,11 +467,15 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	 */
 	describeSurface(): NativeSurface {
 		if (!this.#started || this.#stopped) return this.#nativeSurface;
-		const main: NativeChild[] = [...this.#header.children];
+		const main: NativeChild[] = [...this.extensionHeader.children, ...this.#header.children];
 		const dock: NativeChild[] = [];
+		// Only a band that actually holds something takes a dock slot. An empty
+		// container contributes no rows, and giving it a position anyway would
+		// change the dock layout for every session that mounts no extension at all.
+		const footerSlot = (): Container[] => (this.extensionFooter.children.length > 0 ? [this.extensionFooter] : []);
 		if (!this.#runtimeMounted) {
 			// The bootstrap gap is row spacing; the terminal owns the dock layout.
-			dock.push(this.editor);
+			dock.push(this.editor, ...footerSlot());
 		} else {
 			const roots = this.#runtimeChildren;
 			const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
@@ -455,6 +485,9 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 				const transcript = roots[transcriptIndex] as TranscriptContainer;
 				main.push(...roots.slice(0, transcriptIndex), ...transcript.nativeBlocks());
 				dock.push(...(this.#nativeDock ?? roots.slice(transcriptIndex + 1)));
+				// InteractiveMode's own dock list ends at the editor, so the footer
+				// slot is appended here rather than supplied by the caller.
+				dock.push(...footerSlot());
 			}
 		}
 		const previous = this.#nativeSurface;
@@ -585,7 +618,10 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		const rows = Math.max(0, viewport.rows);
 		const tail = this.#runtimeMounted
 			? this.#renderResizeTail(width, rows)
-			: this.#renderRoots([this.#bootstrapInputGap, this.editor, this.#statusHost], width);
+			: this.#renderRoots(
+					[this.extensionHeader, this.#bootstrapInputGap, this.editor, this.extensionFooter, this.#statusHost],
+					width,
+				);
 		let header: readonly string[];
 		if (this.#headerRetired) {
 			this.#resizeRetiredHeaderStart ??= Math.max(
@@ -745,7 +781,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	 * it renders only when that tail underfills the screen.
 	 */
 	#renderResizeTail(width: number, rows: number): string[] {
-		const roots = [...this.#runtimeChildren, this.#statusHost];
+		const roots = [this.extensionHeader, ...this.#runtimeChildren, this.extensionFooter, this.#statusHost];
 		const transcriptIndex = roots.findIndex(root => root instanceof TranscriptContainer);
 		if (transcriptIndex < 0) return this.#renderRoots(roots, width);
 		const transcript = roots[transcriptIndex] as TranscriptContainer;
@@ -903,6 +939,10 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		this.#transientChromeFloor = undefined;
 		this.#nativeDock = options.nativeDock;
 		this.ui.removeChild(this.#statusHost);
+		// Re-seated with the status host so the footer stays at the bottom edge once
+		// the runtime dock replaces the bootstrap editor; the header keeps its mount
+		// from `start()` because it belongs above everything the dock installs.
+		this.ui.removeChild(this.extensionFooter);
 		if (this.#runtimeMounted) {
 			for (const child of this.#runtimeChildren) this.ui.removeChild(child);
 		} else {
@@ -912,6 +952,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		}
 		this.#runtimeChildren = children;
 		for (const child of children) this.ui.addChild(child);
+		this.ui.addChild(this.extensionFooter);
 		this.ui.addChild(this.#statusHost);
 		this.ui.requestRender();
 	}

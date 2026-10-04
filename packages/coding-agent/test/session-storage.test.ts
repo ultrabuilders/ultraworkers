@@ -92,7 +92,7 @@ describe("FileSessionStorage writer", () => {
 	let storage: FileSessionStorage;
 
 	beforeEach(async () => {
-		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-session-writer-"));
+		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-session-writer-"));
 		storage = new FileSessionStorage();
 	});
 
@@ -225,7 +225,7 @@ describe("FileSessionStorage.deleteSessionWithArtifacts", () => {
 	let storage: FileSessionStorage;
 
 	beforeEach(async () => {
-		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-session-storage-"));
+		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-session-storage-"));
 		storage = new FileSessionStorage();
 	});
 
@@ -277,7 +277,7 @@ describe("FileSessionStorage.writeTextSync", () => {
 	let tempDir: string;
 
 	beforeEach(async () => {
-		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-session-storage-"));
+		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-session-storage-"));
 	});
 
 	afterEach(async () => {
@@ -471,7 +471,7 @@ describe("FileSessionStorage.updateSessionTitle", () => {
 	let storage: FileSessionStorage;
 
 	beforeEach(async () => {
-		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-session-storage-"));
+		tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "ultraworkers-session-storage-"));
 		storage = new FileSessionStorage();
 	});
 

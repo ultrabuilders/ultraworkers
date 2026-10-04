@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the browser relay README naming an "omp" tab group; the group is titled "ultraworkers", so users following the docs were looking for a group the extension no longer creates.
+
 ## [18.3.1] - 2026-09-25
 
 ### Fixed

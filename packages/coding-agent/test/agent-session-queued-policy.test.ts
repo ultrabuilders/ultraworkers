@@ -40,6 +40,8 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		path: name,
 		resolvedPath: name,
 		registeredProviders: [],
+		surfaces: [],
+		modes: [],
 		toolRegistrationListeners: new Set(),
 		handlers: new Map([
 			["before_agent_start", [async (...args: unknown[]) => handler(args[0] as BeforeAgentStartEvent)]],
@@ -47,16 +49,29 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		tools: new Map(),
 		assistantThinkingRenderers: [],
 		fileWriteFallbackHandlers: [],
+		peerTransports: [],
+		peerLockBackends: [],
+		peerFences: [],
 		fileDeleteFallbackHandlers: [],
+		compactionProtections: [],
+		contextTransforms: [],
+		configReloadDisposers: [],
 		messageRenderers: new Map(),
+		entryRenderers: new Map(),
 
 		outputFormats: new Map(),
 
 		toolNameResolvers: [],
+		usageReporters: [],
+		diagnostics: [],
+		hostRenderStrategies: [],
+		copyTargetProviders: [],
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),
+		doubleEscapeActions: [],
+		settingIds: [],
 	};
 }
 
@@ -159,7 +174,7 @@ describe("queued user delivery policy", () => {
 		recall: (query: string) => Promise<string | undefined>,
 		policy = false,
 	) {
-		const dir = TempDir.createSync("@pi-queued-memory-");
+		const dir = TempDir.createSync("@ultraworkers-queued-memory-");
 		tempDirs.push(dir);
 		const settings = Settings.isolated({
 			"compaction.enabled": false,

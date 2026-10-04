@@ -52,18 +52,18 @@ afterEach(() => {
 describe("native composer", () => {
 	it("tints the composer by shell mode and marks `!!` as not sent to the model", () => {
 		const bash = composer({ running: false, shell: { kind: "bash", excluded: true } }).describe(cx);
-		expect(bash.p).toMatchObject({ role: "omp.editor.bash" });
-		const mode = byRole(bash, "omp.composer.mode")!;
+		expect(bash.p).toMatchObject({ role: "ultraworkers.editor.bash" });
+		const mode = byRole(bash, "ultraworkers.composer.mode")!;
 		expect(nodes(mode).map(n => n.k)).toEqual(["row", "icon", "text"]);
 		expect(nodes(mode)[1]!.p).toMatchObject({ name: "eye-off" });
 
 		const python = composer({ running: false, shell: { kind: "python", excluded: false } }).describe(cx);
-		expect(python.p).toMatchObject({ role: "omp.editor.python" });
-		expect(nodes(byRole(python, "omp.composer.mode")!).some(n => n.k === "icon")).toBe(false);
+		expect(python.p).toMatchObject({ role: "ultraworkers.editor.python" });
+		expect(nodes(byRole(python, "ultraworkers.composer.mode")!).some(n => n.k === "icon")).toBe(false);
 
 		const prompt = composer({ running: false }).describe(cx);
-		expect(prompt.p).toMatchObject({ role: "omp.editor" });
-		expect(byRole(prompt, "omp.composer.mode")).toBeUndefined();
+		expect(prompt.p).toMatchObject({ role: "ultraworkers.editor" });
+		expect(byRole(prompt, "ultraworkers.composer.mode")).toBeUndefined();
 	});
 
 	it("draws a shell-mode draft as code in its language, the sigil hidden behind the mode chip", () => {
@@ -92,9 +92,12 @@ describe("native composer", () => {
 		editor.onEscape = vi.fn();
 		const idle = editor.describe(cx);
 		expect(idle.p).not.toHaveProperty("tone");
-		expect(byRole(idle, "omp.composer.send")?.p).toMatchObject({ keys: ["enter"], actions: { click: "submit" } });
-		expect(byRole(idle, "omp.composer.stop")).toBeUndefined();
-		const chip = byRole(idle, "omp.composer.effort")!;
+		expect(byRole(idle, "ultraworkers.composer.send")?.p).toMatchObject({
+			keys: ["enter"],
+			actions: { click: "submit" },
+		});
+		expect(byRole(idle, "ultraworkers.composer.stop")).toBeUndefined();
+		const chip = byRole(idle, "ultraworkers.composer.effort")!;
 		expect(chip.p).toMatchObject({ actions: { click: "thinking.cycle" } });
 		expect(nodes(chip).find(n => n.k === "meter")?.p).toMatchObject({ value: 0.75, style: "blocks", steps: 4 });
 		expect(nodes(chip).find(n => n.k === "text")?.p).toMatchObject({ text: "high" });
@@ -102,8 +105,11 @@ describe("native composer", () => {
 		running = true;
 		const busy = editor.describe(cx);
 		expect(busy.p).toMatchObject({ tone: "pending" });
-		expect(byRole(busy, "omp.composer.send")).toBeUndefined();
-		expect(byRole(busy, "omp.composer.stop")?.p).toMatchObject({ actions: { click: "interrupt" }, tone: "error" });
+		expect(byRole(busy, "ultraworkers.composer.send")).toBeUndefined();
+		expect(byRole(busy, "ultraworkers.composer.stop")?.p).toMatchObject({
+			actions: { click: "interrupt" },
+			tone: "error",
+		});
 
 		editor.handleNativeEvent({ type: "action", key: "bar/effort", act: "thinking.cycle", mods: [] });
 		editor.handleNativeEvent({ type: "action", key: "bar/stop", act: "interrupt", mods: [] });
@@ -123,14 +129,14 @@ describe("native composer", () => {
 	});
 
 	it("keeps the effort chip at `off` with an empty meter so a click can turn thinking back on", () => {
-		const chip = byRole(composer({ running: false, thinking: "off" }).describe(cx), "omp.composer.effort")!;
+		const chip = byRole(composer({ running: false, thinking: "off" }).describe(cx), "ultraworkers.composer.effort")!;
 		expect(chip.p).toMatchObject({ actions: { click: "thinking.cycle" } });
 		expect(nodes(chip).find(n => n.k === "meter")?.p).toMatchObject({ value: 0 });
 		expect(nodes(chip).find(n => n.k === "text")?.p).toMatchObject({ text: "off" });
 	});
 
 	it("omits the effort chip when the model has no thinking", () => {
-		expect(byRole(composer({ running: false }).describe(cx), "omp.composer.effort")).toBeUndefined();
+		expect(byRole(composer({ running: false }).describe(cx), "ultraworkers.composer.effort")).toBeUndefined();
 	});
 });
 
@@ -146,7 +152,7 @@ describe("native working row", () => {
 		const first = row.c![0] as NativeNode;
 		expect(first.k).toBe("meter");
 		expect(first.p).toMatchObject({ value: 0.75, style: "ring" });
-		const stop = byRole(row, "omp.working.stop")!;
+		const stop = byRole(row, "ultraworkers.working.stop")!;
 		expect(stop.p).toMatchObject({ title: "Cancel  esc", actions: { click: "interrupt" } });
 
 		const plain = describeWorkingRow(spec, context([]), 2_000);
@@ -160,7 +166,7 @@ describe("native working row", () => {
 			10,
 		);
 		expect(nodes(row).find(n => n.k === "progress")?.p).toEqual({ value: null });
-		expect(byRole(row, "omp.working.stop")).toBeUndefined();
+		expect(byRole(row, "ultraworkers.working.stop")).toBeUndefined();
 	});
 });
 
@@ -177,13 +183,13 @@ describe("native queued messages", () => {
 		);
 		const pills = (band.describe().c ?? []).filter(isNode);
 		expect(pills).toHaveLength(3);
-		const counts = pills.map(pill => byRole(pill, "omp.queue.count")?.p);
-		expect(counts).toEqual([{ text: "3", role: "omp.queue.count" }, undefined, undefined]);
+		const counts = pills.map(pill => byRole(pill, "ultraworkers.queue.count")?.p);
+		expect(counts).toEqual([{ text: "3", role: "ultraworkers.queue.count" }, undefined, undefined]);
 		band.handleNativeEvent({ type: "action", key: "x/edit", act: "queue.edit", mods: [] });
 		expect(onEdit).toHaveBeenCalledTimes(1);
 
 		const single = new QueuedMessagesBand([{ label: "Steering", messages: ["only"] }], "alt+up", onEdit);
-		expect(byRole(single.describe(), "omp.queue.count")).toBeUndefined();
+		expect(byRole(single.describe(), "ultraworkers.queue.count")).toBeUndefined();
 	});
 });
 
@@ -249,30 +255,30 @@ describe("native composer without a status strip", () => {
 			const { dock } = composer.describeSurface();
 			expect(dock).toEqual([composer.editor]);
 			const described = composer.editor.describe(cx);
-			expect(nodes(described).some(n => n.p !== undefined && "role" in n.p && n.p.role === "omp.status")).toBe(
-				false,
-			);
+			expect(
+				nodes(described).some(n => n.p !== undefined && "role" in n.p && n.p.role === "ultraworkers.status"),
+			).toBe(false);
 
 			// The context hairline leads the composer; the bar closes it.
 			const [first] = (described.c ?? []).filter(isNode);
-			expect(first).toMatchObject({ k: "meter", p: { role: "omp.composer.context", style: "bar" } });
-			const bar = byRole(described, "omp.composer.bar")!;
+			expect(first).toMatchObject({ k: "meter", p: { role: "ultraworkers.composer.context", style: "bar" } });
+			const bar = byRole(described, "ultraworkers.composer.bar")!;
 			expect(
 				(bar.c ?? []).filter(isNode).map(n => (n.p !== undefined && "role" in n.p ? n.p.role : undefined)),
 			).toEqual([
-				"omp.composer.model",
-				"omp.composer.effort",
-				"omp.composer.extras",
-				"omp.composer.usage",
-				"omp.composer.send",
+				"ultraworkers.composer.model",
+				"ultraworkers.composer.effort",
+				"ultraworkers.composer.extras",
+				"ultraworkers.composer.usage",
+				"ultraworkers.composer.send",
 			]);
-			const model = byRole(bar, "omp.composer.model")!;
+			const model = byRole(bar, "ultraworkers.composer.model")!;
 			expect(model.p).toMatchObject({ actions: { click: "status.model" } });
 			expect(nodes(model).map(n => n.k)).toEqual(["row", "icon", "text", "icon"]);
 			// Path and branch belong to Tern's pane header; the rest stays as a fact.
-			const extras = byRole(bar, "omp.composer.extras")!;
+			const extras = byRole(bar, "ultraworkers.composer.extras")!;
 			expect((extras.c ?? []).filter(isNode).map(n => n.key)).toEqual(["hostname"]);
-			expect(byRole(bar, "omp.composer.usage")?.p).toMatchObject({ actions: { click: "status.context" } });
+			expect(byRole(bar, "ultraworkers.composer.usage")?.p).toMatchObject({ actions: { click: "status.context" } });
 		} finally {
 			composer.stop();
 		}

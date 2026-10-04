@@ -711,7 +711,7 @@ describe("InputController image paste into an image-accepting prompt", () => {
 	beforeEach(async () => {
 		settingsState = beginSettingsTest();
 		await Settings.init({ inMemory: true });
-		tempDir = await TempDir.create("@omp-prompt-image-");
+		tempDir = await TempDir.create("@ultraworkers-prompt-image-");
 	});
 
 	afterEach(async () => {

@@ -33,7 +33,7 @@ describe.each([false, true])("AgentSession compaction cancellation source (exper
 	let session: AgentSession;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-compaction-cancellation-");
+		tempDir = TempDir.createSync("@ultraworkers-compaction-cancellation-");
 		vi.spyOn(globalThis, "fetch").mockRejectedValue(
 			new Error("Network access is forbidden in compaction cancellation tests"),
 		);

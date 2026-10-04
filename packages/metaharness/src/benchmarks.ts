@@ -1,7 +1,7 @@
 /** Benchmark adapters normalize native artifacts into manager runs and traces. */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { aggregate, readJobResult, readTrials } from "./runner";
+import { aggregate, readJobResult, readTrials, transcriptFilename } from "./runner";
 import type { BenchmarkKind } from "./store";
 
 /** Describes a benchmark metric so storage and UI do not hard-code benchmark semantics. */
@@ -238,10 +238,10 @@ function readSnapcompactSnapshot(jobDir: string): BenchmarkSnapshot {
 }
 
 /** Read and normalize the latest artifacts for a benchmark run. */
-export function readBenchmarkSnapshot(benchmark: BenchmarkKind, jobDir: string): BenchmarkSnapshot {
+export function readBenchmarkSnapshot(benchmark: BenchmarkKind, jobDir: string, agent: string): BenchmarkSnapshot {
 	if (benchmark === "edit") return readEditSnapshot(jobDir);
 	if (benchmark === "snapcompact") return readSnapcompactSnapshot(jobDir);
-	const trials = readTrials(jobDir);
+	const trials = readTrials(jobDir, agent);
 	const job = readJobResult(jobDir);
 	const totals = aggregate(trials, job, job?.nTotal ?? trials.length);
 	return {
@@ -253,7 +253,7 @@ export function readBenchmarkSnapshot(benchmark: BenchmarkKind, jobDir: string):
 			costUsd: trial.costUsd,
 			durationMs: trial.durationMs,
 			detail: trial.detail,
-			tracePath: path.join(trial.name, "agent", "omp.txt"),
+			tracePath: path.join(trial.name, "agent", transcriptFilename(agent)),
 		})),
 		total: totals.total,
 		done: totals.done,

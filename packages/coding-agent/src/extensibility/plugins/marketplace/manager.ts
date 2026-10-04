@@ -30,7 +30,7 @@ import {
 	writeInstalledPluginsRegistry,
 	writeMarketplacesRegistry,
 } from "./registry";
-import { resolvePluginSource, validatePluginSource } from "./source-resolver";
+import { assertPinnedSource, resolvePluginSource, validatePluginSource } from "./source-resolver";
 import type {
 	InstalledPluginEntry,
 	InstalledPluginSummary,
@@ -38,6 +38,7 @@ import type {
 	MarketplaceCatalog,
 	MarketplacePluginEntry,
 	MarketplaceRegistryEntry,
+	PluginSource,
 } from "./types";
 import { buildPluginId, nameSegmentCollisionKey, parsePluginId } from "./types";
 
@@ -323,10 +324,69 @@ export class MarketplaceManager {
 	async installPlugin(
 		name: string,
 		marketplace: string,
-		options?: { force?: boolean; scope?: "user" | "project" },
+		options?: {
+			force?: boolean;
+			scope?: "user" | "project";
+			restore?: boolean;
+			respectPin?: boolean;
+			unpin?: boolean;
+		},
 	): Promise<InstalledPluginEntry> {
 		const { scope, registryPath, catalog, marketplaceClonePath, pluginEntry, pluginId, existing } =
 			await this.#validateInstall(name, marketplace, options);
+
+		/** True when the source names a ref or a sha — i.e. the user pinned it. */
+		function hasExplicitRef(source: PluginSource): boolean {
+			if (typeof source === "string") return false;
+			if (source.source === "npm") return source.version !== undefined;
+			return source.ref !== undefined || source.sha !== undefined;
+		}
+
+		/** The ref a user would recognise in their own marketplace file. */
+		function describeRef(source: PluginSource): string {
+			// Split rather than combined: `typeof x === "string" || x.kind === "npm"`
+			// does not narrow on the right-hand branch, and the error that produces
+			// reads like the union is wrong rather than like the condition is.
+			if (typeof source === "string") return source;
+			if (source.source === "npm") return source.version ?? "";
+			return source.sha ?? source.ref ?? "";
+		}
+
+		// The pin gate, and only for restore. An explicit install is the user saying
+		// "give me whatever this ref resolves to now", so a mutable source is exactly
+		// what they asked for. A restore is the opposite: nobody re-asked, the
+		// registry just lost its copy, and re-fetching a branch would silently put
+		// different bytes where the reviewed commit used to be.
+		//
+		// Placed here rather than at the caller because this is the first point where
+		// the catalog entry — and therefore the declared source — exists. The caller
+		// that discovered the orphan holds only a bare plugin name.
+		if (options?.restore) assertPinnedSource(pluginEntry.source, name);
+
+		// The pin an upgrade must not silently break. Deliberately NOT the same test
+		// as `restore`: a restore has to match the bytes that were reviewed, so it
+		// demands a 40-hex sha. An upgrade only has to avoid quietly changing what
+		// the user typed — and `#main` is something they typed. pi's package manager
+		// makes the same split: `pinned = Boolean(args.ref)`, auto-update runs only
+		// when `!pinned`.
+		if (options?.respectPin && hasExplicitRef(pluginEntry.source)) {
+			const ref = describeRef(pluginEntry.source);
+			if (!options?.unpin) {
+				// The override is per-command, not per-plugin: nothing records that it was
+				// used, so the next plain upgrade meets this wall again. Saying so is the
+				// difference between a user who knows to keep passing --force and one who
+				// passes it once, succeeds, and is surprised by the same error later.
+				throw new Error(
+					`Cannot upgrade "${name}": its source is pinned to "${ref}", so an upgrade would move it to ` +
+						`whatever that ref resolves to now. Either drop the "${ref}" from the marketplace source and ` +
+						`reinstall, or pass --force on every upgrade to keep following "${ref}".`,
+				);
+			}
+			// The gate refuses by default and the override leaves no state, so this warn
+			// is the only durable trace that a pinned plugin was moved anyway. Without it
+			// the next upgrade fails with no hint that --force was ever used here.
+			logger.warn("Plugin upgrade overrode a pinned source", { plugin: name, ref });
+		}
 
 		// 4. Resolve source path.
 
@@ -879,8 +939,28 @@ export class MarketplaceManager {
 		return { delisted, unversioned };
 	}
 
+	/**
+	 * Restore a plugin whose installed copy went missing, refusing a mutable source.
+	 *
+	 * Distinct from {@link installPlugin} on one axis only: whether the source must be
+	 * pinned. `installPlugin` is a user request and accepts whatever a tag or branch
+	 * resolves to; a restore is not a request at all, so it may only put back the
+	 * commit the registry recorded.
+	 */
+	async restorePlugin(
+		name: string,
+		marketplace: string,
+		options?: { scope?: "user" | "project" },
+	): Promise<InstalledPluginEntry> {
+		return this.installPlugin(name, marketplace, { force: true, restore: true, ...options });
+	}
+
 	// Re-install a specific plugin at the latest catalog version (force-overwrites).
-	async upgradePlugin(pluginId: string, scope?: "user" | "project"): Promise<InstalledPluginEntry> {
+	async upgradePlugin(
+		pluginId: string,
+		scope?: "user" | "project",
+		options?: { force?: boolean },
+	): Promise<InstalledPluginEntry> {
 		const parsed = parsePluginId(pluginId);
 		if (!parsed) {
 			throw new Error(`Invalid plugin ID: "${pluginId}". Expected "name@marketplace".`);
@@ -911,12 +991,20 @@ export class MarketplaceManager {
 			resolvedScope = "user";
 		}
 
-		return this.installPlugin(parsed.name, parsed.marketplace, { force: true, scope: resolvedScope });
+		return this.installPlugin(parsed.name, parsed.marketplace, {
+			force: true,
+			scope: resolvedScope,
+			respectPin: true,
+			// An explicit --force is the user saying "move it anyway". It is not a
+			// silent skip: the install below re-resolves and writes the new source, so
+			// the override is recorded in the registry like any other install.
+			unpin: options?.force ?? false,
+		});
 	}
 
 	// Upgrade a plugin across all scopes where it is installed.
 	// Returns one entry per scope upgraded (0–2 entries).
-	async upgradePluginAcrossScopes(pluginId: string): Promise<InstalledPluginEntry[]> {
+	async upgradePluginAcrossScopes(pluginId: string, options?: { force?: boolean }): Promise<InstalledPluginEntry[]> {
 		const parsed = parsePluginId(pluginId);
 		if (!parsed) {
 			throw new Error(`Invalid plugin ID: "${pluginId}". Expected "name@marketplace".`);
@@ -933,12 +1021,26 @@ export class MarketplaceManager {
 
 		const results: InstalledPluginEntry[] = [];
 
+		// `respectPin` here for the same reason as in `upgradePlugin`: this is the path
+		// taken when the user does NOT pass --scope, so it is the default invocation.
+		// Omitting it left `ultraworkers plugin upgrade <id>` free to move a pinned source while
+		// the same command with --scope refused — the gate would have held only on the
+		// less common branch.
+		const pin = { respectPin: true, unpin: options?.force ?? false };
 		if (inProject) {
-			const entry = await this.installPlugin(parsed.name, parsed.marketplace, { force: true, scope: "project" });
+			const entry = await this.installPlugin(parsed.name, parsed.marketplace, {
+				force: true,
+				scope: "project",
+				...pin,
+			});
 			results.push(entry);
 		}
 		if (inUser) {
-			const entry = await this.installPlugin(parsed.name, parsed.marketplace, { force: true, scope: "user" });
+			const entry = await this.installPlugin(parsed.name, parsed.marketplace, {
+				force: true,
+				scope: "user",
+				...pin,
+			});
 			results.push(entry);
 		}
 

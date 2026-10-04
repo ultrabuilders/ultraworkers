@@ -56,7 +56,7 @@ describe("InteractiveMode startup header after the terminal reports a light back
 		await themeModule.initTheme(false, undefined, undefined, "dark", "light");
 
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-interactive-mode-startup-header-theme-");
+		tempDir = TempDir.createSync("@ultraworkers-interactive-mode-startup-header-theme-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

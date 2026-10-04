@@ -108,7 +108,7 @@ describe("AgentSession plan-mode convergence", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		authDir = TempDir.createSync("@pi-plan-converge-auth-");
+		authDir = TempDir.createSync("@ultraworkers-plan-converge-auth-");
 		authStorage = await AuthStorage.create(authDir.join("auth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage, authDir.join("models.yml"));
@@ -120,7 +120,7 @@ describe("AgentSession plan-mode convergence", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-plan-converge-");
+		tempDir = TempDir.createSync("@ultraworkers-plan-converge-");
 	});
 
 	afterEach(async () => {
@@ -431,7 +431,7 @@ describe("AgentSession plan-mode convergence", () => {
 
 		const chromeTool = makeMcpTool("mcp__chrome_devtools_list_pages", "discoverable");
 		const contextTool = makeMcpTool("mcp__context_query_docs", "essential");
-		await harness.session.refreshMCPTools([chromeTool, contextTool]);
+		await harness.session.refreshMCPTools([chromeTool, contextTool], "connect");
 		expect(harness.session.getSelectedMCPToolNames()).toEqual([
 			"mcp__context_query_docs",
 			"mcp__chrome_devtools_list_pages",
@@ -474,7 +474,7 @@ describe("AgentSession plan-mode convergence", () => {
 		await entered.promise;
 
 		const chromeTool = makeMcpTool("mcp__chrome_devtools_list_pages", "discoverable");
-		const refresh = harness.session.refreshMCPTools([chromeTool]);
+		const refresh = harness.session.refreshMCPTools([chromeTool], "connect");
 		const planPath = resolveLocalUrlToPath("local://queued-mcp-plan.md", {
 			getArtifactsDir: () => harness.session.sessionManager.getArtifactsDir(),
 			getSessionId: () => harness.session.sessionManager.getSessionId(),
@@ -502,7 +502,7 @@ describe("AgentSession plan-mode convergence", () => {
 		await harness.session.waitForIdle();
 
 		const chromeTool = makeMcpTool("mcp__chrome_devtools_list_pages", "discoverable", "write");
-		await harness.session.refreshMCPTools([chromeTool]);
+		await harness.session.refreshMCPTools([chromeTool], "connect");
 		const registeredTool = harness.session.getToolByName("mcp__chrome_devtools_list_pages");
 		expect(registeredTool).toBeDefined();
 

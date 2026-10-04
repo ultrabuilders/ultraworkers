@@ -26,12 +26,12 @@ import type {
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 async function tmpFile(name: string): Promise<string> {
-	return join(await mkdtemp(join(tmpdir(), "omp-fmt-")), name);
+	return join(await mkdtemp(join(tmpdir(), "ultraworkers-fmt-")), name);
 }
 
 /** The exporter reads the session file to collect sub-sessions, so it must exist. */
 async function sessionFile(): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), "omp-fmt-"));
+	const dir = await mkdtemp(join(tmpdir(), "ultraworkers-fmt-"));
 	const file = join(dir, "s1.jsonl");
 	await Bun.write(file, "");
 	return file;

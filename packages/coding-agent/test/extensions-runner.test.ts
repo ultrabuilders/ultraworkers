@@ -32,6 +32,7 @@ import type {
 } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
 import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/wrapper";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
+import { APPROVAL_ENTRY_TYPE, type ApprovalEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { getProjectAgentDir, logger, TempDir } from "@oh-my-pi/pi-utils";
 import { createAssistantMessage } from "./helpers/agent-session-setup";
@@ -49,7 +50,7 @@ describe("ExtensionRunner", () => {
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@pi-runner-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-runner-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
@@ -60,7 +61,7 @@ describe("ExtensionRunner", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-runner-test-");
+		tempDir = TempDir.createSync("@ultraworkers-runner-test-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		sessionManager = SessionManager.inMemory();
@@ -795,15 +796,27 @@ describe("ExtensionRunner", () => {
 			);
 			const controller = new AbortController();
 			const message = createAssistantMessage("original");
-			const started = new Promise<void>(resolve => {
-				const watcher = fs.watch(tempDir.path(), (_eventType, filename) => {
-					if (filename?.toString() !== path.basename(startedPath)) return;
-					watcher.close();
-					resolve();
-				});
-			});
 			const emission = runner.emitAssistantMessage(message, controller.signal);
-			await started;
+			// Poll for the marker rather than `fs.watch`ing for it. The watch made this
+			// test's outcome depend on FSEvents delivery latency, and a delayed or
+			// coalesced notification under full-suite load pushed the wait past the 30s
+			// handler timeout — so the test could report a hang as though the runner had
+			// mis-sequenced the handlers.
+			//
+			// The poll asserts the same precondition the watch did (handler 2 reached its
+			// `writeFileSync`), with a bounded deadline so a genuine regression fails with
+			// a message instead of timing out.
+			//
+			// What actually stops handler 3 is NOT the `signal?.aborted` check in the
+			// dispatch loop: handler 2 parks on a promise that only an abort-race can
+			// settle, so the loop never advances to handler 3 in the first place. Removing
+			// the loop's abort checks outright leaves this test green — verified. The
+			// contract it protects is that an abort SETTLES a parked handler, so the
+			// dispatch loop resumes and stops.
+			const deadline = performance.now() + 10_000;
+			while (performance.now() < deadline && !(await Bun.file(startedPath).exists())) {
+				await Bun.sleep(10);
+			}
 			expect(await Bun.file(startedPath).text()).toBe("started");
 			controller.abort(new Error("cancelled"));
 			await expect(emission).resolves.toEqual([{ type: "text", text: "accepted" }]);
@@ -1911,6 +1924,7 @@ describe("ExtensionRunner", () => {
 					expect(await decision).toEqual({
 						block: true,
 						reason: `Extension ${extensionPath} timed out after ${EXTENSION_HANDLER_TIMEOUT_MS}ms`,
+						kind: "hook-failed",
 					});
 				}
 			} finally {
@@ -2207,6 +2221,7 @@ describe("ExtensionRunner", () => {
 				expect(await decision).toEqual({
 					block: true,
 					reason: `Extension ${extensionPath} timed out after 10ms`,
+					kind: "hook-failed",
 				});
 			} finally {
 				vi.useRealTimers();
@@ -2547,6 +2562,11 @@ describe("ExtensionRunner", () => {
 					// and it now reads that off the context rather than comparing
 					// against a sentinel.
 					hasUI: true,
+					// A test UI that claims a frame it does not have: this fixture mounts
+					// nothing, so claiming `true` keeps it honest about being a stub for
+					// the flag while `canMount` — the query an extension author uses to
+					// decide whether mounting will work — correctly answers `false`.
+					canMount: () => false,
 					setWorkingIndicator: () => {},
 					select,
 					confirm: async () => false,
@@ -2636,6 +2656,10 @@ describe("ExtensionRunner", () => {
 			expect(select).toHaveBeenCalledWith(expect.stringContaining("Allow tool: dangerous_tool"), [
 				"Approve",
 				"Deny",
+				// The always option rides on the same prompt, after the two that were
+				// already there. Listed explicitly rather than loosely so adding a fourth
+				// choice later has to be a decision someone makes.
+				"Approve always",
 			]);
 			delete globalState.__approvalEvents;
 		});
@@ -2802,6 +2826,136 @@ describe("ExtensionRunner", () => {
 				{ type: "tool_approval_resolved", approved: false, reason: "denied by user" },
 			]);
 			delete globalState.__deniedApprovalEvents;
+		});
+
+		// The local interactive gate is a different transport from the ACP one but the same
+		// decision: `ApprovalEntry` exists so that after a crash the log can answer "who
+		// approved this". A single record at either end cannot — one written at the answer
+		// cannot tell a denial from a process that died with the prompt open.
+		const approvalEntries = (): ApprovalEntry[] =>
+			sessionManager.getEntries().filter((entry): entry is ApprovalEntry => entry.type === APPROVAL_ENTRY_TYPE);
+		const runLocalApproval = async (
+			toolCallId: string,
+			choice: (title: string, options: string[]) => Promise<string | undefined>,
+		): Promise<void> => {
+			const result = await loadTestExtensions();
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir.path(),
+				sessionManager,
+				modelRegistry,
+			);
+			initializeRunner(runner, choice);
+			await (new ExtensionToolWrapper(approvalTool, runner) as ExtensionToolWrapper<any>).execute(
+				toolCallId,
+				{},
+				undefined,
+				undefined,
+				{
+					sessionManager,
+					modelRegistry,
+					model: undefined,
+					isIdle: () => true,
+					hasQueuedMessages: () => false,
+					abort: () => {},
+					settings: Settings.isolated({ "tools.approvalMode": "always-ask" }),
+				},
+			);
+		};
+
+		it("records both halves of an interactive approval the user granted", async () => {
+			await runLocalApproval("call-local-approve", async () => "Approve");
+
+			const entries = approvalEntries();
+			expect(entries.map(e => e.phase)).toEqual(["asked", "answered"]);
+			// `source` names the transport rather than leaving a comment to: a reader
+			// comparing this row against the ACP gate's `source: "acp"` can see which
+			// gate produced the record without reading either implementation.
+			expect(entries.every(e => e.source === "user")).toBe(true);
+			expect(entries.every(e => e.toolName === "dangerous_tool")).toBe(true);
+			expect(entries[1]?.decision).toBe("approved");
+		});
+
+		it("records the answer as denied when the user refuses", async () => {
+			// The other terminal branch. Without this the pair could satisfy the row above
+			// while a refusal — the answer that most needs to be distinguishable from a
+			// crash — went unrecorded.
+			await expect(runLocalApproval("call-local-deny", async () => "Deny")).rejects.toThrow(
+				"Tool call denied by user",
+			);
+
+			const entries = approvalEntries();
+			expect(entries.map(e => e.phase)).toEqual(["asked", "answered"]);
+			expect(entries[1]?.decision).toBe("denied");
+		});
+
+		it("records the pair even when nothing subscribes to the approval events", async () => {
+			const result = await loadTestExtensions();
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir.path(),
+				sessionManager,
+				modelRegistry,
+			);
+			// Precondition of this row, stated so the row cannot pass for the wrong reason:
+			// the recorder must be doing work the event bus knows nothing about.
+			expect(runner.hasHandlers("tool_approval_requested")).toBe(false);
+			expect(runner.hasHandlers("tool_approval_resolved")).toBe(false);
+			initializeRunner(runner, async () => "Approve");
+
+			await (new ExtensionToolWrapper(approvalTool, runner) as ExtensionToolWrapper<any>).execute(
+				"call-local-unwatched",
+				{},
+				undefined,
+				undefined,
+				{
+					sessionManager,
+					modelRegistry,
+					model: undefined,
+					isIdle: () => true,
+					hasQueuedMessages: () => false,
+					abort: () => {},
+					settings: Settings.isolated({ "tools.approvalMode": "always-ask" }),
+				},
+			);
+
+			// Moving the recorder behind the `hasApprovalHandlers` guard would silently
+			// satisfy every other row in this file, because they all register a handler.
+			expect(approvalEntries().map(e => e.phase)).toEqual(["asked", "answered"]);
+		});
+
+		it("leaves an unanswered question open when the prompt never returns", async () => {
+			const result = await loadTestExtensions();
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir.path(),
+				sessionManager,
+				modelRegistry,
+			);
+			initializeRunner(runner, () => new Promise<string | undefined>(() => {}));
+
+			const execution = (new ExtensionToolWrapper(approvalTool, runner) as ExtensionToolWrapper<any>)
+				.execute("call-local-open", {}, undefined, undefined, {
+					sessionManager,
+					modelRegistry,
+					model: undefined,
+					isIdle: () => true,
+					hasQueuedMessages: () => false,
+					abort: () => {},
+					settings: Settings.isolated({ "tools.approvalMode": "always-ask" }),
+				})
+				.catch(() => {});
+			await Promise.race([execution, Bun.sleep(60)]);
+
+			// The absence is the whole point: a reader must be able to tell "refused" from
+			// "still open when the process died", which a synthesized `answered` would
+			// erase. Writing one on the way out is the mutation this row exists to kill.
+			const entries = approvalEntries();
+			expect(entries.some(e => e.phase === "asked")).toBe(true);
+			expect(entries.some(e => e.phase === "answered")).toBe(false);
 		});
 		it("emits resolved false when the approval prompt throws", async () => {
 			const events: Array<{ type: string; approved?: boolean; reason?: string }> = [];
@@ -4543,21 +4697,36 @@ describe("ExtensionRunner", () => {
 				path: extensionPath,
 				resolvedPath: extensionPath,
 				registeredProviders: [],
+				surfaces: [],
+				modes: [],
 				toolRegistrationListeners: new Set(),
 				handlers: new Map([["input", [async (...args: unknown[]) => handler(args[0] as InputEvent)]]]),
 				tools: new Map(),
 				assistantThinkingRenderers: [],
 				fileWriteFallbackHandlers: [],
+				peerTransports: [],
+				peerLockBackends: [],
+				peerFences: [],
 				fileDeleteFallbackHandlers: [],
+				compactionProtections: [],
+				contextTransforms: [],
+				configReloadDisposers: [],
 				messageRenderers: new Map(),
+				entryRenderers: new Map(),
 
 				outputFormats: new Map(),
 
 				toolNameResolvers: [],
+				usageReporters: [],
+				diagnostics: [],
+				hostRenderStrategies: [],
+				copyTargetProviders: [],
 				composerShapes: new Map(),
 				commands: new Map(),
 				flags: new Map(),
 				shortcuts: new Map(),
+				doubleEscapeActions: [],
+				settingIds: [],
 			};
 			return new ExtensionRunner([extension], new ExtensionRuntime(), tempDir.path(), sessionManager, modelRegistry);
 		};

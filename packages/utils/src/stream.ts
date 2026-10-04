@@ -35,8 +35,12 @@ export async function* readLines(stream: ReadableStream<Uint8Array>, signal?: Ab
 	}
 }
 
-export async function* readJsonl<T>(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<T> {
-	const buffer = new ConcatSink();
+export async function* readJsonl<T>(
+	stream: ReadableStream<Uint8Array>,
+	signal?: AbortSignal,
+	options: { maxBytes?: number } = {},
+): AsyncGenerator<T> {
+	const buffer = new ConcatSink(options);
 	const source = abortableSource(stream, signal);
 	try {
 		for await (const chunk of source) {
@@ -64,6 +68,23 @@ export async function* readJsonl<T>(stream: ReadableStream<Uint8Array>, signal?:
 }
 
 /**
+ * A framed record grew past the reader's byte cap.
+ *
+ * Carries the limit so a caller can report it without re-deriving the number.
+ * The buffer is already cleared by the time this is thrown, so a caller that
+ * chooses to continue sees a clean stream rather than a poisoned one.
+ */
+export class StreamBufferOverflowError extends Error {
+	readonly maxBytes: number;
+
+	constructor(maxBytes: number) {
+		super(`stream record exceeds ${maxBytes} bytes`);
+		this.name = "StreamBufferOverflowError";
+		this.maxBytes = maxBytes;
+	}
+}
+
+/**
  * Amortized byte accumulator for chunked stream readers.
  *
  * Holds the unconsumed tail of a stream in a single growing `Buffer` so that
@@ -76,6 +97,24 @@ export class ConcatSink {
 	#space?: Buffer;
 	#length = 0;
 	#skipLeadingLf = false;
+	readonly #maxBytes?: number;
+
+	/**
+	 * @param options.maxBytes Cap on the unconsumed tail. Exceeding it clears the
+	 *   buffer and throws {@link StreamBufferOverflowError}, so a peer that never
+	 *   sends a delimiter cannot grow the buffer without bound. Omitted by
+	 *   default, which leaves every existing caller byte-identical.
+	 */
+	constructor(options: { maxBytes?: number } = {}) {
+		this.#maxBytes = options.maxBytes;
+	}
+
+	/** Fail closed: a partial record is discarded rather than parsed. */
+	#enforceCap(nextLength: number) {
+		if (this.#maxBytes === undefined || nextLength <= this.#maxBytes) return;
+		this.#length = 0;
+		throw new StreamBufferOverflowError(this.#maxBytes);
+	}
 
 	#ensureCapacity(size: number): Buffer {
 		const space = this.#space;
@@ -93,6 +132,7 @@ export class ConcatSink {
 		const n = chunk.length;
 		if (!n) return;
 		const offset = this.#length;
+		this.#enforceCap(offset + n);
 		const space = this.#ensureCapacity(offset + n);
 		space.set(chunk, offset);
 		this.#length += n;
@@ -104,6 +144,7 @@ export class ConcatSink {
 			this.#length = 0;
 			return;
 		}
+		this.#enforceCap(n);
 		const space = this.#ensureCapacity(n);
 		space.set(chunk, 0);
 		this.#length = n;

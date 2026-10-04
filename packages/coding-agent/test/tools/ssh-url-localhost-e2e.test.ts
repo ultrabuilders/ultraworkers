@@ -40,7 +40,7 @@ const sh = async (script: string) => {
 
 describe.skipIf(!SSH_OK)("ssh:// handler against a real localhost ssh", () => {
 	const handler = new SshProtocolHandler();
-	const TMP = `/tmp/omp-ssh-e2e-${process.pid}`;
+	const TMP = `/tmp/ultraworkers-ssh-e2e-${process.pid}`;
 
 	beforeAll(async () => {
 		await sh(`mkdir -p ${TMP}`);
@@ -87,7 +87,7 @@ describe.skipIf(!SSH_OK)("ssh:// handler against a real localhost ssh", () => {
 		const back = await handler.resolve(parseInternalUrl(`ssh://localhost${dest}`));
 		expect(back.content).toBe("hi\n\t!\n");
 		// The uniquely-named temp must have been renamed away (no leftovers).
-		const leftovers = await Bun.$`ssh -o BatchMode=yes localhost ls ${TMP} | grep -c omp-tmp || true`.text();
+		const leftovers = await Bun.$`ssh -o BatchMode=yes localhost ls ${TMP} | grep -c ultraworkers-tmp || true`.text();
 		expect(leftovers.trim()).toBe("0");
 	});
 
@@ -169,7 +169,7 @@ describe.skipIf(!SSH_OK)("ssh:// handler against a real localhost ssh", () => {
 });
 
 describe.skipIf(!SSH_OK)("ssh:// through the real read/grep/write tools (localhost)", () => {
-	const TMP = `/tmp/omp-ssh-tools-e2e-${process.pid}`;
+	const TMP = `/tmp/ultraworkers-ssh-tools-e2e-${process.pid}`;
 
 	function createSession(): ToolSession {
 		return {

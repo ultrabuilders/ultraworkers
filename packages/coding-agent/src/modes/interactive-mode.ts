@@ -53,6 +53,7 @@ import { isInsideTerminalMultiplexer } from "@oh-my-pi/pi-tui/terminal-capabilit
 import {
 	$env,
 	adjustHsv,
+	APP_NAME,
 	formatDuration,
 	formatNumber,
 	getProjectDir,
@@ -70,7 +71,7 @@ import type { CollabGuestLink } from "../collab/guest";
 import { CollabController } from "../collab/controller";
 import type { CollabHost } from "../collab/host";
 import { formatKeyHint, KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
-import { appKey, editorKey } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
+import { appKey, editorKey, formatKeybindingConflicts } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
 import { formatModelString, type ResolvedModelRoleValue } from "../config/model-resolver";
 import { isSettingsInitialized, Settings, settings } from "../config/settings";
 import { clearClaudePluginRootsCache } from "../discovery/helpers";
@@ -112,6 +113,8 @@ import { onDownloadActivity } from "../downloads/activity";
 import { DownloadActivityHud, JudgmentBatchProgressHud } from "./progress-hud";
 import { autosaveApprovedPlan, planSaveFileName } from "../plan-mode/plan-autosave";
 import { resolvePlanModelTransition } from "../plan-mode/model-transition";
+import { PLAN_MODE_WRITE_POLICY } from "../plan-mode/write-policy";
+import { modeRegistry, type ModeDefinition } from "./mode-registry";
 import guidedGoalInterviewPrompt from "../prompts/goals/guided-goal-interview.md" with { type: "text" };
 import planFilenamePrompt from "../prompts/system/plan-filename.md" with { type: "text" };
 import planModeApprovedPrompt from "../prompts/system/plan-mode-approved.md" with { type: "text" };
@@ -228,7 +231,7 @@ import { EditorTopGap } from "@oh-my-pi/pi-tui/prompt/editor-top-gap";
 import { ErrorBannerComponent } from "@oh-my-pi/pi-tui/overlays/error-banner";
 import type { EvalExecutionComponent } from "@oh-my-pi/pi-tui/chat/eval-execution";
 import type { HookEditorComponent } from "@oh-my-pi/pi-tui/overlays/hook-editor";
-import type { HookInputComponent } from "@oh-my-pi/pi-tui/overlays/hook-input";
+import type { OverlayPanel } from "@oh-my-pi/pi-tui/chrome/overlay-box";
 import type { HookSelectorComponent, HookSelectorSlider } from "@oh-my-pi/pi-tui/overlays/hook-selector";
 import { type PlanReviewAnnotationState, PlanReviewOverlay } from "@oh-my-pi/pi-tui/overlays/plan-review-overlay";
 import { PlanSaveOverlay, type PlanSaveOverlayResult } from "@oh-my-pi/pi-tui/overlays/plan-save-overlay";
@@ -247,6 +250,7 @@ import {
 	PINNED_HUD_TOGGLE_ID,
 } from "@oh-my-pi/pi-tui/prompt/composer";
 import { setMagicKeywords } from "@oh-my-pi/pi-tui/prompt/magic-keywords";
+import { bindKeybindingsToConfigReload } from "./keybindings-reload";
 import { MAGIC_KEYWORDS } from "./magic-keywords";
 import { sharedComposerCache } from "@oh-my-pi/pi-tui/prompt/composer-cache";
 import { BtwController } from "./controllers/btw-controller";
@@ -312,6 +316,7 @@ import type {
 	InteractiveModeInitOptions,
 	InteractiveSelectorDialogOptions,
 	RenderSessionContextOptions,
+	StatusLineEntry,
 	SubmittedUserInput,
 } from "./types";
 import type { TodoItem, TodoPhase } from "@oh-my-pi/pi-tui/tools/todo";
@@ -682,7 +687,7 @@ function describeJobsHud(running: number): NativeNode {
 	return node(
 		"row",
 		{
-			role: "omp.hud.pill",
+			role: "ultraworkers.hud.pill",
 			gap: "xs",
 			align: "center",
 			title: "Background jobs  /jobs",
@@ -756,7 +761,7 @@ class DeferredCommandPreview implements Component {
 				col(this.items, { max: { h: `${this.maxRows}lines` } }),
 				text([span(`${queued} — shown in full in the transcript when the agent pauses`, "dim")]),
 			],
-			{ role: "omp.hud.deferred" },
+			{ role: "ultraworkers.hud.deferred" },
 		);
 		return this.#native;
 	}
@@ -906,7 +911,7 @@ export function describeSubagentHud(sessions: ObservableSession[]): NativeNode {
 			),
 		],
 		{
-			role: "omp.hud.pill",
+			role: "ultraworkers.hud.pill",
 			gap: "xs",
 			align: "center",
 			title: `Agents  ${formatDoubleTap("left")}`,
@@ -1059,6 +1064,14 @@ export class InteractiveMode implements InteractiveModeContext {
 	readonly composer: Composer;
 	ui: TUI;
 	chatContainer: TranscriptContainer;
+	/**
+	 * Anchored container for keyed status notices, mounted directly above the editor.
+	 *
+	 * Kept out of `chatContainer` so a keyed line can be removed without disturbing
+	 * a turn's transcript — a transcript child is not removable once committed, and
+	 * a line that cannot leave is not a notice, it is log spam.
+	 */
+	noticeContainer: Container;
 	pendingMessagesContainer: Container;
 	/** Judge-batch and automatic-download progress rows above the working line. */
 	progressHudContainer: Container;
@@ -1079,6 +1092,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	attachmentChipsContainer: Container;
 	hookWidgetContainerAbove: Container;
 	hookWidgetContainerBelow: Container;
+	extensionHeaderContainer: Container;
+	extensionFooterContainer: Container;
 	statusLine: StatusLineComponent;
 
 	isInitialized = false;
@@ -1256,7 +1271,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				rate,
 				node: row([node("rate", { value: rate, unit: "tok/s" }, undefined, "rate")], {
 					justify: "end",
-					role: "omp.working.idle",
+					role: "ultraworkers.working.idle",
 				}),
 			};
 		}
@@ -1274,7 +1289,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		const memo = this.#hudPillsNative;
 		const empty = this.todoHudNative === undefined && this.subagentContainer.children.length === 0 && running === 0;
 		if (memo && memo.empty === empty && sameItems(memo.children, children)) return memo.node;
-		const described = row(children, { role: "omp.hud", justify: "end", gap: "sm", hidden: empty || undefined });
+		const described = row(children, {
+			role: "ultraworkers.hud",
+			justify: "end",
+			gap: "sm",
+			hidden: empty || undefined,
+		});
 		this.#hudPillsNative = { children, empty, node: described };
 		return described;
 	}
@@ -1295,7 +1315,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			return memo.node;
 		}
 		const parts: NativeChild[] = children.length === 0 ? (slot ? [slot] : []) : children.slice();
-		const hud = parts.length === 0 ? EMPTY_HUD : col(parts, { role: "omp.hud.status" });
+		const hud = parts.length === 0 ? EMPTY_HUD : col(parts, { role: "ultraworkers.hud.status" });
 		this.#statusHudNative = { children: children.slice(), slot, node: hud };
 		return hud;
 	}
@@ -1341,9 +1361,11 @@ export class InteractiveMode implements InteractiveModeContext {
 		return this.#isShuttingDown;
 	}
 	hookSelector: HookSelectorComponent | undefined = undefined;
-	hookInput: HookInputComponent | undefined = undefined;
+	hookInput: OverlayPanel | undefined = undefined;
 	hookEditor: HookEditorComponent | undefined = undefined;
 	lastStatus: StatusNotice | undefined = undefined;
+	/** Keyed status lines, newest last. See {@link StatusLineEntry}. */
+	keyedStatusLines: StatusLineEntry[] = [];
 	fileSlashCommands: Set<string> = new Set();
 	skillCommands: Map<string, Skill> = new Map();
 	oauthManualInput: OAuthManualInputManager = new OAuthManualInputManager();
@@ -1368,6 +1390,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	/** Extension-registered provider factories, applied in registration order (#4919). */
 	#autocompleteProviderFactories: AutocompleteProviderFactory[] = [];
 	#cleanupUnsubscribe?: () => void;
+	/** Withdraws the keybindings-on-config-reload handler registered in `init()`. */
+	#stopKeybindingsReload?: () => void;
 	#signalTeardown?: SessionTeardown;
 	readonly #version: string;
 	readonly #startupChangelog: StartupChangelogSelection | undefined;
@@ -1571,6 +1595,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.session = session;
 		this.sessionManager = session.sessionManager;
 		this.settings = session.settings;
+		// Declared here rather than in `init`: once a field becomes a
+		// registry-backed accessor, its setter calls `setActivation`, which throws
+		// for a mode nobody declared. Construction is the first moment `this`
+		// exists and the last moment before any field can be written, so it is the
+		// only point where registering is both possible and early enough.
+		this.#registerBuiltinModes();
 		const preferences = {
 			quiet: cfgStartupQuiet.get(settings),
 			composerShape: cfgComposerShape.get(settings),
@@ -1661,6 +1691,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		);
 		this.ui.setInlineMouseTrackingProvider(() => this.#mouseCapture);
 		this.chatContainer = new TranscriptContainer();
+		// Keyed notices live here, not in the transcript: a keyed line has to be
+		// removable without disturbing a turn's output, which a transcript child is not.
+		this.noticeContainer = new Container();
 		this.pendingMessagesContainer = new AnchoredLiveContainer();
 		this.progressHudContainer = new AnchoredLiveContainer();
 		this.progressHudContainer.addChild(this.#judgmentBatchProgressHud);
@@ -1715,6 +1748,11 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.hookWidgetContainerAbove = new Container();
 		this.hookWidgetContainerAbove.addChild(new EditorTopGap(() => this.statusRowOccupied));
 		this.hookWidgetContainerBelow = new Container();
+		// Owned by the composer (it mounts them beside the editor) and only lent
+		// here so the extension controller has the same shape of handle it has for
+		// the hook widget bands.
+		this.extensionHeaderContainer = this.composer.extensionHeader;
+		this.extensionFooterContainer = this.composer.extensionFooter;
 		this.attachmentChipsContainer = new Container();
 		const attachmentChips = new AttachmentChipsBand(this.editor, this.ui.imageBudget, () => this.ui.requestRender());
 		this.attachmentChipsContainer.addChild(attachmentChips);
@@ -1874,10 +1912,81 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.composer.playWelcomeIntro();
 	}
 
+	/**
+	 * Declare the built-in modes to the shared registry.
+	 *
+	 * The definitions close over `this` and call the `#enter*` / `#exit*` methods
+	 * directly, rather than reaching for the public `handle*ModeCommand` handlers.
+	 * Those handlers are the wrong shape twice over: the entry points are private,
+	 * and a handler *toggles* — binding `enter` to one turns "enter" into "exit"
+	 * whenever the mode is already on, which is exactly when a registry-driven
+	 * consumer is least likely to notice.
+	 *
+	 * `loop` is deliberately absent. It changes no tool set, gates no write, has no
+	 * `enter`/`exit`, and never consults the other modes — and since loop and
+	 * plan mode can be on at the same time, putting it in a single-active registry
+	 * would evict plan mode and silently drop its read-only policy while the UI
+	 * still said "plan mode". It is an auto-submit driver that renders like a mode.
+	 */
+	#registerBuiltinModes(): void {
+		// Built as a value first, then declared. Passing these object literals
+		// straight into a call crashed Bun's transpiler on the private-method
+		// arrows inside a call's argument list (`panic: Scope mismatch while
+		// visiting`, .function_args vs .block) — which took `bun test` down before
+		// a single assertion ran. `check:types` was green throughout, so the gate
+		// that caught it was the one that loads the file.
+		const definitions: ModeDefinition[] = [
+			{
+				id: "plan",
+				name: "Plan",
+				description: "Research and plan without touching the working tree.",
+				writePolicy: PLAN_MODE_WRITE_POLICY,
+				statusLine: { label: "Plan" },
+				enter: () => this.#enterPlanMode(),
+				exit: () => this.#exitPlanMode(),
+			},
+			{
+				id: "goal",
+				name: "Goal",
+				description: "Work toward a stated objective until it is met.",
+				statusLine: { label: "Goal" },
+				enter: () => this.#enterGoalMode({}),
+				exit: () => this.#exitGoalMode(),
+			},
+			{
+				id: "vibe",
+				name: "Vibe",
+				description: "Direct freeform coding through worker agents.",
+				statusLine: { label: "Vibe" },
+				enter: () => this.#enterVibeMode(),
+				exit: () => this.#exitVibeMode(),
+			},
+		];
+
+		for (const definition of definitions) {
+			// `register` throws on a duplicate id, and a throw here would take the
+			// TUI down on a path that should be idempotent, so skip instead.
+			if (!modeRegistry.has(definition.id)) modeRegistry.register(definition);
+		}
+	}
+
 	async init(options: InteractiveModeInitOptions = {}): Promise<void> {
 		if (this.isInitialized) return;
 
 		this.keybindings = logger.time("InteractiveMode.init:keybindings", () => KeybindingsManager.create());
+		// A key bound to two actions means one of them silently stopped responding
+		// when the user remapped it. That is invisible until they press the key and
+		// nothing happens, so say so at load rather than waiting to be asked. Warned
+		// once per session at construction — remapping mid-session is the
+		// /keybindings panel's business, not this path's.
+		const keybindingConflicts = formatKeybindingConflicts(this.keybindings.getConflicts());
+		if (keybindingConflicts) {
+			this.#uiHelpers.showWarning(`Conflicting keybindings:\n${keybindingConflicts}`);
+		}
+		// A rebind lands as an applied config-reload pass. `bindKeybindingsToConfigReload`
+		// owns why that needs a bridge at all; `??=` so a re-`init()` after `stop()`
+		// re-registers rather than stacking a second handler.
+		this.#stopKeybindingsReload ??= bindKeybindingsToConfigReload(this.keybindings);
 		// Before first paint, so hints the user already learned never flash on.
 		await logger.time("InteractiveMode.init:hintUsage", () => hintUsage.load());
 
@@ -2010,6 +2119,10 @@ export class InteractiveMode implements InteractiveModeContext {
 				// composer collapses that gap so its status band sits flush).
 				this.statusContainer,
 				this.attachmentChipsContainer,
+				// Keyed notices sit directly above the editor's hook-widget top margin,
+				// so they read next to the prompt without a turn's worth of transcript
+				// between them and the composer.
+				this.noticeContainer,
 				this.hookWidgetContainerAbove,
 				this.editorContainer,
 				this.hookWidgetContainerBelow,
@@ -2032,6 +2145,9 @@ export class InteractiveMode implements InteractiveModeContext {
 					this.progressHudContainer,
 					this.statusContainer,
 					this.pendingMessagesContainer,
+					// Same position in the native dock: a keyed notice must not move when
+					// the dock swaps in, or it would jump when the composer collapses.
+					this.noticeContainer,
 					this.hookWidgetContainerAbove,
 					this.editorContainer,
 					this.hookWidgetContainerBelow,
@@ -2215,7 +2331,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		// custom messages, branch summaries, and compaction summaries) and the user
 		// set no explicit `mode_change` (which #reconcileModeFromSession just
 		// restored). SDK startup metadata and extension `custom` state entries are
-		// ignored. This way `omp --continue` (or auto-resume) that finds no recent
+		// ignored. This way `ultraworkers --continue` (or auto-resume) that finds no recent
 		// session and creates a fresh one still honors the default, while a session
 		// with restored context or an explicit mode keeps its reconciled mode. Scoped
 		// to launch (not the switch reconciler above) so /new and the plan-approval →
@@ -2298,7 +2414,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		);
 		// The preset may have switched before this listener existed.
 		this.#refreshSlashCommandIcons();
-		// A confirmed Glyph Protocol handshake means omp's own icons render in
+		// A confirmed Glyph Protocol handshake means ultraworkers' own icons render in
 		// this terminal without a Nerd Font, so the default `unicode` preset is
 		// upgraded to `nerd` for this session. The persisted setting is left
 		// alone: it travels to terminals (ssh, tmux) where the upgrade would
@@ -4081,7 +4197,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				),
 				node("tree", { nodes: phaseNodes }),
 			],
-			{ role: "omp.hud.todo" },
+			{ role: "ultraworkers.hud.todo" },
 		);
 		// A `checklist` HUD is a pill with the whole plan as its popover.
 		const checklistPhases: TspChecklistPhase[] = phases.map((phase, phaseIndex) => ({
@@ -4108,7 +4224,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			}),
 		}));
 		this.todoHudNative = {
-			checklist: node("checklist", { phases: checklistPhases, mode: "hud", role: "omp.hud.todo" }),
+			checklist: node("checklist", { phases: checklistPhases, mode: "hud", role: "ultraworkers.hud.todo" }),
 			fallback,
 		};
 	}
@@ -6475,7 +6591,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.#sttController = undefined;
 		}
 		this.#extensionUiController.clearExtensionTerminalInputListeners();
-		this.#extensionUiController.clearHookWidgets();
+		this.#extensionUiController.remountHookWidgets();
 		this.#extensionUiController.disposeComposerShapes();
 		for (const unsubscribe of this.#eventBusUnsubscribers) {
 			unsubscribe();
@@ -6498,6 +6614,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.#cleanupUnsubscribe) {
 			this.#cleanupUnsubscribe();
 		}
+		// Withdrawn here, not left to process exit: `stop()` clears `isInitialized`, so a
+		// later `init()` re-registers, and two handlers would reload every rebind twice.
+		this.#stopKeybindingsReload?.();
+		this.#stopKeybindingsReload = undefined;
 		// Clear the process-global consent handler so it doesn't outlive this
 		// InteractiveMode instance (e.g. test harnesses, headless re-init).
 		setAutoQaConsentHandler(null, null);
@@ -7155,7 +7275,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	 * `/reload`.
 	 *
 	 * Ported from senpi's `LoaderIndicatorOptions` rather than the bare
-	 * `spinnerFrames` omp already had, because the interval was the part that
+	 * `spinnerFrames` ultraworkers already had, because the interval was the part that
 	 * actually needed naming: a slow terminal wants a slower spinner.
 	 */
 	setWorkingIndicator(indicator: { frames?: string[]; intervalMs?: number } | undefined): void {
@@ -7282,7 +7402,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			row([node("icon", { name: "loop", tone: "muted" }), kbd(retryKey, "key"), text([span("to Retry", "dim")])], {
 				gap: "xs",
 				align: "center",
-				role: "omp.hint.retry",
+				role: "ultraworkers.hint.retry",
 			}),
 		);
 		this.statusContainer.addChild(this.#retryHintRow);
@@ -7491,7 +7611,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			await active.stop();
 			this.statusLine.setRecording(false);
 			this.showStatus(
-				`Saved ${formatDuration(elapsed)} recording to ${active.path} · replay: omp play · share: omp clip`,
+				`Saved ${formatDuration(elapsed)} recording to ${active.path} · replay: ${APP_NAME} play · share: ${APP_NAME} clip`,
 			);
 			return;
 		}
@@ -7598,6 +7718,10 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	showHistorySearch(): void {
 		this.#selectorController.showHistorySearch();
+	}
+
+	showTranscriptSearch(): void {
+		this.#selectorController.showTranscriptSearch();
 	}
 
 	showExtensionsDashboard(): void {
@@ -7918,6 +8042,13 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	// Hook UI methods
 	initHooksAndCustomTools(): Promise<void> {
+		// Not beside the `setAuthHandler` call in the constructor: that runs
+		// before `#extensionUiController` is assigned, so reading it here would
+		// be a use-before-assignment. This method runs after construction, which
+		// is the whole reason the handler is installed here.
+		this.mcpManager?.setElicitationHandler((serverName, request) =>
+			this.#extensionUiController.showElicitationForm(serverName, request),
+		);
 		return this.#extensionUiController.initHooksAndCustomTools();
 	}
 

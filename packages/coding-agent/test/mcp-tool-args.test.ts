@@ -409,7 +409,7 @@ describe("MCP tool arguments", () => {
 	});
 
 	it("resolves local image arguments before forwarding tools/call", async () => {
-		using tempDir = TempDir.createSync("@pi-mcp-local-image-");
+		using tempDir = TempDir.createSync("@ultraworkers-mcp-local-image-");
 		const calls: CapturedRequest[] = [];
 		const { context, expectedPath } = await createLocalImageContext(tempDir);
 		const tool = new MCPTool(createCapturedConnection(calls), imageToolDefinition);

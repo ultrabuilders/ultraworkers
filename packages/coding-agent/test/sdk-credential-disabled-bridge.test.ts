@@ -436,6 +436,8 @@ describe("createAgentSession credential_disabled subscription", () => {
 				path: "test://throwing-credential-disabled",
 				resolvedPath: "test://throwing-credential-disabled",
 				registeredProviders: [],
+				surfaces: [],
+				modes: [],
 				toolRegistrationListeners: new Set(),
 				handlers: new Map([
 					[
@@ -450,16 +452,29 @@ describe("createAgentSession credential_disabled subscription", () => {
 				tools: new Map(),
 				assistantThinkingRenderers: [],
 				fileWriteFallbackHandlers: [],
+				peerTransports: [],
+				peerLockBackends: [],
+				peerFences: [],
 				fileDeleteFallbackHandlers: [],
+				compactionProtections: [],
+				contextTransforms: [],
+				configReloadDisposers: [],
 				messageRenderers: new Map(),
+				entryRenderers: new Map(),
 
 				outputFormats: new Map(),
 
 				toolNameResolvers: [],
+				usageReporters: [],
+				diagnostics: [],
+				hostRenderStrategies: [],
+				copyTargetProviders: [],
 				composerShapes: new Map(),
 				commands: new Map(),
 				flags: new Map(),
 				shortcuts: new Map(),
+				doubleEscapeActions: [],
+				settingIds: [],
 			};
 			const runtime = new ExtensionRuntime();
 			const sessionManager = SessionManager.inMemory();

@@ -1,7 +1,21 @@
+import { WIRE_NAME } from "./dirs";
 import { stripWindowsExtendedLengthPathPrefix } from "./path";
 
-/** Prefix reserved for argv selectors dispatched by the shared CLI worker host. */
-export const WORKER_HOST_SELECTOR_PREFIX = "__omp_worker_";
+/**
+ * Prefix reserved for argv selectors dispatched by the shared CLI worker host.
+ *
+ * Derived from {@link WIRE_NAME} rather than written out, because a selector is
+ * invisible everywhere except the two places that must agree on it: the spawn
+ * site and the dispatcher. Spelled out here it would be a second literal of a
+ * value the rest of the tree already derives, and it stayed correct only by
+ * hand — a rename of WIRE_NAME moved this string's sibling without moving it,
+ * and nothing turned red.
+ *
+ * Deriving it here also keeps the dependency shape every consumer already
+ * has: `packages/stats` must not depend on `pi-coding-agent`, so it reads this
+ * constant rather than rebuilding it, and that is unchanged.
+ */
+export const WORKER_HOST_SELECTOR_PREFIX = `__${WIRE_NAME}_worker_`;
 
 /** Whether an argv value selects a worker hosted by the shared CLI entrypoint. */
 export function isWorkerHostSelector(value: string | undefined): value is string {

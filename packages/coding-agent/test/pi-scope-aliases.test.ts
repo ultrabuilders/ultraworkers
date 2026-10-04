@@ -73,6 +73,20 @@ const CASES: readonly AliasCase[] = [
 		// `oauth.d.ts`; it makes a stable probe across both layouts.
 		symbol: "refreshOAuthToken",
 	},
+	// @ultraworkers — the scope this project renames to (W2a). Lives here rather
+	// than in the W2b batch because the reason it was held back does not hold:
+	// `aliasSpecifier` is only interpolated into the generated probe (the lines
+	// below), it resolves nothing at module scope, and `canonicalUtils` is
+	// already resolved at line 29. Dropping "ultraworkers" from PI_SCOPE_ALIASES
+	// turns this red with a module-not-found, which is the whole point: losing an
+	// alias is a runtime failure, so compile and unit gates stay green and only a
+	// user loading a real plugin finds out.
+	{
+		id: "ultraworkers-utils",
+		aliasSpecifier: "@ultraworkers/pi-utils",
+		canonicalPath: canonicalUtils,
+		symbol: "logger",
+	},
 	// `Key` runtime helper restored on pi-tui (plannotator + rpiv-* import it).
 	{
 		id: "earendil-tui-key",
@@ -87,7 +101,7 @@ describe("pi-* scope aliases", () => {
 	let extensionPath: string;
 
 	beforeEach(() => {
-		projectDir = TempDir.createSync("@pi-scope-aliases-");
+		projectDir = TempDir.createSync("@ultraworkers-scope-aliases-");
 		const pluginDir = path.join(projectDir.path(), "alias-probe-plugin");
 		extensionPath = path.join(pluginDir, "dist", "extension.ts");
 		fs.mkdirSync(path.dirname(extensionPath), { recursive: true });
@@ -131,5 +145,84 @@ describe("pi-* scope aliases", () => {
 		expect(result.errors).toEqual([]);
 		const extension = result.extensions.find(ext => ext.path === extensionPath);
 		expect(extension).toBeDefined();
+	});
+});
+
+/**
+ * Invariant 2 of W8a: scope resolution has no silent fallback.
+ *
+ * Every case in the table above names a scope, and every one of them is protected
+ * by the single filter in the shim:
+ *
+ *   `^@(?:ultraworkers|oh-my-pi|mariozechner|earendil-works)/<pkg>(?:/.*)?$`
+ *
+ * A bare `pi-utils` never reaches that filter — it is not a `@scope/pkg` specifier
+ * at all. It goes down a different path entirely: `resolveExtensionBareDependency`,
+ * which tries the plugin's own dependency tree and then falls through to ordinary
+ * resolution. Measured at HEAD, it does not reach the host copy and the load fails.
+ *
+ * That distinction is load-bearing for this row, and it was measured rather than
+ * assumed. Widening `LEGACY_PI_SPECIFIER_FILTER` so the scope becomes optional
+ * leaves this test **green** — the filter is not consulted for a bare specifier,
+ * so "loosening the alias filter" is not the change this row defends against.
+ * The change it does defend against is giving `resolveExtensionBareDependency` a
+ * host fallback, which turns this row red. If that filter ever does need to
+ * widen, this row is unaffected and must not be cited as the reason.
+ *
+ * ## Why the failure is the contract worth pinning
+ *
+ * The obvious "fix" for a plugin whose manifest lost its scope is to let bare
+ * `pi-*` specifiers fall back to the host bundle. That would make the load succeed
+ * — and would quietly reintroduce the one condition this whole file exists to rule
+ * out: a second copy of `pi-utils` entering the process. Every row above proves
+ * single-instance identity by comparing an aliased import against an
+ * absolute-path import; a bare import that resolves to *anything* is the duplicate
+ * this guards against, and it would be invisible — the extension loads, the tool
+ * registry is forked, and the symptom surfaces somewhere else entirely.
+ *
+ * So the observable contract is the failure: an unscoped specifier must not load,
+ * and the error must name the package that could not be found. That keeps the
+ * boundary where it is and makes the fallback — if it is ever wanted — a
+ * deliberate change that has to argue with this row, rather than a drive-by.
+ *
+ * Asserted against the error rather than `result.errors` being non-empty: a bare
+ * "some error happened" row would stay green if the shim failed for an unrelated
+ * reason, which is the failure this file has already been bitten by once.
+ */
+describe("pi-* scope resolution without a scope", () => {
+	let projectDir: TempDir;
+	let extensionPath: string;
+
+	beforeEach(() => {
+		projectDir = TempDir.createSync("@ultraworkers-scope-unscoped-");
+		const pluginDir = path.join(projectDir.path(), "unscoped-probe-plugin");
+		extensionPath = path.join(pluginDir, "dist", "extension.ts");
+		fs.mkdirSync(path.dirname(extensionPath), { recursive: true });
+		fs.writeFileSync(
+			path.join(pluginDir, "package.json"),
+			JSON.stringify({
+				name: "unscoped-probe-plugin",
+				version: "1.0.0",
+				pi: { extensions: ["./dist/extension.ts"] },
+			}),
+		);
+		fs.writeFileSync(
+			extensionPath,
+			[`import { logger } from "pi-utils";`, "export default function() {", "\treturn logger;", "}"].join("\n"),
+		);
+	});
+
+	afterEach(() => {
+		projectDir.removeSync();
+	});
+
+	it("does not load an extension whose import carries no scope", async () => {
+		const result = await loadExtensions([extensionPath], projectDir.path());
+
+		expect(result.extensions.find(ext => ext.path === extensionPath)).toBeUndefined();
+		expect(result.errors).toHaveLength(1);
+		// The error names the package, so a user can tell "your manifest lost its
+		// scope" apart from "your extension has a syntax error".
+		expect(result.errors[0].error).toContain("Cannot find package 'pi-utils'");
 	});
 });

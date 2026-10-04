@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import * as themeModule from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import { UiHelpers } from "@oh-my-pi/pi-coding-agent/modes/utils/ui-helpers";
@@ -122,6 +123,16 @@ describe("lazy status color re-resolves on theme switch", () => {
 			.split("\n")
 			.map(line => line.trim())
 			.filter(line => line === "Update Available" || line.startsWith("New version "));
-		expect(semanticLines).toEqual(["Update Available", "New version 1.2.3 is available. Run: omp update"]);
+		// Built from APP_NAME, which is what `showNewVersionNotification` builds it
+		// from (`ui-helpers.ts:1225`). This row froze the installed command's OLD
+		// name as a literal, so it went red on the rename while the renderer stayed
+		// correct — a fixture asserting a string the product is supposed to change.
+		//
+		// What this row is FOR is content preservation across the theme switch: the
+		// recolor must not drop or duplicate content. Comparing against the same
+		// source the renderer uses keeps that contract and stops the next rename
+		// from breaking it. It is deliberately not an assertion that the command is
+		// spelled a particular way — the color rows above are the subject here.
+		expect(semanticLines).toEqual(["Update Available", `New version 1.2.3 is available. Run: ${APP_NAME} update`]);
 	});
 });

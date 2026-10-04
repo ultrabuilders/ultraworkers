@@ -20,7 +20,7 @@ describe("Settings entry-level writes", () => {
 
 	beforeEach(() => {
 		state = beginSettingsTest();
-		tempDir = TempDir.createSync("@pi-settings-entries-");
+		tempDir = TempDir.createSync("@ultraworkers-settings-entries-");
 		agentDir = tempDir.join("agent");
 		cwd = tempDir.join("project");
 		overlayPath = tempDir.join("overlay.yml");

@@ -2,7 +2,7 @@ import type { AssistantMessage, ImageContent } from "@oh-my-pi/pi-ai";
 import * as AIError from "@oh-my-pi/pi-ai/error";
 import { getStreamingPartialJson } from "@oh-my-pi/pi-ai/utils/block-symbols";
 import { type Component, Loader, TERMINAL } from "@oh-my-pi/pi-tui";
-import { formatDuration, isRecord, logger, prompt, sanitizeText } from "@oh-my-pi/pi-utils";
+import { APP_NAME, formatDuration, isRecord, logger, prompt, sanitizeText } from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
 import { extractTextContent } from "../../commit/utils";
 import { settings } from "../../config/settings";
@@ -11,7 +11,7 @@ import { detectCacheInvalidation } from "@oh-my-pi/pi-tui/chat/cache-invalidatio
 import {
 	groupedReadUsageCallIds,
 	ReadToolGroupComponent,
-	readArgsCollapseIntoGroup,
+	isReadToolGroupMember,
 	readArgsHaveTarget,
 } from "@oh-my-pi/pi-tui/chat/read-tool-group";
 import { TodoReminderComponent } from "@oh-my-pi/pi-tui/chat/todo-reminder";
@@ -53,6 +53,8 @@ import {
 	splitAssistantMessageToolTimeline,
 } from "@oh-my-pi/pi-tui/chat/transcript-render-helpers";
 import { isWarpCliAgentProtocolActive } from "../warp-events";
+import { mountCustomEntry } from "../utils/mount-custom-entry";
+import type { CustomEntry } from "../../session/session-entries";
 import { StreamingRevealController } from "./streaming-reveal";
 import { streamingStringKeysForTool, ToolArgsRevealController } from "./tool-args-reveal";
 
@@ -386,6 +388,18 @@ export class EventController {
 			// this event exists for RPC/ACP clients that have no equivalent local
 			// call site to hook, so there is nothing additional to do here.
 			queue_update: async () => {},
+			// Ported from `pi` (`modes/interactive/interactive-mode.ts:3339`, which
+			// dispatches `entry_appended` to `addCustomEntryToChat`). A custom entry
+			// has no other route to the screen — the transcript rebuild goes through
+			// `buildSessionContext`, which has no `case "custom"` — so this is what
+			// gives a registered `EntryRenderer` something to draw.
+			entry_appended: async e => {
+				// pi narrows here too (`interactive-mode.ts:3341`): the event carries
+				// the whole `SessionEntry` union because several other entry kinds
+				// have their own display paths, and a custom one is the only kind a
+				// registered `EntryRenderer` can draw.
+				if (e.entry.type === "custom") this.#handleEntryAppended(e.entry);
+			},
 		} satisfies AgentSessionEventHandlers;
 	}
 
@@ -1331,6 +1345,23 @@ export class EventController {
 	}
 
 	/**
+	 * Draw a custom entry with the renderer its extension registered.
+	 *
+	 * Ported from `pi` (`modes/interactive/interactive-mode.ts:3739`,
+	 * `addCustomEntryToChat`). Three behaviours carried over verbatim because each
+	 * is load-bearing rather than stylistic: an entry with no renderer returns
+	 * silently (most custom entries are bookkeeping, not display); a renderer that
+	 * produced nothing is not mounted either, so an empty widget leaves no gap; and
+	 * the component is spliced in ABOVE an in-flight streaming block so it reads in
+	 * the order it happened rather than jumping below whatever is still typing.
+	 */
+	#handleEntryAppended(entry: CustomEntry): void {
+		// Shared with the transcript replay so the two draw paths cannot drift;
+		// see `mountCustomEntry`.
+		mountCustomEntry(this.ctx, entry);
+	}
+
+	/**
 	 * End-of-turn vocalization: yield mode speaks the final assistant message in
 	 * one shot here (the only mode that is post-hoc); every other mode just makes
 	 * sure the live buffer's trailing partial gets flushed.
@@ -1409,7 +1440,7 @@ export class EventController {
 						// Creating either component now would lock the read into the wrong shape.
 						continue;
 					}
-					if (readArgsCollapseIntoGroup(content.arguments)) {
+					if (isReadToolGroupMember(renderToolName, content.arguments)) {
 						const existing = this.ctx.pendingTools.get(content.id);
 						if (existing) {
 							this.#trackReadToolCall(content.id, content.arguments);
@@ -1750,7 +1781,7 @@ export class EventController {
 					this.ctx.chatContainer.removeChild(stale);
 				}
 			}
-			if (renderToolName === "read" && readArgsCollapseIntoGroup(event.args)) {
+			if (isReadToolGroupMember(renderToolName, event.args)) {
 				this.#trackReadToolCall(event.toolCallId, event.args);
 				if (!this.#toolTimelineComponents.has(event.toolCallId)) {
 					const group = this.#getReadGroup();
@@ -2703,7 +2734,7 @@ export class EventController {
 
 		const sessionName = this.ctx.sessionManager.getSessionName();
 		TERMINAL.sendNotification({
-			title: sessionName || "omp",
+			title: sessionName || APP_NAME,
 			body: "Stopped with error",
 			type: "error",
 			actions: "focus",
@@ -2728,7 +2759,7 @@ export class EventController {
 
 		const sessionName = this.ctx.sessionManager.getSessionName();
 		TERMINAL.sendNotification({
-			title: sessionName || "omp",
+			title: sessionName || APP_NAME,
 			body: "Complete",
 			type: "completion",
 			actions: "focus",

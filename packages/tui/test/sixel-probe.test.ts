@@ -16,6 +16,11 @@ const originalWtSession = Bun.env.WT_SESSION;
 const originalWslDistro = Bun.env.WSL_DISTRO_NAME;
 const originalWslInterop = Bun.env.WSL_INTEROP;
 const originalForcedProtocol = Bun.env.PI_FORCE_IMAGE_PROTOCOL;
+const originalHerdrEnv = Bun.env.HERDR_ENV;
+const originalHerdrPaneId = Bun.env.HERDR_PANE_ID;
+const originalHerdrTabId = Bun.env.HERDR_TAB_ID;
+const originalHerdrWorkspaceId = Bun.env.HERDR_WORKSPACE_ID;
+const originalPaseoTerminalId = Bun.env.PASEO_TERMINAL_ID;
 const stdinIsTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
 const stdoutIsTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
@@ -35,9 +40,19 @@ function restoreEnv(name: string, value: string | undefined): void {
 	else Bun.env[name] = value;
 }
 
-function startProbe(terminal: VirtualTerminal): TUI {
+function startProbe(terminal: VirtualTerminal, options?: { embedder?: boolean }): TUI {
 	setTerminalImageProtocol(null);
 	terminalInfo.imageProtocol = null;
+	// These tests assert the plain-terminal path, so the embedder markers have to
+	// be cleared: a suite run inside a Herdr pane inherits `HERDR_ENV=1`, the probe
+	// is then correctly refused, and every "enables SIXEL" assertion below fails for
+	// a reason that has nothing to do with the code under test.
+	delete Bun.env.HERDR_ENV;
+	delete Bun.env.HERDR_PANE_ID;
+	delete Bun.env.HERDR_TAB_ID;
+	delete Bun.env.HERDR_WORKSPACE_ID;
+	delete Bun.env.PASEO_TERMINAL_ID;
+	if (options?.embedder) Bun.env.HERDR_ENV = "1";
 	Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
 	Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
 	const tui = new TUI(terminal);
@@ -53,6 +68,11 @@ describe("TUI SIXEL capability probe", () => {
 		restoreEnv("WSL_DISTRO_NAME", originalWslDistro);
 		restoreEnv("WSL_INTEROP", originalWslInterop);
 		restoreEnv("PI_FORCE_IMAGE_PROTOCOL", originalForcedProtocol);
+		restoreEnv("HERDR_ENV", originalHerdrEnv);
+		restoreEnv("HERDR_PANE_ID", originalHerdrPaneId);
+		restoreEnv("HERDR_TAB_ID", originalHerdrTabId);
+		restoreEnv("HERDR_WORKSPACE_ID", originalHerdrWorkspaceId);
+		restoreEnv("PASEO_TERMINAL_ID", originalPaseoTerminalId);
 		restoreIsTty(process.stdin, stdinIsTtyDescriptor);
 		restoreIsTty(process.stdout, stdoutIsTtyDescriptor);
 	});
@@ -154,6 +174,39 @@ describe("TUI SIXEL capability probe", () => {
 		const terminal = new VirtualTerminal(80, 24);
 		const tui = startProbe(terminal);
 
+		terminal.sendInput(SIXEL_SUPPORTED_REPLY);
+
+		expect(TERMINAL.imageProtocol).toBeNull();
+		tui.stop();
+	});
+
+	it("does not probe inside an embedder the capability layer refuses", () => {
+		// `resolveImageProtocol` returns null for renderers whose xterm.js draws
+		// neither Kitty APC nor placeholders. The probe only ever runs when that
+		// layer came back empty, so a positive answer here would install a protocol
+		// the capability layer had just refused.
+		//
+		// Same positive reply as the passing tests above, which is what makes this
+		// discriminating: if the probe simply failed to run, those would fail too.
+		const terminal = new VirtualTerminal(80, 24);
+		const tui = startProbe(terminal, { embedder: true });
+
+		terminal.sendInput(SIXEL_SUPPORTED_REPLY);
+
+		expect(TERMINAL.imageProtocol).toBeNull();
+		tui.stop();
+	});
+
+	it("does not install SIXEL when an embedder appears while the reply is in flight", () => {
+		// The other half, and the one that closes the route rather than avoiding it:
+		// gating the query cannot help once the bytes are already on the wire, so the
+		// refusal has to hold at the point of installation too. Installing Sixel here
+		// is the only path that could reverse a refusal the capability layer made.
+		const terminal = new VirtualTerminal(80, 24);
+		const tui = startProbe(terminal);
+		expect(TERMINAL.imageProtocol).toBeNull();
+
+		Bun.env.HERDR_ENV = "1";
 		terminal.sendInput(SIXEL_SUPPORTED_REPLY);
 
 		expect(TERMINAL.imageProtocol).toBeNull();

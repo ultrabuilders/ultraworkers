@@ -49,7 +49,7 @@ describe("credential pins", () => {
 			savedEnv[key] = process.env[key];
 			delete process.env[key];
 		}
-		tempDir = TempDir.createSync("@pi-credential-pin-");
+		tempDir = TempDir.createSync("@ultraworkers-credential-pin-");
 		const store = new SqliteAuthCredentialStore(new Database(":memory:"));
 		await store.saveOAuth("anthropic", mintOAuthCredential("a"));
 		await store.saveOAuth("anthropic", mintOAuthCredential("b"));

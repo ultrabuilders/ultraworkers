@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import { runConfigCommand } from "@oh-my-pi/pi-coding-agent/cli/config-cli";
-import { resetSettingsForTest } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { resetSettingsForTest, Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { AgentStorage } from "@oh-my-pi/pi-coding-agent/session/agent-storage";
 import { getConfigRootDir, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 import { all, lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
@@ -45,6 +45,20 @@ describe("credential settings", () => {
 });
 
 describe("credential masking reaches every surface", () => {
+	// `createSettingsHost()` reads the live `settings` proxy, which throws until
+	// `Settings.init()` has run. These rows passed only when a sibling file had
+	// already initialised it — a full-suite-safety violation: a test that passes
+	// alone and poisons, or is poisoned by, file order. `inMemory` keeps it off
+	// the real config directory.
+	beforeEach(async () => {
+		resetSettingsForTest();
+		await Settings.init({ inMemory: true });
+	});
+
+	afterEach(() => {
+		resetSettingsForTest();
+	});
+
 	it("masks a UI-visible credential in the settings panel", () => {
 		// The panel derives masking from the same classification the CLI uses, so
 		// a credential cannot render as plain text on one surface and dots on the
@@ -81,7 +95,7 @@ describe("config list output", () => {
 
 	beforeEach(() => {
 		resetSettingsForTest();
-		agentDir = TempDir.createSync("@omp-config-credentials-");
+		agentDir = TempDir.createSync("@ultraworkers-config-credentials-");
 		setAgentDir(agentDir.path());
 	});
 

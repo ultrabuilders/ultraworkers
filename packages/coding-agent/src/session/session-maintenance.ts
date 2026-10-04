@@ -50,6 +50,7 @@ import {
 	readToolSupersedeKey,
 } from "@oh-my-pi/pi-agent-core/compaction/pruning";
 import type { ProtectedToolMatcher } from "@oh-my-pi/pi-agent-core/compaction/tool-protection";
+import { hasContextTransforms, runContextTransforms } from "../tools/compaction-transforms";
 import type {
 	AssistantMessage,
 	CodexCompactionContext,
@@ -78,6 +79,7 @@ import type { ConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
 import type { AgentSessionEvent } from "./agent-session-events";
 import type { ContextUsageBreakdown, HandoffResult, SessionHandoffOptions } from "./agent-session-types";
 import { findCompactMode } from "./compact-modes";
+import { runCompactionTransaction } from "./compaction-transaction";
 import {
 	type CompactionMethod,
 	canUseRemoteCompaction,
@@ -118,6 +120,7 @@ import {
 	cfgSnapcompactShape,
 } from "./context-settings";
 import { cfgRetry } from "./settings";
+import { compactionProtectedTools, compactionSupersedeKey } from "../tools/compaction-protection";
 
 /**
  * Resource sample for the emergency compaction floors.
@@ -188,6 +191,24 @@ const COMPACTION_CHECK_BLOCK_AUTOMATIC_CONTINUATION: CompactionCheckResult = {
  * resets the counter, so legitimate multi-step recoveries are never cut short.
  */
 export const INCOMPLETE_RECOVERY_MAX_RETRIES = 3;
+
+/**
+ * Consecutive context-overflow recoveries spent on a single overflow incident —
+ * the `compact → overflow → compact` cycle, not the whole session.
+ *
+ * {@link INCOMPLETE_RECOVERY_MAX_RETRIES} cannot bound this one: that counter is
+ * reset by any turn that delivered output, and an overflow turn delivers none,
+ * so a completed-then-overflowed turn resets it and the cycle never trips. It
+ * also counts a different cause (`length` stops), and folding overflow into it
+ * would let one transient network failure silently disable context recovery.
+ *
+ * One retry is the whole budget on purpose: the retry exists to let a
+ * just-shrunk history succeed once. If it overflows again, more compaction of
+ * the same history cannot help — the loop only spends a full model turn per
+ * round and, because each round *succeeds* at recovering, never appears in the
+ * error log. Past the cap, recovery stops and reports.
+ */
+export const OVERFLOW_RECOVERY_MAX_RETRIES = 1;
 
 /** Whether a configured preference list contains at least one automatic method. */
 function hasConfiguredCompactionMethod(settings: CompactionSettings): boolean {
@@ -582,6 +603,14 @@ export class SessionMaintenance {
 	 * prompt ({@link resetForNewPrompt}).
 	 */
 	#incompleteRecoveryAttempts = 0;
+	/**
+	 * Overflow recoveries spent on the current overflow incident. Bounded by
+	 * {@link OVERFLOW_RECOVERY_MAX_RETRIES} and counted *by cause*: only an
+	 * overflow turn spends it, so an unrelated failure between two overflows
+	 * cannot silently exhaust context recovery. Reset by any turn that did not
+	 * fail on overflow and on every new user prompt ({@link resetForNewPrompt}).
+	 */
+	#overflowRecoveryAttempts = 0;
 	/** Latest rollover boundary that already received its pre-threshold notebook reminder. */
 	#experimentalNotesReminderBoundaryId: string | undefined;
 	readonly #host: SessionMaintenanceHost;
@@ -635,6 +664,7 @@ export class SessionMaintenance {
 	/** Clears per-prompt recovery counters when a new user prompt starts. */
 	resetForNewPrompt(): void {
 		this.#incompleteRecoveryAttempts = 0;
+		this.#overflowRecoveryAttempts = 0;
 	}
 
 	/** Whether manual or automatic context maintenance is active. */
@@ -687,12 +717,49 @@ export class SessionMaintenance {
 	 */
 	#withPlanProtection<T extends { protectedTools: ProtectedToolMatcher[] }>(config: T): T {
 		const planMatcher = createPlanReadMatcher(() => this.#host.planReferencePath());
-		return { ...config, protectedTools: [...config.protectedTools, planMatcher] };
+		// Extension-contributed matchers are appended AFTER the plan matcher so core
+		// policy is evaluated first: protection is a veto, and the order only decides
+		// which matcher gets to report a reason. With no extension registered this
+		// spread contributes nothing, so the config is byte-identical to the
+		// pre-seam one — the red gate's "exactly as before" depends on that.
+		return {
+			...config,
+			protectedTools: [...config.protectedTools, planMatcher, ...compactionProtectedTools()],
+		};
 	}
 
 	async #pruneToolOutputs(): Promise<{ prunedCount: number; tokensSaved: number } | undefined> {
 		const branchEntries = this.#host.sessionManager.getBranch();
 		const keepBoundaryId = getLatestCompactionEntry(branchEntries)?.firstKeptEntryId;
+
+		// Extension transforms run BEFORE core's own pass, not after: core decides
+		// which results to drop by walking the branch and honouring a
+		// `minimumSavings` threshold, so the better input for that decision is the
+		// branch an extension has already reduced rather than the raw one.
+		//
+		// The whole block sits behind `hasContextTransforms()`. With no extension
+		// registered — the overwhelmingly common case — nothing below executes and
+		// core's own `result` is returned unchanged, so the pre-seam path returns the
+		// same object rather than an equal-looking copy. That is what makes the red
+		// gate's "exactly as before" hold rather than merely approximate.
+		if (hasContextTransforms()) {
+			const outcome = runContextTransforms(branchEntries, this.#tokenizer);
+			for (const failure of outcome.errors) {
+				logger.warn("Context transform failed; continuing without it", {
+					extensionPath: failure.extensionPath,
+					transform: failure.name,
+					error: failure.error,
+				});
+			}
+			if (outcome.total.tokensSaved > 0) {
+				logger.debug("Context transforms reduced the branch", {
+					transforms: outcome.outcomes.map(o => `${o.name}(${o.tokensSaved}t/${o.prunedCount})`),
+					tokensSaved: outcome.total.tokensSaved,
+					prunedCount: outcome.total.prunedCount,
+				});
+			}
+		}
+
 		const result = pruneToolOutputs(
 			branchEntries,
 			this.#tokenizer,
@@ -742,7 +809,7 @@ export class SessionMaintenance {
 			branchEntries,
 			this.#tokenizer,
 			this.#withPlanProtection({
-				supersedeKey: supersedeReads ? readToolSupersedeKey : undefined,
+				supersedeKey: supersedeReads ? compactionSupersedeKey(readToolSupersedeKey) : undefined,
 				pruneUseless: dropUseless,
 				protectedTools: [...DEFAULT_PRUNE_CONFIG.protectedTools],
 				// Never re-write summarized-away entries; only flush the whole sent
@@ -2411,29 +2478,40 @@ export class SessionMaintenance {
 		advisorResetReason: string;
 		detachExtensionEmit?: boolean;
 	}): Promise<CompactionEntry | undefined> {
-		const entryId = this.#host.sessionManager.appendCompaction(
-			args.summary,
-			args.shortSummary,
-			args.firstKeptEntryId,
-			args.tokensBefore,
-			{
-				details: args.details,
-				fromExtension: args.fromExtension,
-				preserveData: args.preserveData,
-				method: args.method,
-				providerReplayThroughEntryId: args.providerReplayThroughEntryId,
-				tokensAfter:
-					isRecord(args.details) && args.details.kind === "experimental-context-rollover"
-						? this.#projectExperimentalContextRolloverTokens(args)
-						: this.#projectCompactedContextTokens(args),
-			},
-		);
-		// A committed compaction starts a new cycle; native compaction gets a fresh try.
-		this.#failedNativeSpeculation = undefined;
-		const newEntries = this.#host.sessionManager.getEntries();
-		const sessionContext = this.#host.buildDisplaySessionContext();
-		this.#host.agent.replaceMessages(sessionContext.messages);
-		this.#host.rebaseAfterCompaction();
+		// Bracketed so an observer sees a transaction spanning the durable rewrite,
+		// not just the append. The close lands before the extension fan-out below:
+		// a `session_compact` handler is another party's code, and holding the
+		// compaction open across someone else's await would report a slow handler
+		// as a compaction that never finished.
+		const committed = runCompactionTransaction(`commit:${args.method ?? "extension"}`, async () => {
+			const id = this.#host.sessionManager.appendCompaction(
+				args.summary,
+				args.shortSummary,
+				args.firstKeptEntryId,
+				args.tokensBefore,
+				{
+					details: args.details,
+					fromExtension: args.fromExtension,
+					preserveData: args.preserveData,
+					method: args.method,
+					providerReplayThroughEntryId: args.providerReplayThroughEntryId,
+					tokensAfter:
+						isRecord(args.details) && args.details.kind === "experimental-context-rollover"
+							? this.#projectExperimentalContextRolloverTokens(args)
+							: this.#projectCompactedContextTokens(args),
+				},
+			);
+			// A committed compaction starts a new cycle; native compaction gets a fresh try.
+			this.#failedNativeSpeculation = undefined;
+			// Read here, not after the transaction closes: `rebaseAfterCompaction`
+			// runs below and a snapshot taken later is a different list.
+			const newEntries = this.#host.sessionManager.getEntries();
+			const sessionContext = this.#host.buildDisplaySessionContext();
+			this.#host.agent.replaceMessages(sessionContext.messages);
+			this.#host.rebaseAfterCompaction();
+			return { id, newEntries };
+		});
+		const { id: entryId, newEntries } = await committed;
 		// Compaction discarded the conversation history that carried the approved
 		// plan reference. Clear the sent-flag so #buildPlanReferenceMessage re-reads
 		// the plan from disk and re-injects it on the next turn (issue #1246).
@@ -2806,6 +2884,10 @@ export class SessionMaintenance {
 		// inheriting a stale count from an earlier loop. Signed reasoning alone does
 		// not count, or a model burning every budget on thinking retries forever.
 		if (assistantTurnDelivered(assistantMessage)) this.#incompleteRecoveryAttempts = 0;
+		// Same reasoning for the overflow budget: a turn that actually delivered
+		// output proves the previous overflow recovery broke through, so the next
+		// overflow is a fresh incident rather than a continuation of the last one.
+		if (assistantTurnDelivered(assistantMessage)) this.#overflowRecoveryAttempts = 0;
 		// Skip overflow check if the message came from a different model.
 		// This handles the case where user switched from a smaller-context model (e.g. opus)
 		// to a larger-context model (e.g. codex) - the overflow error from the old model
@@ -2917,7 +2999,14 @@ export class SessionMaintenance {
 		}
 		const overflowEvidence =
 			sameModel && !errorIsFromBeforeCompaction && AIError.isContextOverflow(assistantMessage, contextWindow);
-		if (overflowEvidence || (payloadRejection && !trustedPayloadRejection)) {
+		const overflowing = overflowEvidence || (payloadRejection && !trustedPayloadRejection);
+		// The overflow budget is spent per *cause*, not per turn: a turn that
+		// failed for any other reason (a 503, a `length` stop, a delivered turn)
+		// closes the incident, so the next overflow starts with a fresh retry
+		// rather than inheriting a stale count. Without this, one transient
+		// network failure between two overflows silently disables recovery.
+		if (!overflowing) this.#overflowRecoveryAttempts = 0;
+		if (overflowing) {
 			this.#host.removeAssistantMessageFromActiveContext(assistantMessage);
 
 			// Try context promotion first - switch to a larger model and retry without compacting
@@ -2935,6 +3024,29 @@ export class SessionMaintenance {
 
 			// No promotion target available fall through to compaction
 			if (compactionAvailable) {
+				// Bound the compact → overflow → compact cycle. Every round of it
+				// *succeeds* at recovering, so an unbounded loop never surfaces in
+				// the error log — it just spends a full model turn per round,
+				// forever. The single retry exists to let a just-shrunk history
+				// succeed once; a second overflow means compaction of this history
+				// cannot help, so stop and say so rather than keep paying for it.
+				if (this.#overflowRecoveryAttempts >= OVERFLOW_RECOVERY_MAX_RETRIES) {
+					const attempts = this.#overflowRecoveryAttempts;
+					this.#overflowRecoveryAttempts = 0;
+					const droppedEntryId = await this.#host.dropPersistedAssistantTurn(assistantMessage);
+					if (droppedEntryId) await this.#host.sessionManager.discardEntryDurably(droppedEntryId);
+					const finalError = `Context overflow recovery gave up after ${attempts} compact-and-retry ${attempts === 1 ? "attempt" : "attempts"} from ${assistantMessage.provider}/${assistantMessage.model} — the context still overflows after compaction. Try switching to a larger-context model, reducing the conversation, or clearing large tool output.`;
+					logger.warn("Context overflow recovery cap reached; halting retries", {
+						model: `${assistantMessage.provider}/${assistantMessage.model}`,
+						attempts,
+					});
+					this.#host.emitNotice("error", finalError, "compaction");
+					// Without this the dropped turn leaves no error behind, so the task
+					// executor reads the run as idle and re-prompts into the same loop.
+					this.#host.retainTerminalFailure({ ...assistantMessage, stopReason: "error", errorMessage: finalError });
+					return COMPACTION_CHECK_BLOCK_AUTOMATIC_CONTINUATION;
+				}
+				this.#overflowRecoveryAttempts++;
 				const compactionResult = await this.#host.runRecoveryCompactionWithRollback(
 					"overflow",
 					assistantMessage,
@@ -4132,28 +4244,36 @@ export class SessionMaintenance {
 		const rebuilt = snapcompact.getPreservedArchive(result.preserveData);
 		if (!rebuilt || rebuilt.frames.length >= archive.frames.length) return undefined;
 
-		const rebuiltEntryId = this.#host.sessionManager.appendCompaction(
-			result.summary,
-			result.shortSummary,
-			result.firstKeptEntryId,
-			result.tokensBefore,
-			{
-				details: result.details,
-				preserveData: result.preserveData,
-				method: "snapcompact",
-				tokensAfter: this.#projectCompactedContextTokens({
-					summary: result.summary,
-					shortSummary: result.shortSummary,
-					tokensBefore: result.tokensBefore,
-					firstKeptEntryId: result.firstKeptEntryId,
+		// Bracketed like the regular append. This path exists precisely because the
+		// `session_before_compact` hook has already been passed by the time it runs
+		// (`runAutoCompaction` reaches it at ~4595 and emits the hook at ~4706), so
+		// an observer relying on that hook alone would see a compaction commit with
+		// no transaction around it.
+		const rebuiltEntryId = await runCompactionTransaction("commit:snapcompact-rescue", async () => {
+			const id = this.#host.sessionManager.appendCompaction(
+				result.summary,
+				result.shortSummary,
+				result.firstKeptEntryId,
+				result.tokensBefore,
+				{
+					details: result.details,
 					preserveData: result.preserveData,
-				}),
-			},
-		);
-		this.#failedNativeSpeculation = undefined;
-		const sessionContext = this.#host.buildDisplaySessionContext();
-		this.#host.agent.replaceMessages(sessionContext.messages);
-		this.#host.rebaseAfterCompaction();
+					method: "snapcompact",
+					tokensAfter: this.#projectCompactedContextTokens({
+						summary: result.summary,
+						shortSummary: result.shortSummary,
+						tokensBefore: result.tokensBefore,
+						firstKeptEntryId: result.firstKeptEntryId,
+						preserveData: result.preserveData,
+					}),
+				},
+			);
+			this.#failedNativeSpeculation = undefined;
+			const sessionContext = this.#host.buildDisplaySessionContext();
+			this.#host.agent.replaceMessages(sessionContext.messages);
+			this.#host.rebaseAfterCompaction();
+			return id;
+		});
 		// Same post-rewrite bookkeeping as the regular compaction append: the
 		// rebuilt context no longer carries the transient plan reference (#1246),
 		// and advisor cursors / todo phases were derived from the replaced

@@ -7,7 +7,7 @@ import { configHelp as commandHelp } from "../cli/command-help";
 import { type ConfigAction, type ConfigCommandArgs, runConfigCommand } from "../cli/config-cli";
 import { initTheme } from "@oh-my-pi/pi-tui/theme";
 
-const ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg"];
+const ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg", "migrate"];
 
 export default class Config extends Command {
 	static description = commandHelp.description;
@@ -30,6 +30,11 @@ export default class Config extends Command {
 
 	static flags = {
 		json: Flags.boolean({ description: "Output JSON" }),
+		apply: Flags.boolean({ description: "Actually move directories (config migrate only)" }),
+		config: Flags.string({
+			description: "Load an extra config.yml-style overlay for this run (repeatable)",
+			multiple: true,
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -43,6 +48,14 @@ export default class Config extends Command {
 			value,
 			flags: {
 				json: flags.json,
+				apply: flags.apply,
+				// Only the command-position spelling. The documented one — `ultraworkers
+				// --config <path> config get <key>`, ahead of the command token — is
+				// stripped by `resolveCliArgv` and recorded by the runner through
+				// `setGlobalConfigFiles`, which every settings instance reads. Both
+				// spellings are `--config` overlays and are merged in typed order by
+				// the Settings constructor, so a later one still wins.
+				config: flags.config,
 			},
 		};
 

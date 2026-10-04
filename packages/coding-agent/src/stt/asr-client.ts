@@ -16,6 +16,7 @@ import { tinyModelEnvKey, tinyWorkerEnv } from "../tiny/title-client";
 import { safeSend } from "../utils/ipc";
 import type { SttProgressEvent, SttWorkerInbound, SttWorkerOutbound } from "./asr-protocol";
 import { getSttModelSpec, type SttModelKey } from "./models";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
 
 type PendingRequest =
 	| { kind: "transcribe"; modelKey: SttModelKey; resolve: (text: string) => void; reject: (error: Error) => void }
@@ -69,7 +70,7 @@ interface StreamState {
  * Hidden subcommand on the main CLI that boots the speech-recognition worker in
  * the spawned subprocess. Kept in sync with the dispatch in `cli.ts`.
  */
-export const STT_WORKER_ARG = "__omp_worker_stt";
+export const STT_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stt`;
 
 /**
  * Spawn the speech worker as a subprocess. Exported for tests and the smoke

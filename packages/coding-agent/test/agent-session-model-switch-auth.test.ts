@@ -24,7 +24,7 @@ describe("AgentSession model switch auth pre-flight", () => {
 	const spies: Array<{ mockRestore: () => void }> = [];
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-model-switch-auth-");
+		sharedDir = TempDir.createSync("@ultraworkers-model-switch-auth-");
 		authStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		registry = new ModelRegistry(authStorage, path.join(sharedDir.path(), "models.yml"));

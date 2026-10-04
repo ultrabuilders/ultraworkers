@@ -136,7 +136,7 @@ describe("runSubprocess incremental yield loops", () => {
 		AgentRegistry.resetGlobalForTests();
 		AgentLifecycleManager.resetGlobalForTests();
 		AsyncJobManager.resetForTests();
-		tempDir = TempDir.createSync("@pi-yield-loop-");
+		tempDir = TempDir.createSync("@ultraworkers-yield-loop-");
 	});
 	afterEach(() => {
 		vi.restoreAllMocks();

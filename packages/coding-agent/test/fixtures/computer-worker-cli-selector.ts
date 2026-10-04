@@ -1,6 +1,10 @@
+// The selector is passed to the worker as argv, so it is a wire value: the
+// product owns its spelling and this fixture only chooses which one to request.
+import { COMPUTER_WORKER_ARG } from "../../src/cli/worker-selectors";
+
 const worker = new Worker(new URL("../../src/cli.ts", import.meta.url).href, {
 	type: "module",
-	argv: ["__omp_worker_computer"],
+	argv: [COMPUTER_WORKER_ARG],
 });
 const response = Promise.withResolvers<unknown>();
 worker.addEventListener("message", event => {

@@ -27,7 +27,7 @@ describe("compaction prefers the current session model over modelRoles.default",
 	let modelRegistry: ModelRegistry;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-compact-current-");
+		tempDir = TempDir.createSync("@ultraworkers-compact-current-");
 	});
 
 	afterEach(async () => {

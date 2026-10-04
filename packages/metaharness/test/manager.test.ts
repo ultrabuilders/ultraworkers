@@ -116,6 +116,73 @@ describe("RunStore", () => {
 		expect(store.discover()).toBe(0);
 	});
 
+	it("reports no trials for a job dir whose config could not name an agent", () => {
+		// A `--agent pi` job whose harbor config.json is corrupt. `readHarborConfig`
+		// used to answer `agent: "omp"` for an unreadable config, so `syncRun` probed
+		// `omp.txt` — a transcript this run never writes. `probeTrialCost` returned null
+		// and `?? 0` reported every trial at zero cost, with no error and no log: a
+		// number that reads as a measurement and is not one.
+		//
+		// Two properties, and the second is the one a "just throw" fix loses. Making
+		// `transcriptFilename("")` propagate takes down `readBenchmarkSnapshot` ->
+		// `syncRun` -> `discover`'s per-entry loop -> `Server.start`, so ONE unreadable
+		// dir would abort discovery for every dir after it. The next test pins that.
+		const jobsDir = makeJobsDir();
+		writeFixtureJob(jobsDir, "job-badcfg");
+		const jobDir = path.join(jobsDir, "job-badcfg");
+		fs.writeFileSync(path.join(jobDir, "config.json"), "{ this is not json");
+		// A transcript under the name the OTHER agent writes. If the store guessed "omp"
+		// it would find this file and report alpha at its cost — a cost belonging to a
+		// different agent entirely. Under the fix the run reports no trials at all.
+		fs.rmSync(path.join(jobDir, "alpha__abc", "agent", "omp.txt"), { force: true });
+		fs.writeFileSync(
+			path.join(jobDir, "alpha__abc", "agent", "pi.txt"),
+			[
+				JSON.stringify({
+					type: "message_end",
+					message: {
+						role: "assistant",
+						model: "claude-opus-4-8",
+						content: [{ type: "text", text: "Decoy." }],
+					},
+				}),
+			].join("\n"),
+		);
+
+		const store = new RunStore(jobsDir);
+		cleanups.push(() => store.close());
+
+		expect(store.discover()).toBe(1);
+		const run = store.getRun("job-badcfg");
+		// The agent is recorded as unknown rather than invented.
+		expect(run?.agent).toBe("");
+		// And the consequence is "we could not read this", not "this cost nothing".
+		expect(store.listTraces("job-badcfg")).toEqual([]);
+		expect(run?.costUsd ?? 0).toBe(0);
+	});
+
+	it("keeps discovering later job dirs after one has an unreadable config", () => {
+		// The blast-radius half of the test above. `discover()` walks its entries and
+		// calls `syncRun` per dir with no try/catch, so a throw anywhere in the read
+		// path escapes `discover()` entirely — and `Server.start` calls `discover()`
+		// unwrapped, so a single corrupt job dir would stop the manager booting.
+		const jobsDir = makeJobsDir();
+		writeFixtureJob(jobsDir, "job-aaa-badcfg");
+		fs.writeFileSync(path.join(jobsDir, "job-aaa-badcfg", "config.json"), "{ not json");
+		writeFixtureJob(jobsDir, "job-zzz-good");
+
+		const store = new RunStore(jobsDir);
+		cleanups.push(() => store.close());
+
+		// readdir order is not guaranteed, so assert on the OUTCOME: the good dir is
+		// present and mirrored, whatever order it was reached in.
+		expect(store.discover()).toBe(2);
+		const good = store.getRun("job-zzz-good");
+		expect(good?.agent).toBe("omp");
+		expect(good?.nTotal).toBe(3);
+		expect(good?.costUsd).toBeCloseTo(0.7, 5);
+	});
+
 	it("marks discovered runs complete when harbor recorded a terminal state", () => {
 		const jobsDir = makeJobsDir();
 		writeFixtureJob(jobsDir, "job-done");

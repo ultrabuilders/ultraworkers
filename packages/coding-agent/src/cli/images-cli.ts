@@ -10,6 +10,7 @@ import {
 	queryBlobBrokerPurge,
 	queryBlobBrokerStatus,
 } from "../blob-broker/daemon";
+import { closeDaemonClients } from "../launch/client";
 import {
 	type BlobDestinationId,
 	type BlobDestinationMetadata,
@@ -75,7 +76,17 @@ export interface ImagesProviderFileSnapshot {
 	readonly lastError?: string;
 }
 
-export type ImagesDoctorSeverity = "ok" | "warn" | "error";
+/**
+ * What a check concluded.
+ *
+ * `unavailable` is deliberately separate from `warn`. A `warn` is a **measurement**
+ * ("the cache directory is not writable"), whereas `unavailable` means **no
+ * measurement was taken** ("the daemon could not be reached"). Reporting those two
+ * the same way makes "nothing is wrong" indistinguishable from "nothing was
+ * checked", and health derived from the absence of errors then certifies a
+ * subsystem nobody successfully asked about.
+ */
+export type ImagesDoctorSeverity = "ok" | "warn" | "error" | "unavailable";
 
 export interface ImagesDoctorCheck {
 	readonly name: string;
@@ -523,7 +534,7 @@ async function collectDoctor(
 		} catch {
 			checks.push({
 				name: "config:provider-files",
-				severity: "warn",
+				severity: "unavailable",
 				detail: "Provider authentication storage could not be inspected",
 			});
 		} finally {
@@ -532,7 +543,11 @@ async function collectDoctor(
 	}
 	const daemon = await deps.queryDoctor(projectDir, { probe: true });
 	if (!daemon) {
-		checks.push({ name: "daemon", severity: "warn", detail: "Image daemon is stopped or unreachable" });
+		checks.push({
+			name: "daemon",
+			severity: "unavailable",
+			detail: "Image daemon is stopped or unreachable",
+		});
 	} else {
 		for (const check of daemon.checks) {
 			checks.push({
@@ -542,7 +557,10 @@ async function collectDoctor(
 			});
 		}
 	}
-	const healthy = !checks.some(check => check.severity === "error");
+	// Enumerated, not inferred: health means every subsystem positively cleared, so a
+	// check that could not run withholds it. Deriving it from "nothing is an error"
+	// alone is what let a stopped daemon read as healthy — see the severity union.
+	const healthy = !checks.some(check => check.severity === "error" || check.severity === "unavailable");
 	return { action: "doctor", exitCode: healthy ? 0 : 1, projectDir, healthy, checks };
 }
 
@@ -820,4 +838,29 @@ export async function runImagesCommand(
 	else if ("error" in result) deps.writeStderr(renderHuman(result));
 	else deps.writeStdout(renderHuman(result));
 	return result;
+}
+
+/**
+ * Run one standalone images command, then release the sockets it opened.
+ *
+ * The daemon queries reach a process-shared broker client, whose socket outlives
+ * the query that created it. A one-shot CLI process that returns while holding
+ * it never reaches an empty event loop, so `ultraworkers images status|doctor|purge`
+ * printed their complete report and then hung forever — the command was
+ * unusable and any CI step using it hung with it. `probe` escaped only because
+ * it short-circuits before touching the daemon when no backend is configured.
+ *
+ * The close belongs to the command rather than to the client: the client is
+ * shared, so tearing it down where it is created would break every other user
+ * in the process. `ps`, `read` and `predict` already close it the same way.
+ */
+export async function runImagesCommandAndExit(
+	args: ImagesCommandArgs,
+	overrides?: Partial<ImagesCliDependencies>,
+): Promise<ImagesCommandResult> {
+	try {
+		return await runImagesCommand(args, overrides);
+	} finally {
+		await closeDaemonClients();
+	}
 }

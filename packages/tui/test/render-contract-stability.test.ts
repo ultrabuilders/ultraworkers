@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { clearRenderCache, Markdown } from "@oh-my-pi/pi-tui/components/markdown";
-import { defaultMarkdownTheme } from "./test-themes.js";
+import { defaultMarkdownTheme } from "./test-themes";
 
 // What the render contract actually requires, and what a reader of the 15.10.11
 // changelog entry would assume is missing.

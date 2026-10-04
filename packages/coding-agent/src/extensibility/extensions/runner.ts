@@ -1,6 +1,8 @@
 /**
  * Extension runner - executes extensions and manages their lifecycle.
  */
+import { addPeerLockBackend, addPeerTransport } from "../../irc/peer-transport";
+import { addInboundFence } from "../../irc/inbound-fence";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	type AgentMessage,
@@ -11,6 +13,7 @@ import {
 	isNonBlankContext,
 	joinAdditionalContext,
 } from "@oh-my-pi/pi-agent-core";
+import { ExtensionContextStaleError, STALE_CONTEXT_MESSAGE } from "./stale-context";
 import type {
 	AssistantMessage,
 	CredentialDisabledEvent,
@@ -30,13 +33,24 @@ import { logger } from "@oh-my-pi/pi-utils";
 import { MAIN_AGENT_RULE_NAME } from "../../capability/rule";
 import type { ModelRegistry } from "../../config/model-registry";
 import { type Settings, withActiveSettings } from "../../config/settings";
+import { isProjectTrustedForScope } from "../../config/project-trust";
 import type { LocalProtocolOptions } from "../../internal-urls/local-protocol";
 import type { MemoryRuntimeContext } from "../../memory-backend";
 import { type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { AsyncJobSnapshot } from "../../session/agent-session";
 import { MAIN_AGENT_ID } from "../../registry/agent-registry";
+import { registerCompactionTransactionObserver } from "../../session/compaction-transaction";
+import { safeJsonStringify } from "../../tools/browser/run-output";
+import type { ApprovalEntry, SessionEntryBase } from "../../session/session-entries";
 import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
+import { addCompactionProtection } from "../../tools/compaction-protection";
+import { addContextTransform } from "../../tools/compaction-transforms";
+import { registerHostRenderStrategy, type HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
+import { releaseDiagnostics } from "./diagnostics";
+import { releaseToolEffects } from "../../tools/effects";
+import { addUsageReporter } from "../../tools/usage-reporter";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
 import { accumulateToolCallResult, buildAggregatedToolCallResult } from "../shared-events";
 import { ManagedTimers, UNOWNED_TIMERS } from "./managed-timers";
@@ -62,6 +76,7 @@ import type {
 	ExtensionAgentIdentity,
 	ExtensionCommandContext,
 	ExtensionCommandContextActions,
+	ReplacedSessionContext,
 	ExtensionContext,
 	ExtensionContextActions,
 	ExtensionError,
@@ -70,6 +85,7 @@ import type {
 	ExtensionMode,
 	ExtensionRuntime,
 	ExtensionShortcut,
+	DoubleEscapeAction,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	InputEvent,
@@ -79,6 +95,10 @@ import type {
 	CacheWarmingDecisionEventResult,
 	McpNotificationEvent,
 	MessageRenderer,
+	EntryRenderer,
+	MarkdownTransformer,
+	ExtensionRegistrationDiagnostic,
+	OutputFormat,
 	RegisteredCommand,
 	RegisteredTool,
 	ResourcesDiscoverEvent,
@@ -90,6 +110,7 @@ import type {
 	SessionCompactingResult,
 	SessionStopEvent,
 	SessionStopEventResult,
+	ToolApprovalRequestedEventResult,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolRegistrationListener,
@@ -100,8 +121,15 @@ import type {
 	UserPythonEvent,
 	UserPythonEventResult,
 } from "./types";
+import { unregisterOwned } from "../../config/registry";
+import { extensionSettingOwner } from "./loader";
+import { type HookResultRejection, validateHookResult } from "../hooks/result-validation";
+import { unavailableFrameMessage, type FramelessGuard } from "./unavailable-ui";
 
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
+import { cfgToolsApproval } from "../../tools/settings";
+import { modeRegistry } from "../../modes/mode-registry";
+import { extensionSurfaceRegistry } from "./surface-registry";
 
 /** Combined result from all before_agent_start handlers */
 interface BeforeAgentStartCombinedResult {
@@ -165,6 +193,26 @@ function handlerTimeoutForEvent(eventType: string): number {
 
 const EXTENSION_HANDLER_TIMEOUT = Symbol("extensionHandlerTimeout");
 const EXTENSION_HANDLER_ABORTED = Symbol("extensionHandlerAborted");
+
+/**
+ * Reported when a handler returned a value for an event that consumes none.
+ *
+ * A return value on such an event is not an error the host can act on — it is
+ * silently dropped — but silence is the worst possible report, because the
+ * author has no way to learn that the seam they wrote to is inert.
+ */
+export const EXTENSION_HANDLER_RESULT_DISCARDED_CODE = "handler-result-discarded";
+
+/** Cap on the rendered value, so a large object cannot flood a toast or a log line. */
+const DISCARDED_RESULT_PREVIEW_LENGTH = 200;
+
+/** Render a discarded value for a one-line surface: collapsed whitespace, bounded length. */
+function describeDiscardedHandlerResult(value: unknown): string {
+	const rendered = safeJsonStringify(value).replace(/\s+/g, " ").trim();
+	return rendered.length > DISCARDED_RESULT_PREVIEW_LENGTH
+		? `${rendered.slice(0, DISCARDED_RESULT_PREVIEW_LENGTH)}…`
+		: rendered;
+}
 
 interface HandlerTimeoutBudget {
 	pause(): void;
@@ -373,7 +421,7 @@ const MAX_PENDING_MCP_NOTIFICATIONS = 100;
  * Events handled by the generic emit() method.
  * Events with dedicated emitXxx() methods are excluded for stronger type safety.
  */
-type RunnerEmitEvent = Exclude<
+export type RunnerEmitEvent = Exclude<
 	ExtensionEvent,
 	| ToolCallEvent
 	| ToolResultEvent
@@ -410,7 +458,9 @@ type RunnerEmitResult<TEvent extends RunnerEmitEvent> = TEvent extends { type: "
 					? SessionCompactingResult | undefined
 					: TEvent extends { type: "session_stop" }
 						? SessionStopEventResult | undefined
-						: undefined;
+						: TEvent extends { type: "tool_approval_requested" }
+							? ToolApprovalRequestedEventResult | undefined
+							: undefined;
 
 // Session-lifecycle handler types live once in session-handler-types (imported
 // above for local use); re-exported here to keep this module's public API stable.
@@ -442,28 +492,84 @@ export async function emitSessionShutdownEvent(extensionRunner: ExtensionRunner 
 	}
 }
 
+/**
+ * `noOpUIContext.hasUI` is a constant `false`, so the guard the frameless message
+ * names is real here: `if (pi.ui.hasUI)` skips the call that would otherwise throw.
+ * This is the opposite of the ACP context, which reports `hasUI` as a variable.
+ */
+const FRAMELESS_GUARD = "hasUI-blocks-the-call" satisfies FramelessGuard;
+
 export const noOpUIContext: ExtensionUIContext = {
 	hasUI: false,
+	// Stated, not derived from `hasUI`. They happen to agree here because `hasUI` is
+	// a constant `false`; the point is that nothing forces them to agree anywhere
+	// else, and deriving this one would make the query a rename of the flag rather
+	// than an answer to a different question.
+	canMount: () => false,
 	select: async (_title, _options, _dialogOptions) => undefined,
 	confirm: async (_title, _message, _dialogOptions) => false,
 	input: async (_title, _placeholder, _dialogOptions) => undefined,
-	notify: () => {},
+	// Not silent. `setStatus` below can be, because the frameless message names it as
+	// the text path that still works — an author has somewhere to go. `notify` has no
+	// such alternative named anywhere, so swallowing it turned a dropped message into
+	// an absence with no trace. There is no channel to deliver on here, which is
+	// exactly the situation the ACP context is in, and it logs for the same reason
+	// (`acp-agent.ts`). Logged rather than thrown: it returns `void`, so throwing
+	// would break the bundled commands that call it on this context without telling
+	// the author anything they could act on differently.
+	//
+	// `debug` and not `warn` even for `type: "error"`: `emitLocally` applies no level
+	// filter (`logger.ts:329`), so every level reaches the rotating log file — this is
+	// recorded, not buried, and `debug` is what the analogous ACP seam already uses.
+	notify: (message, type) => {
+		logger.debug("Extension notification dropped (extension runner)", { message, type });
+	},
 	onTerminalInput: () => () => {},
+	// `setStatus` stays silent deliberately, and is the one member here that keeps a
+	// working alternative: it is the text path the frameless message below tells authors
+	// to reach for, and `annotate/index.ts:286,303` calls it on this context. Making it
+	// throw would break a live caller and contradict the advice in the same message.
 	setStatus: () => {},
-	setWorkingMessage: () => {},
-	// The no-op context cannot animate anything, so there is nothing to set.
-	setWorkingIndicator: () => {},
-	setWidget: () => {},
-	setFooter: () => {},
-	setHeader: () => {},
-	setTitle: () => {},
-	custom: async () => undefined as never,
-	setEditorText: () => {},
+	setWorkingMessage: () => {
+		throw new Error(unavailableFrameMessage("setWorkingMessage", "this mode", FRAMELESS_GUARD));
+	},
+	setWorkingIndicator: () => {
+		throw new Error(unavailableFrameMessage("setWorkingIndicator", "this mode", FRAMELESS_GUARD));
+	},
+	// This one had no comment at all, which made it read as an oversight rather than a
+	// decision. It is the same decision as its neighbours, so it now says so: there is no
+	// frame to draw the widget into, and silence would leave the author believing a panel
+	// is on screen. Zero in-repo callers, so throwing narrows nothing that was working.
+	setWidget: () => {
+		throw new Error(unavailableFrameMessage("setWidget", "this mode", FRAMELESS_GUARD));
+	},
+	setFooter: () => {
+		throw new Error(unavailableFrameMessage("setFooter", "this mode", FRAMELESS_GUARD));
+	},
+	setHeader: () => {
+		throw new Error(unavailableFrameMessage("setHeader", "this mode", FRAMELESS_GUARD));
+	},
+	setTitle: () => {
+		throw new Error(unavailableFrameMessage("setTitle", "this mode", FRAMELESS_GUARD));
+	},
+	custom: () => {
+		// Throws rather than resolving `undefined as never`. That cast satisfied the
+		// declared `Promise<T>` while handing the caller a value its factory never
+		// produced, so an author awaiting a result got `undefined` and no error. The
+		// documented usage (hooks/types.ts) is `const result = await ctx.ui.custom(...)`,
+		// which is exactly the shape this lied to.
+		throw new Error(unavailableFrameMessage("custom", "this mode", FRAMELESS_GUARD));
+	},
+	setEditorText: () => {
+		throw new Error(unavailableFrameMessage("setEditorText", "this mode", FRAMELESS_GUARD));
+	},
 	pasteToEditor: () => {},
 	getEditorText: () => "",
 	editor: async () => undefined,
 	addAutocompleteProvider: () => {},
-	setEditorComponent: () => {},
+	setEditorComponent: () => {
+		throw new Error(unavailableFrameMessage("setEditorComponent", "this mode", FRAMELESS_GUARD));
+	},
 	get theme() {
 		return theme;
 	},
@@ -471,7 +577,9 @@ export const noOpUIContext: ExtensionUIContext = {
 	getTheme: () => Promise.resolve(undefined),
 	setTheme: (_theme: string | Theme) => Promise.resolve({ success: false, error: "UI not available" }),
 	getToolsExpanded: () => false,
-	setToolsExpanded: () => {},
+	setToolsExpanded: () => {
+		throw new Error(unavailableFrameMessage("setToolsExpanded", "this mode", FRAMELESS_GUARD));
+	},
 };
 
 interface ToolRegistrationScope {
@@ -513,24 +621,87 @@ export class ExtensionContextDisposedError extends Error {
  * clear `registeredProviders` — the record of what was registered is what makes a
  * re-load or a resume able to restore it.
  */
-function clearExtensionBuckets(extension: Extension): void {
+export function clearExtensionBuckets(extension: Extension): void {
 	extension.handlers.clear();
 	extension.tools.clear();
 	extension.assistantThinkingRenderers.length = 0;
 	extension.fileWriteFallbackHandlers.length = 0;
 	extension.fileDeleteFallbackHandlers.length = 0;
+	extension.peerTransports.length = 0;
+	extension.peerLockBackends.length = 0;
+	extension.compactionProtections.length = 0;
+	extension.contextTransforms.length = 0;
 	extension.messageRenderers.clear();
+	// Both new seams are withdrawn here, not left to the object being dropped: an
+	// entryRenderers map and a markdownTransformer would otherwise outlive the
+	// extension and collide with its own replacement on reload.
+	extension.entryRenderers.clear();
+	extension.markdownTransformer = undefined;
 	extension.composerShapes.clear();
 	extension.commands.clear();
 	extension.flags.clear();
 	extension.shortcuts.clear();
 	extension.outputFormats.clear();
 	extension.toolNameResolvers.length = 0;
+	extension.usageReporters.length = 0;
+	// Diagnostics live in a process-wide registry the doctor reads from another
+	// subsystem, so emptying the array alone would leave the check running and
+	// reporting on a directory that is no longer loaded.
+	releaseDiagnostics(extension.path);
+	extension.diagnostics.length = 0;
+	// Declared effects are the same shape of residue: the gate reads a registry by
+	// tool name, so a tool left declared after its extension unloads would keep
+	// narrowing calls under a name the extension no longer owns.
+	releaseToolEffects(extension.path);
+	extension.hostRenderStrategies.length = 0;
+	// Same residue, same reason. A surface declared at load lives in a process-wide
+	// registry, so clearing the array would leave the declaration in place: a
+	// session starting later would drain it and mount a band for an extension that
+	// no longer exists. Released by owner, never by index, because by unload time
+	// the record may belong to a reloaded copy of the same path.
+	extensionSurfaceRegistry.releaseOwnedBy(extension.path);
+	extension.surfaces.length = 0;
+	extension.copyTargetProviders.length = 0;
 	extension.toolRegistrationListeners.clear();
 }
 
+/**
+ * Built-in keys an extension may not claim, used when the caller does not supply the
+ * live set. This is a FLOOR, not the answer: it names the defaults ultraworkers ships with, and
+ * a user who remaps one of them onto a key it does not mention is not represented here.
+ * Pass `KeybindingsManager.claimedKeyIds()` to get the real set.
+ */
+const RESERVED_SHORTCUT_KEYS: ReadonlySet<KeyId> = new Set([
+	"ctrl+c",
+	"ctrl+d",
+	"ctrl+z",
+	"ctrl+k",
+	"ctrl+p",
+	"ctrl+l",
+	"ctrl+o",
+	"ctrl+t",
+	"ctrl+g",
+	"alt+m",
+	// Default chord for `app.message.followUp` (Windows Terminal can't deliver Ctrl+Enter; #1903).
+	"ctrl+q",
+	"shift+tab",
+	"shift+ctrl+p",
+	"alt+enter",
+	"escape",
+	"enter",
+]);
+
 export class ExtensionRunner {
 	#uiContext: ExtensionUIContext;
+	/**
+	 * One `ui` wrapper per extension, memoised on the extension itself.
+	 *
+	 * Identity is the point, not a cache: the wrapper is what carries
+	 * `options.owner` into `setWidget`, and a fresh object per `createContext`
+	 * call would make two contexts for the same extension compare unequal for no
+	 * reason a caller could see.
+	 */
+	#ownedUiContexts = new WeakMap<Extension, ExtensionUIContext>();
 	#mode: ExtensionMode = "print";
 	#toolApprovalPreviewWaiter?: (toolCallId: string) => Promise<void>;
 	#errorListeners: Set<ExtensionErrorListener> = new Set();
@@ -552,7 +723,18 @@ export class ExtensionRunner {
 	#reloadHandler: () => Promise<void> = async () => {};
 	#shutdownHandler: ShutdownHandler = () => {};
 	#getMemoryFn?: () => MemoryRuntimeContext | undefined;
-	#commandDiagnostics: Array<{ type: string; message: string; path: string }> = [];
+	#registrationDiagnostics: ExtensionRegistrationDiagnostic[] = [];
+	/**
+	 * Bumped whenever the session behind this runner is replaced.
+	 *
+	 * A counter rather than a boolean because the escape hatch needs both: a
+	 * context minted AFTER the replacement must work, while every context minted
+	 * before it must not. A boolean cannot tell those apart — it would leave the
+	 * `withSession` context just as dead as the one it replaced.
+	 */
+	#generation = 0;
+	/** First invalidation reason wins, so the original cause is the one reported. */
+	#staleMessage: string | undefined;
 	#toolRegistrationScope = new AsyncLocalStorage<ToolRegistrationScope>();
 	#toolRegistrationBarrier: Promise<void> | undefined;
 	#initialized = false;
@@ -567,6 +749,76 @@ export class ExtensionRunner {
 	 * {@link MAX_PENDING_CREDENTIAL_DISABLED}; oldest entries are dropped under pressure.
 	 */
 	#pendingCredentialDisabled: CredentialDisabledEvent[] = [];
+
+	/**
+	 * Approval prompts currently on screen, so a later decision can reach them.
+	 *
+	 * ## Why this registry has to exist
+	 *
+	 * A batch of parallel tool calls is dispatched with `Promise.allSettled`
+	 * (agent-loop.ts:3712), and each gated call raises its own prompt. They are
+	 * therefore *concurrent*: a user answering one leaves the siblings still asking.
+	 * Two consequences follow, and both are bugs rather than preferences:
+	 *
+	 * 1. Choosing "Approve always" on one call did nothing for its siblings — they
+	 *    had already resolved and were already showing a prompt, so the new grant
+	 *    was invisible to the calls it was meant to cover.
+	 * 2. Choosing "Deny" on one call left the siblings asking questions the user had
+	 *    already answered in spirit. Worse, a sibling covering a *related* action is
+	 *    now asking about something the user just refused.
+	 *
+	 * Registering the resolver here is what lets a decision answer prompts that are
+	 * already on screen. The alternative — checking a shared policy after each
+	 * prompt returns — cannot work, because the prompt is already blocking the very
+	 * call it would release.
+	 *
+	 * Entries are removed when their prompt settles, so this holds only what is
+	 * genuinely in flight; a registry that outlived its prompt would keep releasing
+	 * callers nobody is waiting for.
+	 */
+	#pendingApprovals = new Map<string, { policyKey: string; settle: (decision: "approve" | "deny") => void }>();
+
+	/**
+	 * Register a prompt that is currently awaiting the user.
+	 *
+	 * @param policyKey the action key this prompt would be persisted under, so a later
+	 *   grant or denial can recognise exactly the prompts it covers.
+	 * @returns A function that must be called when the prompt settles, to unregister.
+	 */
+	registerPendingApproval(
+		toolCallId: string,
+		policyKey: string,
+		settle: (decision: "approve" | "deny") => void,
+	): () => void {
+		this.#pendingApprovals.set(toolCallId, { policyKey, settle });
+		return () => this.#pendingApprovals.delete(toolCallId);
+	}
+
+	/**
+	 * Answer every prompt already on screen that one policy key covers.
+	 *
+	 * Used by the always-grant and by the deny cascade. Matching on the same
+	 * canonical key the grant is written under is what keeps the two consistent: a
+	 * sibling covered by the new policy is exactly a sibling whose key equals it.
+	 *
+	 * @returns how many prompts were released, so a caller can tell a cascade that
+	 *   reached nothing from one that reached a batch.
+	 */
+	settlePendingApprovals(policyKey: string, decision: "approve" | "deny"): number {
+		let settled = 0;
+		for (const [toolCallId, pending] of this.#pendingApprovals) {
+			if (pending.policyKey !== policyKey) continue;
+			this.#pendingApprovals.delete(toolCallId);
+			pending.settle(decision);
+			settled++;
+		}
+		return settled;
+	}
+
+	/** How many approval prompts are on screen; used by tests and diagnostics. */
+	get pendingApprovalCount(): number {
+		return this.#pendingApprovals.size;
+	}
 
 	/**
 	 * Buffer for `mcp_notification` events received via {@link emitMcpNotification} before
@@ -740,7 +992,17 @@ export class ExtensionRunner {
 		if (depth >= 8) {
 			throw new Error(`invokeTool: delegation depth exceeded 8 (recursive invokeTool for "${name}"?)`);
 		}
-		const toolCallId = `invoke-${name}-${Date.now().toString(36)}-${depth}`;
+		// A uuid rather than `Date.now()`-and-depth. Depth is threaded from the caller,
+		// so two independent delegations of the same tool both sit at depth 0 — and
+		// `Date.now()` has millisecond resolution, so two such calls in one millisecond
+		// minted the *same* id. That is not a rare race: the approval registry keys on
+		// this id, and `Map.set` on a duplicate silently drops the earlier entry, so the
+		// first call's prompt could never be released by a decision on the second. A
+		// prompt that hangs with nothing logged is exactly what the cascade exists to
+		// prevent, so the id has to be unique by construction rather than by timing.
+		//
+		// Same shape as the other synthesized ids in the codebase (`eval/js/tool-bridge.ts`).
+		const toolCallId = `invoke-${name}-${crypto.randomUUID()}`;
 		return (await resolved.tool.execute(
 			toolCallId,
 			params as never,
@@ -800,6 +1062,61 @@ export class ExtensionRunner {
 	}
 
 	/**
+	 * Append one half of an approval audit pair to this session's log.
+	 *
+	 * Deliberately *not* reached through `context.sessionManager`. That is
+	 * `ReadonlySessionManager` — a `Pick` of read-only methods, and the facade
+	 * extensions see on purpose. Adding `appendApprovalEntry` to it would hand
+	 * every installed extension write access to the session transcript to buy core
+	 * a single append, so the seam is here, on the core runner that already holds
+	 * the real manager.
+	 *
+	 * Core-only: nothing reachable from an extension's `ToolContext` lands here.
+	 */
+	recordApprovalEntry(half: Omit<ApprovalEntry, keyof SessionEntryBase>): void {
+		this.sessionManager.appendApprovalEntry(half);
+	}
+
+	/**
+	 * Persist a "remember this decision" approval policy, keyed by action.
+	 *
+	 * ## Why this is a runner method and not on `ToolContext`
+	 *
+	 * Same reasoning as `recordApprovalEntry` above: writing a user policy is a
+	 * core decision about the user's configuration, and an extension that could
+	 * write arbitrary policies would be able to grant itself `allow` for any tool.
+	 * The prompt lives in core, so the write belongs in core too — the extension
+	 * never names the policy, it only observes that the choice was made.
+	 *
+	 * ## Why `policyKey` and not `toolName`
+	 *
+	 * `tools.approval` is a `record` setting, and `resolveApproval` (approval.ts:211)
+	 * consults `tools.approval.<policyKey>` in preference to `tools.approval.<tool>`.
+	 * The ACP gate already keys its "always" decisions on the canonicalized
+	 * *action* (`canonicalizeApprovalKey`) rather than the tool name, precisely so
+	 * approving `git status` does not also approve `rm -rf ./build`. This method
+	 * takes that same key so the two surfaces cannot disagree about what "always"
+	 * means.
+	 *
+	 * Silently does nothing when no settings instance is available: a missing
+	 * settings layer is not a reason to fail a call the user already approved.
+	 *
+	 * `settings` is passed in rather than read from `this.settings` because the
+	 * approval gate resolves against the execute-time context when the call carried
+	 * one, and those are different objects. Writing to the runner's copy would persist
+	 * the decision somewhere the very call that granted it would not read it back.
+	 */
+	persistApprovalPolicy(policyKey: string, policy: "allow" | "deny", settings?: Settings): void {
+		const target = settings ?? this.settings;
+		if (!target) return;
+		const existing = cfgToolsApproval.get(target) as Record<string, unknown>;
+		// Skip a write that would change nothing, so repeating an "always" decision
+		// does not dirty the settings file or add a spurious write event.
+		if (existing[policyKey] === policy) return;
+		target.writeValue(cfgToolsApproval, { ...existing, [policyKey]: policy }, "global");
+	}
+
+	/**
 	 * Session settings this runner was constructed with. Used when a direct
 	 * `tool.execute()` omits execute-time context so approval still sees the
 	 * user's configured mode (schema default `yolo`) instead of fail-closed.
@@ -819,6 +1136,12 @@ export class ExtensionRunner {
 		this.runtime.sendMessage = actions.sendMessage;
 		this.runtime.sendUserMessage = actions.sendUserMessage;
 		this.runtime.appendEntry = actions.appendEntry;
+		// Falls back to the module's own registry so every host wiring an
+		// ExtensionActions gets the seam without having to remember it. The registry
+		// is process-global, so a per-host action could only ever be a different
+		// function over the same set.
+		this.runtime.registerCompactionTransactionObserver =
+			actions.registerCompactionTransactionObserver ?? registerCompactionTransactionObserver;
 		this.runtime.getActiveTools = actions.getActiveTools;
 		this.runtime.getAllTools = actions.getAllTools;
 		this.runtime.setActiveTools = async toolNames => {
@@ -872,6 +1195,53 @@ export class ExtensionRunner {
 		// accumulate duplicate global registrations — drop the prior generation before
 		// installing this one's trampolines.
 		this.disposeFileFallbacks();
+		// Prune-pass protection rides the same lifecycle: installed once here,
+		// released by `disposeFileFallbacks()` above, and bucketed by extension so
+		// unloading ONE extension releases exactly its own contribution. Without
+		// this an unloaded extension's matcher would keep pinning context forever.
+		//
+		// A separate loop from the write/delete trampolines below on purpose: those
+		// install a callable that is consulted at mutation time, whereas protection is
+		// plain data the prune pass reads. Merging the loops would couple two seams
+		// whose `continue` guards mean genuinely different things — a contribution
+		// with no matcher and no key must still install, so it can be rejected by
+		// name, rather than being skipped as "registered nothing".
+		for (const ext of this.getLoadedExtensions()) {
+			for (const protection of ext.compactionProtections) {
+				this.#pushFallbackDisposer(ext.path, addCompactionProtection(ext.path, protection));
+			}
+		}
+		// Context transforms install beside protections for the same reason and with
+		// the same lifecycle: the prune pass reads the registry from module scope,
+		// long after extension load, and an unloaded extension must stop reducing a
+		// live transcript. Disposer-per-registration, so releasing ONE extension
+		// leaves every other extension's transform running.
+		for (const ext of this.getLoadedExtensions()) {
+			for (const transform of ext.contextTransforms) {
+				this.#pushFallbackDisposer(ext.path, addContextTransform(ext.path, transform));
+			}
+		}
+		// Host render strategies install beside the other process-wide registries for
+		// the same reason: the resize gate reads its registry from module scope, long
+		// after extension load, and an unloaded extension must stop advising the
+		// terminal renderer. No re-apply call is needed — unlike a composer shape, the
+		// gate consults the registry lazily on each resize, so installing is enough.
+		for (const ext of this.getLoadedExtensions()) {
+			for (const strategy of ext.hostRenderStrategies) {
+				this.#pushFallbackDisposer(ext.path, registerHostRenderStrategy(strategy));
+			}
+		}
+		// Usage reporters install beside compaction protections for the same reason:
+		// the fold that reads them runs in the session index and the stats tracker,
+		// neither of which holds an ExtensionRunner, so the registry has to be
+		// reachable from module scope. Disposer-per-registration, so unloading ONE
+		// extension releases exactly its own contribution — otherwise a stale
+		// reporter keeps adding a dead extension's tokens to the live ledger.
+		for (const ext of this.getLoadedExtensions()) {
+			for (const { toolName, reporter } of ext.usageReporters) {
+				this.#pushFallbackDisposer(ext.path, addUsageReporter(ext.path, toolName, reporter));
+			}
+		}
 		// Suspended extensions keep a (gated) trampoline so resuming them needs no rewire.
 		for (const ext of this.getLoadedExtensions()) {
 			// Nothing registered by this extension means no trampoline, so a host with
@@ -879,7 +1249,13 @@ export class ExtensionRunner {
 			// `hasFileWriteFallback()`/`hasFileDeleteFallback()` false — the invariant
 			// the whole feature rests on. Each seam is checked separately, so an
 			// extension that only brokers writes never appears in the delete registry.
-			if (ext.fileWriteFallbackHandlers.length === 0 && ext.fileDeleteFallbackHandlers.length === 0) continue;
+			if (
+				ext.fileWriteFallbackHandlers.length === 0 &&
+				ext.fileDeleteFallbackHandlers.length === 0 &&
+				ext.peerTransports.length === 0 &&
+				ext.peerLockBackends.length === 0
+			)
+				continue;
 			// One trampoline per extension per seam, not per handler: the list is walked
 			// at mutation time so a handler this extension adds later still takes effect,
 			// and `createContext()` takes no extension argument, so within one invocation
@@ -939,6 +1315,38 @@ export class ExtensionRunner {
 						return false;
 					}),
 				);
+			}
+
+			// Peer seams are installed from the same load pass, and for the same
+			// reason: a registration made after the runner initialises never takes
+			// effect, so an extension that registers during its factory — as it
+			// must — is covered, and one that registers later is silently skipped
+			// exactly as the file fallbacks are.
+			for (const transport of ext.peerTransports) {
+				// Refusing the TRANSPORT, not the runner: one extension built against
+				// another wire version must not take every other extension's seams
+				// down with it. Logged at the only moment anyone can act on it, which
+				// is load — the same place, and the same shape, as a throwing
+				// fallback handler above.
+				try {
+					this.#pushFallbackDisposer(ext.path, addPeerTransport(transport));
+				} catch (error) {
+					logger.warn("Extension peer transport refused; continuing without it", {
+						extension: ext.path,
+						transport: transport.id,
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+			}
+			for (const backend of ext.peerLockBackends) {
+				this.#pushFallbackDisposer(ext.path, addPeerLockBackend(backend));
+			}
+			for (const fence of ext.peerFences) {
+				// No try/catch, unlike the transport above: registering a fence cannot
+				// fail (it is a table write, and the protocol check lives in the
+				// transport where skew is possible). The absence of a catch is
+				// therefore deliberate rather than an oversight.
+				this.#pushFallbackDisposer(ext.path, addInboundFence(fence));
 			}
 		}
 
@@ -1143,20 +1551,15 @@ export class ExtensionRunner {
 	unloadExtension(extensionPath: string): boolean {
 		// Captured BEFORE the splice: after removal there is nothing to read.
 		const index = this.extensions.findIndex(ext => ext.path === extensionPath);
-		const extension = index >= 0 ? this.extensions[index] : undefined;
-		if (!extension) {
-			// Reachable, not hypothetical: `setSuspendedExtensions` splices
-			// `extensions` down to the active set while `#loadOrder` keeps ALL of
-			// them. So a SUSPENDED extension is present in one and absent from the
-			// other, and unloading it lands here.
-			//
-			// `true` is deliberate: the extension IS gone from the registry after
-			// this, which is what the caller asked for. What it cannot do is empty
-			// the buckets or drop providers — the object holding them is not
-			// reachable from `extensions`, so there is nothing to clear. Trampolines
-			// and timers are released by path below and are unaffected.
-			if (!this.#loadOrder?.some(ext => ext.path === extensionPath)) return false;
-		}
+		// `#loadOrder` is the fallback, and it is load-bearing rather than defensive.
+		// `setSuspendedExtensions` splices `extensions` down to the active set while
+		// `#loadOrder` keeps every extension ever bound, so a SUSPENDED extension is
+		// present in one and absent from the other. Reading only `extensions` made
+		// `extension` undefined on exactly that path — and an undefined owner then
+		// dereferenced by the timers release below, so unloading a suspended extension
+		// with a live timer threw instead of unloading.
+		const extension = index >= 0 ? this.extensions[index] : this.#loadOrder?.find(ext => ext.path === extensionPath);
+		if (!extension) return false;
 
 		if (index >= 0) this.extensions.splice(index, 1);
 		// `#loadOrder` must lose it too: `getLoadedExtensions()` reads `#loadOrder`
@@ -1166,22 +1569,47 @@ export class ExtensionRunner {
 			const loadIndex = this.#loadOrder.findIndex(ext => ext.path === extensionPath);
 			if (loadIndex >= 0) this.#loadOrder.splice(loadIndex, 1);
 		}
-		this.#suspendedExtensions.delete(extension as Extension);
+		// By object, not by the `as Extension` cast this used to carry: deleting
+		// `undefined` was a silent no-op, so an unloaded extension stayed in the
+		// suspended set and resurfaced as a phantom "resumed" entry on every later
+		// suspend/resume cycle.
+		this.#suspendedExtensions.delete(extension);
 
 		// Its own trampolines only — a neighbour's stay installed.
 		this.disposeFileFallbacksFor(extensionPath);
-		this.#managedTimers.clearFor(extension as Extension);
+		this.#managedTimers.clearForPath(extensionPath);
 
-		if (extension) {
-			for (const { name } of extension.registeredProviders) {
-				// Ownership check: `registerProvider` hands a claimed name to the later
-				// source, so a stale record here would unregister the NEW owner's
-				// provider — the wrong extension's models vanishing with no error.
-				if (this.modelRegistry.providerSource(name) !== extension.path) continue;
-				this.modelRegistry.unregisterProvider(name);
-			}
-			clearExtensionBuckets(extension);
+		// Its config-reload handlers go with it. The registry is process-global and
+		// permanent, so a handler left behind keeps vetoing reloads for an extension
+		// that is gone — the user edits a config, nothing applies, and nothing on
+		// screen says why.
+		for (const dispose of extension.configReloadDisposers) dispose();
+		extension.configReloadDisposers.length = 0;
+
+		// Its modes go with it. The registry is process-global and permanent, so a
+		// mode left behind would outlive the extension and then collide with the
+		// reloaded copy's own registration — an error that reads as the *new*
+		// extension's mistake.
+		for (const mode of extension.modes) {
+			// Ownership check, same reason as the provider loop below: this id may
+			// have been re-declared by a later owner since this record was written,
+			// and withdrawing it would delete a live extension's mode silently.
+			if (modeRegistry.modeSource(mode.id) !== extension.path) continue;
+			modeRegistry.unregister(mode.id);
 		}
+
+		for (const { name } of extension.registeredProviders) {
+			// Ownership check: `registerProvider` hands a claimed name to the later
+			// source, so a stale record here would unregister the NEW owner's
+			// provider — the wrong extension's models vanishing with no error.
+			if (this.modelRegistry.providerSource(name) !== extension.path) continue;
+			this.modelRegistry.unregisterProvider(name);
+		}
+		// Its settings go with it. A setting whose extension is gone still reads
+		// back a value and still shows in the panel, so it looks configured while
+		// nothing can ever write it again.
+		unregisterOwned(extensionSettingOwner(extension));
+		clearExtensionBuckets(extension);
 		return true;
 	}
 
@@ -1196,7 +1624,15 @@ export class ExtensionRunner {
 		return tools;
 	}
 
-	/** Get the effective registered tool for a name using normal last-extension-wins precedence. */
+	/**
+	 * Get the effective registered tool for a name.
+	 *
+	 * Precedence: extensions bind in `discoverExtensionPaths` order, which is sorted
+	 * by path, and on a contested tool name the registration from the LAST path wins.
+	 * A shadowed registration stays reachable through
+	 * {@link getAllRegisteredTools}, and the collision is reported by
+	 * {@link getToolCollisionDiagnostics} rather than only happening silently.
+	 */
 	getRegisteredTool(name: string): RegisteredTool | undefined {
 		for (let index = this.extensions.length - 1; index >= 0; index -= 1) {
 			const tool = this.extensions[index]?.tools.get(name);
@@ -1285,6 +1721,24 @@ export class ExtensionRunner {
 	}
 
 	/** Composer shapes registered during extension load, with later extensions winning id collisions. */
+	/**
+	 * Every registered host render strategy, in registration order across
+	 * extensions. First opinion wins, so the order is the tiebreak — an
+	 * extension loaded later cannot displace one that already has a say.
+	 */
+	getHostRenderStrategies(): HostRenderStrategy[] {
+		return this.extensions.flatMap(extension => extension.hostRenderStrategies);
+	}
+
+	/**
+	 * Every registered copy-target provider, in registration order across
+	 * extensions. The picker appends what they return after core's own blocks,
+	 * so this order decides which contributed block a user sees first.
+	 */
+	getCopyTargetProviders(): CopyTargetProvider[] {
+		return this.extensions.flatMap(extension => extension.copyTargetProviders);
+	}
+
 	getComposerShapes(): ComposerShapeDefinition[] {
 		const shapes = new Map<string, ComposerShapeDefinition>();
 		for (const extension of this.extensions) {
@@ -1309,45 +1763,78 @@ export class ExtensionRunner {
 		return allFlags;
 	}
 
+	/**
+	 * Aggregate the registered output formats across a set of extensions.
+	 *
+	 * Reads each extension's own bucket rather than keeping a parallel
+	 * module-level registry, and that is deliberate: `unloadExtensions` clears
+	 * those buckets, so a format belonging to an extension that has been unloaded
+	 * disappears here too. A second copy of the map would have to be pruned in
+	 * lockstep and would eventually offer a formatter whose module is gone.
+	 *
+	 * On a name collision the first registration wins, matching the tool registry
+	 * above rather than inventing a third policy — the id has already been refused
+	 * within a single extension by `registerOutputFormat`.
+	 */
+	static aggregateOutputFormats(extensions: readonly Extension[]): Map<string, OutputFormat> {
+		const allFormats = new Map<string, OutputFormat>();
+		for (const ext of extensions) {
+			for (const [id, format] of ext.outputFormats) {
+				if (!allFormats.has(id)) allFormats.set(id, format);
+			}
+		}
+		return allFormats;
+	}
+
+	getOutputFormats(): Map<string, OutputFormat> {
+		return ExtensionRunner.aggregateOutputFormats(this.extensions);
+	}
+
 	getFlags(): Map<string, ExtensionFlag> {
 		return ExtensionRunner.aggregateFlags(this.extensions);
 	}
 
-	getFlagValues(): Map<string, boolean | string> {
-		return new Map(this.runtime.flagValues);
+	/**
+	 * Hand a CLI-parsed value to every extension that declared `name`.
+	 *
+	 * `applyExtensionFlags` parses the command line once, with no way to know which
+	 * extension asked for a flag, so the value is applied to all of them. That is
+	 * the interim behaviour while the collision policy — reject at load, namespace
+	 * the flag, or warn and keep last-wins — is still an open product decision; it
+	 * is the one option all three of those can be layered on top of.
+	 */
+	static applyFlagValue(extensions: readonly Extension[], name: string, value: boolean | string): void {
+		for (const extension of extensions) {
+			const flag = extension.flags.get(name);
+			// A name nobody declared is skipped rather than stored: a typo on the
+			// command line must not leave a value that some extension registering the
+			// same name later would silently inherit.
+			if (flag) flag.value = value;
+		}
 	}
 
 	setFlagValue(name: string, value: boolean | string): void {
-		this.runtime.flagValues.set(name, value);
+		ExtensionRunner.applyFlagValue(this.extensions, name, value);
 	}
 
-	static readonly #RESERVED_SHORTCUTS: Record<string, true> = {
-		"ctrl+c": true,
-		"ctrl+d": true,
-		"ctrl+z": true,
-		"ctrl+k": true,
-		"ctrl+p": true,
-		"ctrl+l": true,
-		"ctrl+o": true,
-		"ctrl+t": true,
-		"ctrl+g": true,
-		"alt+m": true,
-		// Default chord for `app.message.followUp` (Windows Terminal can't deliver Ctrl+Enter; #1903).
-		"ctrl+q": true,
-		"shift+tab": true,
-		"shift+ctrl+p": true,
-		"alt+enter": true,
-		escape: true,
-		enter: true,
-	};
-
-	getShortcuts(): Map<KeyId, ExtensionShortcut> {
+	/**
+	 * `claimedKeys` is every key a built-in action currently owns — defaults and the
+	 * user's remaps together, normally from `KeybindingsManager.claimedKeyIds()`.
+	 *
+	 * It is a parameter rather than a hardcoded set because a hardcoded set is stale
+	 * the moment a user remaps a default onto a key it never mentioned: the
+	 * extension claims that key, the remap silently stops working, and nothing logs
+	 * an error because nothing here knows the remap happened. Omitting it falls back
+	 * to the built-in defaults, which is the pre-existing behaviour.
+	 */
+	getShortcuts(claimedKeys?: ReadonlySet<KeyId>): Map<KeyId, ExtensionShortcut> {
+		const reserved: ReadonlySet<KeyId> = claimedKeys ?? RESERVED_SHORTCUT_KEYS;
 		const allShortcuts = new Map<KeyId, ExtensionShortcut>();
 		for (const ext of this.extensions) {
 			for (const [key, shortcut] of ext.shortcuts) {
 				const normalizedKey = key.toLowerCase() as KeyId;
 
-				if (ExtensionRunner.#RESERVED_SHORTCUTS[normalizedKey]) {
+				if (reserved.has(normalizedKey)) {
 					logger.warn("Extension shortcut conflicts with built-in shortcut", {
 						key,
 						extensionPath: shortcut.extensionPath,
@@ -1367,6 +1854,23 @@ export class ExtensionRunner {
 			}
 		}
 		return allShortcuts;
+	}
+
+	/**
+	 * Every registered double-Escape action, in load order, across all loaded
+	 * extensions — the seam's empty-state invariant is that this is empty until
+	 * an extension registers one.
+	 *
+	 * A snapshot rather than a live view: the input controller iterates it while
+	 * responding to a keystroke, and an extension unloading mid-iteration would
+	 * otherwise splice the collection under it.
+	 */
+	getDoubleEscapeActions(): DoubleEscapeAction[] {
+		const actions: DoubleEscapeAction[] = [];
+		for (const ext of this.extensions) {
+			for (const action of ext.doubleEscapeActions) actions.push(action);
+		}
+		return actions;
 	}
 
 	onError(listener: ExtensionErrorListener): () => void {
@@ -1400,19 +1904,93 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
+	/**
+	 * Markdown transformers in extension load order.
+	 *
+	 * Read only by the interactive transcript components; nothing on the RPC/JSON
+	 * path calls this, which is what keeps a client reading the session from
+	 * receiving transformed Markdown. The boundary is structural rather than a
+	 * promise in a docblock: a transformer that reached the RPC path would break
+	 * such a client with no stack trace on ultraworkers' side.
+	 */
+	getMarkdownTransformers(): MarkdownTransformer[] {
+		return this.extensions.flatMap(ext => (ext.markdownTransformer ? [ext.markdownTransformer] : []));
+	}
+
+	/**
+	 * Last extension that registered a renderer for this custom type wins.
+	 *
+	 * Scans backwards for the same reason {@link getRegisteredTool} does: extensions
+	 * bind in `discoverExtensionPaths` order, so the last registration takes effect.
+	 * A contested customType is not an error — it is a collision, reported by
+	 * {@link getEntryRendererCollisionDiagnostics} rather than only happening
+	 * silently. The duplicate that IS an error, one extension claiming a type twice,
+	 * is refused at registration.
+	 */
+	getEntryRenderer(customType: string): EntryRenderer | undefined {
+		for (let index = this.extensions.length - 1; index >= 0; index -= 1) {
+			const renderer = this.extensions[index]?.entryRenderers.get(customType);
+			if (renderer) return renderer;
+		}
+		return undefined;
+	}
+
+	getEntryRendererCollisionDiagnostics(): ExtensionRegistrationDiagnostic[] {
+		return this.#collectEntryRendererCollisions();
+	}
+
+	/**
+	 * One diagnostic per customType rendered by two or more extensions.
+	 *
+	 * Walks `this.extensions` in load order, so the collected paths are in load order
+	 * and the LAST is the winner — the same precedence {@link getEntryRenderer}
+	 * implements by scanning backwards. Shaped like {@link getToolCollisionDiagnostics}
+	 * deliberately: two extensions reaching for one id is one situation and should
+	 * have one diagnostic saying so, rather than each registration seam inventing its
+	 * own vocabulary for it.
+	 */
+	#collectEntryRendererCollisions(): ExtensionRegistrationDiagnostic[] {
+		const registrants = new Map<string, string[]>();
+		for (const ext of this.extensions) {
+			for (const customType of ext.entryRenderers.keys()) {
+				const paths = registrants.get(customType);
+				if (paths) paths.push(ext.path);
+				else registrants.set(customType, [ext.path]);
+			}
+		}
+
+		const diagnostics: ExtensionRegistrationDiagnostic[] = [];
+		for (const [customType, paths] of registrants) {
+			if (paths.length < 2) continue;
+			const winner = paths[paths.length - 1]!;
+			diagnostics.push({
+				type: "warning",
+				message: `Entry renderer for '${customType}' registered by ${paths.length} extensions: ${paths.join(", ")}. Using ${winner}.`,
+				path: winner,
+				paths: [...paths],
+			});
+		}
+		return diagnostics;
+	}
+
 	getAssistantThinkingRenderers(): AssistantThinkingRenderer[] {
 		return this.extensions.flatMap(ext => ext.assistantThinkingRenderers);
 	}
 
 	getRegisteredCommands(reserved?: ReadonlySet<string>): RegisteredCommand[] {
-		this.#commandDiagnostics = [];
+		this.#registrationDiagnostics = [];
 
 		const commands = new Map<string, RegisteredCommand>();
 		for (const ext of this.extensions) {
 			for (const command of ext.commands.values()) {
 				if (reserved?.has(command.name)) {
 					const message = `Extension command '${command.name}' from ${ext.path} conflicts with built-in commands. Skipping.`;
-					this.#commandDiagnostics.push({ type: "warning", message, path: ext.path });
+					this.#registrationDiagnostics.push({
+						type: "warning",
+						message,
+						path: ext.path,
+						paths: [ext.path],
+					});
 					if (!this.hasUI()) {
 						logger.warn(message);
 					}
@@ -1422,11 +2000,71 @@ export class ExtensionRunner {
 				commands.set(command.name, command);
 			}
 		}
+
+		// Collected here so the command list and the tool collisions arrive together,
+		// but stored separately: see #collectToolNameCollisions for why the tool side
+		// is recomputed on demand rather than cached in #registrationDiagnostics.
+		this.#registrationDiagnostics.push(...this.#collectToolNameCollisions());
 		return [...commands.values()];
 	}
 
-	getCommandDiagnostics(): Array<{ type: string; message: string; path: string }> {
-		return this.#commandDiagnostics;
+	/**
+	 * Conflicts found while resolving reserved command names.
+	 *
+	 * Populated only once {@link getRegisteredCommands} has run, so it is empty on a
+	 * runner that has never been asked for its commands.
+	 */
+	getCommandDiagnostics(): ExtensionRegistrationDiagnostic[] {
+		return this.#registrationDiagnostics;
+	}
+
+	/**
+	 * Extensions that registered the same tool name, with the shadowed ones named.
+	 *
+	 * Recomputed on every call rather than read from
+	 * {@link #registrationDiagnostics}: those are only populated by
+	 * {@link getRegisteredCommands}, and a collision is worth reporting whether or not
+	 * anybody has asked for the command list.
+	 *
+	 * Reported, never logged. A plugin tree can generate a great many collisions, and
+	 * the reserved-command branch above only logs when `!this.hasUI()`; recording
+	 * them keeps startup quiet while still exposing them to any consumer.
+	 */
+	getToolCollisionDiagnostics(): ExtensionRegistrationDiagnostic[] {
+		return this.#collectToolNameCollisions();
+	}
+
+	/**
+	 * One diagnostic per tool name registered by two or more extensions.
+	 *
+	 * Walks `this.extensions` in load order, so the collected paths are in load order
+	 * and the LAST one is the winner -- the same precedence
+	 * {@link getRegisteredTool} implements by scanning backwards. Map insertion order
+	 * also makes the diagnostic list itself deterministic, given a deterministic load
+	 * order (see `discoverExtensionPaths`).
+	 */
+	#collectToolNameCollisions(): ExtensionRegistrationDiagnostic[] {
+		const registrants = new Map<string, string[]>();
+		for (const ext of this.extensions) {
+			for (const name of ext.tools.keys()) {
+				const paths = registrants.get(name);
+				if (paths) paths.push(ext.path);
+				else registrants.set(name, [ext.path]);
+			}
+		}
+
+		const diagnostics: ExtensionRegistrationDiagnostic[] = [];
+		for (const [name, paths] of registrants) {
+			if (paths.length < 2) continue;
+			const winner = paths[paths.length - 1]!;
+			diagnostics.push({
+				type: "warning",
+				message: `Tool '${name}' registered by ${paths.length} extensions: ${paths.join(", ")}. Using ${winner}.`,
+				path: winner,
+				paths: [...paths],
+			});
+		}
+		return diagnostics;
 	}
 
 	getCommand(name: string): RegisteredCommand | undefined {
@@ -1479,19 +2117,19 @@ export class ExtensionRunner {
 		// never fire. The failure only appears after an unload — exactly when
 		// nothing else reports it.
 		//
-		// `this.extensions`, and deliberately NOT `#loadOrder` or
-		// `#suspendedExtensions`: it is the only one of the three that means "still
-		// loaded". `#loadOrder` keeps every extension ever bound, including unloaded
-		// ones, so asking it would never throw. `#suspendedExtensions` answers
-		// "currently suspended", and killing the context of a merely-suspended
-		// extension would break the very thing suspend exists to allow — resume.
+		// `this.extensions` alone cannot answer this. It holds the ACTIVE set, and
+		// `setSuspendedExtensions` splices a suspended extension out of it — so
+		// reading it reported a merely-suspended extension as dead, killing the very
+		// thing suspend exists to allow. `#loadOrder` is the other half to skip: it
+		// keeps every extension ever bound, so it would never throw at all. A
+		// context is dead only when the extension is in NEITHER list.
 		const alive = (): void => {
-			if (extension && !this.extensions.includes(extension)) {
+			if (extension && !this.extensions.includes(extension) && !this.#suspendedExtensions.has(extension)) {
 				throw new ExtensionContextDisposedError(extension.path);
 			}
 		};
 		const context: ExtensionContext = {
-			ui: this.#uiContext,
+			ui: this.#uiContextFor(extension),
 			mode: this.#mode,
 			getContextUsage: () => this.#getContextUsageFn(),
 			compact: instructionsOrOptions => this.#compactFn(instructionsOrOptions),
@@ -1500,7 +2138,7 @@ export class ExtensionRunner {
 			cwd: this.cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this.modelRegistry,
-			isProjectTrusted: () => true,
+			isProjectTrusted: () => isProjectTrustedForScope(this.settings),
 			agent: this.agent,
 			get model() {
 				return getModel();
@@ -1540,8 +2178,15 @@ export class ExtensionRunner {
 				: undefined,
 			localProtocolOptions: this.localProtocolOptions,
 			memory: this.#getMemoryFn?.(),
-			setInterval: (callback, ms, ...args) => this.#managedTimers.setInterval(UNOWNED_TIMERS, callback, ms, ...args),
-			setTimeout: (callback, ms, ...args) => this.#managedTimers.setTimeout(UNOWNED_TIMERS, callback, ms, ...args),
+			// Owned by the extension whose context this is, so unloading it releases
+			// them. `UNOWNED_TIMERS` was the only owner ever passed, which made the
+			// per-path release unload performs a no-op and let a background callback
+			// outlive the extension that scheduled it. The sentinel still covers a
+			// context built without one, where no extension can be blamed later.
+			setInterval: (callback, ms, ...args) =>
+				this.#managedTimers.setInterval(extension ?? UNOWNED_TIMERS, callback, ms, ...args),
+			setTimeout: (callback, ms, ...args) =>
+				this.#managedTimers.setTimeout(extension ?? UNOWNED_TIMERS, callback, ms, ...args),
 			clearTimer: timer => this.#managedTimers.clear(timer),
 			addAdditionalContext: delegation?.context?.addAdditionalContext,
 			invokeTool:
@@ -1589,6 +2234,65 @@ export class ExtensionRunner {
 			}
 		}
 		return Object.defineProperties({}, descriptors) as ExtensionContext;
+	}
+
+	/**
+	 * The shared `ui`, tagged with which extension is calling it.
+	 *
+	 * Only the surfaces that persist past the call are wrapped, and only to add
+	 * `owner`. Every other member is forwarded by reference, so this cannot
+	 * change what any of them does — it exists so a widget, header or footer can
+	 * be traced to the extension that placed it, which is what lets one
+	 * extension's surfaces survive a session switch that was meant for another,
+	 * and what makes a name collision between two extensions attributable.
+	 *
+	 * Without an extension there is nobody to own the surface, so the shared
+	 * context goes through untouched: a tool call's own `ui` has no author to
+	 * attribute a persistent surface to.
+	 */
+	#uiContextFor(extension: Extension | undefined): ExtensionUIContext {
+		if (!extension) return this.#uiContext;
+		const existing = this.#ownedUiContexts.get(extension);
+		if (existing) return existing;
+		const owner = extension.resolvedPath;
+		const target = this.#uiContext;
+		const owned: Partial<ExtensionUIContext> = {
+			setWidget: (key, content, options) => target.setWidget(key, content, { ...options, owner }),
+			setHeader: (factory, options) => target.setHeader(factory, { ...options, owner }),
+			setFooter: (factory, options) => target.setFooter(factory, { ...options, owner }),
+		};
+		// Forwarded, not copied. A spread takes only own enumerable properties, and the
+		// one context in the tree that is a class rather than an object literal —
+		// `RpcExtensionUIContext` — keeps all 25 of its members on its prototype, so the
+		// spread dropped every one of them. An extension hook in RPC mode called
+		// `ctx.ui.notify(...)` and got a `TypeError`, while `hasUI` — a field, hence an
+		// own property — survived and still advertised a live UI.
+		//
+		// Members are *bound* to the target rather than only read off it: passing
+		// `receiver` to `Reflect.get` pins `this` for a getter, but calling
+		// `proxy.notify(...)` still invokes the function with `this` bound to the proxy.
+		// That is safe only because this class reads its state through own properties.
+		// AGENTS.md requires `#private` fields, so the first one added here makes every
+		// method reached through this wrapper throw — the bind below is what keeps that
+		// from being silent.
+		//
+		// No `set` trap: assigning through the wrapper writes to the shared host
+		// context, where the spread it replaced would have dropped the write. That is
+		// the honest direction for a surface the host also owns, and no caller in the
+		// tree assigns to it — but it is a change, not a preservation.
+		const forwarded = new Map<PropertyKey, unknown>();
+		const wrapped: ExtensionUIContext = new Proxy(target, {
+			get: (receiver, prop) => {
+				if (prop in owned) return owned[prop as keyof typeof owned];
+				if (!forwarded.has(prop)) {
+					const value = Reflect.get(receiver, prop, receiver);
+					forwarded.set(prop, typeof value === "function" ? value.bind(receiver) : value);
+				}
+				return forwarded.get(prop);
+			},
+		});
+		this.#ownedUiContexts.set(extension, wrapped);
+		return wrapped;
 	}
 
 	/**
@@ -1642,16 +2346,102 @@ export class ExtensionRunner {
 		this.#fileFallbackDisposers.clear();
 	}
 
+	/**
+	 * Mark every context minted so far as stale, and record why.
+	 *
+	 * Additive: calling this changes nothing an extension can already observe,
+	 * because contexts only refuse to act when their author asks them to via
+	 * {@link assertActive}. What it does guarantee is that the generation moves,
+	 * so the context handed to `withSession` is the live one and every earlier
+	 * one is distinguishable from it.
+	 */
+	invalidate(message: string = STALE_CONTEXT_MESSAGE): void {
+		this.#staleMessage ??= message;
+		// The runtime is what an extension's `pi` holds, so it is the object whose
+		// `assertActive` the author can actually reach. Bumping only the runner's
+		// own counter would leave that path permanently green.
+		this.runtime.invalidate(message);
+		this.#generation++;
+	}
+
+	/**
+	 * Throw if this runtime has been invalidated.
+	 *
+	 * The opt-in half of the seam. An extension that wants a hard failure instead
+	 * of silent use-after-free calls this itself — from its own `session_switch`
+	 * handler, or at the top of work it defers across a replacement — and gets a
+	 * message naming the replacement calls and the `withSession` way out.
+	 */
+	assertActive(): void {
+		if (this.#staleMessage !== undefined) {
+			throw new ExtensionContextStaleError(this.#staleMessage);
+		}
+	}
+
+	/** Whether this runtime has been invalidated, for extensions that prefer a check to a throw. */
+	get isStale(): boolean {
+		return this.#staleMessage !== undefined;
+	}
+
+	/**
+	 * Run the tail every session replacement owes its caller: the old contexts
+	 * stop being current, then `withSession` gets one that is.
+	 *
+	 * Invalidation happens FIRST so that a `withSession` callback which itself
+	 * replaces the session again leaves the context it was handed stale, rather
+	 * than resurrecting a chain of contexts that all claim to be live.
+	 */
+	async #finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {
+		this.invalidate();
+		if (withSession) await withSession(this.createReplacedSessionContext());
+	}
+
+	/**
+	 * A command context minted after a replacement, carrying the messaging
+	 * actions the pre-replacement context never had.
+	 *
+	 * The same builder as {@link createCommandContext}, called again *after* the
+	 * generation moved — which is the whole reason it works where the old
+	 * context cannot.
+	 */
+	createReplacedSessionContext(): ReplacedSessionContext {
+		return {
+			...this.createCommandContext(),
+			sendMessage: (message, options) => this.runtime.sendMessage(message, options),
+			sendUserMessage: (content, options) => this.runtime.sendUserMessage(content, options),
+		};
+	}
+
 	createCommandContext(): ExtensionCommandContext {
 		return {
 			...this.createContext(),
 			getContextUsage: () => this.#getContextUsageFn(),
 			waitForIdle: () => this.#waitForIdleFn(),
-			newSession: options => this.#newSessionHandler(options),
-			branch: entryId => this.#branchHandler(entryId),
+			newSession: async options => {
+				// `withSession` is consumed here rather than forwarded: the host
+				// handlers predate it and must not have to know about it, and the
+				// generation can only move once, in one place.
+				const { withSession, ...rest } = options ?? {};
+				const result = await this.#newSessionHandler(rest);
+				if (!result.cancelled) await this.#finishSessionReplacement(withSession);
+				return result;
+			},
+			branch: async (entryId, options) => {
+				const result = await this.#branchHandler(entryId);
+				if (!result.cancelled) await this.#finishSessionReplacement(options?.withSession);
+				return result;
+			},
 			navigateTree: (targetId, options) => this.#navigateTreeHandler(targetId, options),
-			switchSession: sessionPath => this.#switchSessionHandler(sessionPath),
-			reload: () => this.#reloadHandler(),
+			switchSession: async (sessionPath, options) => {
+				const result = await this.#switchSessionHandler(sessionPath);
+				if (!result.cancelled) await this.#finishSessionReplacement(options?.withSession);
+				return result;
+			},
+			reload: async () => {
+				const result = await this.#reloadHandler();
+				this.invalidate();
+				return result;
+			},
 			compact: instructionsOrOptions => this.#compactFn(instructionsOrOptions),
 		};
 	}
@@ -1753,7 +2543,59 @@ export class ExtensionRunner {
 			});
 			return onFailure?.("error", message);
 		}
+		const verdict = validateHookResult(event.type, handlerResult);
+		if (!verdict.ok) {
+			this.#rejectHookResult(ext, event.type, verdict);
+			return undefined;
+		}
 		return handlerResult as R | undefined;
+	}
+
+	/**
+	 * Report a hook return value the host refuses to act on.
+	 *
+	 * The value is dropped, never coerced. A `cancel: "false"` read as a boolean
+	 * would cancel the switch the extension meant to allow, so a shape the host
+	 * cannot interpret stays out of control flow entirely and the extension is
+	 * told which event produced it.
+	 *
+	 * `error` carries the code as a prefix because that is what a log line shows;
+	 * `code` and `detail` are set alongside so a listener can branch without
+	 * parsing the sentence back apart.
+	 */
+	#rejectHookResult(ext: Extension, eventType: string, verdict: HookResultRejection): void {
+		this.emitError({
+			extensionPath: ext.path,
+			event: eventType,
+			error: `${verdict.code}: ${verdict.detail}`,
+			code: verdict.code,
+			detail: verdict.detail,
+		});
+	}
+
+	/**
+	 * Report a handler result that no branch of `emit` will read.
+	 *
+	 * Surfaces through `emitError` and not only `logger`, because the default logger
+	 * writes to a rotating file with **no** console output — stdout/stderr would
+	 * corrupt the TUI — so a log-only warning is invisible to the extension author,
+	 * who is the one person who can act on it. `emitError` reaches
+	 * `showExtensionError`, a transient toast. Nothing here changes control flow:
+	 * the value is still dropped, and no decision is read from it.
+	 */
+	#reportDiscardedHandlerResult(eventType: string, ext: Extension, value: unknown): void {
+		const rendered = describeDiscardedHandlerResult(value);
+		logger.warn("Extension handler return value discarded", {
+			extensionPath: ext.path,
+			event: eventType,
+			returned: rendered,
+		});
+		this.emitError({
+			extensionPath: ext.path,
+			event: eventType,
+			error: `handler returned a value that "${eventType}" does not consume; it was discarded: ${rendered}`,
+			code: EXTENSION_HANDLER_RESULT_DISCARDED_CODE,
+		});
 	}
 
 	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {
@@ -1766,6 +2608,7 @@ export class ExtensionRunner {
 		if (this.#isSessionShutdownEvent(event)) {
 			const timeoutMs = handlerTimeoutForEvent(event.type);
 			const promises: Promise<unknown>[] = [];
+			const owners: Extension[] = [];
 			for (const ext of this.extensions) {
 				const handlers = ext.handlers.get(event.type);
 				if (!handlers || handlers.length === 0) continue;
@@ -1775,11 +2618,27 @@ export class ExtensionRunner {
 				const ctx = this.createContext(undefined, undefined, ext);
 				for (const handler of handlers) {
 					promises.push(this.#runHandlerWithTimeout(handler, event, ctx, ext, timeoutMs));
+					owners.push(ext);
 				}
 			}
-			if (promises.length > 0) await Promise.all(promises);
+			if (promises.length > 0) {
+				// Shutdown reads no handler result, so a returned value is dropped.
+				// Kept parallel to `promises` so the report names the right extension.
+				const settled = await Promise.all(promises);
+				for (const [index, value] of settled.entries()) {
+					if (value !== undefined) this.#reportDiscardedHandlerResult(event.type, owners[index], value);
+				}
+			}
 			return result as RunnerEmitResult<TEvent>;
 		}
+
+		// Only these event types read a handler result; everything else routed
+		// through `emit` drops it. Computed once — it cannot vary per handler.
+		const consumesHandlerResult =
+			this.#isSessionBeforeEvent(event) ||
+			event.type === "session.compacting" ||
+			event.type === "session_stop" ||
+			event.type === "tool_approval_requested";
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
@@ -1795,10 +2654,28 @@ export class ExtensionRunner {
 					handlerTimeoutForEvent(event.type),
 				);
 
+				// Report before the branches below, which would otherwise read this
+				// value as "consumed" for the three types that do consume it.
+				if (handlerResult !== undefined && !consumesHandlerResult) {
+					this.#reportDiscardedHandlerResult(event.type, ext, handlerResult);
+				}
+
 				if (this.#isSessionBeforeEvent(event) && handlerResult) {
 					result = handlerResult as SessionBeforeEventResult;
 					if (result.cancel) {
 						return result as RunnerEmitResult<TEvent>;
+					}
+				}
+
+				// First-truthy-wins, matching `emitUserEvent`: a veto short-circuits and a
+				// handler that declines falls through to the prompt untouched. A handler
+				// that throws or times out yields `undefined` from `#runHandlerWithTimeout`,
+				// so a broken extension can neither deny nor — the dangerous direction —
+				// stand in for an allow.
+				if (event.type === "tool_approval_requested" && handlerResult) {
+					const vetoResult = handlerResult as ToolApprovalRequestedEventResult;
+					if (vetoResult.cancel) {
+						return vetoResult as RunnerEmitResult<TEvent>;
 					}
 				}
 
@@ -2007,6 +2884,10 @@ export class ExtensionRunner {
 							kind === "timeout"
 								? `Extension ${ext.path} timed out after ${timeoutMs}ms`
 								: `Extension ${ext.path} failed: ${message}`,
+						// Fail-closed is unchanged above; this says WHY. A crashed or hung
+						// handler produced no decision, and presenting its block as one is
+						// the "system looks like it decided, and nothing decided" failure.
+						kind: "hook-failed",
 					}),
 					signal,
 				)) as ToolCallEventResult | undefined;
@@ -2022,7 +2903,13 @@ export class ExtensionRunner {
 		}
 
 		if (signal?.aborted) {
-			return { block: true, reason: `Tool execution was cancelled while an extension handler was pending` };
+			// A cancellation is a decision — by the user or by the caller — not a
+			// malfunction, so it must not borrow the hook-failed label.
+			return {
+				block: true,
+				reason: `Tool execution was cancelled while an extension handler was pending`,
+				kind: "denied",
+			};
 		}
 		return buildAggregatedToolCallResult(result, aggregated);
 	}

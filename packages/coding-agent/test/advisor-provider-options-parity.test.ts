@@ -71,7 +71,7 @@ describe("AgentSession advisor provider-options parity", () => {
 		});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-advisor-parity-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-parity-");
 		sessionManager = SessionManager.create(tempDir.path(), tempDir.path());
 	});
 

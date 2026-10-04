@@ -19,7 +19,7 @@ describe("HookToolWrapper tool_call contract", () => {
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@pi-hook-wrapper-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-hook-wrapper-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
@@ -37,10 +37,11 @@ describe("HookToolWrapper tool_call contract", () => {
 			resolvedPath: "/test/test-hook.ts",
 			handlers,
 			messageRenderers: new Map(),
+			entryRenderers: new Map(),
 			commands: new Map(),
 			setSendMessageHandler: () => {},
 			setAppendEntryHandler: () => {},
-		} as unknown as LoadedHook;
+		};
 	}
 
 	function makeRunner(hooks: LoadedHook | LoadedHook[]): HookRunner {

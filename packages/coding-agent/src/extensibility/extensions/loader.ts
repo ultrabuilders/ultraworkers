@@ -1,11 +1,14 @@
 /**
  * Extension loader - loads TypeScript extension modules using native Bun import.
  */
+import type { PeerLockBackend, PeerTransport } from "../../irc/peer-transport";
+import type { InboundFenceRegistration } from "../../irc/inbound-fence";
 import type * as fs1 from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
 import * as zod from "@oh-my-pi/omptype/zod";
+import { pluginSettingId } from "../settings";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type {
 	ImageContent,
@@ -17,11 +20,38 @@ import type {
 	TSchema,
 } from "@oh-my-pi/pi-ai";
 import { isBuiltinComposerStyle, type KeyId } from "@oh-my-pi/pi-tui";
+import { getKeybindings } from "@oh-my-pi/pi-tui/keybindings";
+import type { ThemeJson } from "@oh-my-pi/pi-tui/theme/schema";
+import { registerTheme as registerThemeInRegistry } from "@oh-my-pi/pi-tui/theme";
 import { hasFsCode, isEacces, isEnoent, logger } from "@oh-my-pi/pi-utils";
+import { registerSubcommand as registerSubcommandVerb } from "../../cli-commands";
+import {
+	type CompactionTransactionObserver,
+	registerCompactionTransactionObserver,
+} from "../../session/compaction-transaction";
 import { type ExtensionModule, extensionModuleCapability } from "../../capability/extension-module";
+import { declareToolEffectsFor } from "../../tools/effects";
 import { type Hook, hookCapability } from "../../capability/hook";
+import { recordHookHash, recordedHookHash } from "../../config/hook-settings";
+import { settings } from "../../config/settings";
+import {
+	onAfterConfigReload as registerAfterConfigReload,
+	onBeforeConfigReload as registerBeforeConfigReload,
+	type ConfigReloadAppliedHandler,
+	type ConfigReloadHandler,
+} from "../../config/reload-observer";
+import {
+	hookContentHash,
+	hookModifiedMessage,
+	hookTrustKey,
+	hookTrustStatus,
+	hookUntrustedMessage,
+} from "../hooks/trust";
+import { createExtensionOptOut } from "../settings";
 import { isServiceTierFamily, isServiceTierForFamily } from "../../config/service-tier";
 import { loadCapability } from "../../discovery";
+import { addDiagnostic, type ExtensionDiagnostic } from "./diagnostics";
+import { ExtensionContextStaleError, STALE_CONTEXT_MESSAGE } from "./stale-context";
 import { getExtensionNameFromPath } from "../../discovery/helpers";
 import type { ExecOptions } from "../../exec/exec";
 import { execCommand } from "../../exec/exec";
@@ -30,6 +60,12 @@ import * as PiCodingAgent from "../../index";
 import type { SendUserMessageOptions } from "../../session/agent-session";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
+import type { CompactionProtection } from "../../tools/compaction-protection";
+import type { HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
+import type { ContextTransform } from "../../tools/compaction-transforms";
+import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
+import { lookup as lookupSetting, registerOwned } from "../../config/registry";
 import { isFilesystemSourcePath } from "../../tools/path-utils";
 import { EventBus } from "../../utils/event-bus";
 import * as TypeBox from "../legacy-typebox";
@@ -38,6 +74,8 @@ import { installLegacyPiSpecifierShim, loadLegacyPiModule } from "../plugins/leg
 import { getAllPluginExtensionPaths } from "../plugins/loader";
 
 import { createHandlerDisposer, resolvePath, withHostGuard } from "../utils";
+import { modeRegistry, type ModeDefinition } from "../../modes/mode-registry";
+import { extensionSurfaceRegistry } from "./surface-registry";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type {
 	AssistantThinkingRenderer,
@@ -48,14 +86,22 @@ import type {
 	ExtensionRuntime as IExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
+	EntryRenderer,
+	MarkdownTransformer,
 	PreparedExtension,
 	ProviderConfig,
 	RegisteredCommand,
+	RegisteredExtensionSurface,
+	ExtensionSurfaceBand,
+	ExtensionSurfaceOptions,
+	ExtensionUiComponentFactory,
 	SourceInfo,
 	ToolDefinition,
 	ToolInfo,
 	OutputFormat,
 	ToolNameResolver,
+	UsageReporter,
+	UsageReporterRegistration,
 } from "./types";
 
 installLegacyPiSpecifierShim();
@@ -100,8 +146,27 @@ export class ExtensionRuntimeNotInitializedError extends Error {
  * These are replaced with real implementations during initialization.
  */
 export class ExtensionRuntime implements IExtensionRuntime {
-	flagValues = new Map<string, boolean | string>();
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; sourceId: string }> = [];
+
+	/**
+	 * First invalidation reason wins.
+	 *
+	 * Held on the runtime rather than on any context, because the contexts are
+	 * what goes stale: they are minted per handler run and outlive neither a
+	 * session replacement nor a reload, while the runtime is built once and lives
+	 * across both.
+	 */
+	#staleMessage: string | undefined;
+
+	assertActive(): void {
+		if (this.#staleMessage !== undefined) {
+			throw new ExtensionContextStaleError(this.#staleMessage);
+		}
+	}
+
+	invalidate(message?: string): void {
+		this.#staleMessage ??= message;
+	}
 
 	registerProvider(name: string, config: ProviderConfig, sourceId: string): void {
 		this.pendingProviderRegistrations.push({ name, config, sourceId });
@@ -121,6 +186,10 @@ export class ExtensionRuntime implements IExtensionRuntime {
 	}
 
 	appendEntry(): void {
+		throw new ExtensionRuntimeNotInitializedError();
+	}
+
+	registerCompactionTransactionObserver(): () => void {
 		throw new ExtensionRuntimeNotInitializedError();
 	}
 
@@ -178,12 +247,25 @@ export class ExtensionRuntime implements IExtensionRuntime {
  * Registration methods write to the extension object.
  * Action methods delegate to the shared runtime.
  */
+/**
+ * Stable owner key for an extension's settings.
+ *
+ * `resolvedPath` rather than `path`: `path` can be a specifier or a URL that
+ * resolves to the same file, so reloading by a different-but-equivalent path
+ * would register a second owner and orphan the first one's settings. The
+ * resolved path is the same string for the same file, which is what "reload
+ * cleanly" needs.
+ */
+export function extensionSettingOwner(extension: { resolvedPath: string }): string {
+	return `extension:${extension.resolvedPath}`;
+}
+
 class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 	readonly logger = logger;
 	readonly typebox = TypeBox;
 	readonly arktype = type;
 	readonly zod = zod;
-	readonly flagValues = new Map<string, boolean | string>();
+	readonly pluginSettingId = pluginSettingId;
 	readonly pendingProviderRegistrations: Array<{
 		name: string;
 		config: ProviderConfig;
@@ -216,6 +298,19 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		return createHandlerDisposer(this.extension.handlers, event, handler);
 	}
 
+	/**
+	 * Delegate to the shared runtime rather than tracking staleness per
+	 * extension: every extension loaded into this process shares one session
+	 * lifetime, so a stale context is stale for all of them at once.
+	 */
+	assertActive(): void {
+		this.runtime.assertActive();
+	}
+
+	invalidate(message?: string): void {
+		this.runtime.invalidate(message);
+	}
+
 	registerTool<TParams extends TSchema = TSchema, TDetails = unknown>(tool: ToolDefinition<TParams, TDetails>): void {
 		const registered = {
 			definition: tool,
@@ -223,6 +318,16 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 			sourceInfo: extensionToolSourceInfo(tool, this.extension.resolvedPath),
 		};
 		this.extension.tools.set(tool.name, registered);
+		// Declared at the door rather than at call time: the gate reads a registry
+		// keyed by tool name, and a declaration made inside `execute` would arrive
+		// after the floor has already been resolved for that call. Keyed by the
+		// extension path so unloading one cannot withdraw another's declaration.
+		if (tool.effects) {
+			// `resolvedPath`, not `path`: the teardown side releases by `extension.path`,
+			// and for a factory-loaded extension the two are the same name, while
+			// `path` may be a specifier or URL that is not a filesystem identity.
+			declareToolEffectsFor(tool.name, tool.effects, this.extension.resolvedPath);
+		}
 		// No `?? []`: the bucket is required on `Extension`, and an empty-array
 		// fallback here would turn a missing bucket into ZERO listener calls —
 		// silently dropping a tool-registration callback rather than failing.
@@ -233,8 +338,91 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.fileWriteFallbackHandlers.push(handler);
 	}
 
+	registerPeerTransport(impl: PeerTransport): void {
+		this.extension.peerTransports.push(impl);
+	}
+
+	unregisterPeerTransport(id: string): void {
+		this.extension.peerTransports = this.extension.peerTransports.filter(t => t.id !== id);
+	}
+
+	registerPeerLockBackend(impl: PeerLockBackend): void {
+		this.extension.peerLockBackends.push(impl);
+	}
+
+	registerPeerFence(registration: InboundFenceRegistration): void {
+		// Collected here and INSTALLED by the runner, not installed from here. A fence is
+		// process-wide rather than per-extension, so the bucket exists only to carry the
+		// declaration from load to the single point where the process-wide registry is
+		// written — the same two-stage shape `peerTransports` uses.
+		this.extension.peerFences.push(registration);
+	}
+
 	registerFileDeleteFallback(handler: FileDeleteFallbackHandler): void {
 		this.extension.fileDeleteFallbackHandlers.push(handler);
+	}
+
+	registerCompactionProtection(protection: CompactionProtection): void {
+		this.extension.compactionProtections.push(protection);
+	}
+
+	registerContextTransform(transform: ContextTransform): void {
+		this.extension.contextTransforms.push(transform);
+	}
+
+	/**
+	 * See, and optionally hold, a config edit the watcher is about to apply.
+	 *
+	 * The disposer is recorded on the extension as well as returned, so unload
+	 * withdraws it: the registry is process-global, and a handler left behind
+	 * would keep vetoing reloads on behalf of an extension that no longer exists.
+	 */
+	onBeforeConfigReload(handler: ConfigReloadHandler): () => void {
+		const dispose = registerBeforeConfigReload(handler);
+		this.extension.configReloadDisposers.push(dispose);
+		return dispose;
+	}
+
+	/**
+	 * Learn that a config edit has been applied, having previously declined to
+	 * hold it. Recorded for unload on the same terms as {@link onBeforeConfigReload}.
+	 */
+	onAfterConfigReload(handler: ConfigReloadAppliedHandler): () => void {
+		const dispose = registerAfterConfigReload(handler);
+		this.extension.configReloadDisposers.push(dispose);
+		return dispose;
+	}
+
+	/**
+	 * Claim the double-Escape gesture for an action.
+	 *
+	 * Validated at the door rather than at the keystroke: a malformed action that
+	 * is silently ignored is indistinguishable from one that was never registered,
+	 * and the user just sees double-Escape stop working.
+	 *
+	 * @throws when `id` is not a non-empty string, when the same extension
+	 * registers that id twice, or when `handler` is not callable — each naming
+	 * the extension, since "your gesture silently stopped working" is the worst
+	 * possible failure report for this seam.
+	 */
+	registerDoubleEscapeAction(action: {
+		id: string;
+		description?: string;
+		handler: (ctx: ExtensionContext) => Promise<void> | void;
+	}): void {
+		const extensionPath = this.extension.path;
+		if (typeof action.id !== "string" || action.id.length === 0) {
+			throw new TypeError(`Extension ${extensionPath}: doubleEscapeAction id must be a non-empty string`);
+		}
+		if (typeof action.handler !== "function") {
+			throw new TypeError(`Extension ${extensionPath}: doubleEscapeAction ${action.id} handler must be a function`);
+		}
+		if (this.extension.doubleEscapeActions.some(registered => registered.id === action.id)) {
+			throw new Error(
+				`Extension ${extensionPath}: doubleEscapeAction id ${action.id} is already registered — ids must be unique within an extension so a thrown handler can be attributed`,
+			);
+		}
+		this.extension.doubleEscapeActions.push({ ...action, extensionPath });
 	}
 
 	registerCommand(
@@ -248,8 +436,66 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.commands.set(name, { name, ...options });
 	}
 
+	registerMode(definition: ModeDefinition): void {
+		// Validate before handing it over, so the message names the extension that
+		// caused the collision. The registry's own throw says only that an id is
+		// taken, which is useless to an author with three extensions loaded.
+		if (modeRegistry.has(definition.id)) {
+			throw new Error(
+				`Extension ${this.extension.resolvedPath}: mode id "${definition.id}" is already registered — ids must be unique across all extensions and the built-in modes`,
+			);
+		}
+		// `path`, not `resolvedPath`: those are different fields, and `unloadExtension`
+		// compares against `extension.path` — the same field `registerProvider` hands
+		// over as its source, and the only one the unload loop has.
+		modeRegistry.register(definition, this.extension.path);
+		this.extension.modes.push(definition);
+	}
+
+	/**
+	 * Register a top-level `ultraworkers <verb>`, distinct from {@link registerCommand}'s
+	 * session slash command. The verb goes straight into the routing registry
+	 * `cli-commands.ts` reads, because there is no second place for it to live:
+	 * a name that is not in that registry is forwarded to the model as a prompt.
+	 *
+	 * The extension path is the collision owner, so a duplicate names both sides
+	 * rather than one anonymous loser.
+	 */
+	registerSubcommand(name: string, handler: (argv: string[]) => Promise<void>): void {
+		if (!registerSubcommandVerb(name, this.extension.path, handler)) {
+			logger.warn(
+				`Extension ${this.extension.path}: top-level verb "${name}" is already registered — the first registration keeps routing and this handler will not run; see subcommandCollisionDiagnostics() for both owners`,
+			);
+		}
+	}
+
+	/**
+	 * Contribute a named theme.
+	 *
+	 * Straight delegation to the registry that already owned the policy — the
+	 * built-in-wins rule and its warning live there, so this cannot drift from
+	 * them. The extension path is named in the rejection warning because an
+	 * anonymous loser is exactly what WI-B was raised against: four call sites
+	 * applied "built-in wins" with no exception and no warning, so an extension
+	 * whose theme never appeared had no way to learn why.
+	 */
+	registerTheme(name: string, theme: ThemeJson): boolean {
+		if (registerThemeInRegistry(name, theme)) return true;
+		logger.warn(
+			`Extension ${this.extension.path}: theme "${name}" was not registered — the name is taken by a built-in theme or an earlier registration, and that one is kept. Pick a different name.`,
+		);
+		return false;
+	}
+
 	setLabel(label: string): void {
 		this.extension.label = label;
+	}
+
+	getClaimedKeyIds(): ReadonlySet<KeyId> {
+		// Read through the live manager rather than a snapshot: the set of claimed
+		// keys changes when the user remaps one, and a copy taken now would go on
+		// answering for a table the dispatcher has already stopped using.
+		return getKeybindings().claimedKeyIds();
 	}
 
 	registerShortcut(
@@ -262,14 +508,61 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.shortcuts.set(shortcut, { shortcut, extensionPath: this.extension.path, ...options });
 	}
 
+	registerSetting<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]> {
+		const owner = extensionSettingOwner(this.extension);
+		// Idempotent across a rebind: re-running the factory must not re-register.
+		// Without this, a reload of an unchanged extension would collide with its
+		// own settings and fail on an id the author cannot see the origin of.
+		if (this.extension.settingIds.includes(definition.id)) {
+			const existing = lookupSetting(definition.id);
+			if (existing) return existing as Setting<DefinitionValue<D>, D["id"]>;
+		}
+		const handle = registerOwned(owner, definition);
+		this.extension.settingIds.push(definition.id);
+		return handle;
+	}
+
 	registerFlag(
 		name: string,
 		options: { description?: string; type: "boolean" | "string"; default?: boolean | string },
 	): void {
-		this.extension.flags.set(name, { name, extensionPath: this.extension.path, ...options });
-		if (options.default !== undefined) {
-			this.runtime.flagValues.set(name, options.default);
+		// The value is seeded onto the declaration, not into a shared map. Two
+		// extensions may declare the same name; each keeps its own value, so loading
+		// order stops deciding what the other one reads.
+		//
+		// No duplicate-name guard here. What a collision should MEAN — reject,
+		// namespace, or warn — is a product decision that is still open, and adding a
+		// wall now would silently pick one of them.
+		this.extension.flags.set(name, {
+			name,
+			extensionPath: this.extension.path,
+			...options,
+			value: options.default,
+		});
+	}
+
+	registerUsageReporter(toolName: string, reporter: UsageReporter): void {
+		// Duplicates are refused rather than first-wins: two reporters folding one
+		// tool would add the same tokens to /usage, the ACP usage update and
+		// packages/stats twice, and which one "won" would then decide how badly the
+		// ledger over-reports. Per-extension is the right scope for the guard —
+		// addUsageReporter is what rejects the process-wide case.
+		if (this.extension.usageReporters.some(r => r.toolName === toolName)) {
+			throw new Error(
+				`Extension ${this.extension.path}: a usage reporter for tool '${toolName}' is already registered — tool names must be unique within an extension so its usage lands once`,
+			);
 		}
+		if (typeof toolName !== "string" || toolName.length === 0 || toolName !== toolName.trim()) {
+			throw new TypeError(
+				`Extension ${this.extension.path}: usageReporter tool name must be a non-empty trimmed string`,
+			);
+		}
+		if (typeof reporter !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: usageReporter for '${toolName}' must be a function, got ${typeof reporter}`,
+			);
+		}
+		this.extension.usageReporters.push({ toolName, reporter });
 	}
 
 	registerToolNameResolver(resolver: ToolNameResolver): void {
@@ -277,6 +570,109 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		// extension's joins them. Order matters — the first hit wins — so
 		// registration order is the only thing a caller can reason about.
 		this.extension.toolNameResolvers.push(resolver);
+	}
+
+	registerDiagnostic(diagnostic: ExtensionDiagnostic): void {
+		const id = typeof diagnostic?.id === "string" ? diagnostic.id.trim() : "";
+		if (id.length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: diagnostic id must be a non-empty trimmed string`);
+		}
+		if (typeof diagnostic.label !== "string" || diagnostic.label.trim().length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: diagnostic "${id}" must have a label`);
+		}
+		if (typeof diagnostic.run !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: diagnostic "${id}" must provide run(), got ${typeof diagnostic.run}`,
+			);
+		}
+		// Refused rather than silently shadowed: two checks with one name make the
+		// doctor report twice under a name the user cannot tell apart, and which of
+		// them ran is then anyone's guess.
+		if (this.extension.diagnostics.some(entry => entry.id === id)) {
+			throw new TypeError(`Extension ${this.extension.path}: diagnostic "${id}" is already registered`);
+		}
+		const entry: ExtensionDiagnostic = { ...diagnostic, id };
+		this.extension.diagnostics.push(entry);
+		// Also into the process-wide registry the doctor reads, because the command
+		// that runs it lives in another subsystem with no handle on this extension.
+		// `releaseDiagnostics(path)` undoes exactly this extension's contributions on
+		// unload, which the runner calls beside its other per-extension teardown.
+		addDiagnostic(this.extension.path, entry);
+	}
+
+	registerHostRenderStrategy(strategy: HostRenderStrategy): void {
+		const id = typeof strategy.id === "string" ? strategy.id.trim() : "";
+		// Re-validated here, not only in `registerHostRenderStrategy`: the
+		// registry is a module singleton, so a definition that skipped its own
+		// check would otherwise be refused at install time with no extension named.
+		if (id.length === 0) {
+			throw new TypeError(
+				`Extension ${this.extension.path}: host render strategy id must be a non-empty trimmed string`,
+			);
+		}
+		if (typeof strategy.label !== "string" || strategy.label.trim().length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: host render strategy "${id}" must have a label`);
+		}
+		if (typeof strategy.decide !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: host render strategy "${id}" must provide decide(), got ${typeof strategy.decide}`,
+			);
+		}
+		// Appended, not replaced: an extension's strategies join the host's own
+		// gate rather than displacing it, and order is the tiebreak.
+		this.extension.hostRenderStrategies.push({ ...strategy, id });
+	}
+
+	registerSurface(
+		band: ExtensionSurfaceBand,
+		factory: ExtensionUiComponentFactory,
+		options?: ExtensionSurfaceOptions,
+	): void {
+		// Validated here for the same reason `registerHostRenderStrategy` validates:
+		// the registry is a module singleton, so a bad declaration that skipped its
+		// own check would otherwise be refused later with no extension named.
+		if (band !== "header" && band !== "footer") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: surface band must be "header" or "footer", got ${JSON.stringify(band)}`,
+			);
+		}
+		if (typeof factory !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: surface in the ${band} band must be a component factory, got ${typeof factory}`,
+			);
+		}
+		// `path`, not `resolvedPath`: the unload loop releases by `extension.path`,
+		// the same field `registerMode` hands the mode registry as its source.
+		const surface: RegisteredExtensionSurface = {
+			band,
+			factory,
+			options: { ...options, owner: this.extension.path },
+		};
+		this.extension.surfaces.push(surface);
+		extensionSurfaceRegistry.register(this.extension.path, surface);
+	}
+
+	registerCopyTargetProvider(provider: CopyTargetProvider): void {
+		const id = typeof provider.id === "string" ? provider.id.trim() : "";
+		// Re-validated here, not only in `registerCopyTargetProvider`: the registry
+		// is a module singleton, so a definition that skipped its own check would
+		// otherwise be refused at install time with no extension named.
+		if (id.length === 0) {
+			throw new TypeError(
+				`Extension ${this.extension.path}: copy target provider id must be a non-empty trimmed string`,
+			);
+		}
+		if (typeof provider.label !== "string" || provider.label.trim().length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: copy target provider "${id}" must have a label`);
+		}
+		if (typeof provider.collect !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: copy target provider "${id}" must provide collect(), got ${typeof provider.collect}`,
+			);
+		}
+		// Appended, not replaced: a provider's blocks join core's own extraction
+		// rather than displacing it, and order is the tiebreak.
+		this.extension.copyTargetProviders.push({ ...provider, id });
 	}
 
 	registerOutputFormat(format: OutputFormat): void {
@@ -307,6 +703,31 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.messageRenderers.set(customType, renderer as MessageRenderer);
 	}
 
+	registerMarkdownTransformer(transformer: MarkdownTransformer): void {
+		// One transformer per extension, refused rather than replaced: a second
+		// registration is the author silently overwriting their own, and last-wins
+		// would leave whichever one lost with no way to learn it never runs.
+		if (this.extension.markdownTransformer !== undefined) {
+			throw new Error(
+				`Extension ${this.extension.path}: a Markdown transformer is already registered — an extension transforms Markdown once so its own output is predictable`,
+			);
+		}
+		this.extension.markdownTransformer = transformer;
+	}
+
+	registerEntryRenderer<T>(customType: string, renderer: EntryRenderer<T>): void {
+		// Refused rather than replaced. This differs from a cross-extension
+		// collision, which is kept and reported: a duplicate customType within ONE
+		// extension is the author overwriting their own registration, and no
+		// diagnostic naming "two extensions" would describe it.
+		if (this.extension.entryRenderers.has(customType)) {
+			throw new Error(
+				`Extension ${this.extension.path}: an entry renderer for custom type '${customType}' is already registered — custom types must be unique within an extension so an entry renders once`,
+			);
+		}
+		this.extension.entryRenderers.set(customType, renderer as EntryRenderer);
+	}
+
 	registerAssistantThinkingRenderer(renderer: AssistantThinkingRenderer): void {
 		this.extension.assistantThinkingRenderers.push(renderer);
 	}
@@ -326,8 +747,9 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 	}
 
 	getFlag(name: string): boolean | string | undefined {
-		if (!this.extension.flags.has(name)) return undefined;
-		return this.runtime.flagValues.get(name);
+		// A name this extension never declared is `undefined` — not another
+		// extension's value, and not a CLI value that arrived for someone else.
+		return this.extension.flags.get(name)?.value;
 	}
 
 	sendMessage<T = unknown>(
@@ -343,6 +765,13 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	appendEntry(customType: string, data?: unknown): void {
 		this.runtime.appendEntry(customType, data);
+	}
+
+	registerCompactionTransactionObserver(observer: CompactionTransactionObserver): () => void {
+		// Straight to the module registry rather than through the runtime: the
+		// registry is process-global, so routing it through a per-host field would
+		// add a wiring step that could only ever forward to the same set.
+		return registerCompactionTransactionObserver(observer);
 	}
 
 	exec(command: string, args: string[], options?: ExecOptions) {
@@ -418,10 +847,25 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		toolRegistrationListeners: new Set(),
 		assistantThinkingRenderers: [],
 		fileWriteFallbackHandlers: [],
+		peerTransports: [],
+		peerLockBackends: [],
+		peerFences: [],
+		compactionProtections: [],
+		contextTransforms: [],
+		configReloadDisposers: [],
+		doubleEscapeActions: [],
+		modes: [],
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
+		entryRenderers: new Map(),
 		outputFormats: new Map(),
+		settingIds: [],
 		toolNameResolvers: [] as ToolNameResolver[],
+		usageReporters: [] as UsageReporterRegistration[],
+		hostRenderStrategies: [] as HostRenderStrategy[],
+		surfaces: [] as RegisteredExtensionSurface[],
+		copyTargetProviders: [] as CopyTargetProvider[],
+		diagnostics: [] as ExtensionDiagnostic[],
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),
@@ -631,10 +1075,9 @@ export async function discoverExtensionPaths(
 ): Promise<string[]> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
-	const disabled = new Set(disabledExtensionIds ?? []);
 	const loadOptions = disabledExtensionIds ? { cwd, disabledExtensions: disabledExtensionIds } : { cwd };
 
-	const isDisabledName = (name: string): boolean => disabled.has(`extension-module:${name}`);
+	const isDisabledName = createExtensionOptOut(disabledExtensionIds ?? []);
 
 	const addPath = (extPath: string): void => {
 		const resolved = path.resolve(extPath);
@@ -675,11 +1118,53 @@ export async function discoverExtensionPaths(
 	if (ambient) {
 		if (options.includeAmbientHooks !== false) {
 			const hooks = await loadCapability<Hook>(hookCapability.id, loadOptions);
-			for (const hookPath of hooks.items
-				.map(hook => hook.path)
-				.filter(hookPath => isExtensionFile(path.basename(hookPath)))) {
-				addPath(hookPath);
+			// Trust gate. A hook whose file changed after its content was recorded
+			// does not load, and says so rather than vanishing — the alternative is
+			// edited code running at the privilege the user approved for different
+			// code. First sight is blocked too, not recorded: admitting an unvouched
+			// file is what let a hook run at a privilege no one had agreed to. Only a
+			// `hooks.state` entry the user wrote for that exact content approves a
+			// hook, and the message on the untrusted branch names the key and value
+			// to write; see ../hooks/trust.
+			let recordedAny = false;
+			for (const hook of hooks.items) {
+				if (!isExtensionFile(path.basename(hook.path))) continue;
+				const hash = await hookContentHash(hook);
+				// No hash means the file could not be read. Judge nothing and record
+				// nothing: a stand-in hash here would lock the hook out on the next
+				// load that *can* read it. See hookContentHash for why that is not a
+				// way in — an unreadable hook does not load either.
+				if (hash === undefined) continue;
+				const key = hookTrustKey(hook);
+				const recorded = recordedHookHash(key);
+				// Admin-installed hooks are exempt: a file the user did not write is
+				// not an "approved then edited" event.
+				const managed = hook._source?.level === "native";
+				const status = hookTrustStatus(recorded, hash, managed);
+				if (status === "modified") {
+					logger.warn(hookModifiedMessage(hook, recorded ?? ""));
+					continue;
+				}
+				// GAP-D3 (a): block, do not ask. A hook nobody has approved does not
+				// load, and says so — the alternative, admitting it on first sight,
+				// is what let a hook run at a privilege no one had agreed to. The
+				// message carries the hash to approve, because with no approval
+				// surface yet this line is the only place the user will be told.
+				if (status === "untrusted") {
+					logger.warn(hookUntrustedMessage(hook, hash));
+					continue;
+				}
+				if (recordHookHash(key, hash)) recordedAny = true;
+				addPath(hook.path);
 			}
+			// One flush for the whole scan, and only when something was newly
+			// recorded — the steady state must not rewrite the user's config on every
+			// load. The flush is not redundant even though `Settings.set` debounces
+			// its own write: a process that exits before that timer fires would
+			// leave the record unwritten, and the next run would be first sight
+			// again. That window is closed here by argument; the test covers the
+			// behaviour, not the window.
+			if (recordedAny) await settings.flush();
 		}
 	} else {
 		for (const configuredPath of configuredPaths) {
@@ -711,6 +1196,19 @@ export async function discoverExtensionPaths(
 		addPath(resolved);
 	}
 
+	// Deterministic load order.
+	//
+	// `allPaths` accumulates in discovery order, which is raw-`readdir` order for
+	// ambient/configured scans and I/O-completion order for the linked-module branch
+	// -- both filesystem-dependent. Registration is last-extension-wins (see
+	// ExtensionRunner#getRegisteredTool), so that order IS user-visible behavior:
+	// without this, which extension wins a contested tool name changes from machine
+	// to machine with no signal at all.
+	//
+	// Sorted once, here, after dedup and after all four discovery branches, so every
+	// branch contributes to a single order. Code-unit order, deliberately not
+	// localeCompare: the winner must not depend on the host's locale.
+	allPaths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 	return allPaths;
 }
 

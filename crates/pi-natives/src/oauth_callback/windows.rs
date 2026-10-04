@@ -26,9 +26,9 @@ use winreg::{
 };
 
 use super::context::Context;
+use super::marker::{self, MARKER_NAME, MARKER_NAME_LEGACY};
 
 const SNAPSHOT_VERSION: u32 = 1;
-const MARKER_NAME: &str = "omp OAuth Callback Transaction";
 const DEFAULT_VALUE: &str = "";
 
 /// Complete pre-registration state for the HKCU values touched by this backend.
@@ -199,7 +199,12 @@ pub(super) fn restore(context: &Context, snapshot: &Snapshot) -> Result<()> {
 		.map(|legacy| owned_values(context, legacy));
 	let marker_before = &snapshot.values[3].value;
 	let marker_owned = &owned[3];
-	let marker_current = read_value(&layout.root, MARKER_NAME)?;
+	// Read whichever name the journal was written under: a snapshot taken
+	// before the rename records the legacy spelling in `marker_before`, and the
+	// registry still holds that legacy value. The name resolution lives in
+	// `marker`, which is covered on every platform — this file compiles only on
+	// Windows, so a rule kept here would have no test that could observe it.
+	let marker_current = read_marker(&layout.root)?;
 
 	if marker_current == *marker_before {
 		#[allow(
@@ -261,7 +266,10 @@ pub(super) fn restore(context: &Context, snapshot: &Snapshot) -> Result<()> {
 	}
 
 	context.check()?;
-	if read_value(&layout.root, MARKER_NAME)? != Some(marker_owned.clone()) {
+	// Same name resolution as the entry read above: a journal carried over from a
+	// pre-rename build legitimately still holds the legacy marker, and bailing
+	// here would wedge exactly the recovery this whole path exists to perform.
+	if read_marker(&layout.root)? != Some(marker_owned.clone()) {
 		bail!("Windows OAuth callback ownership marker changed during recovery");
 	}
 	restore_value(&snapshot.values[3])?;
@@ -378,6 +386,19 @@ fn key_exists(path: &str) -> Result<bool> {
 		Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
 		Err(error) => Err(error).with_context(|| format!("failed to inspect HKCU\\{path}")),
 	}
+}
+
+/// Read the ownership marker under whichever spelling the writing build used.
+///
+/// A legacy read that fails is not an error: the legacy name is only a fallback
+/// for machines that crashed under a pre-rename build, so failing to open it
+/// simply means "this registry has no legacy marker". The name resolution
+/// itself is `marker::resolve` so it stays covered on non-Windows CI.
+fn read_marker(root: &str) -> Result<Option<RawValue>> {
+	Ok(marker::resolve(marker::MarkerReads {
+		current: read_value(root, MARKER_NAME)?,
+		legacy:  read_value(root, MARKER_NAME_LEGACY).ok().flatten(),
+	}))
 }
 
 fn read_value(path: &str, name: &str) -> Result<Option<RawValue>> {
@@ -703,8 +724,8 @@ mod tests {
 					.as_nanos(),
 				TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
 			);
-			let scheme = format!("omp-oauth-test-{unique}");
-			let directory = std::env::temp_dir().join(format!("omp oauth callback {unique}"));
+			let scheme = format!("ultraworkers-oauth-test-{unique}");
+			let directory = std::env::temp_dir().join(format!("ultraworkers oauth callback {unique}"));
 			fs::create_dir_all(&directory).unwrap();
 			let context = Context::new(
 				directory.clone(),
@@ -748,13 +769,13 @@ mod tests {
 
 	#[test]
 	fn command_quotes_native_paths_and_url_as_data() {
-		let helper = Path::new(r#"C:\Program Files\omp\callback "helper".exe"#);
+		let helper = Path::new(r#"C:\Program Files\ultraworkers\callback "helper".exe"#);
 		let callback = Path::new(r"C:\OAuth callbacks\pending\");
 		let command = relay_command(helper, callback).unwrap();
 		assert_eq!(
 			command,
 			OsString::from(
-				r#""C:\Program Files\omp\callback \"helper\".exe" "C:\OAuth callbacks\pending\\" "%1""#
+				r#""C:\Program Files\ultraworkers\callback \"helper\".exe" "C:\OAuth callbacks\pending\\" "%1""#
 			)
 		);
 	}
@@ -762,14 +783,14 @@ mod tests {
 	#[test]
 	fn command_rewrites_canonicalized_verbatim_paths_the_shell_cannot_launch() {
 		let command = relay_command(
-			Path::new(r"\\?\C:\Users\dev\.omp\oauth\callback-helper.exe"),
-			Path::new(r"\\?\C:\Users\dev\.omp\oauth\callback.url"),
+			Path::new(r"\\?\C:\Users\dev\.ultraworkers\oauth\callback-helper.exe"),
+			Path::new(r"\\?\C:\Users\dev\.ultraworkers\oauth\callback.url"),
 		)
 		.unwrap();
 		assert_eq!(
 			command,
 			OsString::from(
-				r#""C:\Users\dev\.omp\oauth\callback-helper.exe" "C:\Users\dev\.omp\oauth\callback.url" "%1""#
+				r#""C:\Users\dev\.ultraworkers\oauth\callback-helper.exe" "C:\Users\dev\.ultraworkers\oauth\callback.url" "%1""#
 			)
 		);
 	}
@@ -905,7 +926,7 @@ mod tests {
 		// fall back to the legacy command instead of retaining the journal.
 		let verbatim = Context::new(
 			context.home,
-			PathBuf::from(r"\\?\Volume{d0e5f6a7-0000-0000-0000-000000000000}\omp-oauth-test"),
+			PathBuf::from(r"\\?\Volume{d0e5f6a7-0000-0000-0000-000000000000}\ultraworkers-oauth-test"),
 			context.scheme,
 			context.id,
 			BTreeMap::new(),

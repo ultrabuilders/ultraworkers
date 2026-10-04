@@ -355,7 +355,7 @@ describe("worktree isolation helpers", () => {
 				// as a stash entry for the user to reconcile manually.
 				expect(status).toBe("");
 				expect(headContent).toBe("task branch change\n");
-				expect(stashList).toContain("omp-task-merge");
+				expect(stashList).toContain("uw-task-merge");
 
 				// Downstream contract: with a clean index, captureDeltaPatch
 				// produces a valid unified diff (not `diff --cc`) that a
@@ -416,7 +416,7 @@ describe("worktree isolation helpers", () => {
 					expect(magicExists).toBe(false);
 					expect(buildLogExists).toBe(true);
 					expect(headContent).toBe("task branch change\n");
-					expect(stashList).toContain("omp-task-merge");
+					expect(stashList).toContain("uw-task-merge");
 				} finally {
 					await cleanupTaskBranches(repo, [ignoredBranch]);
 					await Promise.all([
@@ -1051,7 +1051,7 @@ describe("applyNestedPatches", () => {
 			runGit(nestedDir, ["stash", "list"]),
 		]);
 		expect(committedFiles.trim()).toBe("file.txt");
-		expect(stashList).toContain("omp-isolation-");
+		expect(stashList).toContain("ultraworkers-isolation-");
 	});
 });
 

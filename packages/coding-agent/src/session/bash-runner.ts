@@ -30,6 +30,25 @@ interface PendingBashMessage {
 	message: BashExecutionMessage;
 }
 
+/**
+ * How a transition anchors in-flight bash.
+ *
+ * `anchorEntryId` exists because `getLeafId()` stopped answering "which entry
+ * does this rewrite displace". A turn writes a durable `phase: "ended"` marker
+ * at `turn_end`, and that marker is the leaf by the time an accepted terminal
+ * empty stop discards the assistant turn — so the leaf is the marker while the
+ * entry actually discarded is the assistant message beneath it. In-flight bash
+ * then parents its result to the marker instead of the message it belongs with.
+ *
+ * A caller that KNOWS which entry it is rewriting passes it here; callers that
+ * genuinely just move the leaf keep the default.
+ */
+export interface BranchTransitionOptions {
+	persistDetached?: boolean;
+	/** The entry this rewrite displaces, when it is not the current leaf. */
+	anchorEntryId?: string;
+}
+
 /** Ownership snapshot spanning a session or branch transition. */
 export interface BashSessionTransition {
 	oldTarget: BashSessionTarget;
@@ -180,8 +199,8 @@ export class BashRunner {
 	}
 
 	/** Runs a leaf rewrite while retaining in-flight bash on its originating branch. */
-	withBranchTransition<T>(mutate: () => T): T {
-		const transition = this.beginSessionTransition();
+	withBranchTransition<T>(mutate: () => T, options?: BranchTransitionOptions): T {
+		const transition = this.beginSessionTransition(options);
 		let transitioned = false;
 		try {
 			const result = mutate();
@@ -194,7 +213,7 @@ export class BashRunner {
 	}
 
 	/** Snapshots the owner of in-flight bash before a session or branch transition. */
-	beginSessionTransition(options?: { persistDetached?: boolean }): BashSessionTransition {
+	beginSessionTransition(options?: BranchTransitionOptions): BashSessionTransition {
 		const oldTarget = this.#sessionTarget;
 		let detachedManager: SessionManager | undefined;
 		let resolveOld: ((destination: BashAppendDestination) => void) | undefined;
@@ -215,7 +234,7 @@ export class BashRunner {
 			},
 			oldSessionId: this.#host.sessionManager.getSessionId(),
 			oldSessionFile: this.#host.sessionManager.getSessionFile(),
-			oldLeafId: this.#host.sessionManager.getLeafId(),
+			oldLeafId: options?.anchorEntryId ?? this.#host.sessionManager.getLeafId(),
 			detachedManager,
 			resolveOld,
 			resolveNew: pendingNew.resolve,

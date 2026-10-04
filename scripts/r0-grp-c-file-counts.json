@@ -1,0 +1,9 @@
+{
+  "head": "a7b7af008",
+  "note": "R0 GRP-C AC7. Moving files is allowed; losing them is not. Raise a count in the same commit that adds files; a drop is a failure.",
+  "counts": {
+    "packages (all)": 7078,
+    "prompts (any depth)": 309,
+    "tools/puppeteer": 14
+  }
+}

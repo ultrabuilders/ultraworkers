@@ -21,7 +21,7 @@ describe("Settings layer refresh", () => {
 
 	beforeEach(() => {
 		state = beginSettingsTest();
-		tempDir = TempDir.createSync("@pi-settings-reload-");
+		tempDir = TempDir.createSync("@ultraworkers-settings-reload-");
 		agentDir = tempDir.join("agent");
 		startProject = tempDir.join("start");
 		scopedProject = tempDir.join("scoped");

@@ -77,7 +77,7 @@ describe("print mode disposes the session before terminating", () => {
 	});
 
 	it("disposes an active print session before SIGTERM exits", async () => {
-		using tempDir = TempDir.createSync("@omp-print-signal-");
+		using tempDir = TempDir.createSync("@ultraworkers-print-signal-");
 		const marker = tempDir.join("disposed");
 		const fixture = path.join(import.meta.dir, "..", "fixtures", "print-mode-signal.js");
 		const child = Bun.spawn([process.execPath, fixture, marker], {

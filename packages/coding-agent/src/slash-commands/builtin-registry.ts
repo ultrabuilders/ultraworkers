@@ -1,4 +1,5 @@
 import { clearSubmittedText } from "./helpers/draft";
+import { tuiRuntimeAsSlashCommand } from "./helpers/tui-runtime";
 import type { AutocompleteItem } from "@oh-my-pi/pi-tui";
 import { COLLAB_GUEST_ALLOWED_COMMANDS } from "../collab/guest";
 import { BUILTIN_COLLABORATION_SLASH_COMMANDS } from "./builtin-collaboration";
@@ -12,7 +13,7 @@ import {
 } from "./builtin-completions";
 import { BUILTIN_CONTROL_SLASH_COMMANDS } from "./builtin-control";
 import { BUILTIN_LIFECYCLE_SLASH_COMMANDS } from "./builtin-lifecycle";
-import { BUILTIN_MARKETPLACE_SLASH_COMMANDS, reloadTuiPluginState } from "./builtin-marketplace";
+import { BUILTIN_MARKETPLACE_SLASH_COMMANDS } from "./builtin-marketplace";
 import { BUILTIN_MODE_SLASH_COMMANDS } from "./builtin-modes";
 import { BUILTIN_SESSION_SLASH_COMMANDS } from "./builtin-session";
 import { BUILTIN_SKILLS_SLASH_COMMANDS } from "./builtin-skills";
@@ -157,19 +158,10 @@ export async function executeBuiltinSlashCommand(
 		// reload pipeline. Spec authors get a single body usable from either
 		// dispatcher without forcing every TUI test to construct the full
 		// `SlashCommandRuntime` shape.
-		const ctx = runtime.ctx;
-		const adapted: SlashCommandRuntime = {
-			session: ctx.session,
-			sessionManager: ctx.sessionManager,
-			settings: ctx.settings,
-			cwd: ctx.sessionManager.getCwd(),
-			output: (text: string) => {
-				ctx.showStatus(text);
-			},
-			refreshCommands: () => ctx.refreshSlashCommandState(),
-			reloadPlugins: () => reloadTuiPluginState(ctx),
-		};
-		const result = await command.handle(parsed, adapted);
+		//
+		// Shared with commands that implement `handleTui` as well and need the same
+		// runtime on their own side — see `helpers/tui-runtime.ts`.
+		const result = await command.handle(parsed, tuiRuntimeAsSlashCommand(runtime.ctx));
 		clearSubmittedText(runtime);
 		if (result && typeof result === "object" && "prompt" in result) return result.prompt;
 		return true;

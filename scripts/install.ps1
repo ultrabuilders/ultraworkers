@@ -46,7 +46,7 @@ $NativeArchitecture = switch ($RawArchitecture.ToUpperInvariant()) {
     "ARM64" { "arm64" }
     default { throw "Unsupported Windows architecture: $RawArchitecture" }
 }
-$BinaryName = "omp-windows-$NativeArchitecture.exe"
+$BinaryName = "ultraworkers-windows-$NativeArchitecture.exe"
 $MinimumBunVersion = "1.3.14"
 
 # PowerShell 5.1 raises a terminating NativeCommandError for any line a native
@@ -274,11 +274,11 @@ function Install-ViaBun {
     }
 
     Write-Host ""
-    Write-Host "[OK] Installed omp via bun" -ForegroundColor Green
+    Write-Host "[OK] Installed ultraworkers via bun" -ForegroundColor Green
 
     Configure-BashShell
 
-    Write-Host "Run 'omp' to get started!"
+    Write-Host "Run 'ultraworkers' to get started!"
 }
 
 function Install-Binary {
@@ -305,11 +305,11 @@ function Install-Binary {
     # Download binary
     $BinaryUrl = "https://github.com/$Repo/releases/download/$Latest/$BinaryName"
     Write-Host "Downloading $BinaryName..."
-    $OutPath = Join-Path $InstallDir "omp.exe"
+    $OutPath = Join-Path $InstallDir "ultraworkers.exe"
     Invoke-WebRequest -Uri $BinaryUrl -OutFile $OutPath -TimeoutSec 900
 
     Write-Host ""
-    Write-Host "[OK] Installed omp to $OutPath" -ForegroundColor Green
+    Write-Host "[OK] Installed ultraworkers to $OutPath" -ForegroundColor Green
 
     # Add to PATH if not already there
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -322,9 +322,9 @@ function Install-Binary {
     Configure-BashShell
 
     if ($needsRestart) {
-        Write-Host "Restart your terminal, then run 'omp' to get started!"
+        Write-Host "Restart your terminal, then run 'ultraworkers' to get started!"
     } else {
-        Write-Host "Run 'omp' to get started!"
+        Write-Host "Run 'ultraworkers' to get started!"
     }
 }
 

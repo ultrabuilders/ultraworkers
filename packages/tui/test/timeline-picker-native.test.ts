@@ -101,7 +101,7 @@ describe("rewind picker", () => {
 		expect([p.layout, p.size, p.icon, p.query]).toEqual(["timeline", "lg", "rewind", null]);
 		expect(p.items?.map(item => [item.id, item.node, item.role, item.label])).toEqual([
 			["u1", "user", undefined, "find the ack"],
-			["a1", "tool", "omp.tool.grep", "grep ack"],
+			["a1", "tool", "ultraworkers.tool.grep", "grep ack"],
 			["a2", "assistant", undefined, "Found it:"],
 			["u2", "user", undefined, "thanks"],
 		]);
@@ -181,15 +181,15 @@ describe("copy picker", () => {
 		expect(
 			sections().map(section => [section.key, (section.p as TspProps<"section">).head, section.p?.role]),
 		).toEqual([
-			["whole", "Whole message", "omp.picker.block"],
-			["b0", expect.stringContaining("rust"), "omp.picker.block"],
+			["whole", "Whole message", "ultraworkers.picker.block"],
+			["b0", expect.stringContaining("rust"), "ultraworkers.picker.block"],
 		]);
 		expect(sections()[1]?.p?.actions?.click).toBe("copy");
 
 		selector.handleNativeEvent({ type: "action", key: "", act: "blocks", mods: [] });
 		root = selector.describe(pickerCx);
 		expect(props(root).focus).toBe("preview");
-		expect(sections()[1]?.p?.role).toBe("omp.picker.block.focused");
+		expect(sections()[1]?.p?.role).toBe("ultraworkers.picker.block.focused");
 		expect(props(root).actions?.find(action => action.id === "close")?.label).toBe("Back");
 	});
 

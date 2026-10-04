@@ -2,6 +2,7 @@
  * View, clean, and push reported tool issues from automated QA.
  */
 
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { Args, Command, Flags } from "@oh-my-pi/pi-utils/cli";
 import { grievancesHelp as commandHelp } from "../cli/command-help";
 import { cleanGrievances, listGrievances, pushGrievances } from "../cli/grievances-cli";
@@ -10,7 +11,7 @@ export default class Grievances extends Command {
 	static description = commandHelp.description;
 	static args = {
 		// Positional action: "list" (default), "clean", or "push". A positional
-		// arg keeps the historical `omp grievances` invocation working unchanged
+		// arg keeps the historical `ultraworkers grievances` invocation working unchanged
 		// while reusing the same command surface for the clean/push verbs.
 		action: Args.string({
 			description: "list (default), clean, or push",
@@ -29,12 +30,12 @@ export default class Grievances extends Command {
 	};
 
 	static examples = [
-		"omp grievances",
-		"omp grievances list --tool find",
-		"omp grievances clean --id 209",
-		"omp grievances clean --tool find",
-		"omp grievances clean --all",
-		"omp grievances push",
+		`${APP_NAME} grievances`,
+		`${APP_NAME} grievances list --tool find`,
+		`${APP_NAME} grievances clean --id 209`,
+		`${APP_NAME} grievances clean --tool find`,
+		`${APP_NAME} grievances clean --all`,
+		`${APP_NAME} grievances push`,
 	];
 
 	async run(): Promise<void> {

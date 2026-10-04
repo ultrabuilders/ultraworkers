@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from "bun:test";
-import { type Component, Container, isFocusable, type OverlayOptions, setKeybindings } from "@oh-my-pi/pi-tui";
+import { type Component, Container, isFocusable, type OverlayOptions, setKeybindings, Text } from "@oh-my-pi/pi-tui";
 import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ExtensionAskDialogQuestion, ExtensionUIContext } from "../../../src/extensibility/extensions";
 import { AskDialogComponent } from "@oh-my-pi/pi-tui/overlays/ask-dialog";
@@ -22,6 +22,12 @@ beforeAll(async () => {
 
 function makeHarness() {
 	const editor = new CustomEditor(getEditorTheme());
+	/** Mutable so a row can unload an extension and remount again. */
+	let liveExtensionPaths: string[] = [];
+	const hookWidgetContainerAbove = new Container();
+	const hookWidgetContainerBelow = new Container();
+	const extensionHeaderContainer = new Container();
+	const extensionFooterContainer = new Container();
 	const editorContainer = new Container();
 	editorContainer.addChild(editor);
 	const requestRender = vi.fn();
@@ -51,8 +57,23 @@ function makeHarness() {
 			terminal: { rows: 40, columns: 120 },
 		},
 		editorContainer,
+		hookWidgetContainerAbove,
+		hookWidgetContainerBelow,
+		extensionHeaderContainer,
+		extensionFooterContainer,
 		session: {
-			extensionRunner: undefined,
+			// Settable so a row can retire one extension between two remounts, which
+			// is the whole difference between the old global wipe and the re-seat.
+			// The rest of the surface the controller touches is stubbed empty: it is
+			// reached during `init`, so a runner that only answers `getExtensionPaths`
+			// fails every pre-existing row in this file, not just the new ones.
+			extensionRunner: {
+				getExtensionPaths: () => liveExtensionPaths,
+				getComposerShapes: () => [],
+				emit: async () => {},
+				initialize: () => {},
+				onError: () => {},
+			} as unknown as InteractiveModeContext["session"]["extensionRunner"],
 			setUsageFallbackConfirmer: vi.fn(),
 		},
 		setToolUIContext(context: ExtensionUIContext, hasUI: boolean): void {
@@ -70,6 +91,14 @@ function makeHarness() {
 		editor,
 		requestRender,
 		addAutocompleteProvider,
+		hookWidgetContainerAbove,
+		hookWidgetContainerBelow,
+		extensionHeaderContainer,
+		extensionFooterContainer,
+		/** The extensions the runner currently reports as loaded. */
+		setLiveExtensions(paths: string[]): void {
+			liveExtensionPaths = paths;
+		},
 		editorContainer,
 		getFocused,
 		setFocus,
@@ -247,6 +276,44 @@ describe("ExtensionUiController Ask dialog input", () => {
 });
 
 describe("ExtensionUiController editor UI", () => {
+	it("mounts setHeader / setFooter into their bands instead of refusing", async () => {
+		// This row used to assert the opposite: the interactive context refused both
+		// surfaces, because it was the one context that COULD mount a component and
+		// still could not. That refusal is what shipped — an extension set a footer,
+		// got no error, and the footer never appeared — so the fix is not to restore
+		// the throw. It is to mount.
+		//
+		// Asserting on the painted band rather than "did not throw" is the whole point:
+		// the failure this bead exists to end is precisely the one where the call
+		// succeeds and nothing appears, so an assertion that cannot see the output
+		// would stay green through a complete regression.
+		const harness = makeHarness();
+		const ui = await harness.init();
+
+		ui.setHeader((() => new Text("HDR", 0, 0)) as never, { key: "banner" });
+		ui.setFooter((() => new Text("FTR", 0, 0)) as never, { key: "legend" });
+
+		const painted = (container: Container): string =>
+			container
+				.render(80)
+				.map(row => Bun.stripANSI(row))
+				.join("\n");
+		expect(painted(harness.extensionHeaderContainer)).toContain("HDR");
+		expect(painted(harness.extensionFooterContainer)).toContain("FTR");
+	});
+
+	it("withdraws a surface when the same key is set to undefined", async () => {
+		// The other half of mounting: a surface an extension cannot take back is a
+		// surface it cannot correct. Undefined must clear the band it owns.
+		const harness = makeHarness();
+		const ui = await harness.init();
+
+		ui.setHeader((() => new Text("HDR", 0, 0)) as never, { key: "banner", owner: "/ext/a.ts" });
+		ui.setHeader(undefined, { key: "banner", owner: "/ext/a.ts" });
+
+		expect(harness.extensionHeaderContainer.render(80)).toHaveLength(0);
+	});
+
 	it("requests a render after extension pasteToEditor mutates the prompt", async () => {
 		const harness = makeHarness();
 		const ui = await harness.init();
@@ -505,5 +572,178 @@ describe("ExtensionUiController custom overlay", () => {
 		expect(component.dispose).toHaveBeenCalledTimes(1);
 		expect(harness.editorContainer.children).toEqual([harness.editor]);
 		expect(harness.editor.getText()).toBe("draft typed while factory is pending");
+	});
+});
+
+/**
+ * A hook widget belongs to the extension that placed it, so a session switch
+ * re-seats widgets instead of wiping them.
+ *
+ * **The regression this defends.** Every session-switch site called
+ * `clearHookWidgets()`, which disposed *every* widget. An extension that was
+ * not involved in the switch, and had not gone anywhere, lost its widget — and
+ * got it back only if it happened to re-register on `session_start`. A status
+ * bar from an unrelated extension therefore vanished on `/new`.
+ *
+ * **Why the assertion is on the container, not on a count.** "One widget was
+ * disposed" is also what a *correct* unload produces, so a count cannot tell
+ * "took down the wrong extension's widget" from "took down a dead one's". What
+ * distinguishes them is WHICH component survives, so every row here names the
+ * component it expects to still be mounted.
+ */
+describe("hook widgets are owned, and a session switch re-seats them", () => {
+	const owner = "/ext/alpha";
+	const other = "/ext/beta";
+
+	/**
+	 * A widget factory plus the component it will produce.
+	 *
+	 * `setWidget` takes a FACTORY `(ui, theme) => component`, not a component —
+	 * so the component has to be reachable after the call for the assertion, and
+	 * the factory has to be what is handed in. Returning both keeps a row from
+	 * passing a bare `Container` and failing on the type instead of the contract.
+	 */
+	const widget = () => {
+		const component = new Container() as Container & { dispose: Mock<() => void> };
+		component.dispose = vi.fn();
+		return { component, content: (() => component) as never };
+	};
+
+	it("keeps a live extension's widget across a session switch", async () => {
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner]);
+		const ui = await harness.init();
+		const alpha = widget();
+		ui.setWidget("alpha-status", alpha.content, { owner });
+
+		// The switch. Under the old wipe this emptied the container.
+		harness.controller.remountHookWidgets();
+
+		// Presence, not just a count: the component that must still be there is
+		// named, so a remount that kept the wrong one cannot pass.
+		expect(harness.hookWidgetContainerAbove.children).toContain(alpha.component);
+		expect(alpha.component.dispose).not.toHaveBeenCalled();
+	});
+
+	it("disposes only the widget whose extension is gone", async () => {
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner, other]);
+		const ui = await harness.init();
+		const alpha = widget();
+		const beta = widget();
+		ui.setWidget("alpha-status", alpha.content, { owner });
+		ui.setWidget("beta-status", beta.content, { owner: other });
+
+		// `beta` unloads. `alpha` was never involved.
+		harness.setLiveExtensions([owner]);
+		harness.controller.remountHookWidgets();
+
+		expect(beta.component.dispose).toHaveBeenCalledTimes(1);
+		expect(alpha.component.dispose).not.toHaveBeenCalled();
+		expect(harness.hookWidgetContainerAbove.children).toContain(alpha.component);
+		expect(harness.hookWidgetContainerAbove.children).not.toContain(beta.component);
+	});
+
+	it("keeps a widget placed with no owner rather than guessing who it belongs to", async () => {
+		// A tool call's own `ui` carries no extension, so nothing can be named as
+		// its author. Disposing it would be a guess, and the guess is the same
+		// silent loss the re-seat exists to stop.
+		const harness = makeHarness();
+		harness.setLiveExtensions([]);
+		const ui = await harness.init();
+		const anonymous = widget();
+		ui.setWidget("tool-status", anonymous.content);
+
+		harness.controller.remountHookWidgets();
+
+		expect(harness.hookWidgetContainerAbove.children).toContain(anonymous.component);
+		expect(anonymous.component.dispose).not.toHaveBeenCalled();
+	});
+
+	it("re-seats both bands, so a below-editor widget is not left behind", async () => {
+		// The two bands are separate containers with separate maps; covering only
+		// `above` would leave the disposal path for `below` untested and a widget
+		// stranded in a container nothing clears.
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner]);
+		const ui = await harness.init();
+		const above = widget();
+		const below = widget();
+		ui.setWidget("alpha-above", above.content, { owner });
+		ui.setWidget("alpha-below", below.content, { owner, placement: "belowEditor" });
+
+		harness.setLiveExtensions([]);
+		harness.controller.remountHookWidgets();
+
+		expect(above.component.dispose).toHaveBeenCalledTimes(1);
+		expect(below.component.dispose).toHaveBeenCalledTimes(1);
+		// Presence, not a child count: both bands carry a spacer of their own (an
+		// `EditorTopGap` when empty, a `Spacer(1)` when not), so `children.length` is
+		// never the number of widgets. Asserting on it would have made this row pass
+		// against a container still holding a disposed widget.
+		expect(harness.hookWidgetContainerAbove.children).not.toContain(above.component);
+		expect(harness.hookWidgetContainerBelow.children).not.toContain(below.component);
+	});
+
+	it("clears a widget when the same key is re-placed, and does not double-mount", async () => {
+		// The negative half: re-seating is not an accumulating append. Without the
+		// per-key removal, a session switch would leave both the old and new
+		// component mounted and the band would grow one row per switch.
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner]);
+		const ui = await harness.init();
+		const first = widget();
+		const second = widget();
+		ui.setWidget("alpha-status", first.content, { owner });
+		ui.setWidget("alpha-status", second.content, { owner });
+
+		// The second placement replaces the first — one key is one line. Named
+		// components, because the band's leading `Spacer(1)` makes a count of 2
+		// indistinguishable from a correct single widget.
+		expect(harness.hookWidgetContainerAbove.children).toContain(second.component);
+		expect(harness.hookWidgetContainerAbove.children).not.toContain(first.component);
+		expect(first.component.dispose).toHaveBeenCalledTimes(1);
+	});
+	it("keeps both widgets when two extensions claim one key, and names both owners", async () => {
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner, other]);
+		const ui = await harness.init();
+		const alphaWidget = widget();
+		const betaWidget = widget();
+
+		ui.setWidget("shared", alphaWidget.content, { owner });
+		ui.setWidget("shared", betaWidget.content, { owner: other });
+
+		// The contract: the first extension's widget is not silently evicted. A
+		// disappearing widget with nothing logged is indistinguishable from one
+		// that was never placed, so its author has no way to learn why.
+		expect(harness.hookWidgetContainerAbove.children).toContain(alphaWidget.component);
+		// And the second is still placed, under its own key rather than replacing
+		// the first — both surfaces kept, matching `setExtensionSurface`.
+		expect(harness.hookWidgetContainerAbove.children).toContain(betaWidget.component);
+		// Neither was disposed: nothing was taken away from anyone.
+		expect(alphaWidget.component.dispose).not.toHaveBeenCalled();
+		expect(betaWidget.component.dispose).not.toHaveBeenCalled();
+	});
+
+	it("withdraws only the caller's own widget when two extensions shared a key", async () => {
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner, other]);
+		const ui = await harness.init();
+		const alphaWidget = widget();
+		const betaWidget = widget();
+
+		ui.setWidget("shared", alphaWidget.content, { owner });
+		ui.setWidget("shared", betaWidget.content, { owner: other });
+
+		// Beta unloads and withdraws. Alpha's widget must survive: a withdrawal
+		// matched on the key alone would take the first extension's widget with
+		// it, which is the failure this scoping exists to prevent.
+		ui.setWidget("shared", undefined, { owner: other });
+
+		expect(harness.hookWidgetContainerAbove.children).not.toContain(betaWidget.component);
+		expect(harness.hookWidgetContainerAbove.children).toContain(alphaWidget.component);
+		expect(betaWidget.component.dispose).toHaveBeenCalledTimes(1);
+		expect(alphaWidget.component.dispose).not.toHaveBeenCalled();
 	});
 });

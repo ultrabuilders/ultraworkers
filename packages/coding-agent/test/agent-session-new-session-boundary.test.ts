@@ -20,7 +20,7 @@ let authStorage: AuthStorage;
 let modelRegistry: ModelRegistry;
 
 async function setup(): Promise<void> {
-	sharedDir = TempDir.createSync("@pi-new-session-boundary-shared-");
+	sharedDir = TempDir.createSync("@ultraworkers-new-session-boundary-shared-");
 	authStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 	modelRegistry = new ModelRegistry(authStorage, path.join(sharedDir.path(), "models.yml"));
 }
@@ -36,7 +36,7 @@ async function createHarness(options?: {
 		register: (api: ExtensionAPI) => void;
 	};
 }): Promise<{ agent: Agent; session: AgentSession; sessionManager: SessionManager }> {
-	const tempDir = TempDir.createSync("@pi-new-session-boundary-");
+	const tempDir = TempDir.createSync("@ultraworkers-new-session-boundary-");
 	const cwd = tempDir.path();
 	const sessionManager = SessionManager.create(cwd, path.join(cwd, "sessions"));
 	const agent = new Agent({

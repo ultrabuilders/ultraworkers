@@ -1,14 +1,14 @@
 /**
  * Plugin CLI command handlers.
  *
- * Handles `omp plugin <command>` subcommands for plugin lifecycle management.
+ * Handles `ultraworkers plugin <command>` subcommands for plugin lifecycle management.
  */
 
 import * as path from "node:path";
 import { APP_NAME, getPluginsNodeModules, getProjectDir } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { resolveOrDefaultProjectRegistryPath } from "../discovery/helpers";
-import { PluginManager, parseSettingValue, validateSetting } from "../extensibility/plugins";
+import { type ChangeResult, PluginManager, parseSettingValue, validateSetting } from "../extensibility/plugins";
 import {
 	getInstalledPluginsRegistryPath,
 	getMarketplacesCacheDir,
@@ -16,8 +16,10 @@ import {
 	getPluginsCacheDir,
 	MarketplaceManager,
 	parsePluginId,
-} from "../extensibility/plugins/marketplace/index.js";
-import type { InstalledPlugin } from "../extensibility/plugins/types";
+} from "../extensibility/plugins/marketplace/index";
+import { type InstalledPlugin } from "../extensibility/plugins/types";
+import { formatDoctorResults, runDoctorChecks } from "../extensibility/plugins/doctor";
+import { doctorPresentation } from "../extensibility/plugins/doctor-report";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 
 // =============================================================================
@@ -57,6 +59,26 @@ export interface PluginCommandArgs {
 // =============================================================================
 // Argument Parser
 // =============================================================================
+
+/**
+ * Report what a plugin-config write actually did.
+ *
+ * `changed: false` means the value was already in the requested state and
+ * nothing was written, so announcing "Set …" there would claim a write that
+ * never happened. `restart-required` is reported separately because a user
+ * toggling a plugin from the shell otherwise has no way to know the running
+ * session is unaffected.
+ */
+function reportChange(result: ChangeResult, verb: string, subject: string): void {
+	if (!result.changed) {
+		console.log(chalk.dim(`${subject} was already in that state — nothing written`));
+		return;
+	}
+	console.log(chalk.green(`${theme.status.success} ${verb} ${subject}`));
+	if (result.application === "restart-required") {
+		console.log(chalk.dim(`Restart ${APP_NAME} for this to apply to the running session.`));
+	}
+}
 
 const VALID_ACTIONS: PluginAction[] = [
 	"install",
@@ -325,10 +347,10 @@ async function handleUpgrade(args: string[], flags: PluginCommandArgs["flags"]):
 	try {
 		if (pluginId) {
 			if (flags.scope) {
-				const result = await manager.upgradePlugin(pluginId, flags.scope);
+				const result = await manager.upgradePlugin(pluginId, flags.scope, { force: flags.force });
 				console.log(chalk.green(`Upgraded ${pluginId} (${flags.scope}) to ${result.version}`));
 			} else {
-				const entries = await manager.upgradePluginAcrossScopes(pluginId);
+				const entries = await manager.upgradePluginAcrossScopes(pluginId, { force: flags.force });
 				for (const entry of entries) {
 					console.log(chalk.green(`Upgraded ${pluginId} (${entry.scope}) to ${entry.version}`));
 				}
@@ -337,7 +359,7 @@ async function handleUpgrade(args: string[], flags: PluginCommandArgs["flags"]):
 			if (flags.scope) {
 				console.error(
 					chalk.yellow(
-						`Warning: --scope is ignored when upgrading all plugins. Use 'omp plugin upgrade <id> --scope ${flags.scope}' to target a specific plugin and scope.`,
+						`Warning: --scope is ignored when upgrading all plugins. Use '${APP_NAME} plugin upgrade <id> --scope ${flags.scope}' to target a specific plugin and scope.`,
 					),
 				);
 			}
@@ -426,7 +448,7 @@ async function handleInstall(
 		if (target.type === "local") {
 			// Local paths route to link(): symlink the directory into the plugins
 			// node_modules tree so source edits show up without a reinstall. Matches
-			// `omp plugin link <path>` so users can use either verb interchangeably.
+			// `ultraworkers plugin link <path>` so users can use either verb interchangeably.
 			if (flags.scope) {
 				console.error(
 					chalk.yellow(
@@ -681,41 +703,86 @@ async function handleLink(
 	}
 }
 
-async function handleDoctor(manager: PluginManager, flags: { json?: boolean; fix?: boolean }): Promise<void> {
-	const checks = await manager.doctor({ fix: flags.fix });
+/**
+ * Render the health check.
+ *
+ * Exported for the same reason `runPluginCommand` is: it takes its manager as a
+ * parameter, and that is the only seam through which a caller can point the
+ * renderer at a project root that genuinely lacks a `patches/` directory. A test
+ * driving the real repo checkout can only ever see the ledger pass, so it could
+ * not cover the branch that matters.
+ */
+export async function handleDoctor(manager: PluginManager, flags: { json?: boolean; fix?: boolean }): Promise<void> {
+	// Two collectors, one command. `manager.doctor()` answers "is the plugin
+	// system itself healthy"; `runDoctorChecks()` answers "is the environment
+	// this host runs in healthy" — PATH lookups, credentials, and the extension
+	// seam registries. They share no check name at all, so running only the first
+	// reported a clean bill of health to anyone whose registered theme would
+	// never load.
+	//
+	// `runDoctorChecks` used to be exported, tested, and unreachable: nothing in
+	// `src/` called it, so the checks existed only for the tests that called them
+	// directly. A caller can go away while its tests stay green — that is what
+	// "a registry that accepted a registration and is never consulted is a dead
+	// seam wearing a live one" looks like from the outside.
+	//
+	// They are reported as TWO blocks rather than one merged list. Merging is the
+	// obvious shape and it is wrong here: the partition contract the plugin report
+	// is pinned by is stated over the rows that collector produced, and folding
+	// eight machine-dependent environment checks into the same denominator makes
+	// that number a property of the host instead of a property of the code. Two
+	// blocks keep the plugin section exactly what it was and still give the user
+	// both answers. Same module, same formatter — the split is in the report, not
+	// in the implementation.
+	const pluginChecks = await manager.doctor({ fix: flags.fix });
+	const environmentChecks = await runDoctorChecks();
 
 	if (flags.json) {
-		console.log(JSON.stringify(checks, null, 2));
+		console.log(JSON.stringify([...pluginChecks, ...environmentChecks], null, 2));
 		return;
 	}
 
-	console.log(chalk.bold("Plugin Health Check\n"));
+	// The report is built by the shared formatter rather than inlined here, so the
+	// bucketing that produced two wrong summaries in a row has one implementation
+	// and one set of tests instead of a copy per renderer. Colouring stays a
+	// parameter, but the DEFAULT set now comes from `doctorPresentation()` —
+	// building the same five chalk wrappers in a third file was how `ultraworkers doctor`
+	// and this command ended up with two copies that could disagree.
+	const { styles, icons } = doctorPresentation();
 
-	for (const check of checks) {
-		const icon =
-			check.status === "ok"
-				? chalk.green(theme.status.success)
-				: check.status === "warning"
-					? chalk.yellow(theme.status.warning)
-					: chalk.red(theme.status.error);
-		console.log(`${icon} ${check.name}: ${check.message}`);
-		if (check.fixed) {
-			console.log(chalk.dim(`  ${theme.nav.cursor} Fixed`));
-		}
-	}
+	const pluginReport = formatDoctorResults(pluginChecks, styles, icons, { heading: "Plugin Health Check" });
+	const environmentReport = formatDoctorResults(environmentChecks, styles, icons, {
+		heading: "Environment Health Check",
+	});
 
-	const errors = checks.filter(c => c.status === "error" && !c.fixed).length;
-	const warnings = checks.filter(c => c.status === "warning" && !c.fixed).length;
-	const ok = checks.filter(c => c.status === "ok").length;
-	const fixed = checks.filter(c => c.fixed).length;
-
+	// The plugin block prints exactly as it did before the environment half was
+	// added — including its `Summary:` line — so a reader (or a script) that only
+	// cares about plugin health sees an unchanged report.
+	for (const line of pluginReport.lines) console.log(line);
 	console.log("");
-	console.log(`Summary: ${ok} ok, ${warnings} warnings, ${errors} errors${fixed > 0 ? `, ${fixed} fixed` : ""}`);
 
-	if (errors > 0) {
-		if (!flags.fix) {
-			console.log(chalk.dim("\nRun with --fix to attempt automatic repair"));
-		}
+	// The environment block prints its checks but NOT its own `Summary:`. Two
+	// summary lines in one report is not a report: a reader cannot tell which one
+	// is the verdict, and any tooling that reads the first `Summary:` it finds
+	// then disagrees with the number of lines above it. The counts ride on a
+	// labelled line instead, so both halves stay legible and only one of them
+	// claims to be the summary.
+	const summaryIndex = environmentReport.lines.findIndex(line => line.startsWith("Summary:"));
+	for (const line of environmentReport.lines.slice(0, summaryIndex)) console.log(line);
+	const env = environmentReport.counts;
+	console.log(
+		styles.dim(
+			`Environment: ${env.ok} ok, ${env.warning} warnings, ${env.error} errors` +
+				`${env.unavailable > 0 ? `, ${env.unavailable} not checked` : ""}` +
+				`${env.fixed > 0 ? `, ${env.fixed} fixed` : ""}`,
+		),
+	);
+	// Anything the formatter appended after its summary (the --fix advice) is
+	// still advice the reader needs.
+	for (const line of environmentReport.lines.slice(summaryIndex + 1)) console.log(line);
+
+	// Either half failing is a failing health check, so the exit code spans both.
+	if (pluginReport.errors + environmentReport.errors > 0 && !flags.fix) {
 		process.exit(1);
 	}
 }
@@ -771,8 +838,8 @@ async function handleFeatures(
 			}
 		}
 
-		await manager.setEnabledFeatures(pluginName, [...currentFeatures]);
-		console.log(chalk.green(`${theme.status.success} Updated features for ${pluginName}`));
+		const result = await manager.setEnabledFeatures(pluginName, [...currentFeatures]);
+		reportChange(result, "Updated features for", pluginName);
 	}
 
 	// Display current state
@@ -916,8 +983,8 @@ async function handleConfig(
 				}
 			}
 
-			await manager.setPluginSetting(pluginName, key, value);
-			console.log(chalk.green(`${theme.status.success} Set ${key}`));
+			const result = await manager.setPluginSetting(pluginName, key, value);
+			reportChange(result, "Set", `${key} for ${pluginName}`);
 			break;
 		}
 
@@ -927,8 +994,8 @@ async function handleConfig(
 				process.exit(1);
 			}
 
-			await manager.deletePluginSetting(pluginName, key);
-			console.log(chalk.green(`${theme.status.success} Deleted ${key}`));
+			const result = await manager.deletePluginSetting(pluginName, key);
+			reportChange(result, "Deleted", `${key} from ${pluginName}`);
 			break;
 		}
 
@@ -1048,11 +1115,13 @@ async function handleSetEnabled(
 		}
 
 		try {
-			await manager.setEnabled(name, enabled);
+			const result = await manager.setEnabled(name, enabled);
 			if (flags.json) {
-				console.log(JSON.stringify({ [jsonKey]: name }));
+				// Structured output carries the outcome rather than prose, so a
+				// script can tell a no-op write from a real one.
+				console.log(JSON.stringify({ [jsonKey]: name, changed: result.changed, application: result.application }));
 			} else {
-				console.log(chalk.green(`${theme.status.success} ${pastTense} ${name}`));
+				reportChange(result, pastTense, name);
 			}
 		} catch (err) {
 			console.error(chalk.red(`${theme.status.error} Failed to ${action} ${name}: ${err}`));

@@ -7,6 +7,7 @@
  */
 export * from "@oh-my-pi/pi-tui/prompt/composer";
 export * from "./interactive-mode";
+export * from "./mode-registry";
 export * from "./rpc/rpc-client";
 export * from "./rpc/rpc-types";
 

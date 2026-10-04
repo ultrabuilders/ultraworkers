@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { ConcatSink, getBlobsDir, isEnoent, isEnotdir, parseJsonlLenient } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
@@ -227,8 +228,50 @@ export async function visitEntriesFromFileStream(
 
 	try {
 		const file = Bun.file(filePath);
-		const source = Number.isFinite(maxBytes) ? file.slice(0, maxBytes) : file;
-		for await (const chunk of source.stream()) {
+		// The byte cap is expressed as a stream bound, not as `file.slice(0, maxBytes).stream()`.
+		//
+		// That combination is broken in Bun 1.3.14: the sliced stream yields every byte
+		// and then never closes, so the `for await` below waits forever on a stream
+		// that is already complete. This is upstream oven-sh/bun#18192 (also reported
+		// as #31675), not a local mistake, and it is fixed in Bun 1.4.2.
+		//
+		// Do not "restore upstream parity" here without checking the runtime floor —
+		// `MIN_BUN_VERSION` is 1.3.14, so a supported runtime may still hang, and this
+		// line is the only thing standing between it and an infinite wait. Revisit when
+		// that floor moves to 1.4+.
+		//
+		// Provenance, corrected 2026-10-03. This comment's reproduction numbers were
+		// long attributed to 1.3.14 on the strength of `brew list`, whose keg is *named*
+		// 1.3.14 while the binary inside it was rewritten 2026-09-05 and reports 1.4.2 —
+		// so every run here, including the first version of this comment, was 1.4.2
+		// wearing a 1.3.14 label. A real 1.3.14 binary was later fetched to /tmp, which
+		// makes this an A/B pair rather than a claim. Measured 3 runs per side:
+		//
+		//   1.3.14  slice(0, 262238)  ->  HANG past a 2.5s race, 3/3
+		//   1.4.2   slice(0, 262238)  ->  completed 262238B, 0.25-0.47ms, 3/3
+		//
+		// What decides the hang is the FILE, not the slice. On an 8,000,000-byte file
+		// under real 1.3.14: `slice(0, 1)` and `slice(0, 1000)` both hang, while
+		// `slice(0, 7_864_321)` and `slice(0, 7_999_999)` both complete. A 1-byte slice
+		// hangs at 4 MB, 8 MB, 20 MB and 40 MB alike. Upstream's account is EOF/window
+		// accounting in the streaming read buffer, so a slice is only safe when the file
+		// fits under it.
+		//
+		// So the hang is real, the 1.4.2 fix is real, and this workaround is load-bearing
+		// at the declared floor. It stays because `MIN_BUN_VERSION` still permits 1.3.14 —
+		// and it should be deleted when that floor moves to 1.4+, not before.
+		//
+		// `createReadStream` is used for the bounded case only, and it bounds the read
+		// in the same place: the OS is never asked for a byte past the cap, which is
+		// the point of the cap. `maxBytes` is routinely the whole file size
+		// (`advisor/transcript-recorder.ts` passes `stat(file).size`), so reading the
+		// slice with `arrayBuffer()` instead would load whole files into memory on a
+		// path built specifically to avoid that — the opposite of the fix. The
+		// unbounded branch keeps `Bun.file(...).stream()`, which is unaffected.
+		const source: AsyncIterable<Uint8Array> = Number.isFinite(maxBytes)
+			? fs.createReadStream(filePath, { start: 0, end: maxBytes - 1 })
+			: file.stream();
+		for await (const chunk of source) {
 			if (stopped) break;
 			bytesSinceYield += chunk.byteLength;
 			options.onBytesConsumed?.(chunk.byteLength);

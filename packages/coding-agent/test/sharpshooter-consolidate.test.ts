@@ -109,7 +109,7 @@ afterEach(() => {
 
 describe("runSharpshooterConsolidation", () => {
 	it("short-circuits while not due and force bypasses the due check", async () => {
-		using temp = TempDir.createSync("@pi-sharpshooter-not-due-");
+		using temp = TempDir.createSync("@ultraworkers-sharpshooter-not-due-");
 		const harness = createHarness(temp.path());
 		await appendSharpshooterDelta(harness.agentDir, harness.cwd, delta("session-a", 1, "Keep one boundary."));
 		await writeSharpshooterState(harness.agentDir, harness.cwd, {
@@ -128,7 +128,7 @@ describe("runSharpshooterConsolidation", () => {
 	});
 
 	it("stamps an empty queue without calling the model", async () => {
-		using temp = TempDir.createSync("@pi-sharpshooter-empty-");
+		using temp = TempDir.createSync("@ultraworkers-sharpshooter-empty-");
 		const harness = createHarness(temp.path());
 		const before = Date.now();
 		const completeSpy = vi.spyOn(ai, "completeSimple");
@@ -142,7 +142,7 @@ describe("runSharpshooterConsolidation", () => {
 	});
 
 	it("writes all returned files, consumes only the listed deltas, and records the result", async () => {
-		using temp = TempDir.createSync("@pi-sharpshooter-happy-");
+		using temp = TempDir.createSync("@ultraworkers-sharpshooter-happy-");
 		const harness = createHarness(temp.path());
 		await appendSharpshooterDelta(harness.agentDir, harness.cwd, delta("session-a", 10, "Keep one boundary."));
 		await appendSharpshooterDelta(
@@ -175,7 +175,7 @@ describe("runSharpshooterConsolidation", () => {
 	});
 
 	it("rejects an over-budget file without consuming deltas or changing memory files", async () => {
-		using temp = TempDir.createSync("@pi-sharpshooter-budget-");
+		using temp = TempDir.createSync("@ultraworkers-sharpshooter-budget-");
 		const harness = createHarness(temp.path());
 		await appendSharpshooterDelta(harness.agentDir, harness.cwd, delta("session-a", 1, "Keep one boundary."));
 		const bankDir = sharpshooterBankDir(harness.agentDir, harness.cwd);
@@ -204,7 +204,7 @@ describe("runSharpshooterConsolidation", () => {
 	});
 
 	it("rejects an all-empty replacement without consuming deltas or wiping memory files", async () => {
-		using temp = TempDir.createSync("@pi-sharpshooter-empty-wipe-");
+		using temp = TempDir.createSync("@ultraworkers-sharpshooter-empty-wipe-");
 		const harness = createHarness(temp.path());
 		await appendSharpshooterDelta(harness.agentDir, harness.cwd, delta("session-a", 1, "Keep one boundary."));
 		const bankDir = sharpshooterBankDir(harness.agentDir, harness.cwd);
@@ -233,7 +233,7 @@ describe("runSharpshooterConsolidation", () => {
 	});
 
 	it("accepts an all-empty replacement when the current memory files are already empty", async () => {
-		using temp = TempDir.createSync("@pi-sharpshooter-empty-noop-");
+		using temp = TempDir.createSync("@ultraworkers-sharpshooter-empty-noop-");
 		const harness = createHarness(temp.path());
 		await appendSharpshooterDelta(
 			harness.agentDir,

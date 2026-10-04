@@ -130,6 +130,7 @@ describe("initTelemetryExport signals export path", () => {
 			["traces", "./otel-export-probe.ts"],
 			["logs and metrics", "./otel-signals-probe.ts"],
 			["resource attributes", "./otel-resource-probe.ts"],
+			["fallback service name", "./otel-service-name-probe.ts"],
 		] as const;
 		const results = await Promise.all(
 			probes.map(async ([name, relativePath]) => {
@@ -150,6 +151,7 @@ describe("initTelemetryExport signals export path", () => {
 			traces: 0,
 			"logs and metrics": 0,
 			"resource attributes": 0,
+			"fallback service name": 0,
 		});
 	}, 20_000);
 });

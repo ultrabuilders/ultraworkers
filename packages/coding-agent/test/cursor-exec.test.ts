@@ -69,6 +69,13 @@ function passthroughRunner(seen: string[] = []): ExtensionRunner {
 	return {
 		hasHandlers: () => true,
 		consumeToolCallEmitted: () => false,
+		// The wrapper records the decision it reached on the deny path
+		// (`wrapper.ts:249`) and on the ask path (`:419`), unconditionally, before
+		// the outcome is reported. A fake predating either call made those rows fail
+		// on `recordApprovalEntry is not a function` instead of on the policy they
+		// assert. A no-op is honest here: these fakes carry no session store, and no
+		// row reads the entry back.
+		recordApprovalEntry: () => {},
 		runScoped<T>(fn: () => T): T {
 			return fn();
 		},
@@ -1002,6 +1009,10 @@ describe("CursorExecHandlers mounted tool bridge", () => {
 		// consults first.
 		const wrapped = new ExtensionToolWrapper(device, {
 			consumeToolCallEmitted: () => false,
+			// See `passthroughRunner`: the deny path records its decision before
+			// reporting it, so this fake needs the method even though this row only
+			// cares that the gate refused the call.
+			recordApprovalEntry: () => {},
 		} as unknown as ExtensionRunner);
 		const settings = Settings.isolated({ "tools.approval": { ast_edit: "deny" } });
 		const handlers = new CursorExecHandlers({

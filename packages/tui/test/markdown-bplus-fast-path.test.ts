@@ -5,7 +5,7 @@ import {
 	fastLineStartHazard,
 	Markdown,
 } from "@oh-my-pi/pi-tui/components/markdown";
-import { defaultMarkdownTheme } from "./test-themes.js";
+import { defaultMarkdownTheme } from "./test-themes";
 
 // B+ fast-tail contract: when a transient streaming frame's last content row
 // came from a paragraph, an append-only same-line delta re-renders ONLY that

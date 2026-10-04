@@ -20,6 +20,7 @@ import { isPosixShell } from "@oh-my-pi/pi-utils/procmgr";
 import { raceJobSettlement, resolveAutoBackgroundWaitMs } from "../async";
 import type { Settings } from "../config/settings";
 import { applyDirenvPreflight, type BashResult, executeBash } from "../exec/bash-executor";
+import { contributedExecPolicyRules } from "./exec-policy";
 import { InternalUrlRouter } from "../internal-urls";
 import { sessionResolveContext } from "../internal-urls/context";
 import { InternalUrlFilesystem, UrlFsError } from "../internal-urls/url-filesystem";
@@ -159,7 +160,7 @@ const BASH_PATTERN_APPROVAL_VALUES = new Set(["allow", "deny", "prompt"]);
  * preserves `bash` tool semantics (`$VAR`, `$(...)`, `source`, POSIX quoting,
  * `-l`) wherever a POSIX shell is available. The agent host's shell path is
  * used as a proxy for the client's, matching the near-universal ACP
- * deployment shape of an editor spawning omp as a co-hosted subprocess.
+ * deployment shape of an editor spawning ultraworkers as a co-hosted subprocess.
  */
 export function wrapShellLineForClientTerminal(
 	line: string,
@@ -506,7 +507,13 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 	readonly approval = (args: unknown): ToolApprovalDecision => {
 		const rawCommand = (args as Partial<BashToolInput>).command;
 		const command = typeof rawCommand === "string" ? rawCommand : "";
-		const patternRules = getBashApprovalPatternRules(cfgBashPatterns.get(this.session.settings));
+		// User policy first, contributed rules after: the matcher keeps ordered
+		// first-match semantics, so a user's own `allow` is reached before anything an
+		// extension contributed and a provider can never pre-empt their decision.
+		const patternRules = [
+			...getBashApprovalPatternRules(cfgBashPatterns.get(this.session.settings)),
+			...contributedExecPolicyRules(),
+		];
 		const shell = cfgBashAllowCompoundCommands.get(this.session.settings)
 			? this.session.settings.getShellConfig().shell
 			: undefined;
@@ -542,7 +549,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		}
 		const criticalCommand = command !== "" && CRITICAL_BASH_PATTERNS.some(pattern => pattern.test(command));
 		if (!compoundSegments && criticalCommand) {
-			return { tier: "exec", override: true, reason: "Critical pattern detected" };
+			return { tier: "exec", override: true, policy: "deny", reason: "Critical pattern detected" };
 		}
 		if (compoundSegments) {
 			let promptRule: BashApprovalPatternRule | undefined = patternRule;
@@ -571,7 +578,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 			for (const segment of compoundSegments) {
 				const literalCommand = segment.argv.join(" ");
 				if (criticalCommand || CRITICAL_BASH_PATTERNS.some(pattern => pattern.test(literalCommand))) {
-					return { tier: "exec", override: true, reason: "Critical pattern detected" };
+					return { tier: "exec", override: true, policy: "deny", reason: "Critical pattern detected" };
 				}
 			}
 			// Unmatched segments retain the standalone tool-policy and mode fallback.

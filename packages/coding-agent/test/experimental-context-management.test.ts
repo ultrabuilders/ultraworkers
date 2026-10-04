@@ -612,7 +612,7 @@ describe("experimental context management", () => {
 	});
 
 	it("commits no boundary when the run aborts mid-rollover while the compaction hook is parked", async () => {
-		const tempDir = TempDir.createSync("@pi-experimental-abort-");
+		const tempDir = TempDir.createSync("@ultraworkers-experimental-abort-");
 		try {
 			const model = getBundledModel("anthropic", "claude-sonnet-4-5");
 			if (!model) throw new Error("Expected bundled model");

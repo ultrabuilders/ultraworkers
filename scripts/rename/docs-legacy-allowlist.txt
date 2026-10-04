@@ -1,0 +1,308 @@
+# scripts/rename/docs-legacy-allowlist.txt
+#
+# WHAT THIS FILE IS
+#   Paths whose legacy display token (`omp`) is ACCEPTED, one repo-relative path
+#   per line. `scripts/rename/check-docs-rename.ts` exits non-zero when a
+#   markdown file outside this list still carries the token.
+#
+# WHAT A LINE IS NOT
+#   A line is a decision, not a backlog. The seed below records what W13 has NOT
+#   swept yet, each with the reason it is still outstanding, so the gate stays red
+#   about real work instead of reporting 113 identical failures.
+#
+#   Do NOT add a path to turn the gate green. That is the failure mode it exists to
+#   catch (bead criterion 3): a line means a human accepted the legacy token.
+#
+# NOT IN THIS FILE, DELIBERATELY
+#   packages/coding-agent/src/prompts/internal-urls/omp.md — runtime asset,
+#     imported by omp-protocol.ts:10. Excluded by path in the scanner.
+#   .omp/** — runtime prompt corpus under a dot directory. Same.
+#   Neither is documentation, so neither is an accepted documentation choice; both
+#   are filtered by path, which is the other option the bead allows.
+#
+# SEEDED FROM
+#   `bun scripts/rename/check-docs-rename.ts .`, originally at
+#   113 files / 869 occurrences. Twelve have since been swept, so the seed
+#   summary below describes the SEED, not the current list — read the entries
+#   themselves for what is still outstanding.
+#
+# CURRENT
+#   99 entries, every one pinned to its CURRENT count; the budgets sum to exactly
+#   the 672 occurrences now on disk.
+#
+#   They were tightened from a seed total of 838, and the direction was measured
+#   before tightening: 35 entries had SHRUNK and NONE had regrown, so every
+#   surplus was a stale ceiling rather than work in progress. That distinction is
+#   the whole reason the check ran first — a file under its ceiling might be
+#   mid-sweep, while a file over one has quietly added legacy tokens.
+#
+#   Two entries were REMOVED rather than re-approved: packages/coding-agent/
+#   examples/README.md named a package that is actually `@oh-my-pi/pi-coding-agent`,
+#   and scripts/session-stats/audit-prompt.md is a system prompt a model reads.
+#   Both were prose, both were wrong, both are fixed in the tree — which is what
+#   the STALE branch is for: it named exactly those two files.
+#
+# SEED SUMMARY (describes the original 113, not the 101 below)
+#    84  docs/ — not yet swept
+#    19  package README — documentation surface, not yet swept
+#     4  python/robomp is a SEPARATE tool with its own brand; outside the omp documentation surface
+#     3  infra/ deployment docs — not yet swept; tracked for the W13 sweep
+#     2  scripts/ operational doc — not yet swept
+#     1  root README — highest-traffic file, swept by hand in a later W13 batch
+
+# Everything below this line is an entry. A `#` line between two paths is the
+# REASON for the path that follows it, read by check-docs-rename.ts. The
+# separator below ends the run of comment lines above, so the file's own header
+# is never recorded as an entry's justification.
+
+# ---
+# on-disk config dir name; npm package @oh-my-pi/omp-stats
+AGENTS.md	5
+# on-disk config dir name
+docs/advisor-watchdog.md	5
+# on-disk config dir name
+docs/agent-hub.md	1
+# on-disk config dir name
+docs/approval-mode.md	1
+# on-disk config dir name
+docs/auth-broker-gateway.md	4
+# on-disk config dir name
+docs/cli-reference.md	1
+# omp.sh is a live domain; on-disk config dir name
+docs/collab.md	7
+# on-disk config dir name
+docs/computer-use.md	2
+# discovery provider id read from user config.yml; on-disk config dir name
+docs/config-usage.md	43
+# discovery provider id read from user config.yml; on-disk config dir name
+docs/context-files.md	44
+# on-disk config dir name
+docs/custom-tools.md	3
+# on-disk config dir name
+docs/environment-variables.md	12
+# on-disk config dir name
+docs/ERRATA-GPT5-HARMONY.md	1
+# nix flake input/attribute; plugin manifest key read from package.json; on-disk config dir name
+docs/extension-loading.md	22
+# on-disk config dir name
+docs/extension-state-persistence.md	1
+# plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
+docs/extension-trust-model.md	11
+# on-disk config dir name
+docs/extensions.md	1
+# plugin manifest key read from package.json
+docs/gemini-manifest-extensions.md	2
+# Quoted path of a file that EXISTS, not a legacy brand string. Both occurrences are
+# `packages/coding-agent/src/discovery/omp-plugins.ts` (:682, :684), cited in the
+# section "Đính chính một claim đã truyền sai" as the file whose L336-350 `if` blocks
+# disprove a relayed `check:ts` failure count. Measured: that file is on disk (15 KB),
+# so the token is part of a CURRENT filename. Rewriting it in the doc would make the
+# doc cite a path that does not exist, and the retraction would lose its evidence.
+# Pinned at the gate's own count (2), so a 3rd occurrence reds.
+docs/goal-completion-auditor.md	2
+# on-disk config dir name
+docs/hooks.md	7
+# on-disk config dir name
+docs/install-id.md	2
+# on-disk config dir name
+docs/keybindings.md	2
+# on-disk config dir name
+docs/local-models.md	3
+# on-disk config dir name
+docs/lsp-config.md	5
+# omp.sh is a live domain
+docs/macos-signing-notarization.md	5
+# discovery provider id read from user config.yml; on-disk config dir name
+docs/marketplace.md	15
+# on-disk config dir name
+docs/mcp-config.md	15
+# on-disk config dir name
+docs/mcp-server-tool-authoring.md	6
+# on-disk config dir name
+docs/models.md	5
+# on-disk config dir name
+docs/natives-addon-loader-runtime.md	5
+# on-disk config dir name
+docs/natives-architecture.md	3
+# omp-kata release / arc-omp-values.yaml are live infra names
+docs/natives-build-release-debugging.md	11
+# MIME type application/x-omp-status sent to the notebook kernel
+docs/notebook-tool-runtime.md	1
+# nix flake input/attribute; discovery provider id from user config.yml; plugin manifest key read from package.json; on-disk config dir name
+docs/plugin-manager-installer-plumbing.md	28
+# on-disk config dir name
+docs/porting-from-pi-mono.md	1
+# on-disk config dir name
+docs/prewalk.md	2
+# omp.sh is a live domain
+docs/provider-quirks.md	4
+# on-disk config dir name
+docs/providers.md	16
+# on-disk config dir name
+docs/python-repl.md	6
+# omp-rpc is the bundled python distribution name (python/omp-rpc/pyproject.toml)
+docs/rpc.md	4
+# discovery provider id read from user config.yml; on-disk config dir name
+docs/rulebook-matching-pipeline.md	13
+# on-disk config dir name
+docs/sdk.md	1
+# on-disk config dir name
+docs/secrets.md	4
+# omp.sh is a live domain; on-disk config dir name
+docs/session-operations-export-share-fork-resume.md	4
+# on-disk config dir name
+docs/session-switching-and-recent-listing.md	2
+# on-disk config dir name
+docs/session.md	4
+# on-disk config dir name
+docs/settings.md	30
+# discovery provider id from user config.yml; on-disk config dir name
+docs/skills.md	10
+# discovery provider id from user config.yml; plugin manifest key read from package.json; on-disk config dir name
+docs/skills/authoring-extensions.md	20
+# discovery provider id from user config.yml; plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
+docs/skills/authoring-marketplaces.md	16
+# plugin manifest key read from package.json; on-disk config dir name
+docs/skills/examples/hello-extension/README.md	4
+# plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
+docs/skills/examples/mini-marketplace/README.md	2
+# on-disk config dir name
+docs/skills/examples/safety-hook/README.md	1
+# discovery provider id read from user config.yml; on-disk config dir name
+docs/slash-command-internals.md	10
+# omp.sh is a live domain; on-disk config dir name
+docs/stream.md	10
+# on-disk config dir name
+docs/system-prompt-customization.md	11
+# discovery provider id from user config.yml; plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
+docs/task-agent-discovery.md	16
+# on-disk config dir name
+docs/theme.md	4
+# on-disk config dir name
+docs/toolconv/minimax.md	1
+# on-disk config dir name
+docs/toolconv/xml.md	1
+# internal URL namespace (omp://) routed by InternalUrlRouter
+docs/tools/ast-grep.md	1
+# prose: "omp-owned page" names who owns the Chromium page, no literal
+docs/tools/browser.md	2
+# on-disk config dir name
+docs/tools/debug.md	6
+# internal URL scheme omp:// in the path parameter
+docs/tools/find.md	4
+# output filename template omp-image-<snowflake>
+docs/tools/generate_image.md	1
+# on-disk config dir name
+docs/tools/github.md	3
+# internal URL scheme omp:// in the path parameter
+docs/tools/glob.md	2
+# internal URL scheme omp:// in the path parameter
+docs/tools/grep.md	3
+# on-disk config dir name; internal URL scheme
+docs/tools/ida.md	5
+# on-disk config dir name
+docs/tools/learn.md	1
+# on-disk config dir name
+docs/tools/manage_skill.md	1
+# internal URL registry entry (InternalUrlRouter)
+docs/tools/read.md	1
+# hindsight.retainContext value "omp" — read from user config
+docs/tools/retain.md	1
+# on-disk config dir name
+docs/tools/rewind.md	1
+# example output_root path /tmp/omp-security-review
+docs/tools/security_scan.md	1
+# on-disk config dir name
+docs/tools/task.md	5
+# internal URL scheme in a tool description
+docs/tools/web_search.md	1
+# omp.sh is a live domain; on-disk config dir name; npm package @oh-my-pi/omp-stats
+docs/user-facing-packages.md	7
+# omp-kata / arc-omp-values.yaml are live infra names
+infra/docs/03-runner-image.md	32
+# omp-kata release / arc-omp-values.yaml are live infra names; local host convenience wrapper, not a repo artifact
+infra/docs/04-arc-and-caching.md	34
+# omp-kata / arc-omp-values.yaml are live infra names
+infra/docs/README.md	1
+# OTel attribute omp.gen_ai.tool.status shipped to collectors
+packages/agent/README.md	1
+# omp.sh is a live domain
+packages/ai/README.md	1
+# on-disk config dir name
+packages/browser-relay/README.md	2
+# build output path dist/omp
+packages/coding-agent/DEVELOPMENT.md	1
+# on-disk config dir name
+packages/coding-agent/examples/custom-tools/README.md	3
+# on-disk config dir name
+packages/coding-agent/examples/extensions/README.md	2
+# on-disk config dir name
+packages/coding-agent/examples/hooks/README.md	2
+# on-disk config dir name
+packages/coding-agent/examples/sdk/README.md	2
+# on-disk config dir name
+packages/coding-agent/README.md	1
+# omp.sh is a live domain; on-disk config dir name
+packages/collab-web/README.md	3
+# on-disk config dir name; npm package @oh-my-pi/omp-stats
+packages/stats/README.md	5
+# on-disk config dir name
+packages/utils/README.md	2
+# the distribution name omp-rpc
+python/omp-rpc/README.md	1
+# on-disk config dir name
+python/robomp/AGENTS.md	4
+# on-disk config dir name
+python/robomp/README.md	3
+# omp.sh is a live domain; nix flake input/attribute; on-disk config dir name; npm package @oh-my-pi/omp-stats
+README.md	42
+# W8b. This file documents the decision table that governs the legacy token, so it
+# has to name the token and the pinned expression verbatim — a reader must be able
+# to reproduce the counts the gate derives. Renaming them here would make the
+# documentation describe a pattern that no longer matches the gate.
+# Budget 6 -> 9 on 2026-10-02, in the same commit that touched the file. The three
+# added occurrences are all dot-directory paths quoted in "Writing a test in this
+# directory", where naming the exact directory IS the point: the section's claim is
+# that `.omp/` is the right control for one gate and the wrong control for another,
+# because the two disagree about dot-directories. Rewriting those paths would leave
+# the rule stated and its evidence gone. The token here is documentation of the
+# gate's own scope, not a brand string in prose.
+scripts/rename/README.md	9
+# on-disk config dir name
+scripts/session-stats/README.md	4
+# `.omp` here is the config read root a migrating install still reads from, not a
+# retired brand name. `packages/utils/src/dirs.ts:438` `getConfigReadRootName()`
+# returns the first candidate directory that holds a main config file, and `.omp`
+# is one of those candidates; `:499` `getConfigWriteRootName()` returns
+# `CONFIG_DIR_NAME_NEXT` unconditionally, so no write re-enters `.omp` while that
+# directory exists. This doc names the path a real install reads, so the token is
+# the read root's name — renaming it here would point the doc at a path no install
+# uses. Stated as that invariant, not as a count: the count moves, the two
+# functions above do not.
+docs/ui-comparison-ulw-vs-opencoding.md	8
+# `omp-plugins.ts` here is an internal path reference, not a retired brand: the
+# table names the module that registers the MCP provider, and
+# `packages/coding-agent/src/discovery/omp-plugins.ts` is a real tracked file
+# (`git ls-files` confirms it). Renaming the token in the doc would point the
+# table at a file that does not exist. Same class as the `omp-protocol.ts:10`
+# reference recorded in `disposition.tsv`.
+docs/mcp-server-contribution-by-extensions.md	1
+#
+# This README is the rename programme's own SPECIFICATION of the legacy token, so
+# the token is its subject rather than a stale name in it. Three measured anchors:
+#   :117  "| `.omp`    | **yes** | the leading class does **not** exclude `.`" — the
+#          sentence exists to state whether the leading dot is matched; rewriting
+#          the token deletes the question the table is answering.
+#   :122  "`omp.shx` | **yes** | that lookahead only covers `.sh` / `.sh-`" — a
+#          boundary case about the spelling itself.
+#   :355  "The concrete case: `.omp/skills/a.md` is the right control" — the
+#          legacy path is the fixture the matcher is verified against.
+# Pinned at the count the gate itself reported (15), so a 16th occurrence reds.
+scripts/rename/README.md	15
+# Quoted source, not prose. §7.1 reproduces the Windows branch of lspMuxEndpoint
+# verbatim from packages/coding-agent/src/lsp/mux/protocol.ts:66-72 so readers can
+# check the citation. The one token is the live pipe name `omp-lsp-mux`, and the
+# doc quotes it exactly — rewriting the token here would make the quotation
+# disagree with the file it cites, so the class is keep-wire.
+# Pinned at the count the gate itself reported (1), so a 2nd occurrence reds.
+docs/peer-messaging.md	1

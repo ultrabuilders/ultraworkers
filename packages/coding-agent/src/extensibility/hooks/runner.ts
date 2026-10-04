@@ -24,6 +24,7 @@ import type {
 	HookContext,
 	HookError,
 	HookEvent,
+	HookEntryRenderer,
 	HookMessageRenderer,
 	HookUIContext,
 	RegisteredCommand,
@@ -193,6 +194,25 @@ export class HookRunner {
 	}
 
 	/**
+	 * Get an entry renderer for the given customType.
+	 * Returns the first renderer found across all hooks, or undefined if none.
+	 *
+	 * Same scan order and same last-wins-by-first-found shape as
+	 * {@link getMessageRenderer}, deliberately: two readers that disagree about
+	 * precedence would make an entry draw differently depending on which seam
+	 * registered it.
+	 */
+	getEntryRenderer(customType: string): HookEntryRenderer | undefined {
+		for (const hook of this.hooks) {
+			const renderer = hook.entryRenderers.get(customType);
+			if (renderer) {
+				return renderer;
+			}
+		}
+		return undefined;
+	}
+
+	/**
 	 * Get all registered commands from all hooks.
 	 */
 	getRegisteredCommands(): RegisteredCommand[] {
@@ -334,8 +354,15 @@ export class HookRunner {
 
 	/**
 	 * Emit a tool_call event to all hooks.
-	 * No timeout - user prompts can take as long as needed.
-	 * Errors are thrown (not swallowed) so caller can block on failure.
+	 * No timeout - a `tool_call` handler may block on an interactive prompt via the
+	 * context's `ui`, and that legitimately takes as long as the user takes. (This is
+	 * why the extensions path's `extensionHandlerTimeoutMs` must NOT be copied here:
+	 * the two gates accept different kinds of handler.)
+	 *
+	 * Errors are thrown (not swallowed) so caller can block on failure — that
+	 * fail-closed decision is deliberate and unchanged. They are also REPORTED, which
+	 * they previously were not: a broken third-party hook used to vanish into a prose
+	 * `reason` with no surface to grep, matching the `emit()` path below.
 	 */
 	async emitToolCall(event: ToolCallEvent): Promise<ToolCallEventResult | undefined> {
 		const ctx = this.#createContext();
@@ -348,7 +375,19 @@ export class HookRunner {
 
 			for (const handler of handlers) {
 				// No timeout - let user take their time
-				const handlerResult = (await handler(event, ctx)) as ToolCallEventResult | undefined;
+				let handlerResult: ToolCallEventResult | undefined;
+				try {
+					handlerResult = (await handler(event, ctx)) as ToolCallEventResult | undefined;
+				} catch (err) {
+					// Report, then rethrow. Reporting is additive: the caller still blocks,
+					// but a failure now leaves a trace instead of looking like a decision.
+					this.emitError({
+						hookPath: hook.path,
+						event: event.type,
+						error: err instanceof Error ? err.message : String(err),
+					});
+					throw err;
+				}
 
 				if (!handlerResult) continue;
 				if (handlerResult.block) {

@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 function makeCwd(): string {
-	tempDir = TempDir.createSync("@pi-plan-autosave-");
+	tempDir = TempDir.createSync("@ultraworkers-plan-autosave-");
 	return tempDir.path();
 }
 

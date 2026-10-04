@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { Markdown, renderInlineMarkdown } from "../src/components/markdown";
-import { defaultMarkdownTheme } from "./test-themes.js";
+import { defaultMarkdownTheme } from "./test-themes";
 
 /** Render markdown and return non-empty, ANSI-stripped, right-trimmed lines. */
 function renderLines(md: string, width = 100): string[] {

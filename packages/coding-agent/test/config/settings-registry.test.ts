@@ -239,7 +239,7 @@ describe("settings registry", () => {
 	});
 
 	it("warns once per instance about an invalid configured value, unaffected by other instances", async () => {
-		const tempDir = TempDir.createSync("@pi-settings-warn-");
+		const tempDir = TempDir.createSync("@ultraworkers-settings-warn-");
 		try {
 			const agentDir = tempDir.join("agent");
 			const cwd = tempDir.join("project");

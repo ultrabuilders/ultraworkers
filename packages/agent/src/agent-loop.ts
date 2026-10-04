@@ -51,8 +51,16 @@ import {
 	recoverHarmonyToolCall,
 	signalListLabel,
 } from "@oh-my-pi/pi-ai/utils/harmony-leak";
-import { cloneJsonTree, logger, sanitizeText, structuredCloneJSON } from "@oh-my-pi/pi-utils";
+import {
+	cloneJsonTree,
+	isBunTestRuntime,
+	logger,
+	normalizeErrorMessage,
+	sanitizeText,
+	structuredCloneJSON,
+} from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
+import { assertDerivable, snapshotForDerivation } from "./derivation-invariant";
 import { LiveSteeringChannel } from "./live-steering";
 import { agentPauseGate } from "./pause";
 import { type AgentRunCoverage, type AgentRunSummary, ToolCallBlockedError } from "./run-collector";
@@ -523,6 +531,24 @@ function hasSubstantiveToolResultContent(content: AgentToolResult["content"]): b
 		if (block.type === "text" && block.text.trim().length > 0) return true;
 	}
 	return false;
+}
+
+/** Key under which a blocked call's classification rides in `result.details`. */
+export const TOOL_BLOCK_KIND_DETAIL = "blockedKind";
+
+/**
+ * The `details` payload for a tool call that threw.
+ *
+ * A `ToolCallBlockedError` knows whether a handler DENIED the call or FAILED while judging it,
+ * and that distinction is invisible in the message: both reach here as one line of prose the
+ * user reads the same way. Carrying it in `details` is what lets a surface label the two
+ * differently — a refusal is somebody's decision, a failure is a broken gate, and rendering one
+ * as the other is the conflation this field exists to prevent.
+ *
+ * Returns `{}` for every other error, so an ordinary tool exception is untouched.
+ */
+function blockedCallDetails(error: unknown): Record<string, unknown> {
+	return error instanceof ToolCallBlockedError ? { [TOOL_BLOCK_KIND_DETAIL]: error.kind } : {};
 }
 
 function coerceToolResult(raw: unknown): { result: AgentToolResult<unknown>; malformed: boolean } {
@@ -1797,7 +1823,7 @@ async function emitHarmonyAudit(
 	);
 }
 
-interface PreparedProviderCall {
+export interface PreparedProviderCall {
 	model: Model;
 	context: Context;
 	promptToolWireTools: Context["tools"];
@@ -1868,13 +1894,42 @@ function openLiveSteering(
 	});
 }
 
-async function prepareProviderCall(
+export async function prepareProviderCall(
 	context: AgentContext,
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 ): Promise<PreparedProviderCall> {
 	const model = config.getModel?.() ?? config.model;
 	let messages = context.messages;
+	// Snapshot the PRE-transform context. `transformContext` may return the very
+	// array it was handed, so `messages` below stops being the source; the
+	// derivation check needs the source to re-derive FROM, and comparing a value
+	// against a re-derivation of itself is circular — it agrees by construction.
+	//
+	// Default ON under test, off in production. An invariant nothing turns on is a
+	// gate that can never fire, and the "0 desyncs" measurement behind option A
+	// only means something if it is re-checked rather than remembered — so every
+	// agent test now carries it, and the claim "this has never caught anything"
+	// becomes falsifiable on each run instead of a one-off number.
+	//
+	// Gated on the ABSENCE of `transformContext`, which is not a technicality.
+	// Re-deriving re-runs exactly two host-supplied hooks — `transformContext` and
+	// `convertToLlm` — and nothing else. Everything downstream of them
+	// (`transformProviderContext`, image normalisation, dialect rewriting) is NOT
+	// re-run, so it cannot be perturbed and is out of scope.
+	//
+	// `transformContext` is the one that can carry arbitrary code: `sdk.ts` wires
+	// it to `extensionRunner.emitContext`, which runs extension `context`
+	// handlers. Re-deriving would execute them twice per request and let the check
+	// perturb the thing it measures, so a pipeline that has one is not checked
+	// automatically. With none, the only re-run hook left is `convertToLlm`, which
+	// is host-supplied and contractually a pure function — the auto-learn capture
+	// agent in `sdk.ts` uses `wrapSteeringForModel`, which copies on write and
+	// never mutates its input. A host whose transform IS pure opts in with the
+	// flag; `packages/agent` tests do exactly that.
+	const derivationEnabled =
+		config.derivationInvariant ?? (config.transformContext === undefined && isBunTestRuntime());
+	const derivationSource = derivationEnabled ? snapshotForDerivation(messages) : undefined;
 	if (config.transformContext) {
 		messages = await config.transformContext(messages, signal);
 	}
@@ -1903,6 +1958,26 @@ async function prepareProviderCall(
 	}
 	if (config.transformProviderContext) {
 		llmContext = await config.transformProviderContext(llmContext, model);
+	}
+
+	// Off in production by default, on under test. It lives here rather than at a
+	// dispatch site because BOTH callers reach this function — the
+	// speculative-stream path pre-builds the call and passes it in, so a check at
+	// the dispatch site would be skipped by exactly the path most likely to hold
+	// a stale derivation. The comparison runs on the post-convert messages
+	// actually handed to the provider, and re-derives them through the loop's own
+	// pipeline rather than a reimplementation of it.
+	if (derivationSource) {
+		// Re-run the WHOLE pipeline from the pre-transform snapshot, and compare its
+		// output to what was just sent. Re-deriving from an already-transformed
+		// value would run the second half of a drifting pipeline twice and can
+		// agree by accident — which is the failure this exists to catch, not to
+		// reproduce.
+		const source = [...derivationSource];
+		const expected = await config.convertToLlm(
+			config.transformContext ? await config.transformContext(source, signal) : source,
+		);
+		assertDerivable(normalizedMessages, () => expected);
 	}
 
 	let promptToolWireTools: Context["tools"];
@@ -2914,8 +2989,7 @@ async function prepareToolCallDispatch(
 					return fallback;
 				}
 				entry.args = "__parseError" in args ? { __parseError: args.__parseError } : args;
-				entry.validationErrorMessage =
-					validationError instanceof Error ? validationError.message : String(validationError);
+				entry.validationErrorMessage = normalizeErrorMessage(validationError);
 				return undefined;
 			}
 		};
@@ -3437,8 +3511,8 @@ async function executeToolCalls(
 			} catch (e) {
 				caughtError = e;
 				result = {
-					content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
-					details: {},
+					content: [{ type: "text", text: normalizeErrorMessage(e) }],
+					details: blockedCallDetails(e),
 				};
 				isError = true;
 			}
@@ -3474,7 +3548,7 @@ async function executeToolCalls(
 				} catch (e) {
 					caughtError = e;
 					result = {
-						content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+						content: [{ type: "text", text: normalizeErrorMessage(e) }],
 						details: {},
 					};
 					isError = true;

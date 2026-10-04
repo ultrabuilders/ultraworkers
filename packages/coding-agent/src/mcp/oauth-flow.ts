@@ -10,6 +10,7 @@ import { OAuthCallbackFlow } from "@oh-my-pi/pi-ai/oauth/callback-server";
 import type { OAuthController, OAuthCredentials } from "@oh-my-pi/pi-ai/oauth/types";
 import type { FetchImpl } from "@oh-my-pi/pi-ai/types";
 import { getActiveProfile } from "@oh-my-pi/pi-utils/dirs";
+import { logger } from "@oh-my-pi/pi-utils";
 import type { OAuthCredential } from "../session/auth-storage";
 import { buildWellKnownUrls } from "./oauth-discovery";
 
@@ -132,7 +133,57 @@ async function readRegistrationFailureDetail(response: Response): Promise<string
 }
 
 function isLoopbackHostname(hostname: string): boolean {
-	return hostname === "localhost" || hostname === "127.0.0.1";
+	// `::1` alongside the IPv4 forms: a server reached over IPv6 loopback carries
+	// the same "never leaves this machine" property, and omitting it would let the
+	// guard below refuse a connection that never crosses a network.
+	return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
+}
+
+/**
+ * Opt out of the HTTPS requirement, for a self-hosted MCP server on a LAN address.
+ *
+ * Deliberately explicit and deliberate loudly: an operator who turns this on is
+ * sending a client secret over plaintext, and the only thing standing between
+ * that mistake and silence is this. The warning is emitted at use, not at
+ * configuration, so a log captured during the exchange carries the evidence.
+ */
+function insecureEndpointAllowed(): boolean {
+	return Bun.env.OMP_ALLOW_INSECURE_MCP_OAUTH === "1";
+}
+
+/**
+ * Refuse to put a credential on a non-HTTPS endpoint.
+ *
+ * This is the guard `pi` has (`pi/packages/mcp/src/oauth/flow.ts:89`) and omp did
+ * not: both endpoints below carry the client secret or the refresh token, and a
+ * server that answers on plain HTTP can read them off the wire. Discovery already
+ * rejects other schemes, but discovery is not the send — a `.mcp.json` can name a
+ * `http://` token endpoint directly and never pass through discovery at all.
+ *
+ * Loopback is exempt because the request never leaves the machine, which is what
+ * makes `http://127.0.0.1` a local dev server rather than a remote disclosure.
+ */
+function assertSecureCredentialEndpoint(value: string, what: string): void {
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		// Not a URL is not this guard's business; the fetch will report it.
+		return;
+	}
+	if (url.protocol === "https:" || isLoopbackHostname(url.hostname)) return;
+	if (insecureEndpointAllowed()) {
+		logger.warn("MCP OAuth: sending a credential to a non-HTTPS endpoint because the opt-out is set", {
+			endpoint: url.href,
+			which: what,
+		});
+		return;
+	}
+	throw new Error(
+		`Refusing to send an MCP OAuth ${what} to a non-HTTPS endpoint: ${url.href}. ` +
+			"Use https, or a loopback address for a local server. " +
+			"Set OMP_ALLOW_INSECURE_MCP_OAUTH=1 to override — the credential will cross the network in plaintext.",
+	);
 }
 
 function resolveRedirectUri(redirectUri: string | undefined): string | undefined {
@@ -515,6 +566,7 @@ export class MCPOAuthFlow extends OAuthCallbackFlow {
 			params.set("client_secret", clientSecret);
 		}
 
+		assertSecureCredentialEndpoint(this.config.tokenUrl, "token request");
 		const response = await this.#fetch(this.config.tokenUrl, {
 			method: "POST",
 			headers: {
@@ -828,6 +880,7 @@ export async function refreshMCPOAuthToken(
 	if (resolvedResource) params.set("resource", resolvedResource);
 	if (clientSecret) params.set("client_secret", clientSecret);
 
+	assertSecureCredentialEndpoint(tokenUrl, "refresh request");
 	const response = await fetchImpl(tokenUrl, {
 		method: "POST",
 		headers: { "Content-Type": "application/x-www-form-urlencoded" },

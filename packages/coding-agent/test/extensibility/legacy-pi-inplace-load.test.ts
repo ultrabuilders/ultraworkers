@@ -27,7 +27,7 @@ afterAll(async () => {
 });
 
 async function writePackage(files: Record<string, string>): Promise<string> {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-legacy-inplace-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-legacy-inplace-"));
 	tempRoots.push(dir);
 	for (const rel in files) {
 		const abs = path.join(dir, rel);
@@ -946,7 +946,14 @@ describe("legacy-pi in-place module loading (issue #1674)", () => {
 				'import { createExtensionRuntime } from "@earendil-works/pi-coding-agent";',
 				"const first = createExtensionRuntime();",
 				"const second = createExtensionRuntime();",
-				"first.flagValues.set('sprite', true);",
+				// Two calls must yield two DISTINCT runtimes. The probe used to be
+				// `first.flagValues.set(...)`, but 68cb6c3ade moved a flag's value onto the
+				// extension that declared it (`extension.flags.get(name).value`,
+				// runner.ts:1758) and deleted `flagValues` from the runtime — so the field
+				// this line touched no longer exists and the test died on `undefined`.
+				// `pendingProviderRegistrations` is the same isolation claim against a
+				// field the runtime still has, and it is readable before initialization.
+				"first.registerProvider('sprite', { baseUrl: 'http://sprite' }, '/tmp/sprite');",
 				"let initializationError;",
 				"try {",
 				"  first.getActiveTools();",
@@ -954,8 +961,8 @@ describe("legacy-pi in-place module loading (issue #1674)", () => {
 				"  initializationError = error instanceof Error ? error.message : String(error);",
 				"}",
 				"export const runtimeContract = {",
-				"  firstFlag: first.flagValues.get('sprite'),",
-				"  secondHasFlag: second.flagValues.has('sprite'),",
+				"  firstProviderCount: first.pendingProviderRegistrations.length,",
+				"  secondProviderCount: second.pendingProviderRegistrations.length,",
 				"  initializationError,",
 				"};",
 				"export default function (pi) { void pi; }",
@@ -964,15 +971,15 @@ describe("legacy-pi in-place module loading (issue #1674)", () => {
 
 		const mod = (await loadLegacyPiModule(path.join(dir, "index.ts"))) as {
 			runtimeContract: {
-				firstFlag: boolean;
-				secondHasFlag: boolean;
+				firstProviderCount: number;
+				secondProviderCount: number;
 				initializationError: string;
 			};
 		};
 
 		expect(mod.runtimeContract).toEqual({
-			firstFlag: true,
-			secondHasFlag: false,
+			firstProviderCount: 1,
+			secondProviderCount: 0,
 			initializationError:
 				"Extension runtime not initialized. Action methods cannot be called during extension loading.",
 		});

@@ -1,0 +1,477 @@
+#!/usr/bin/env bun
+/**
+ * R0 GRP-C — GATE. Fail only on test failures the captured baseline does not
+ * already contain.
+ *
+ * WHAT A GREEN RUN DOES NOT MEAN
+ * ------------------------------
+ * This gate protects against **regression**: a failure name that was not in the
+ * baseline. It has no opinion on whether the baseline's own contents are correct.
+ * A green run means "no NEW failures" — it does NOT mean "the baseline is right",
+ * and the two must not be read as one. Whether the recorded entries are the right
+ * entries is a different question, answered by measuring the importer counts this
+ * bead is scoped to, not by asking this gate.
+ *
+ * WHY A BASELINE INSTEAD OF `bun test` PASSING
+ * --------------------------------------------
+ * `packages/coding-agent/test/` is not green at HEAD. There are pre-existing
+ * failures around the MCP area, speculative compaction, and provider subagents.
+ * That makes the obvious gate useless in both directions: running the suite and
+ * requiring exit 0 is always red, and a permanently red gate gets switched off
+ * within a day — at which point nothing is guarded at all.
+ *
+ * So the contract is narrower and is the one this gate can actually keep: a
+ * merge step may not *add* a failure. Failures already in the baseline stay
+ * tolerated until someone deletes them from the baseline file on purpose, which
+ * forces the deletion to show up in a diff.
+ *
+ * IT MUST BE RED BOTH WAYS
+ * ------------------------
+ * 1. A failure absent from the baseline → red. That is the whole point.
+ * 2. The baseline file missing or unreadable → red, NOT green. Treating "no
+ *    baseline" as "nothing to tolerate" is what keeps (1) honest: otherwise
+ *    deleting the baseline is a one-command way to silence every known failure,
+ *    and the gate cannot tell that from a clean run.
+ *
+ * A gate that goes green when its own input is missing is not a gate — see the
+ * related failure mode where a check regenerates the thing it diffs against.
+ */
+
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import { tmpdir } from "node:os";
+import { $ } from "bun";
+import { extractFailures } from "./ci-failure-extract";
+
+const BASELINE = path.join(import.meta.dir, "r0-grp-c-test-baseline.json");
+
+/** Per-session report directory — see the note at the write site. */
+const REPORT_DIR = `${tmpdir()}/grp-c-test-baseline`;
+const REPORT = `${REPORT_DIR}/${process.pid}-current.log`;
+const SUITE = "packages/coding-agent/test/";
+
+/** Print and exit. Returns `never` so call sites narrow correctly. */
+function fail(message: string): never {
+	console.error(message);
+	process.exit(1);
+}
+
+/** An identity that is only a duration is an unnamed test the runner could not name. */
+const UNNAMED_IDENTITY = /^\[[\d.]+\s*m?s\]$/;
+
+/** Where bun says an unnamed failure happened — the `at <anonymous> (…)` line above it. */
+const FAILURE_SITE = /^\s*at <anonymous> \((\S+?):\d+:\d+\)\s*$/gm;
+
+/**
+ * Give an unnamed failure an identity that survives the next run.
+ *
+ * `test("")` prints `(fail)  [0.19ms]`, so a duration-stripping parse captures the
+ * DURATION as the name — and durations change every run. Measured: identical code
+ * yielded the identities `[0.11ms]` and `[0.87ms]` on two runs, so such a test can
+ * never match its own baseline entry and is reported as a new failure forever,
+ * which is a gate that is permanently red for a reason no one can fix.
+ *
+ * Keyed on the file bun blames instead, which is stable. The site is found by
+ * searching outward **from the failing line**, never from the top of the log: the
+ * first `at <anonymous>` in the whole log belongs to whichever failure happened
+ * to be printed first, so scanning globally gave every unnamed failure that one
+ * file. Two unnamed failures in different files then collapsed into a single
+ * identity, and the second was recorded in the baseline under the *wrong* file —
+ * a name that is not merely lossy but false, and that no later run could
+ * reproduce.
+ *
+ * Direction matters and was measured, not assumed. Bun prints the frame
+ * immediately BEFORE the `(fail)` line:
+ *
+ *     at <anonymous> (/repo/beta.test.ts:2:28)
+ *     (fail)  [0.13ms]
+ *
+ * so an upward-only search from the failing line finds the *next* test's frame
+ * and mispairs in the opposite direction. The nearest site in either direction is
+ * therefore taken, preferring the one above. The residual limit is two unnamed
+ * failures sharing a site, which is honest rather than hidden.
+ */
+function stabilizeUnnamed(log: string, identity: string, failLine: number): string {
+	if (!UNNAMED_IDENTITY.test(identity)) return identity;
+	const lines = log.split("\n");
+	// One line of slack either side: the frame is adjacent, and reaching further
+	// would cross into a neighbouring test's output and pair them wrongly.
+	for (let offset = -1; offset <= 1; offset++) {
+		FAILURE_SITE.lastIndex = 0; // a /g regex carries lastIndex between calls
+		const site = FAILURE_SITE.exec(lines[failLine - 1 + offset] ?? "");
+		if (site?.[1]) return `unnamed @ ${site[1]}`;
+	}
+	return `unnamed @ ${identity}`;
+}
+
+/**
+ * Run the suite and return the set of failing test names, or `null` if the run
+ * never measured. `target` defaults to the whole suite; the confirmation pass
+ * re-runs the suite once to see which new names survive.
+ *
+ * `null` covers two different failures, and the caller must not describe them the
+ * same way. An unreconcilable list means the RUN happened and the parse of it is
+ * what could not be trusted; a void run means there was no measurement at all. The
+ * first was previously reported as the second, which sent the reader looking for a
+ * suite that could not load when the suite ran fine and the arithmetic was wrong.
+ */
+async function collectFailures(
+	target: string = SUITE,
+): Promise<{ readonly failures: Set<string> } | { readonly reason: "unparseable" | "void" }> {
+	const proc = Bun.spawn(["bun", "test", target], { stdout: "pipe", stderr: "pipe" });
+	const [stdout, stderr] = await Promise.all([
+		new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+		new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
+	]);
+	await proc.exited;
+	// Keep the raw output: when this gate goes red, the next question is always
+	// "what did it print", and re-running the suite to find out is expensive.
+	//
+	// Under a per-session directory, not a fixed `/tmp` name. This machine is
+	// shared and other agents pick the same obvious filenames: a sibling run
+	// truncated this exact file to 304 bytes mid-inspection, and a different
+	// report came back as "981 bytes" while claiming 718 lines — impossible, so
+	// the artifact was being rewritten underneath the measurement. A gate whose
+	// own report can be clobbered cannot be diagnosed when it goes red.
+	await fs.mkdir(REPORT_DIR, { recursive: true });
+	await Bun.write(REPORT, `${stdout}${stderr}`);
+
+	// Delegate the parse to the repo's own extractor. It strips the `[12.30ms]`
+	// duration (which changes every run, so keying on it would report every
+	// baseline failure as new forever) and — the reason it exists rather than a
+	// second private regex — reconciles the named `(fail)` lines against bun's own
+	// `<n> fail` tally. Its header names this gate as the consumer it was written
+	// for, so re-implementing the parse here would fork the one piece of this file
+	// that was already reviewed.
+	//
+	// Both streams are concatenated: `bun test` writes its `(fail)` lines to
+	// STDERR, and a stdout-only parse finds nothing and reports green on a suite
+	// with hundreds of failures. That was caught by running it, not by reading it.
+	const raw = `${stdout}\n${stderr}`;
+	const extracted = extractFailures(raw);
+
+	// A list that cannot be reconciled against the runner's tally is not a list
+	// that can be trusted, and this gate's whole value is that "no new failures"
+	// means "no new failures". Reporting a short list as complete is the failure
+	// mode `ci-failure-extract.ts` was ported to prevent.
+	if (extracted.discrepant) {
+		console.error("grp-c baseline gate: the failure list could not be reconciled.");
+		console.error(
+			// Both tallies render "not read" as `?`, never as a number. Printing an
+			// unread error count as `0` does not merely misreport it — the
+			// reconciliation below subtracts this value, so a missing tally shifts
+			// the arithmetic and inverts the verdict between under-counted and
+			// over-counted. An honest `?` is what stops a wrong conclusion from
+			// arriving looking settled.
+			`runner tallied ${extracted.reportedFailCount ?? "?"} fail / ${extracted.reportedErrorCount ?? "?"} error, ` +
+				`parsed ${extracted.failures.length} line(s) naming ${extracted.identities.length} identity(ies).\n` +
+				"Deciding 'no new failures' from a list this run cannot vouch for would report a\n" +
+				"silently truncated measurement as a clean suite. Fix the parse, not the baseline.",
+		);
+		return { reason: "unparseable" };
+	}
+
+	// The line number travels with the identity because an unnamed failure can only
+	// be given a stable name by the site the runner printed beneath it, and that
+	// site is found relative to its own line — not relative to the top of the log.
+	const lineOf = new Map(extracted.failures.map(f => [f.identity, f.line]));
+	const failures = new Set(extracted.identities.map(name => stabilizeUnnamed(raw, name, lineOf.get(name) ?? 1)));
+
+	// A run that found no failure but exited non-zero never measured anything.
+	// The common cause is a suite that cannot load: `bun test` reports that as
+	// `error:` plus a non-zero exit, never as a `(fail)` line, so the parse above
+	// returns empty and the gate would call a broken suite clean — and then, in
+	// the healed branch, tell the reader to delete their baseline entries. That
+	// is fail-open *and* destructive, and it is the exact shape this file's own
+	// header warns about for a missing baseline, one layer over.
+	//
+	// Measured, not reasoned: a suite with a bad import makes `bun test` exit 1
+	// reporting `1 fail / 1 error`, and this gate reported green, exit 0, with
+	// both baseline entries announced as healed. Fail closed instead.
+	if (failures.size === 0 && proc.exitCode !== 0) return { reason: "void" };
+	return { failures };
+}
+
+interface Baseline {
+	capturedAt: string;
+	head: string;
+	note: string;
+	failures: string[];
+}
+
+// Validate the baseline BEFORE running the suite: it costs ten minutes, and a
+// missing baseline is knowable in milliseconds. Checking it afterwards meant the
+// cheapest failure of this gate was also the slowest to report.
+let baseline: Baseline | null = null;
+try {
+	baseline = (await Bun.file(BASELINE).json()) as Baseline;
+} catch {
+	baseline = null;
+}
+
+if (!baseline) {
+	fail(
+		`grp-c baseline gate: NO BASELINE at ${BASELINE}\n` +
+			`HEAD is red, so "no baseline" cannot mean "clean".\n` +
+			`Restore the file, or capture a new one deliberately and review the diff.`,
+	);
+}
+
+/**
+ * The commit this gate is measuring right now, or null when git cannot say.
+ *
+ * Shaped like the `gitMaybe` in `fix-changelogs.ts` — same `-c` flags, same
+ * `.nothrow()` — so a reader who knows that helper knows this one.
+ */
+async function liveHead(): Promise<string | null> {
+	const result =
+		await $`git -c core.fsmonitor=false -c core.untrackedCache=false -c fetch.pruneTags=false rev-parse HEAD`
+			.cwd(process.cwd())
+			.quiet()
+			.nothrow();
+	if (result.exitCode !== 0) return null;
+	return result.text().trim();
+}
+
+/**
+ * A fingerprint of the suite corpus: every test file's path and bytes.
+ *
+ * ## Why this exists instead of comparing HEAD
+ *
+ * The gate is a differential against a fixed captured baseline, so the measurement is
+ * only meaningful if the set of tests that produced it is the set the baseline was
+ * captured against. `bun test <dir>` globs **at spawn time**, so the corpus is whatever
+ * existed when the suite started — which is why a file added after the capture can fail
+ * and read as a new regression with nobody having broken anything.
+ *
+ * The previous predicate was `HEAD` string equality, which is a *proxy* for that
+ * condition and a bad one: it treats every commit as if it rewrote the suite.
+ * Measured over the 40 commits before this change: **40 HEAD movements, 7 commits
+ * editing corpus contents, and 1 changing corpus membership.** So the old predicate
+ * discarded 39 of 40 measurements that were in fact sound — and on a tree committing
+ * every ~80 seconds it meant the gate reported VOID essentially always, which is the
+ * state this bead exists to end.
+ *
+ * Hashing names **and** contents is the honest middle. Membership alone is too weak: a
+ * peer editing a test's body mid-run changes what fails just as surely as adding a file.
+ * Content alone is too weak in the other direction: HEAD also moves for commits that
+ * touch neither. This fingerprint is what the differential actually reads.
+ *
+ * Untracked files are included deliberately. A test written but not yet committed is
+ * still run by the suite, so it is part of the corpus even though `HEAD` cannot see it.
+ * Excluding them would make the fingerprint disagree with what `bun test` did.
+ *
+ * Returns `null` when the corpus cannot be enumerated. An unreadable tree is NOT a
+ * still tree — reporting it as one would let the gate certify a measurement it cannot
+ * support, which is the same class of lie as the empty-failure-set bug above.
+ */
+async function corpusFingerprint(): Promise<string | null> {
+	const listing =
+		await $`git -c core.fsmonitor=false -c core.untrackedCache=false ls-files -z --others --cached -- ${SUITE}`
+			.cwd(process.cwd())
+			.quiet()
+			.nothrow();
+	if (listing.exitCode !== 0) return null;
+
+	const paths = listing.text().split("\0").filter(Boolean).sort();
+	if (paths.length === 0) return null;
+
+	// Hash the concatenated per-file digests rather than the raw bytes: `Bun.hash`
+	// is a streaming digest, so this stays O(bytes) in memory rather than holding the
+	// whole corpus, and a rename cannot masquerade as an edit because the path is an
+	// input to the digest.
+	const parts: string[] = [];
+	for (const rel of paths) {
+		const abs = path.join(process.cwd(), rel);
+		const file = Bun.file(abs);
+		if (!(await file.exists())) continue; // deleted between listing and read
+		parts.push(`${rel}:${Bun.hash(await file.arrayBuffer())}`);
+	}
+	if (parts.length === 0) return null;
+	return Bun.hash(parts.join("\n")).toString(16);
+}
+
+/**
+ * Whether a run is allowed to claim a verdict at all.
+ *
+ * An unreadable corpus is NOT a still corpus. Reporting it as still would let the gate
+ * claim a measurement it cannot support, which is the same class of lie as the
+ * empty-failure-set bug this file already exists to prevent.
+ */
+function corpusHeldStill(atStart: string | null, atEnd: string | null): boolean {
+	return atStart !== null && atEnd !== null && atStart === atEnd;
+}
+
+// Captured BEFORE the suite runs, which is the whole point: the suite is the long
+// part, and the window it opens is exactly when a peer commits.
+//
+// Both are captured. HEAD is what the VOID message quotes, because it is the number a
+// reader can look up; the corpus fingerprint is what the verdict is actually based on,
+// because it is the thing the differential reads. Reporting only HEAD would let the
+// message say "the tree changed" on a run whose corpus never did.
+const headAtStart = await liveHead();
+const corpusAtStart = await corpusFingerprint();
+
+const outcome = await collectFailures();
+
+if (!("failures" in outcome)) {
+	// The two reasons need different sentences. Reporting an unreconcilable parse
+	// as "the suite did not run to completion" names a failure that did not happen:
+	// the run finished, printed its own summary, and the numbers did not reconcile.
+	// A reader sent after that goes looking for a suite that cannot load.
+	if (outcome.reason === "unparseable") {
+		console.error("grp-c baseline gate: the suite RAN — its failure list could not be parsed.");
+		console.error(
+			"The run completed and printed a summary; the `(fail)` lines do not reconcile\n" +
+				"against it. Nothing here says a test regressed, and nothing here says the\n" +
+				"suite failed to load. The measurement is untrustworthy, so no verdict is\n" +
+				"being claimed. Fix the parse, then re-run.",
+		);
+	} else {
+		console.error("grp-c baseline gate: the suite did not run to completion.");
+		console.error(
+			"No `(fail)` lines and a non-zero exit means the run produced no measurement —\n" +
+				"most often a suite that cannot load, which `bun test` reports as an error rather\n" +
+				"than a failure. Reporting that as green would call a broken suite clean and then\n" +
+				"advise deleting baseline entries that are still real.",
+		);
+	}
+	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
+}
+
+const current = outcome.failures;
+
+// The tree moved under the run. Checked here, before the confirm re-run, so a void
+// run does not spend another ten minutes proving something it may not report.
+const headAtEnd = await liveHead();
+const corpusAtEnd = await corpusFingerprint();
+if (!corpusHeldStill(corpusAtStart, corpusAtEnd)) {
+	console.error("grp-c baseline gate: VOID — the suite corpus changed while this gate measured it.");
+	console.error(
+		`  HEAD at start:    ${headAtStart ?? "(unreadable)"}\n` +
+			`  HEAD at end:      ${headAtEnd ?? "(unreadable)"}\n` +
+			`  corpus at start:  ${corpusAtStart ?? "(unreadable)"}\n` +
+			`  corpus at end:    ${corpusAtEnd ?? "(unreadable)"}\n` +
+			"\n" +
+			"This gate is a differential against a fixed captured list, so a test ADDED\n" +
+			"after the capture and then failed reads as a new failure — red — with nobody\n" +
+			"having broken anything. `bun test` globs the corpus at spawn time, so a run\n" +
+			"whose test files changed mid-flight describes a suite that exists at no\n" +
+			"moment, and its red/green would belong to no run at all. Void is the honest\n" +
+			"verdict; it is not a pass and not a fail.\n" +
+			"\n" +
+			"The verdict turns on the CORPUS, not on HEAD. A commit that touches no test\n" +
+			"file cannot change what this gate measured, so it no longer voids a run —\n" +
+			"measured over the 40 commits before this change: 40 HEAD movements, 7 editing\n" +
+			"corpus contents, 1 changing corpus membership. If HEAD moved and the corpus\n" +
+			"did not, the number below belongs to this run and is reported normally.",
+	);
+	// VOID is the VERDICT, but it is not the end of what this run knows. `current`
+	// above is a real measurement against the same fixed baseline the non-void path
+	// uses, and discarding it wholesale is what makes "accept VOID" an unsafe policy:
+	// a caller told only "void" cannot tell an idle tree from one where a peer just
+	// landed six failing tests, and must therefore treat them identically.
+	//
+	// So report the count alongside the abstention. This does NOT convert VOID into a
+	// pass — `fail()` below still exits non-zero, and the gate still declines to
+	// certify a red/green. It draws one line that the data already supports: "could
+	// not measure" and "measured, and found N new" are different states, and only
+	// the first is a blank.
+	//
+	// The count is explicitly NOT confirmed (that needs the second run below, which
+	// this path deliberately skips), so it is labelled as unconfirmed rather than
+	// presented as a regression count.
+	const voidKnown = new Set(baseline.failures);
+	const voidAdded = [...current].filter(name => !voidKnown.has(name)).sort();
+	console.error(
+		`\nUnconfirmed new failure(s) in this run: ${voidAdded.length}` +
+			(voidAdded.length > 0
+				? "\n  ~ (not reproduced — a confirm run was skipped, so treat as load, not regression)"
+				: ""),
+	);
+	for (const name of voidAdded) console.error(`  ~ ${name}`);
+	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
+}
+
+const known = new Set(baseline.failures);
+const added = [...current].filter(name => !known.has(name)).sort();
+const healed = [...known].filter(name => !current.has(name)).sort();
+
+// CONFIRM ONCE, THEN STOP.
+//
+// A new failure is re-checked by re-running the suite once. The reason is
+// measured, not hypothetical: wired into `check:ts`, this gate
+// went red on five tests that pass on an idle box, and five identical runs of
+// one file on one commit returned 5 fail, 5 fail, 0, 0, 0 — the *names* changed
+// between runs, so it was the machine, not the code. Those tests drive a real
+// headless Chromium against 1s deadlines, which CI already shards into a
+// low-concurrency bucket for exactly that reason.
+//
+// ONE re-run, never a loop. An unbounded retry is a gate that heals itself, and
+// that is the failure mode this file's own header is about: a gate which owns
+// the thing it measures reports a probability, not a fact, and a real regression
+// walks through it by being flaky often enough. So a name that fails twice is
+// red, and there is no third attempt — that limit is the contract, not a tuning
+// knob. The cost is paid only when there is a signal to check: a clean first run
+// re-runs nothing.
+let confirmed = added;
+let unconfirmed: string[] = [];
+if (added.length > 0) {
+	const second = await collectFailures(SUITE);
+	if (!("failures" in second)) {
+		// The confirmation run itself could not be measured. Failing closed here
+		// would be defensible, but it is not what happened: the only way to reach
+		// it is a suite that loaded the first time and not the second, and
+		// reporting that as "these names are unconfirmed" would be a claim about
+		// the tests that the measurement does not support.
+		console.error(
+			"grp-c baseline gate: the confirmation run did not measure; treating the first run as authoritative.",
+		);
+	} else {
+		unconfirmed = added.filter(name => !second.failures.has(name));
+		confirmed = added.filter(name => second.failures.has(name));
+	}
+}
+
+if (confirmed.length > 0) {
+	console.error(`grp-c baseline gate: ${confirmed.length} NEW failure(s) not in the baseline:`);
+	for (const name of confirmed) console.error(`  + ${name}`);
+	if (unconfirmed.length > 0) {
+		console.error(`\nDid not reproduce when re-run alone — treated as load, not a regression:`);
+		for (const name of unconfirmed) console.error(`  ~ ${name}`);
+	}
+	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
+}
+
+if (unconfirmed.length > 0) {
+	console.log(
+		`grp-c baseline gate: green — ${unconfirmed.length} new failure(s) did not reproduce on re-run,\n` +
+			`so they are load, not regressions. No third attempt: a name that fails twice is red.\n` +
+			`  ~ ${unconfirmed.join("\n  ~ ")}`,
+	);
+}
+
+if (healed.length > 0) {
+	// Not red: healing is good news, and failing here would punish the fix. It is
+	// reported because the baseline now claims failures that no longer happen,
+	// which is how a baseline rots into tolerating a renamed test forever.
+	console.log(`grp-c baseline gate: green. ${healed.length} baseline failure(s) now pass:`);
+	for (const name of healed) console.log(`  - ${name}`);
+	console.log("Drop them from the baseline in a follow-up commit.");
+}
+
+// Count only what the baseline actually accounts for. This line used to print
+// `current.size`, which is every failure in the run — and then claim they were
+// "all present in the baseline". Both halves cannot be true once the re-run has
+// forgiven a name: a real run printed `719 failure(s), all present in the
+// baseline` against a 716-entry baseline, because 4 of the 719 were the very
+// load-flakes the line above had just reported as forgiven. A summary that
+// overstates what was checked is worse than no summary — it is the sentence a
+// reader skims and believes.
+const accounted = [...current].filter(name => known.has(name)).length;
+const forgiven = current.size - accounted;
+const tail = forgiven > 0 ? `, plus ${forgiven} forgiven as load` : "";
+console.log(
+	`grp-c baseline gate: green — ${accounted} failure(s) present in the baseline` +
+		`${tail} (captured ${baseline.capturedAt}, HEAD ${baseline.head}).`,
+);

@@ -2,9 +2,9 @@ import * as path from "node:path";
 import { isEnoent } from "@oh-my-pi/pi-utils/fs-error";
 
 /** Build-time specifier resolved to bundled legacy Pi module namespaces. */
-export const LEGACY_PI_MODULES_SPECIFIER = "omp-legacy-pi-modules";
+export const LEGACY_PI_MODULES_SPECIFIER = "uw-legacy-pi-modules";
 
-const VIRTUAL_NAMESPACE = "omp-legacy-pi-modules-build";
+const VIRTUAL_NAMESPACE = "uw-legacy-pi-modules-build";
 const packageDir = path.resolve(import.meta.dir, "..");
 const repoRoot = path.resolve(packageDir, "..", "..");
 
@@ -27,6 +27,20 @@ const TYPEBOX_MODULE_KEY = "typebox";
 const TYPEBOX_COMPAT_MODULE = "legacy-typebox.ts";
 const SKIPPED_WILDCARD_BASENAMES = new Set(["index"]);
 const MAIN_THREAD_UNSAFE_WILDCARD_BASENAMES = new Set(["worker-entry"]);
+/**
+ * The binary's own entrypoints, which a root catch-all must never enumerate.
+ *
+ * `src/cli.ts` and `src/main.ts` are the host program's entry: importing either
+ * drags the whole application's transitive graph into the compiled registry,
+ * which is what #3442 was — root `./*` "exploded the bundle through the binary
+ * entry's transitive graph". Neither is reachable from `bin`/`main` in
+ * `package.json` (`main` is `src/index.ts`, already skipped), and nothing about
+ * the filename marks them, so the exclusion is named here rather than inferred.
+ *
+ * This is why serving `./*` at all is a scoped change and not a removal of the
+ * skip: without it the registry would work from source and blow up in a binary.
+ */
+const HOST_ENTRYPOINT_WILDCARD_BASENAMES = new Set(["cli", "main"]);
 
 /** One namespace module the binary must retain for legacy extension imports. */
 export interface BundledPiEntry {
@@ -55,7 +69,13 @@ function bindingForSubpath(identifier: string, subpath: string): string {
 		.filter(Boolean)
 		.map(segment =>
 			segment
-				.split(/[-_]/)
+				// `.` joins the split so a subpath carrying an export suffix — `foo.js`,
+				// which `./x/*.js` produces — yields `FooJs` rather than `Foo.js`. A dot
+				// left inside the identifier is not a valid binding: the rendered
+				// module declares `const bundled…Foo.js = …`, which does not parse.
+				// Splitting rather than stripping also keeps the two keys distinct,
+				// so `./*` and `./*.js` over one file do not collide on one binding.
+				.split(/[-_./]/)
 				.filter(Boolean)
 				.map(part => part.charAt(0).toUpperCase() + part.slice(1))
 				.join(""),
@@ -138,7 +158,19 @@ export async function collectBundledPiEntries(): Promise<BundledPiEntry[]> {
 			if (!sourcePattern) continue;
 			const pattern = parseWildcardPattern(exportKey, sourcePattern);
 			if (!pattern || !/\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/.test(pattern.sourceSuffix)) continue;
-			if (pattern.exportPrefix === "" || pattern.exportPrefix === "/") continue;
+			// A root catch-all (`./*`) used to be skipped outright, so every subpath served
+			// only by one died inside the compiled registry — the import resolved
+			// from source and failed inside a binary, which is `epic-idj1`. The
+			// registry has to serve what the manifest's own `exports` declares,
+			// not only the keys enumerated by name above.
+			//
+			// Two cases stay out, and both are measured rather than assumed:
+			// a source prefix that is the package root has no boundary, so
+			// `**/*` would glob `dist/`, tests and fixtures in with `src/`; and
+			// the host entrypoints are excluded per match below, because
+			// enumerating them is what #3442 was.
+			const isRootCatchAll = pattern.exportPrefix === "" || pattern.exportPrefix === "/";
+			if (isRootCatchAll && !pattern.sourcePrefix) continue;
 
 			const sourceDir = path.join(packageRoot, pattern.sourcePrefix);
 			try {
@@ -165,6 +197,9 @@ export async function collectBundledPiEntries(): Promise<BundledPiEntry[]> {
 					// hidden folder is no more exported than a private file.
 					if (segments.some(segment => segment.startsWith(".") || segment.startsWith("_"))) continue;
 					if (!isSafeWildcardBasename(segments.at(-1) ?? "")) continue;
+					// Only a root catch-all reaches the top-level entrypoints, so the
+					// exclusion is scoped to it rather than applied to every wildcard.
+					if (isRootCatchAll && HOST_ENTRYPOINT_WILDCARD_BASENAMES.has(segments.at(-1) ?? "")) continue;
 					const subpath = `${pattern.exportPrefix}${basename}${pattern.exportSuffix}`;
 					const key = `${manifest.name}/${subpath}`;
 					addEntry(key, bindingForSubpath(pkg.identifier, subpath), key);
@@ -198,7 +233,7 @@ export async function createLegacyPiVirtualModulePlugin(): Promise<Bun.BunPlugin
 	return {
 		name: "omp:legacy-pi-modules",
 		setup(build) {
-			build.onResolve({ filter: /^omp-legacy-pi-modules$/ }, () => ({
+			build.onResolve({ filter: /^uw-legacy-pi-modules$/ }, () => ({
 				path: LEGACY_PI_MODULES_SPECIFIER,
 				namespace: VIRTUAL_NAMESPACE,
 			}));

@@ -15,7 +15,7 @@ import { parseArgs } from "node:util";
 import { type ResolvedThinkingLevel, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { THINKING_EFFORTS } from "@oh-my-pi/pi-ai";
 import { postmortem, TempDir } from "@oh-my-pi/pi-utils";
-import { loadTasksFromDir, validateFixturesFromDir } from "@oh-my-pi/typescript-edit-benchmark/tasks";
+import { loadTasksFromDir, validateFixturesFromDir } from "@ultraworkers/typescript-edit-benchmark/tasks";
 import { LiveProgress } from "./live-progress";
 import { generateJsonReport, generateReport } from "./report";
 import { type BenchmarkConfig, type BenchmarkResult, buildBenchmarkResult, runBenchmark } from "./runner";

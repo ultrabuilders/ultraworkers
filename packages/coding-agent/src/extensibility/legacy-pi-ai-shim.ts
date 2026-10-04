@@ -177,16 +177,16 @@ export function streamSimpleOpenAIResponses(
 }
 /**
  * Compatibility re-exports for runtime helpers that upstream
- * `@earendil-works/pi-ai` exposed from its package root but omp's
+ * `@earendil-works/pi-ai` exposed from its package root but ultraworkers'
  * `@oh-my-pi/pi-ai` barrel no longer forwards. Each symbol still exists in the
  * host graph — only its root re-export was dropped — so bridging it here keeps
  * legacy extensions importing it from the pi-ai root resolving through Bun's
- * static named-export check (e.g. `omp plugin install pi-blackhole`).
+ * static named-export check (e.g. `ultraworkers plugin install pi-blackhole`).
  *
  * This is the full set derived from an audit of the upstream root surface: the
  * error-classification predicate `isContextOverflow` (now under
- * `@oh-my-pi/pi-ai/error`) and the JSON-repair helpers that omp relocated to
- * `@oh-my-pi/pi-utils`. Upstream root symbols with no omp equivalent are
+ * `@oh-my-pi/pi-ai/error`) and the JSON-repair helpers that ultraworkers relocated to
+ * `@oh-my-pi/pi-utils`. Upstream root symbols with no ultraworkers equivalent are
  * intentionally not shimmed — the package has diverged and there is nothing to
  * forward.
  */

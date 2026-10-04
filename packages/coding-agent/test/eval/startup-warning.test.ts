@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import * as pyKernel from "@oh-my-pi/pi-coding-agent/eval/py/kernel";
 import {
@@ -8,7 +9,7 @@ import {
 	resolvePythonEvalWarning,
 } from "@oh-my-pi/pi-coding-agent/eval/startup-warning";
 
-const FIX_HINT = "Install Python 3.8+ or set python.interpreter, then verify with `omp setup python --check`.";
+const FIX_HINT = `Install Python 3.8+ or set python.interpreter, then verify with \`${APP_NAME} setup python --check\`.`;
 const CWD = "/tmp/eval-startup-warning";
 
 let savedPiPy: string | undefined;

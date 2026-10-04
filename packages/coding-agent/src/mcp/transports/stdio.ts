@@ -24,6 +24,17 @@ import { createMCPJsonRpcError, MCPTransportError, normalizeMCPTransportError } 
 import { RequestIdAllocator } from "../request-id";
 import { isMCPTimeoutEnabled, resolveMCPTimeoutMs } from "../timeout";
 
+/**
+ * Cap on a single framed record from an MCP stdio server.
+ *
+ * A server is a subprocess we did not write: without a delimiter it can grow
+ * the read buffer without bound, so the reader needs a ceiling. The value is
+ * carried over from `pi-ref` (`packages/mcp/src/transports/transport.ts:3`),
+ * which enforces the same limit the same way — drop the oversized record,
+ * surface an error, do not parse a partial frame.
+ */
+export const DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
+
 /** Subprocess argv and platform-derived spawn flags for an MCP stdio server. */
 export interface StdioSpawnCommand {
 	cmd: string[];
@@ -623,7 +634,9 @@ export class StdioTransport implements MCPTransport {
 		if (!this.#process?.stdout) return;
 		let closeError: MCPTransportError | undefined;
 		try {
-			for await (const line of readJsonl(this.#process.stdout)) {
+			for await (const line of readJsonl(this.#process.stdout, undefined, {
+				maxBytes: DEFAULT_MAX_MESSAGE_BYTES,
+			})) {
 				if (!this.#connected) break;
 				try {
 					this.#handleMessage(line as JsonRpcMessage);

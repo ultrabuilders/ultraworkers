@@ -20,17 +20,20 @@
 //! - Backtraces are captured via [`Backtrace::force_capture`], so they work
 //!   regardless of `RUST_BACKTRACE`.
 //! - The crash log path mirrors the JS side (`packages/utils/src/dirs.ts`):
-//!   `$XDG_STATE_HOME/omp/logs/` on Linux / macOS when the user has migrated to
-//!   XDG (i.e. that directory already exists and `PI_CODING_AGENT_DIR` isn't
-//!   pointed somewhere custom), otherwise `<home>/<PI_CONFIG_DIR>/logs/`
-//!   (defaulting to `~/.omp/logs/`).
+//!   `$XDG_STATE_HOME/ultraworkers/logs/` on Linux / macOS when the user has
+//!   migrated to XDG (i.e. that directory already exists and
+//!   `PI_CODING_AGENT_DIR` isn't pointed somewhere custom), otherwise
+//!   `<home>/<resolved config dir>/logs/`, where the resolved dir is the same
+//!   override → read-root → write-root chain `getConfigDirName()` walks, so a
+//!   half-migrated install keeps receiving crash reports in the directory that
+//!   actually holds its config.
 //! - Hook installation is idempotent across repeated module loads.
 
 use std::{
 	alloc::Layout,
 	backtrace::Backtrace,
 	cell::Cell,
-	ffi::OsStr,
+	ffi::{OsStr, OsString},
 	fmt::Write as _,
 	fs::{self, OpenOptions},
 	io::Write as _,
@@ -44,14 +47,38 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
-/// Default directory name for OMP's per-user state (overridable via
-/// `PI_CONFIG_DIR`, matching `packages/utils/src/dirs.ts`).
-const DEFAULT_CONFIG_DIR: &str = ".omp";
+/// Ordered home-scoped config spellings, newest first -- the pair
+/// `CONFIG_DIR_CANDIDATES` holds at `packages/utils/src/dirs.ts:73`. Order is
+/// the whole contract here and the compiler cannot check it: both entries are
+/// bare strings, so a swap still builds and silently reverses the precedence.
+const CONFIG_DIR_CANDIDATES: [&str; 2] = [CONFIG_DIR_NAME_NEXT, LEGACY_CONFIG_DIR_NAME];
 
-/// App name used as the XDG-root subdirectory (`$XDG_STATE_HOME/omp/`),
-/// matching `APP_NAME` in `packages/utils/src/dirs.ts`.
+/// The WRITE target, i.e. `getConfigWriteRootName()` at `dirs.ts:508`. Its
+/// comment at `dirs.ts:382` is explicit that falling back to the legacy
+/// spelling here would make a brand-new install create `.omp`, "the opposite
+/// of the migration" -- so this is the last resort, never the first guess.
+const CONFIG_DIR_NAME_NEXT: &str = ".ultraworkers";
+
+/// `LEGACY_CONFIG_DIR_NAME` at `dirs.ts:59`. Read-only: it may be selected when
+/// it holds the user's real config, and must never be created by a fresh
+/// install.
+const LEGACY_CONFIG_DIR_NAME: &str = ".omp";
+
+/// `MAIN_CONFIG_FILENAMES` at `dirs.ts:86`. The marker is ANY name in this
+/// list, not just the first -- writes target `[0]`, but every reader loops the
+/// list (`dirs.ts:437`).
+const MAIN_CONFIG_FILENAMES: [&str; 2] = ["config.yml", "config.yaml"];
+
+/// XDG-root subdirectory, i.e. `$XDG_STATE_HOME/ultraworkers/`: the FIRST entry
+/// of `XDG_CONFIG_DIR_CANDIDATES` in `packages/utils/src/dirs.ts`, which lists
+/// the new spelling before the old. Deliberately NOT `APP_NAME` from
+/// `packages/utils/src/brand.ts` — dirs.ts says in so many words that
+/// `APP_NAME` is display identity only and these are the paths where user state
+/// actually lives. The two strings coincide today, which is what makes citing
+/// `APP_NAME` tempting and wrong: it points a reader at a constant that does
+/// not govern this value. Track the candidate list, not the brand.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-const APP_NAME: &str = "omp";
+const APP_NAME: &str = "ultraworkers";
 
 static INSTALL: Once = Once::new();
 static ALLOC_HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -264,37 +291,177 @@ fn build_crash_log_path(dir: &Path, kind: CrashKind, pid: u32, now_ms: u128) -> 
 	dir.join(format!("native-{}-{pid}-{now_ms}.log", kind.as_str()))
 }
 
+/// The two config-dir env overrides in precedence order, newest spelling first.
+///
+/// This mirrors the `process.env.ULTRAWORKERS_CONFIG_DIR ||
+/// process.env.PI_CONFIG_DIR` chain at `dirs.ts:379`, and the JS `||` is doing
+/// real work that a plain `Option::or_else` does not: `||` treats `""` as
+/// falsy, so an empty `ULTRAWORKERS_CONFIG_DIR` falls through to
+/// `PI_CONFIG_DIR` instead of winning.
+///
+/// `Option::or_else` cannot express that -- it stops at the first `Some`, and
+/// `var_os("")` is `Some("")`. Chaining the two reads directly therefore let an
+/// empty primary var shadow the legacy one entirely, sending a caller who set
+/// `ULTRAWORKERS_CONFIG_DIR=""` and `PI_CONFIG_DIR=".foo"` down the candidate
+/// scan instead of to `.foo`.
+///
+/// Extracted from `logs_dir` so the precedence is testable without mutating
+/// process env; the env reads stay at the call site.
+fn config_dir_override_from(
+	primary: Option<OsString>,
+	legacy: Option<OsString>,
+) -> Option<OsString> {
+	primary
+		.filter(|value| !value.is_empty())
+		.or_else(|| legacy.filter(|value| !value.is_empty()))
+}
+
 fn logs_dir() -> Option<PathBuf> {
 	let home = home_dir()?;
-	let config_override = std::env::var_os("PI_CONFIG_DIR");
+	// Newest spelling first, legacy second, matching the precedence chain in
+	// `packages/utils/src/dirs.ts`. Order is the whole contract here, and it is
+	// not something the compiler checks: `var_os` returns an `Option`, so
+	// swapping these two still compiles and silently reverses the precedence.
+	let config_override = config_dir_override_from(
+		std::env::var_os("ULTRAWORKERS_CONFIG_DIR"),
+		std::env::var_os("PI_CONFIG_DIR"),
+	);
 	let xdg_logs = xdg_state_logs_from_env(&home, config_override.as_deref());
-	Some(resolve_logs_dir(&home, config_override.as_deref(), xdg_logs))
+	Some(resolve_logs_dir(
+		&home,
+		config_override.as_deref(),
+		xdg_logs,
+		&Path::exists,
+		&list_profile_dirs,
+	))
 }
 
 fn resolve_logs_dir(
 	home: &Path,
 	config_dir_override: Option<&OsStr>,
 	xdg_state_logs: Option<PathBuf>,
+	exists: &dyn Fn(&Path) -> bool,
+	profile_dirs: &dyn Fn(&Path) -> Vec<PathBuf>,
 ) -> PathBuf {
-	// XDG takes precedence so users who migrated to `$XDG_STATE_HOME/omp/logs/`
-	// see native crash reports in the same directory the JS logger rotates.
+	// XDG takes precedence so users who migrated to
+	// `$XDG_STATE_HOME/ultraworkers/logs/` see native crash reports in the same
+	// directory the JS logger rotates.
 	if let Some(p) = xdg_state_logs {
 		return p;
 	}
-	let config_dir = config_dir_override
-		.filter(|s| !s.is_empty())
-		.unwrap_or_else(|| OsStr::new(DEFAULT_CONFIG_DIR));
-	let base = config_root_dir(home, config_dir);
-	base.join("logs")
+	let config_dir = resolve_config_dir_name(home, config_dir_override, exists, profile_dirs);
+	config_root_dir(home, &config_dir).join("logs")
+}
+
+/// Resolve the config-dir name exactly as `getConfigDirName()` does at
+/// `dirs.ts:379`: explicit override, else the read root, else the write root.
+///
+/// The read root is `getConfigReadRootName()` (`dirs.ts:446`), which asks two
+/// questions per candidate before giving up and deferring to the write root:
+/// first, which candidate actually holds an agent config; then, failing that,
+/// which candidate merely exists. The first question is what makes this correct
+/// for a half-migrated install: when both spellings are on disk, the one that
+/// holds the user's config is the one whose logs they are already reading, and
+/// preferring the newer name unconditionally would point crash reports at an
+/// empty directory instead.
+///
+/// Before this existed the fallback was a bare `.omp`, so on macOS -- which
+/// sets no `XDG_STATE_HOME`, leaving the branch above dead -- the native panic
+/// handler wrote to `~/.omp/logs` while `getLogsDir()` read `~/.ultraworkers`,
+/// and `omp debug report` (which bundles from `getLogsDir()`) could not see the
+/// crash it was meant to report. Tracked as `epic-usoz`.
+///
+/// Both predicates are injected rather than called directly so the decision
+/// stays pure and testable without a real home directory -- the same shape as
+/// [`xdg_state_logs`], which takes its own `exists` argument for that reason.
+fn resolve_config_dir_name(
+	home: &Path,
+	config_dir_override: Option<&OsStr>,
+	exists: &dyn Fn(&Path) -> bool,
+	profile_dirs: &dyn Fn(&Path) -> Vec<PathBuf>,
+) -> OsString {
+	if let Some(s) = config_dir_override.filter(|s| !s.is_empty()) {
+		// Returned before any `join`, and that is load-bearing rather than
+		// incidental. Rust's `Path::join` REPLACES the receiver when the argument
+		// is absolute, whereas Node's `path.join("/home/u", "/abs")` yields
+		// `/home/u/abs`. The two candidates below are relative so they cannot
+		// diverge — but an override is an arbitrary user string, so joining it
+		// would silently disagree with `dirs.ts` on absolute values. Keep the
+		// early return; do not "normalise" it into a join.
+		return s.to_os_string();
+	}
+	for candidate in CONFIG_DIR_CANDIDATES {
+		let root = config_root_dir(home, OsStr::new(candidate));
+		if has_main_config_file(&root, exists, profile_dirs) {
+			return OsString::from(candidate);
+		}
+	}
+	for candidate in CONFIG_DIR_CANDIDATES {
+		if exists(&config_root_dir(home, OsStr::new(candidate))) {
+			return OsString::from(candidate);
+		}
+	}
+	OsString::from(CONFIG_DIR_NAME_NEXT)
+}
+
+/// `hasMainConfigFile` at `dirs.ts:482`: the candidate holds a main config
+/// under `agent/`, or under any profile's `agent/`.
+///
+/// The TS loop's `entry.isDirectory()` filter is applied by the injected
+/// implementation rather than here — [`list_profile_dirs`] does the `is_dir`
+/// check on the real path. Splitting it that way keeps the predicate injectable
+/// and the decision pure, and both sides agree on the result: a non-directory
+/// entry yields `<entry>/agent/<name>`, which cannot exist anyway.
+///
+/// The trade-off is that tests supply their own profile listing, so they pin
+/// the *selection* rule but cannot catch a filtering mistake in
+/// `list_profile_dirs` itself. That filter is a single `is_dir` whose failure
+/// mode is admitting a bogus profile path no config can hang off, which is why
+/// the blind spot is recorded here rather than papered over.
+fn has_main_config_file(
+	config_root: &Path,
+	exists: &dyn Fn(&Path) -> bool,
+	profile_dirs: &dyn Fn(&Path) -> Vec<PathBuf>,
+) -> bool {
+	let agent_dir = config_root.join("agent");
+	if MAIN_CONFIG_FILENAMES
+		.iter()
+		.any(|name| exists(&agent_dir.join(name)))
+	{
+		return true;
+	}
+	profile_dirs(&config_root.join("profiles"))
+		.iter()
+		.any(|profile| {
+			let profile_agent = profile.join("agent");
+			MAIN_CONFIG_FILENAMES
+				.iter()
+				.any(|name| exists(&profile_agent.join(name)))
+		})
+}
+
+/// Real implementation of the profile listing injected into
+/// [`has_main_config_file`]. A missing `profiles/` directory is ordinary --
+/// every install that has never set a profile lacks one -- so it reads as empty
+/// rather than as an error.
+fn list_profile_dirs(profiles_root: &Path) -> Vec<PathBuf> {
+	std::fs::read_dir(profiles_root)
+		.into_iter()
+		.flatten()
+		.flatten()
+		.map(|entry| entry.path())
+		.filter(|path| path.is_dir())
+		.collect()
 }
 
 /// Compute the XDG-state logs dir if the runtime environment matches the
 /// JS-side eligibility rules in `packages/utils/src/dirs.ts`: linux/macos,
-/// `$XDG_STATE_HOME` set, `$XDG_STATE_HOME/omp` exists on disk, and
+/// `$XDG_STATE_HOME` set, `$XDG_STATE_HOME/ultraworkers` exists on disk, and
 /// `PI_CODING_AGENT_DIR` is unset or pointing at the default agent dir.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn xdg_state_logs_from_env(home: &Path, config_dir_override: Option<&OsStr>) -> Option<PathBuf> {
-	let default_agent_dir = default_agent_dir(home, config_dir_override);
+	let default_agent_dir =
+		default_agent_dir(home, config_dir_override, &Path::exists, &list_profile_dirs);
 	let agent_override = std::env::var_os("PI_CODING_AGENT_DIR");
 	let xdg_state_home = std::env::var_os("XDG_STATE_HOME");
 	xdg_state_logs(
@@ -312,14 +479,14 @@ fn xdg_state_logs_from_env(_home: &Path, _config_dir_override: Option<&OsStr>) -
 }
 
 /// Pure XDG-eligibility computation extracted for unit testing — no env
-/// reads, no fs reads. `omp_dir_exists` decides whether the candidate
-/// `<xdg_state_home>/omp` actually lives on disk.
+/// reads, no fs reads. `app_dir_exists` decides whether the candidate
+/// `<xdg_state_home>/ultraworkers` actually lives on disk.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn xdg_state_logs(
 	xdg_state_home: Option<&OsStr>,
 	agent_dir_override: Option<&OsStr>,
 	default_agent_dir: &Path,
-	omp_dir_exists: impl FnOnce(&Path) -> bool,
+	app_dir_exists: impl FnOnce(&Path) -> bool,
 ) -> Option<PathBuf> {
 	if let Some(ov) = agent_dir_override.filter(|s| !s.is_empty()) {
 		// `path.resolve(value)` on the JS side: make absolute against cwd
@@ -331,19 +498,27 @@ fn xdg_state_logs(
 		}
 	}
 	let xdg = xdg_state_home.filter(|s| !s.is_empty())?;
-	let omp_dir = Path::new(xdg).join(APP_NAME);
-	if !omp_dir_exists(&omp_dir) {
+	let app_dir = Path::new(xdg).join(APP_NAME);
+	if !app_dir_exists(&app_dir) {
 		return None;
 	}
-	Some(omp_dir.join("logs"))
+	Some(app_dir.join("logs"))
 }
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn default_agent_dir(home: &Path, config_dir_override: Option<&OsStr>) -> PathBuf {
-	let config_dir = config_dir_override
-		.filter(|s| !s.is_empty())
-		.unwrap_or_else(|| OsStr::new(DEFAULT_CONFIG_DIR));
-	let base = config_root_dir(home, config_dir);
-	base.join("agent")
+fn default_agent_dir(
+	home: &Path,
+	config_dir_override: Option<&OsStr>,
+	exists: &dyn Fn(&Path) -> bool,
+	profile_dirs: &dyn Fn(&Path) -> Vec<PathBuf>,
+) -> PathBuf {
+	// Probe-based, because the JS side is: `defaultAgent` at `dirs.ts:544` is
+	// `path.join(this.configRoot, "agent")`, and `configRoot` is the same
+	// resolved candidate the rest of `dirs.ts` walks. Pinning a literal `.omp`
+	// here instead made this comparison disagree with the very default it is
+	// meant to detect, so a user who set `PI_CODING_AGENT_DIR` to the CURRENT
+	// spelling read as "pointing somewhere custom" and lost XDG eligibility.
+	let config_dir = resolve_config_dir_name(home, config_dir_override, exists, profile_dirs);
+	config_root_dir(home, &config_dir).join("agent")
 }
 
 fn config_root_dir(home: &Path, config_dir: &OsStr) -> PathBuf {
@@ -446,10 +621,143 @@ mod tests {
 		assert_eq!(panic_payload(&*other), "<non-string panic payload>");
 	}
 
+	/// Stands in for the filesystem for the predicates [`resolve_logs_dir`] and
+	/// [`resolve_config_dir_name`] take. `present` is the set of paths that
+	/// exist; the empty set is a home with no config directory at all, which is
+	/// the fresh-install case. Keeping it a set rather than a bool is what lets
+	/// a test put two spellings on disk at once.
+	fn exists_in(present: &[&str]) -> impl Fn(&Path) -> bool {
+		let owned: Vec<PathBuf> = present.iter().map(PathBuf::from).collect();
+		move |path: &Path| owned.iter().any(|p| p == path)
+	}
+
+	/// Every install that has never set a profile has no `profiles/` directory.
+	fn no_profiles(_root: &Path) -> Vec<PathBuf> {
+		Vec::new()
+	}
+
 	#[test]
-	fn resolve_logs_dir_defaults_under_dot_omp() {
-		let dir = resolve_logs_dir(Path::new("/tmp/pi-natives-test-home"), None, None);
+	fn config_dir_override_falls_through_an_empty_primary() {
+		// The regression. `Option::or_else` stops at the first `Some`, and
+		// `var_os("")` is `Some("")`, so chaining the two env reads directly let
+		// an empty primary shadow the legacy var entirely. JS `||` does the
+		// opposite, so `dirs.ts` reaches `.foo` and the native side diverged
+		// into the candidate scan. Same boundary that had just been corrected on
+		// the TS side for an empty `ULTRAWORKERS_CONFIG_DIR`.
+		let dir = config_dir_override_from(Some(OsString::from("")), Some(OsString::from(".foo")));
+		assert_eq!(dir, Some(OsString::from(".foo")));
+	}
+
+	#[test]
+	fn config_dir_override_prefers_the_primary_spelling() {
+		let dir =
+			config_dir_override_from(Some(OsString::from(".new")), Some(OsString::from(".foo")));
+		assert_eq!(dir, Some(OsString::from(".new")));
+	}
+
+	#[test]
+	fn config_dir_override_is_absent_when_neither_var_is_usable() {
+		// Both empty is not an override: it must fall through to the candidate
+		// scan rather than resolve to a directory named "".
+		assert_eq!(
+			config_dir_override_from(Some(OsString::from("")), Some(OsString::from(""))),
+			None
+		);
+		assert_eq!(config_dir_override_from(None, Some(OsString::from(""))), None);
+		assert_eq!(config_dir_override_from(None, None), None);
+	}
+
+	#[test]
+	fn an_unusable_override_falls_through_to_the_candidate_scan() {
+		// The two halves together: no usable env override and nothing on disk,
+		// so the write target. Before the precedence fix this path was never
+		// reachable with an empty primary — the empty string resolved instead.
+		let override_value =
+			config_dir_override_from(Some(OsString::from("")), Some(OsString::from("")));
+		let dir = resolve_logs_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			override_value.as_deref(),
+			None,
+			&exists_in(&[]),
+			&no_profiles,
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.ultraworkers/logs"));
+	}
+
+	#[test]
+	fn resolve_logs_dir_defaults_to_next_spelling_when_no_candidate_exists() {
+		// A fresh install has neither spelling on disk and so must get the write
+		// target. Falling back to the legacy name here would make a brand-new
+		// machine create `.omp`, which `dirs.ts:382` calls out as the opposite of
+		// the migration.
+		let dir = resolve_logs_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			None,
+			&exists_in(&[]),
+			&no_profiles,
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.ultraworkers/logs"));
+	}
+
+	#[test]
+	fn resolve_logs_dir_prefers_the_candidate_that_holds_a_config() {
+		// Both spellings are on disk and only the legacy one holds an agent
+		// config. Pointing crash reports at the newer directory would file them
+		// somewhere the user's config is not, so this case is what separates
+		// scanning the candidate list from merely preferring the new name: the
+		// `exists`-only alternative resolves this to `.ultraworkers` and fails.
+		let dir = resolve_logs_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			None,
+			&exists_in(&[
+				"/tmp/pi-natives-test-home/.ultraworkers",
+				"/tmp/pi-natives-test-home/.omp",
+				"/tmp/pi-natives-test-home/.omp/agent/config.yml",
+			]),
+			&no_profiles,
+		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/logs"));
+	}
+
+	#[test]
+	fn resolve_logs_dir_recognizes_a_config_held_by_a_profile() {
+		// The agent-config marker also counts under `<profile>/agent/`, so a user
+		// who only ever configured through profiles still resolves to the
+		// directory holding that config.
+		let dir = resolve_logs_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			None,
+			&exists_in(&[
+				"/tmp/pi-natives-test-home/.ultraworkers",
+				"/tmp/pi-natives-test-home/.omp",
+				"/tmp/pi-natives-test-home/.omp/profiles/work/agent/config.yaml",
+			]),
+			&|profiles_root: &Path| {
+				if profiles_root.ends_with(".omp/profiles") {
+					vec![PathBuf::from("/tmp/pi-natives-test-home/.omp/profiles/work")]
+				} else {
+					Vec::new()
+				}
+			},
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/logs"));
+	}
+
+	#[test]
+	fn resolve_logs_dir_prefers_next_spelling_when_only_it_exists() {
+		// No config marker anywhere, but the new spelling is the only directory:
+		// that is a completed migration and must not read back into legacy.
+		let dir = resolve_logs_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			None,
+			&exists_in(&["/tmp/pi-natives-test-home/.ultraworkers"]),
+			&no_profiles,
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.ultraworkers/logs"));
 	}
 
 	#[test]
@@ -458,6 +766,8 @@ mod tests {
 			Path::new("/tmp/pi-natives-test-home"),
 			Some(OsStr::new(".omp-dev")),
 			None,
+			&exists_in(&[]),
+			&no_profiles,
 		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp-dev/logs"));
 	}
@@ -472,6 +782,8 @@ mod tests {
 			Path::new("/tmp/pi-natives-test-home"),
 			Some(OsStr::new("/var/tmp/pi-natives-state")),
 			None,
+			&exists_in(&[]),
+			&no_profiles,
 		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/var/tmp/pi-natives-state/logs"));
 	}
@@ -482,6 +794,8 @@ mod tests {
 			Path::new("/tmp/pi-natives-test-home"),
 			Some(OsStr::new("nested/../.omp-dev")),
 			None,
+			&exists_in(&[]),
+			&no_profiles,
 		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp-dev/logs"));
 	}
@@ -497,14 +811,23 @@ mod tests {
 			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
 			|_p| true,
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/ultraworkers/logs")));
 	}
 
 	#[test]
 	fn resolve_logs_dir_ignores_empty_pi_config_dir() {
-		let dir =
-			resolve_logs_dir(Path::new("/tmp/pi-natives-test-home"), Some(OsStr::new("")), None);
-		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/logs"));
+		// An empty override is "unset", not a directory named "". It therefore
+		// falls through to the candidate scan, and with nothing on disk the scan
+		// yields the write target -- so this asserts the override was ignored
+		// rather than honored as a literal empty path segment.
+		let dir = resolve_logs_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			Some(OsStr::new("")),
+			None,
+			&exists_in(&[]),
+			&no_profiles,
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.ultraworkers/logs"));
 	}
 
 	#[test]
@@ -512,33 +835,50 @@ mod tests {
 		let dir = resolve_logs_dir(
 			Path::new("/tmp/pi-natives-test-home"),
 			None,
-			Some(PathBuf::from("/xdg/state/omp/logs")),
+			Some(PathBuf::from("/xdg/state/ultraworkers/logs")),
+			&exists_in(&[]),
+			&no_profiles,
 		);
-		assert_eq!(dir, PathBuf::from("/xdg/state/omp/logs"));
+		assert_eq!(dir, PathBuf::from("/xdg/state/ultraworkers/logs"));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn xdg_state_logs_resolves_when_dir_exists_and_no_agent_override() {
+		// Positive control, and the one that straddles the change: the existence
+		// check succeeds ONLY for the canonical spelling. `|_p| true` accepted any
+		// path, so a regression that probed the legacy `omp` root would still have
+		// passed while producing a different directory. This closure fails closed
+		// for anything else, so the spelling is what the assertion is about.
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			None,
 			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
-			|_p| true,
+			|p| p == Path::new("/xdg/state/ultraworkers"),
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/ultraworkers/logs")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
-	fn xdg_state_logs_skipped_when_omp_dir_missing() {
+	fn xdg_state_logs_skipped_when_ultraworkers_dir_missing() {
+		// The closure records what it was asked about instead of answering blind.
+		// `|_p| false` returns false for ANY path, so it proves "something was not
+		// on disk" and nothing about WHICH directory is gated — the test name would
+		// have asserted a fact the body never checked. Pinned here so the name is a
+		// claim the test actually defends.
+		let mut probed: Option<PathBuf> = None;
 		let dir = xdg_state_logs(
 			Some(OsStr::new("/xdg/state")),
 			None,
 			Path::new("/tmp/pi-natives-test-home/.omp/agent"),
-			|_p| false,
+			|p| {
+				probed = Some(p.to_path_buf());
+				false
+			},
 		);
 		assert_eq!(dir, None);
+		assert_eq!(probed, Some(PathBuf::from("/xdg/state/ultraworkers")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -573,20 +913,50 @@ mod tests {
 			&default_agent,
 			|_p| true,
 		);
-		assert_eq!(dir, Some(PathBuf::from("/xdg/state/omp/logs")));
+		assert_eq!(dir, Some(PathBuf::from("/xdg/state/ultraworkers/logs")));
 	}
 
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
-	fn default_agent_dir_uses_dot_omp_by_default() {
-		let dir = default_agent_dir(Path::new("/tmp/pi-natives-test-home"), None);
+	fn default_agent_dir_defaults_to_next_spelling_when_no_candidate_exists() {
+		// The agent-dir default is derived, not literal: with nothing on disk
+		// the candidate scan yields the write target, which is the spelling
+		// `PI_CODING_AGENT_DIR` is compared against. Pinning `.omp` here made
+		// that comparison reject a user pointing at the CURRENT spelling.
+		let dir = default_agent_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			&exists_in(&[]),
+			&no_profiles,
+		);
+		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.ultraworkers/agent"));
+	}
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	#[test]
+	fn default_agent_dir_follows_the_candidate_holding_the_config() {
+		// The half-migrated shape: both spellings present, only the legacy one
+		// holds an agent config. The default must follow the config, or the
+		// XDG eligibility check compares against a directory nobody is using.
+		let dir = default_agent_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			None,
+			&exists_in(&[
+				"/tmp/pi-natives-test-home/.ultraworkers",
+				"/tmp/pi-natives-test-home/.omp/agent/config.yml",
+			]),
+			&no_profiles,
+		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp/agent"));
 	}
 	#[cfg(any(target_os = "linux", target_os = "macos"))]
 	#[test]
 	fn default_agent_dir_respects_pi_config_dir() {
-		let dir =
-			default_agent_dir(Path::new("/tmp/pi-natives-test-home"), Some(OsStr::new(".omp-dev")));
+		let dir = default_agent_dir(
+			Path::new("/tmp/pi-natives-test-home"),
+			Some(OsStr::new(".omp-dev")),
+			&exists_in(&[]),
+			&no_profiles,
+		);
 		assert_eq!(dir, PathBuf::from("/tmp/pi-natives-test-home/.omp-dev/agent"));
 	}
 

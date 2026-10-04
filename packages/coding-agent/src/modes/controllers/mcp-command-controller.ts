@@ -15,7 +15,6 @@ import {
 	analyzeAuthError,
 	discoverOAuthEndpoints,
 	fetchResourceMetadataScopes,
-	loadAllMCPConfigs,
 	MCPManager,
 	type OAuthEndpoints,
 } from "../../mcp";
@@ -46,6 +45,7 @@ import {
 	saveSmitheryApiKey,
 } from "../../mcp/smithery-auth";
 import { SmitheryConnectError } from "../../mcp/smithery-connect";
+import { applyScopePolicy } from "../../mcp/scope-policy";
 import {
 	SmitheryRegistryError,
 	type SmitherySearchResult,
@@ -1229,8 +1229,8 @@ export class MCPCommandController {
 			const usesMcpRemote = [config.command, ...(config.args ?? [])].some(part => part?.includes("mcp-remote"));
 			throw new Error(
 				usesMcpRemote
-					? `this server proxies OAuth through mcp-remote, which caches tokens machine-wide in ~/.mcp-auth (shared across every OMP profile). Clear ~/.mcp-auth to force a fresh login, or replace the proxy with ${httpHint} so OMP manages OAuth per profile.`
-					: `stdio servers manage their own credentials, so OMP has no OAuth to reauthorize. If the service supports OAuth over HTTP, configure it as ${httpHint} instead.`,
+					? `this server proxies OAuth through mcp-remote, which caches tokens machine-wide in ~/.mcp-auth (shared across every ultraworkers profile). Clear ~/.mcp-auth to force a fresh login, or replace the proxy with ${httpHint} so ultraworkers manages OAuth per profile.`
+					: `stdio servers manage their own credentials, so ultraworkers has no OAuth to reauthorize. If the service supports OAuth over HTTP, configure it as ${httpHint} instead.`,
 			);
 		}
 		// First test if server actually needs auth by connecting without OAuth
@@ -1357,7 +1357,9 @@ export class MCPCommandController {
 				try {
 					await this.#handleTestConnection(config);
 					isConnected = true;
-					await this.#syncManagerConnection(name, config);
+					// GAP-D9: the wizard knows the scope it is adding to, and this
+					// connect passes no source map, so nothing downstream can recover it.
+					await this.#syncManagerConnection(name, applyScopePolicy(config, scope));
 				} catch {
 					// Keep disconnected status
 				}
@@ -1675,7 +1677,12 @@ export class MCPCommandController {
 				return;
 			}
 
-			const { config } = found;
+			// GAP-D9: `found` carries the scope this config was read at, and the
+			// literal policy is applied here rather than inside
+			// `#findConfiguredServer` — three handlers below write that config back
+			// to disk, and a policy forced onto the reader would persist
+			// `envPolicy`/`headerPolicy` into the user's own `.mcp.json`.
+			const config = applyScopePolicy(found.config, found.scope);
 			if (config.enabled === false) {
 				this.ctx.mcpTestEscapeHandlers.delete(handleEscape);
 				this.ctx.showError(`Server "${name}" is disabled. Run /mcp enable ${name} first.`);
@@ -1825,7 +1832,7 @@ export class MCPCommandController {
 				}
 				await setServerDisabled(userConfigPath, name, !enabled);
 				if (enabled) {
-					await this.#connectEnabledMCPServer(name);
+					await this.#connectEnabledMCPServer(name, this.ctx.mcpManager?.getServerConfig(name));
 					const state = await this.#waitForServerConnectionWithAnimation(name);
 					const status =
 						state === "connected"
@@ -1862,7 +1869,7 @@ export class MCPCommandController {
 			const updated: MCPServerConfig = { ...found.config, enabled };
 			await updateMCPServer(found.filePath, name, updated);
 			if (enabled) {
-				await this.#connectEnabledMCPServer(name);
+				await this.#connectEnabledMCPServer(name, applyScopePolicy(updated, found.scope));
 			} else {
 				await this.ctx.mcpManager?.disconnectServer(name);
 				await this.ctx.session.refreshMCPTools(this.ctx.mcpManager?.getTools() ?? []);
@@ -2177,24 +2184,82 @@ export class MCPCommandController {
 		}
 	}
 
-	async #connectEnabledMCPServer(name: string): Promise<void> {
+	/**
+	 * Connect one server, from the config the caller already resolved.
+	 *
+	 * This used to re-derive the whole config set through `loadAllMCPConfigs` and
+	 * look the name up again. That is a second door, and the two did not agree:
+	 * `#findConfiguredServer` reads the user and project files directly, while
+	 * `loadAllMCPConfigs` drops project-scope entries unless
+	 * `mcp.enableProjectConfig` is on — a flag this call site never passed, unlike
+	 * its sibling `reloadServers`. So enabling a project server wrote `enabled:
+	 * true` to disk, reported `Enabled "x" (project config)`, and then connected
+	 * nothing, because the reload could not see the server it had just enabled.
+	 *
+	 * The caller knows the config and wrote it a moment ago; re-reading it through
+	 * a differently-gated loader can only lose it.
+	 */
+	async #connectEnabledMCPServer(name: string, config: MCPServerConfig | undefined): Promise<void> {
 		if (!this.ctx.mcpManager) {
 			return;
 		}
 
-		const { configs, sources } = await loadAllMCPConfigs(getProjectDir(), {
-			extensionRoots: this.ctx.session.effectiveExtensionRoots,
-		});
-		const config = configs[name];
 		if (!config) {
+			// Previously a silent `refreshMCPTools` and return, which reported
+			// success for a connect that never happened. Say so instead, and name
+			// the knob: a project-scope server is absent from the registry precisely
+			// because `mcp.enableProjectConfig` keeps it out, so that is the setting
+			// to reach for. Named as the thing to check rather than asserted as the
+			// cause — the manager can also lack a server it never discovered.
 			await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
+			this.ctx.showError(
+				`Cannot connect "${name}": no server configuration is available for it.` +
+					` If it is declared in a project mcp.json, enable mcp.enableProjectConfig to load it.`,
+			);
 			return;
 		}
 
-		const source = sources[name];
+		// The source map is not decoration: `connectServers` files it under
+		// `#sources`, hands it to the deferred tool wrapper, and puts `source.path`
+		// in the failure message. It was built from `loadAllMCPConfigs` before, and
+		// dropping it with the reload silently took the provenance of every enabled
+		// server with it. Ask the manager instead of re-deriving it — the manager is
+		// where the discovery layer already left it, and it is genuinely absent for
+		// a project server the setting kept out of the registry. `SourceMeta` is
+		// optional at both consumers, so an unknown source is a blank field, not a
+		// failure; inventing one here would misattribute the file.
+		const source = this.ctx.mcpManager.getSource(name);
 		const result = await this.ctx.mcpManager.connectServers({ [name]: config }, source ? { [name]: source } : {});
 		await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
 		this.#showMCPConnectionErrors(result.errors);
+		this.#showMCPNetworkWarnings(result.networkWarnings);
+	}
+
+	/**
+	 * Surface network-policy notices for servers that DID connect.
+	 *
+	 * This is the only channel that reaches the user for the `configured` level
+	 * of the MCP network policy (`mcp/network-policy.ts`). The alternatives were
+	 * measured and all fail: the fetch-time gate runs per request so a log line
+	 * would repeat per tool call, and `validateServerConfig` cannot carry a
+	 * warning at all — a non-empty result drops the server.
+	 *
+	 * Kept separate from {@link #showMCPConnectionErrors} because a warning here
+	 * is not a failure: the server connected, and a user reading "some servers
+	 * failed to connect" above a list of servers that are working fine would be
+	 * misled about which ones broke.
+	 */
+	#showMCPNetworkWarnings(warnings: string[] | undefined): void {
+		if (!warnings || warnings.length === 0) {
+			return;
+		}
+
+		const lines = ["", theme.fg("warning", "MCP network notices:"), ""];
+		for (const warning of warnings) {
+			lines.push(`  ${warning}`);
+		}
+		lines.push("");
+		this.#showMessage(lines.join("\n"));
 	}
 
 	#showMCPConnectionErrors(errors: Map<string, string>): void {
@@ -2247,6 +2312,7 @@ export class MCPCommandController {
 		await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
 
 		this.#showMCPConnectionErrors(result.errors);
+		this.#showMCPNetworkWarnings(result.networkWarnings);
 	}
 
 	/**

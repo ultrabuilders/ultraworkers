@@ -342,6 +342,22 @@ const DEFAULTS: MarkedOptions = {
 	extensions: null,
 };
 const PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/;
+// Ký tự hợp lệ trong local-part của email, dùng để quét ngược từ một `@` tìm đầu
+// địa chỉ. Tách ra khỏi regex email để không phải để engine tự lùi (O(n²)).
+const EMAIL_LOCAL_PART = /[A-Za-z0-9._+-]/;
+// URL có scheme, không cần `@`. Tách khỏi BARE_URL_OR_EMAIL để nhánh email chỉ
+// chạy khi thật sự có `@` — xem chỗ dùng để biết vì sao cần cổng đó.
+const BARE_URL = /^(?:https?:\/\/|ftp:\/\/|www\.)[^\s<]+/i;
+// Scheme ở dạng **không neo** — chỉ dùng để liệt kê vị trí, không dùng để khớp trực tiếp.
+const SCHEME_ANY = /(?:https?:\/\/|ftp:\/\/|www\.)/gi;
+// Nhánh email của regex link trần. `+` tham lam đứng ngay trước ký tự bắt buộc
+// `@` nên để engine tự lùi là bậc hai; giữ riêng để cổng `indexOf("@")` bỏ qua nó.
+const BARE_EMAIL = /^[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+/i;
+// Ký tự dừng inline. Một lần quét regex thay vì 9 lần `indexOf` — cùng kết quả,
+// ít hơn một bậc số lần quét trên phần còn lại. Quét `rest.slice(1)` để bỏ qua
+// `rest[0]`, đúng như các lần `indexOf` cũ bắt đầu từ 1; reset `lastIndex` vì
+// regex có cờ `g`.
+const STOP_CHAR = /[\\`[<!*_~\n]/g;
 
 function tokenList(links: Links = Object.create(null)): TokensList {
 	const list = [] as unknown as TokensList;
@@ -473,10 +489,49 @@ export class Tokenizer {
 	}
 }
 
+/**
+ * Chỉ số trong `src` bắt đầu một hard break, hoặc -1.
+ *
+ * Tương đương `/(?: {2,}|\\)\n/.exec(src.slice(1))` cộng thêm `+1` để về hệ toạ độ
+ * của `src` — nhưng tuyến tính. `{2,}` không chặn trên và đứng trước một ký tự bắt
+ * buộc (`\n`), nên khi không có newline trong tầm engine thử ở *mọi* vị trí bắt đầu
+ * và lùi hết cả run khoảng trắng ở mỗi lần: bậc hai **bên trong một lần `exec`**, đo
+ * được 3 689 ms trên một run 64 KB toàn khoảng trắng — 98.7% tổng thời gian của ca
+ * đó. Đúng dạng với regex email đã thay ở khối `next > 1` và cổng `]` của
+ * `matchLink`.
+ *
+ * Một khớp phải **kết thúc** bằng `\n`, nên quét từng `\n` từ trái sang và kiểm tra
+ * ký tự ngay trước nó cho ra cùng khớp trái-cùng, tuyến tính. Hai chi tiết giữ
+ * đúng khớp cũ:
+ *
+ * - Với `\\`, khớp bắt đầu tại chính backslash.
+ * - Với ` {2,}`, `+` là tham lam nên khớp bắt đầu ở **đầu run** khoảng trắng, không
+ *   phải ở ký tự thứ hai trước newline. Run dài 5 space rồi `\n` khớp tại 0, không
+ *   phải tại 2. Vì vậy phải lùi về đầu run, và chỉ lùi một lần — ở `\n` đầu tiên
+ *   thỏa điều kiện — nên tổng vẫn O(n).
+ */
+function findHardBreak(src: string): number {
+	for (let nl = src.indexOf("\n", 1); nl !== -1; nl = src.indexOf("\n", nl + 1)) {
+		if (src[nl - 1] === "\\") return nl - 1;
+		if (src[nl - 1] !== " ") continue;
+		// `src[1]` là ký tự sớm nhất `src.slice(1)` còn có thể khớp, nên dừng ở đó.
+		let start = nl - 1;
+		while (start > 1 && src[start - 1] === " ") start--;
+		if (nl - start >= 2) return start;
+	}
+	return -1;
+}
+
 function matchLink(src: string, lexer: Lexer): Tokens.Link | Tokens.Image | undefined {
 	const image = src.startsWith("![");
 	if (!(image || src.startsWith("["))) return undefined;
 	const labelStart = image ? 2 : 1;
+	// The caller has already established that a `]` exists somewhere in this text, from a
+	// fact hoisted out of its loop (`lastBracket` in `inlineTokens`). Re-deriving it here with
+	// `indexOf` scans the whole remaining suffix again, which is what kept a run of `[`
+	// quadratic: the loop calls this once per character, so n calls each scanning n. For a
+	// string opening with `[` or `![` the first characters can never be `]`, so "contains one"
+	// and "contains one at or after `labelStart`" ask the same question.
 	const labelEnd = findClosingBracket(src, labelStart, "[", "]");
 	if (labelEnd === -1) return undefined;
 	const label = src.slice(labelStart, labelEnd);
@@ -531,6 +586,33 @@ function trimBareUrl(candidate: string): string {
 
 function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] {
 	let rest = src;
+	// The last character emitted so far, tracked instead of re-read. `appendText` grows
+	// the current text token with `raw += …`, so that token's `raw` is a rope; reading
+	// either end of a rope forces V8 to flatten it. Doing that once per iteration made a
+	// run of emphasis characters quadratic — instrumented, `_`*16384 performs 16380 of
+	// these reads where a run with nothing to emphasise now performs 0, and nothing else
+	// differs between the two (same iterations, same call counts per helper).
+	let prevChar = output.at(-1)?.raw.at(-1) ?? "\n";
+	// Rightmost `@` in `src`, resolved once per call. Every advance in this loop is
+	// `rest = rest.slice(k)`, so `rest` is always `src.slice(consumed)` and still holds an
+	// `@` exactly when `lastAt >= src.length - rest.length`. Computing this inside the loop
+	// instead is what kept the bare-URL gate quadratic — see the branch below.
+	const lastAt = src.lastIndexOf("@");
+	// Same fact for the link branch: `matchLink` answers "is there a closing bracket anywhere
+	// ahead?", and deriving that by scanning what is left of the run is quadratic when the
+	// answer is no — the loop calls it once per character. Hoisted for the same reason.
+	const lastBracket = src.lastIndexOf("]");
+	// **Every** position in `src` that can start a bare URL, in absolute coordinates and in
+	// ascending order. The bare-URL branch needs "the leftmost scheme at or after where we
+	// currently are", and `consumed` only ever increases, so the answer is a pointer walking
+	// this list — O(1) amortised per iteration instead of a fresh unanchored scan of the whole
+	// remainder. A boolean `srcHasScheme` cannot answer it: one link anywhere keeps that flag
+	// true for the entire run, so the scan fires on every iteration and re-reads the tail.
+	// One pass here is O(n) once, and the list is empty — so the branch never runs — when the
+	// run has no URL at all.
+	const schemeAt: number[] = [];
+	for (const m of src.matchAll(SCHEME_ANY)) schemeAt.push(m.index);
+	let schemeIdx = 0;
 	while (rest !== "") {
 		let custom: Tokens.Generic | undefined;
 		for (const extension of lexer.extensions.inline) {
@@ -540,6 +622,7 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 		if (custom?.raw) {
 			output.push(custom);
 			rest = rest.slice(custom.raw.length);
+			prevChar = custom.raw.at(-1) ?? prevChar;
 			continue;
 		}
 
@@ -547,12 +630,14 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 		if (escaped) {
 			output.push({ type: "escape", raw: escaped[0], text: escaped[1]! });
 			rest = rest.slice(2);
+			prevChar = rest[1] ?? prevChar;
 			continue;
 		}
 		const br = lexer.options.breaks ? /^(?: {2,}|\\)?\n/.exec(rest) : /^(?: {2,}|\\)\n/.exec(rest);
 		if (br) {
 			output.push({ type: "br", raw: br[0] });
 			rest = rest.slice(br[0].length);
+			prevChar = br[0].at(-1) ?? prevChar;
 			continue;
 		}
 		if (rest[0] === "`") {
@@ -564,7 +649,23 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 				if (/^ .* $/.test(text) && text.trim() !== "") text = text.slice(1, -1);
 				output.push({ type: "codespan", raw, text });
 				rest = rest.slice(raw.length);
+				prevChar = raw.at(-1) ?? prevChar;
 				continue;
+			}
+			// `rest` toàn backtick ⇒ không thể có run đóng dài bằng `opener`, nên `end`
+			// chắc chắn là -1 và nhánh trên không thể vào. Không có nhánh này thì vòng
+			// lặp đi **một backtick mỗi lần** (`STOP_CHAR` khớp ngay index 0 nên `next`
+			// là 1), và mỗi lần lại chạy `/^`+/` trên **cả run còn lại**: O(n) việc cho
+			// mỗi bước tiến O(1) ⇒ bậc hai. Cùng dạng với cổng `indexOf("@")` ở trên.
+			//
+			// `appendText` đã gộp run thành **một** token `text` sẵn, nên nuốt cả run ở
+			// đây cho đúng kết quả cũ — vòng lặp vốn chỉ trả giá từng ký tự cho cùng một
+			// token đó. Không phải gộp mới, và không giới hạn bề rộng.
+			if (opener.length === rest.length) {
+				appendText(output, rest);
+				prevChar = rest.at(-1) ?? prevChar;
+				rest = "";
+				break;
 			}
 		}
 		const auto = /^<((?:https?:\/\/|ftp:\/\/)[^ >]+|[^ <>@]+@[^ <>@]+)>/i.exec(rest);
@@ -573,23 +674,40 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 			const href = text.includes("@") && !/^[a-z][a-z+.-]*:\/\//i.test(text) ? `mailto:${text}` : text;
 			output.push({ type: "link", raw: auto[0], text, href, tokens: [{ type: "text", raw: text, text }] });
 			rest = rest.slice(auto[0].length);
+			prevChar = auto[0].at(-1) ?? prevChar;
 			continue;
 		}
 		const html = inlineHtmlPrefix(rest);
 		if (html) {
 			output.push({ type: "html", raw: html, inLink: false, inRawBlock: false, block: false, text: html });
 			rest = rest.slice(html.length);
+			prevChar = html.at(-1) ?? prevChar;
 			continue;
 		}
-		const link = matchLink(rest, lexer);
+		const link = lastBracket >= src.length - rest.length ? matchLink(rest, lexer) : undefined;
 		if (link) {
 			output.push(link);
 			rest = rest.slice(link.raw.length);
+			prevChar = link.raw.at(-1) ?? prevChar;
 			continue;
 		}
 
 		const marker = rest[0];
-		const previous = output.at(-1)?.raw.at(-1) ?? "\n";
+		// Only the two emphasis branches below read `previous`, and both are gated on the
+		// marker being `*` or `_`. Reading it eagerly made every iteration of a plain text
+		// run pay O(n) to fetch the last character of a token that `appendText` had just
+		// built by `raw += char`: `raw` is a rope, and reading either end of a rope forces
+		// V8 to flatten it, so a run with nothing to emphasise — the case with the most
+		// iterations — was quadratic. Where the branches do read it, the value is
+		// unchanged.
+		//
+		// No before/after figures: the pair this comment used to quote was taken from
+		// single runs, and single runs on this workload vary by roughly 3x on unchanged
+		// code, so neither number could be reproduced. The mechanism is what is asserted,
+		// and it is checkable — an append-and-read loop that grows its buffer each
+		// iteration runs ~1000x slower than the same appends without the read, while the
+		// same read on a buffer that never grows is free because V8 caches the flatten.
+		const previous = marker === "*" || marker === "_" ? prevChar : "\n";
 		if (
 			(marker === "*" || marker === "_") &&
 			rest.startsWith(marker.repeat(3)) &&
@@ -602,6 +720,7 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 				const text = `${marker.repeat(2)}${inner}${marker.repeat(2)}`;
 				output.push({ type: "em", raw, text, tokens: lexer.inlineTokens(text) });
 				rest = rest.slice(raw.length);
+				prevChar = raw.at(-1) ?? prevChar;
 				continue;
 			}
 		}
@@ -629,6 +748,7 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 				const tokens = lexer.inlineTokens(text);
 				output.push(width === 2 ? { type: "strong", raw, text, tokens } : { type: "em", raw, text, tokens });
 				rest = rest.slice(raw.length);
+				prevChar = raw.at(-1) ?? prevChar;
 				continue;
 			}
 		}
@@ -640,6 +760,7 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 			if (del) {
 				output.push(del);
 				rest = rest.slice(del.raw.length);
+				prevChar = del.raw.at(-1) ?? prevChar;
 				continue;
 			}
 		}
@@ -647,10 +768,23 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 		const urlOverride = lexer.tokenizerOverrides.url;
 		if (urlOverride) url = urlOverride.call(lexer.tokenizer, rest);
 		if (!urlOverride || url === false) {
-			const match =
-				/^(?:(?:https?:\/\/|ftp:\/\/|www\.)[^\s<]+|[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)/i.exec(
-					rest,
-				);
+			// Nhánh email có `[A-Za-z0-9._+-]+` tham lam đứng trước `@` bắt buộc. `_`
+			// nằm trong lớp ký tự đó, nên với một run `_` dài engine khớp hết rồi lùi
+			// từng vị trí một để tìm `@`: O(n) mỗi lần gọi, mà vòng lặp gọi nó một lần
+			// mỗi iteration ⇒ bậc hai (88.9% thời gian của một run 65 536 ký tự, đo tại
+			// chỗ). Đúng dạng với regex email đã thay ở khối `next > 1` bên dưới.
+			//
+			// Cổng là **tương đương**, không phải cắt cụt: hai nhánh đều neo ở `^` nên
+			// `A || B` chính là "thử A, không được thì thử B", và B không thể khớp khi
+			// `rest` không có `@` nào. Có `@` thì B chạy y nguyên — không giới hạn độ dài,
+			// không đổi khớp trái-cùng.
+			//
+			// Cổng đọc `lastAt` tính sẵn thay vì `rest.includes("@")`. Cổng cũ vẫn bậc
+			// hai: nó quét lại TOÀN BỘ phần còn lại ở MỌI iteration. Đếm được trên một
+			// run `_`: 65 530 lần vào nhánh này, 2 147 123 215 ký tự bị quét, con số nhân
+			// đúng 4 mỗi lần n nhân đôi. Thời gian giảm vì `indexOf` quét nhanh hơn regex
+			// lùi, nhưng bậc hai thì vẫn là bậc hai.
+			const match = BARE_URL.exec(rest) ?? (lastAt >= src.length - rest.length ? BARE_EMAIL.exec(rest) : null);
 			if (match) {
 				const text = trimBareUrl(match[0]);
 				const href =
@@ -665,24 +799,78 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 		if (url) {
 			output.push(url);
 			rest = rest.slice(url.raw.length);
+			prevChar = url.raw.at(-1) ?? prevChar;
 			continue;
 		}
 
 		let next = rest.length;
-		for (const char of ["\\", "`", "<", "[", "!", "*", "_", "~", "\n"]) {
-			const at = rest.indexOf(char, 1);
-			if (at !== -1 && at < next) next = at;
+		{
+			// `lastIndex = 1` bỏ qua `rest[0]` mà không cắt chuỗi: `rest.slice(1)` dựng một
+			// substring ở **mỗi** iteration. `lastIndex` làm đúng việc đó, miễn phí.
+			//
+			// Đây là thay đổi **hằng số, không phải hình dạng**: đo lại, tỉ lệ tăng gấp đôi
+			// không đổi, nên công việc vẫn Θ(n²) — thời gian chỉ giảm vài phần trăm. Khi
+			// tôi viết bản comment đầu tiên ở đây, tôi gọi đây là "chi phí còn lại lớn
+			// nhất"; phép đo của chính tôi không ủng hộ câu đó, nên đã ghi đúng lại.
+			STOP_CHAR.lastIndex = 1;
+			const stop = STOP_CHAR.exec(rest);
+			if (stop) next = stop.index;
 		}
-		const urlAt = /(?:https?:\/\/|ftp:\/\/|www\.|[A-Za-z0-9._+-]+@)/i.exec(rest.slice(1));
-		if (urlAt && urlAt.index + 1 < next) next = urlAt.index + 1;
-		const hardBreak = /(?: {2,}|\\)\n/.exec(rest.slice(1));
-		if (hardBreak && hardBreak.index + 1 < next) next = hardBreak.index + 1;
+		// `next` luôn >= 1. Khi `next <= 1` thì `index + 1 < next` không thể đúng với
+		// `index >= 0`, nên cả hai regex đều không thể thu hẹp `next`: bỏ qua chúng.
+		// Không cắt cửa sổ `rest.slice(1)` — một kết quả khớp bắt đầu trước `next` vẫn có
+		// thể kéo dài qua `next` (hard break chính là ví dụ: dấu \n nằm ngay tại `next`).
+		if (next > 1) {
+			// Vị trí bắt đầu sớm nhất của một URL hoặc email. Phần URL để regex quét
+			// (nhanh, không lùi). Phần email KHÔNG dùng `/[A-Za-z0-9._+-]+@/`: với một
+			// chuỗi ký tự lớp này không có `@`, `+` khớp tham lam rồi lùi ở MỌI vị trí
+			// bắt đầu — O(n²) ngay trong engine, 671 ms cho 32 KB. Quét ngược từ `@`
+			// đầu tiên cho đúng cùng kết quả trong O(n). Giới hạn `{1,64}` thì nhanh
+			// hơn nữa nhưng **cắt cụt** mọi địa chỉ dài hơn 64 ký tự.
+			// Cổng vị trí, không phải boolean: regex scheme **không neo `^`**, nên quét
+			// `rest.slice(1)` là quét hết phần còn lại — ở **mọi** iteration, vì prose
+			// luôn vào khối này. Đo trên đoạn văn thật: 7 → 112 lần gọi (×2.00/lần nhân
+			// đôi) và **100%** là lần quét hết ⇒ O(n) lần × O(n) = bậc hai. Một cờ
+			// `srcHasScheme` phỏng vấn *cả chuỗi* không sửa được: đúng một link cũng đủ
+			// giữ cờ bật tới hết vòng lặp. Ở đây `schemeIdx` chỉ tiến, nên mỗi vòng là
+			// O(1) amortised và cả lượt là O(n) cho **mọi** số link — đo ở mục dưới.
+			// `consumed` = `src.length - rest.length`, đúng như hai cổng hoist ở trên.
+			const consumed = src.length - rest.length;
+			while (schemeIdx < schemeAt.length && schemeAt[schemeIdx] <= consumed) schemeIdx++;
+			if (schemeIdx < schemeAt.length && schemeAt[schemeIdx] - consumed < next) {
+				next = schemeAt[schemeIdx] - consumed;
+			}
+			// Duyệt từng `@` từ trái sang. Một `@` trần (không có ký tự local-part
+			// đứng trước) không phải email — regex `+` yêu cầu ít nhất một ký tự — nên
+			// phải đi tiếp thay vì dừng, ví dụ `@@a@b.co` khớp ở `@` thứ hai.
+			// Dừng ngay khi tìm ra: regex là leftmost, khớp sớm nhất rồi thôi.
+			//
+			// Cổng `lastAt` ở trên: `rest.indexOf("@", 1)` quét tới cuối phần còn lại ở
+			// **mọi** iteration có ký tự dừng phía trước, và văn bản thường thì luôn có.
+			// Đo trên một đoạn văn thật (110 → 880 byte): 202 → 13 943 ký tự bị quét,
+			// **×4.00 mỗi lần gần gấp đôi**, `quét/ký tự` 1.8 → 15.8. Không có `@` thì
+			// vòng lặp vốn không chạy lần nào, nên bỏ qua nó là **tương đương**, không
+			// phải cắt cụt: `lastAt < consumed` ⇒ không còn `@` nào ⇒ `indexOf` trả −1.
+			if (lastAt >= src.length - rest.length) {
+				for (let at = rest.indexOf("@", 1); at !== -1; at = rest.indexOf("@", at + 1)) {
+					let start = at;
+					while (start > 1 && EMAIL_LOCAL_PART.test(rest[start - 1])) start--;
+					if (start < at && start < next) {
+						next = start;
+						break;
+					}
+				}
+			}
+			const hardBreak = findHardBreak(rest);
+			if (hardBreak !== -1 && hardBreak < next) next = hardBreak;
+		}
 		for (const extension of lexer.extensions.inline) {
 			const at = extension.start?.call({ lexer }, rest);
 			if (typeof at === "number" && at > 0 && at < next) next = at;
 		}
 		if (next === 0) next = 1;
 		appendText(output, rest.slice(0, next));
+		prevChar = rest[next - 1] ?? prevChar;
 		rest = rest.slice(next);
 	}
 	return output;

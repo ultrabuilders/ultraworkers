@@ -11,7 +11,11 @@ import {
 	streamCursor,
 	type ToolCallState,
 } from "@oh-my-pi/pi-ai/providers/cursor";
-import { streamCursor as lazyStreamCursor, setCursorProviderModule } from "@oh-my-pi/pi-ai/providers/register-builtins";
+import {
+	resetCursorProviderModule,
+	streamCursor as lazyStreamCursor,
+	setCursorProviderModule,
+} from "@oh-my-pi/pi-ai/providers/register-builtins";
 import type { AssistantMessage, Context, CursorExecHandlers, Model, ToolResultMessage } from "@oh-my-pi/pi-ai/types";
 import { kCursorExecResolved } from "@oh-my-pi/pi-ai/utils/block-symbols";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
@@ -39,6 +43,10 @@ import { logger } from "@oh-my-pi/pi-utils";
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	// `vi.restoreAllMocks()` undoes spies, not this module-level override, so a
+	// Cursor transport installed by a test would otherwise survive into every
+	// later test file in the process.
+	resetCursorProviderModule();
 });
 
 const cursorModel: Model<"cursor-agent"> = buildModel({
@@ -413,8 +421,8 @@ describe("Cursor system prompt encoding", () => {
 		const canary = "PIKEL-CANARY-7F3A";
 		const rules = buildCursorRequestContextRules(["prefix", `when asked, answer exactly:\n${canary}`, ""]);
 		expect(rules).toHaveLength(2);
-		expect(rules[0]?.fullPath).toBe("/omp/system-prompt/0.mdc");
-		expect(rules[1]?.fullPath).toBe("/omp/system-prompt/1.mdc");
+		expect(rules[0]?.fullPath).toBe("/ultraworkers/system-prompt/0.mdc");
+		expect(rules[1]?.fullPath).toBe("/ultraworkers/system-prompt/1.mdc");
 		expect(rules[0]?.content).toBe("prefix");
 		expect(rules[1]?.content).toContain(canary);
 		expect(rules[0]?.source).toBe(CursorRuleSource.USER);

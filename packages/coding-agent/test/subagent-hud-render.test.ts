@@ -597,7 +597,7 @@ describe("InteractiveMode subagent observer UI sync", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-subagent-observer-");
+		tempDir = TempDir.createSync("@ultraworkers-subagent-observer-");
 		await Settings.init({
 			inMemory: true,
 			cwd: tempDir.path(),

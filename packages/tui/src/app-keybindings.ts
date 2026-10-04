@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 // Subpaths, not the `@oh-my-pi/pi-utils` barrel: the barrel loads the native
 // addon (file-lock), and key-hint formatting runs on addon-free CLI paths
-// (`omp --version`, help) through cli/command-help.ts.
+// (`ultraworkers --version`, help) through cli/command-help.ts.
 import { getActiveProfile, getAgentDir, getProfileRootDir } from "@oh-my-pi/pi-utils/dirs";
 import { isEnoent } from "@oh-my-pi/pi-utils/fs-error";
 import * as logger from "@oh-my-pi/pi-utils/logger";
@@ -60,6 +60,7 @@ interface AppKeybindings {
 	"app.tree.unfoldOrDown": true;
 	"app.plan.toggle": true;
 	"app.history.search": true;
+	"app.transcript.search": true;
 	"app.stt.toggle": true;
 	"app.live.toggle": true;
 }
@@ -147,6 +148,9 @@ export const KEYBINDINGS = {
 		// first so the default binding works there without remapping (#1903).
 		defaultKeys: ["ctrl+q", "ctrl+enter"],
 		description: "Send follow-up message",
+		// Yields to the user: if Ctrl+Q has been bound to something else, follow-up
+		// stops claiming it and keeps only Ctrl+Enter.
+		fallbackKey: "ctrl+q",
 	},
 	"app.retry": {
 		// F5 leads: it is delivered verbatim by every terminal, unlike modified
@@ -160,6 +164,8 @@ export const KEYBINDINGS = {
 		// for character composition, leaving Alt+Up unreachable there.
 		defaultKeys: ["alt+up", "shift+up"],
 		description: "Dequeue message",
+		// Yields to the user, for the same reason follow-up does.
+		fallbackKey: "shift+up",
 	},
 	"app.clipboard.pasteImage": {
 		defaultKeys: getDefaultPasteImageKeys(),
@@ -236,6 +242,10 @@ export const KEYBINDINGS = {
 	"app.history.search": {
 		defaultKeys: "ctrl+r",
 		description: "Search history",
+	},
+	"app.transcript.search": {
+		defaultKeys: "ctrl+shift+f",
+		description: "Search the transcript",
 	},
 	"app.stt.toggle": {
 		defaultKeys: [],
@@ -389,8 +399,18 @@ function orderKeybindingsConfig(config: KeybindingsConfig): KeybindingsConfig {
 	return ordered;
 }
 
-const KEYBINDINGS_YML = "keybindings.yml";
-const KEYBINDINGS_YAML = "keybindings.yaml";
+/**
+ * Keybinding filenames, exported so the config watcher names the same files the
+ * loader reads.
+ *
+ * These were module-private, and a watcher that spelled them out for itself would
+ * be a second copy of a name that already has one: the day the loader is renamed
+ * to `.yaml`, the watcher keeps firing on a file nothing opens. `LEGACY_KEYBINDINGS_JSON`
+ * is deliberately NOT exported — it is migrated to `.yml` on load, so watching it
+ * would arm a watcher on a path the running process never reads.
+ */
+export const KEYBINDINGS_YML = "keybindings.yml";
+export const KEYBINDINGS_YAML = "keybindings.yaml";
 const LEGACY_KEYBINDINGS_JSON = "keybindings.json";
 
 interface KeybindingsConfigPaths {
@@ -534,13 +554,38 @@ function migrateKeybindingsConfigFile(agentDir: string): void {
 }
 
 const FOLLOW_UP_KEYBINDING: AppKeybinding = "app.message.followUp";
-const WINDOWS_FOLLOW_UP_FALLBACK_KEY: KeyId = "ctrl+q";
-const DEQUEUE_KEYBINDING: AppKeybinding = "app.message.dequeue";
-const MACOS_DEQUEUE_FALLBACK_KEY: KeyId = "shift+up";
+/**
+ * `KEYBINDINGS` is `as const`, so each entry narrows to its own literal shape and
+ * the union of them has no shared `fallbackKey`. This alias is the one widening,
+ * kept beside its only reader so the cast does not have to travel.
+ *
+ * Exported because a test that reads the declarations has to read them the same
+ * widened way; a second copy of this widening in the test would be a third place
+ * for the two views to disagree.
+ */
+export const KEYBINDING_DEFINITIONS: KeybindingDefinitions = KEYBINDINGS;
+/**
+ * The key an action yields when the user has claimed it, if it declares one.
+ *
+ * Takes the definitions as an argument rather than closing over the module record,
+ * and that is what makes the rule testable. As a closed-over lookup it was only
+ * ever exercised through the two actions that already declared a `fallbackKey`,
+ * and the table it replaced listed exactly those two — so replacing the lookup
+ * with that table again reproduced the same behaviour on every case the test could
+ * name, and the test stayed green. Passing the record in lets a caller hand it a
+ * definitions set with an action no hardcoded table has ever heard of, which is the
+ * only way to observe that the lookup follows the record instead of a list.
+ *
+ * `definitions` rather than the module's own, so this stays a pure function of its
+ * two arguments: the production call site passes {@link KEYBINDING_DEFINITIONS}.
+ */
+export function fallbackKeyFor(definitions: KeybindingDefinitions, keybinding: Keybinding): KeyId | undefined {
+	return definitions[keybinding]?.fallbackKey;
+}
+
+/** {@link fallbackKeyFor} over the host's own keybinding record. */
 function getFallbackKey(keybinding: Keybinding): KeyId | undefined {
-	if (keybinding === FOLLOW_UP_KEYBINDING) return WINDOWS_FOLLOW_UP_FALLBACK_KEY;
-	if (keybinding === DEQUEUE_KEYBINDING) return MACOS_DEQUEUE_FALLBACK_KEY;
-	return undefined;
+	return fallbackKeyFor(KEYBINDING_DEFINITIONS, keybinding);
 }
 function keyListIncludes(keys: KeyId | KeyId[] | undefined, target: KeyId): boolean {
 	if (keys === undefined) return false;

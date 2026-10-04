@@ -77,7 +77,7 @@ describe("discovery provider toggles with subagents and helper sessions", () => 
 	};
 
 	it("keeps following the parent's disabledProviders after a subagent session starts", async () => {
-		using tempDir = TempDir.createSync("@pi-provider-toggle-binding-");
+		using tempDir = TempDir.createSync("@ultraworkers-provider-toggle-binding-");
 		const { start, close } = await starter(tempDir);
 		const parentSettings = Settings.isolated({ "compaction.enabled": false });
 		await start(parentSettings);
@@ -95,7 +95,7 @@ describe("discovery provider toggles with subagents and helper sessions", () => 
 	});
 
 	it("keeps host edits reaching discovery during a helper session and after a top-level session ends", async () => {
-		using tempDir = TempDir.createSync("@pi-provider-toggle-helper-");
+		using tempDir = TempDir.createSync("@ultraworkers-provider-toggle-helper-");
 		const { start, close } = await starter(tempDir);
 		const host = Settings.isolated({ "compaction.enabled": false });
 		const releaseHost = initializeWithSettings(host);

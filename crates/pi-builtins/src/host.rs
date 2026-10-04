@@ -1763,6 +1763,15 @@ mod testing {
 			(host, capture)
 		}
 
+		/// Exports a variable on a test host's shell environment.
+		///
+		/// `Host::for_test` starts with an empty environment, and `var` reads that map
+		/// rather than the process environment, so a utility that branches on an exported
+		/// variable cannot be driven from a test without this.
+		pub(crate) fn export_for_test(&mut self, key: &str, value: &str) {
+			self.env.insert(key.to_string(), value.to_string());
+		}
+
 		/// Replaces stdout on a test host, keeping it under the SIGPIPE guard
 		/// like the stream [`build_host`](super::build_host) installs. Tests
 		/// that model a departed reader (`… | head`) hand in the write end of a

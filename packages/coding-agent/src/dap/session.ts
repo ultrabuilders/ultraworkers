@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as timers from "node:timers/promises";
-import { logger, ptree, untilAborted } from "@oh-my-pi/pi-utils";
+import { logger, normalizeErrorMessage, ptree, untilAborted, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { NON_INTERACTIVE_ENV } from "../exec/non-interactive-env";
 import { DapClient } from "./client";
 import type {
@@ -115,9 +115,14 @@ const HEARTBEAT_INTERVAL_MS = 5 * 1000;
 const MAX_OUTPUT_BYTES = 128 * 1024;
 const STOP_CAPTURE_TIMEOUT_MS = 5_000;
 
+/**
+ * Kept as a local, private function rather than deleted in favour of
+ * {@link normalizeErrorMessage}: this sits on the debugger interface, where a
+ * reshaped failure string is a hard-to-reproduce regression for whoever is
+ * attaching a DAP client.
+ */
 function toErrorMessage(value: unknown): string {
-	if (value instanceof Error) return value.message;
-	return String(value);
+	return normalizeErrorMessage(value);
 }
 
 interface DapStartRequestFailure {
@@ -224,7 +229,7 @@ function truncateOutput(session: DapSession, output: string): void {
  *
  * `ptree.spawn` always pipes stdout and only eagerly drains stderr; the exposed
  * stdout stream must be consumed or Bun buffers it unboundedly in this process
- * (a chatty debuggee grows omp toward OOM). The reverse-request path has no
+ * (a chatty debuggee grows ultraworkers toward OOM). The reverse-request path has no
  * terminal surface here, so route the child's stdout through {@link
  * truncateOutput}: this bounds memory at `MAX_OUTPUT_BYTES` and surfaces the
  * program's output to the agent, mirroring the adapter's own `output` events.
@@ -1462,8 +1467,8 @@ export class DapSessionManager {
 
 	#buildInitializeArguments(adapter: DapResolvedAdapter): DapInitializeArguments {
 		return {
-			clientID: "omp",
-			clientName: "omp",
+			clientID: WIRE_NAME,
+			clientName: WIRE_NAME,
 			adapterID: adapter.name,
 			locale: "en-US",
 			linesStartAt1: true,

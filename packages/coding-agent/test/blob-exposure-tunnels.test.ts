@@ -124,7 +124,7 @@ async function stopAndObserve(exposure: ActiveExposure, invocation: FakeInvocati
 }
 
 beforeAll(() => {
-	fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-blob-tunnels-"));
+	fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-blob-tunnels-"));
 });
 
 afterAll(async () => {
@@ -378,7 +378,7 @@ describe("startExposure tunnel adapters", () => {
 	});
 
 	it("reports absent adapter binaries without invoking the network", async () => {
-		const emptyPath = fs.mkdtempSync(path.join(os.tmpdir(), "omp-no-tunnel-bin-"));
+		const emptyPath = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-no-tunnel-bin-"));
 		const fakePath = process.env.PATH;
 		process.env.PATH = emptyPath;
 		try {

@@ -912,9 +912,14 @@ export class RpcClient {
 
 	/**
 	 * Export session to HTML.
+	 *
+	 * `formatId` names a format an extension registered via `registerOutputFormat`;
+	 * omitting it renders the default. Without this parameter a registered format was
+	 * reachable from the CLI and the slash command but not from here, so a client
+	 * driving over RPC could not select it.
 	 */
-	async exportHtml(outputPath?: string): Promise<{ path: string }> {
-		const response = await this.#send({ type: "export_html", outputPath });
+	async exportHtml(outputPath?: string, formatId?: string): Promise<{ path: string }> {
+		const response = await this.#send({ type: "export_html", outputPath, formatId });
 		return this.#getData(response);
 	}
 

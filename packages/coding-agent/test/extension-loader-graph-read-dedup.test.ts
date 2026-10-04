@@ -12,7 +12,7 @@ describe("Extension Loader Graph Read Dedup", () => {
 	let fileSpy: Mock<typeof Bun.file>;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-ext-dedup-");
+		tempDir = TempDir.createSync("@ultraworkers-ext-dedup-");
 		reads = new Map<string, number>();
 
 		const realBunFile = Bun.file.bind(Bun);

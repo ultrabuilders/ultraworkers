@@ -43,8 +43,8 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { $ } from "bun";
-import { generateNpmPackages, LEAF_TARGETS } from "../packages/natives/scripts/gen-npm-packages.ts";
-import { fixEmitExtensions } from "./fix-emit-extensions.ts";
+import { generateNpmPackages, LEAF_TARGETS } from "../packages/natives/scripts/gen-npm-packages";
+import { fixEmitExtensions } from "./fix-emit-extensions";
 
 export interface PublishPackage {
 	dir: string;
@@ -67,6 +67,20 @@ export interface PublishPackage {
 	 * without a build; publish swaps in the `prepack` bundle.
 	 */
 	publishBin?: Readonly<Record<string, string>>;
+	/**
+	 * `bin` map for a publish of this package under a DIFFERENT npm scope.
+	 *
+	 * A stub published under the old scope after a rename serves users who never
+	 * ran the updater, so its manifest has to keep carrying the old command name
+	 * even though `publishBin` now names the new one. Separate from
+	 * `publishBin` rather than a flag that swaps it, so the common publish is
+	 * untouched and a stub publish is an explicit, visible override.
+	 */
+	stubPublishBin?: Readonly<Record<string, string>>;
+	/**
+	 * Whether this publish is the old-scope stub. Selects `stubPublishBin`.
+	 */
+	stub?: boolean;
 	/**
 	 * Packages sharing a lock never run `bun pm pack` concurrently. Needed when
 	 * one package's `prepack` rewrites files another package ships.
@@ -180,10 +194,21 @@ export const packages: PublishPackage[] = [
 		packLock: STATS_CLIENT_LOCK,
 	},
 	{ dir: "packages/agent", kind: "typescript" },
+	{ dir: "packages/chord", kind: "typescript" },
+	{ dir: "packages/client", kind: "typescript" },
+	{ dir: "packages/codemode", kind: "typescript" },
+	{ dir: "packages/durable", kind: "typescript" },
+	{ dir: "packages/protocol", kind: "typescript" },
+	{ dir: "packages/server", kind: "typescript" },
+	{ dir: "packages/telemetry", kind: "typescript" },
 	{
 		dir: "packages/coding-agent",
 		kind: "typescript",
-		publishBin: { omp: "dist/cli.js" },
+		publishBin: { ultraworkers: "dist/cli.js" },
+		// A stub published under the old scope after the rename must keep
+		// handing out the old command name, or users who never run the updater
+		// lose the binary they have always installed. See `stubPublishBin`.
+		stubPublishBin: { omp: "dist/cli.js" },
 		packLock: STATS_CLIENT_LOCK,
 	},
 ];
@@ -240,7 +265,8 @@ function rewriteExports(exports: JsonValue, publishJs: boolean): JsonValue {
 export async function rewriteManifest(pkg: PublishPackage, write: boolean): Promise<PackageManifest> {
 	const manifestPath = path.join(repoRoot, pkg.dir, "package.json");
 	const manifest = (await Bun.file(manifestPath).json()) as PackageManifest;
-	if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };
+	const bin = pkg.stub ? pkg.stubPublishBin : pkg.publishBin;
+	if (bin) manifest.bin = { ...bin };
 	if (typeof manifest.types === "string" && manifest.types.startsWith("./src/")) {
 		manifest.types = rewriteSrcToTypes(manifest.types);
 	}

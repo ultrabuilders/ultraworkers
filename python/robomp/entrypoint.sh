@@ -4,7 +4,7 @@
 #
 # Used by both the orchestrator (CMD: `python -m robomp serve`) and the
 # sibling gh-proxy (compose command: `python -m robomp.proxy serve`). The
-# proxy role does NOT need a $PI_ROOT pi checkout — it never runs omp.
+# proxy role does NOT need a $PI_ROOT pi checkout — it never runs ultraworkers.
 set -euo pipefail
 
 # Shared git metadata under /data/workspaces/_pool is intentionally group
@@ -72,7 +72,7 @@ find /srv/agent-home -type f -exec chmod 0644 {} +
 # omp registers daemon project presence under ~/.omp/run at startup, nesting
 # per-project dirs (daemons/<hash>/clients) that any slot user must be able to
 # create and enter regardless of which slot first made them: setgid + group
-# omp keeps the whole tree group-writable (entrypoint umask 0002 carries into
+# ultraworkers keeps the whole tree group-writable (entrypoint umask 0002 carries into
 # slot processes, so new entries stay group-writable too).
 mkdir -p /srv/agent-home/.omp/run
 chgrp -R omp /srv/agent-home/.omp/run

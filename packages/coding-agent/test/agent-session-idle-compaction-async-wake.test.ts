@@ -125,7 +125,7 @@ describe("AgentSession idle compaction async-job deferral", () => {
 	}
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-idle-compaction-async-wake-");
+		tempDir = TempDir.createSync("@ultraworkers-idle-compaction-async-wake-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);

@@ -26,12 +26,12 @@ User setup, permissions, safety guidance, examples, and platform limitations: [S
 
 ## Settings
 
-| Setting | Type | Default | Contract |
-|---|---|---:|---|
-| `computer.enabled` | boolean | `false` | Enable the Eval prelude. |
-| `computer.display` | string | `all` | Composite every display, or select one native display ID. |
-| `computer.maxWidth` | number | `3840` | Maximum screenshot width. |
-| `computer.maxHeight` | number | `2400` | Maximum screenshot height. |
+| Setting              | Type    | Default | Contract                                                  |
+| -------------------- | ------- | ------: | --------------------------------------------------------- |
+| `computer.enabled`   | boolean | `false` | Enable the Eval prelude.                                  |
+| `computer.display`   | string  |   `all` | Composite every display, or select one native display ID. |
+| `computer.maxWidth`  | number  |  `3840` | Maximum screenshot width.                                 |
+| `computer.maxHeight` | number  |  `2400` | Maximum screenshot height.                                |
 
 There is no `computer.backend` setting. The native addon selects the platform backend.
 
@@ -159,7 +159,7 @@ Recover by refreshing the exact target screenshot after coordinate-frame errors,
 
 ## Platform constraints
 
-Current native backends support macOS, Linux X11, Linux Wayland portal capture/input where available, and Windows; other targets depend on native-addon support. Capabilities and permission state are runtime facts—inspect `desktop.capabilities()` rather than assuming them. Wayland compositors do not permit omp to activate arbitrary windows, so per-window native input and `raise()` are unavailable; use AX actions, or desktop input after focusing the target yourself. See [Scriptable computer use: Platforms](../computer-use.md#platforms) for prerequisites and permission details.
+Current native backends support macOS, Linux X11, Linux Wayland portal capture/input where available, and Windows; other targets depend on native-addon support. Capabilities and permission state are runtime facts—inspect `desktop.capabilities()` rather than assuming them. Wayland compositors do not permit ultraworkers to activate arbitrary windows, so per-window native input and `raise()` are unavailable; use AX actions, or desktop input after focusing the target yourself. See [Scriptable computer use: Platforms](../computer-use.md#platforms) for prerequisites and permission details.
 
 ## Critical constraints
 

@@ -57,12 +57,12 @@ describe("TernSocketClient", () => {
 		expect(failure).toBeInstanceOf(TernBrowserError);
 		expect((failure as TernBrowserError).kind).toBe("refused");
 		expect((failure as TernBrowserError).message).toContain("protocol 7");
-		expect((failure as TernBrowserError).message).toContain("omp speaks Tern protocol 6");
+		expect((failure as TernBrowserError).message).toContain("ultraworkers speaks Tern protocol 6");
 		expect(isTernUnavailable(failure)).toBe(true);
 	});
 
 	it("fails to connect to a missing socket with an unavailable error", async () => {
-		client = new TernSocketClient({ socketPath: "/tmp/omp-tern-missing-daemon.sock" });
+		client = new TernSocketClient({ socketPath: "/tmp/ultraworkers-tern-missing-daemon.sock" });
 		const failure = await client.connect().catch((error: unknown) => error);
 		expect(isTernUnavailable(failure)).toBe(true);
 		expect((failure as TernBrowserError).kind).toBe("connect");

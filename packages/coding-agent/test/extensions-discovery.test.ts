@@ -12,6 +12,7 @@ import {
 } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { discoverSessionExtensionPaths } from "@oh-my-pi/pi-coding-agent/sdk";
 import { getProjectAgentDir, TempDir } from "@oh-my-pi/pi-utils";
+import { approveHook } from "./helpers/approve-hook";
 import { filterUserScoped } from "./utils/filter-user-extensions";
 
 describe("extensions discovery", () => {
@@ -19,7 +20,7 @@ describe("extensions discovery", () => {
 	let extensionsDir: string;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-ext-test-");
+		tempDir = TempDir.createSync("@ultraworkers-ext-test-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		resetSettingsForTest();
@@ -660,6 +661,22 @@ describe("extensions discovery", () => {
 			`,
 		);
 
+		// `recordedHookHash` (`config/hook-settings.ts:38`) defaults its scope to the
+		// module-level `settings` singleton, and `beforeEach` calls
+		// `resetSettingsForTest()` — so ambient hook discovery reached an
+		// uninitialised Settings and threw "Settings not initialized" before it ever
+		// looked at this file. Passing a real one is what makes the row stand on its
+		// own instead of on whichever earlier file happened to re-init the singleton.
+		await Settings.init({ inMemory: true, cwd: tempDir.path() });
+
+		// An unapproved hook does not load: `loader.ts` logs and `continue`s on an
+		// untrusted trust state, so the file never reaches `extensions` and leaves no
+		// error behind — the run looks empty rather than refused. This row is about
+		// JS factories BINDING once admitted, so the approval is part of its premise,
+		// and saying so here is the point (see `helpers/approve-hook.ts`). The
+		// blocking half of that contract is `hook-trust-state.test.ts`'s case 1.
+		await approveHook(tempDir.path(), hookPath);
+
 		const result = await discoverForTest([], true);
 		const loadedHook = result.extensions.find(extension => extension.path === hookPath);
 
@@ -711,6 +728,12 @@ describe("extensions discovery", () => {
 			overrides: { disabledExtensions: ["extension-module:guard"] },
 		});
 		initializeWithSettings(settings);
+
+		// Same premise as the row above: a hook needs an approval to be discovered at
+		// all. `disabledExtensions` here names the extension MODULE id, and the row's
+		// subject is that a hook file is not matched by it — which is only observable
+		// if the hook would otherwise have loaded.
+		await approveHook(tempDir.path(), hookPath);
 
 		const result = await discoverForTest([], true);
 		const loadedHook = result.extensions.find(extension => extension.path === hookPath);

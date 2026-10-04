@@ -1,4 +1,5 @@
 /** Schema-independent display definitions for the settings overlay. */
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import type { SymbolKey } from "../theme/symbols";
 
 export type SettingTab =
@@ -50,7 +51,7 @@ export const TAB_LEADS: Record<SettingTab, string> = {
 	model: "Thinking, sampling, the system prompt, retries and the helper models.",
 	interaction: "Input, approvals, notifications, speech and what happens at startup.",
 	context: "What the model sees, and when and how the conversation compacts.",
-	memory: "What omp remembers across sessions and where it keeps it.",
+	memory: `What ${APP_NAME} remembers across sessions and where it keeps it.`,
 	files: "How files are read, summarized and edited, and the language servers.",
 	shell: "The bash tool and the eval runtimes.",
 	tools: "Which tools the model has, their limits and the external integrations.",
@@ -72,6 +73,7 @@ export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
 		"Notifications",
 		"Speech",
 		"Collab",
+		"Peers",
 		"Stream",
 		"Magic Keywords",
 		"Startup & Updates",
@@ -95,6 +97,13 @@ export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
 		"Execution",
 		"Discovery & MCP",
 		"Extensions",
+		// Trust decisions govern whether extension- and plugin-scoped code loads, so
+		// the group sits beside Extensions rather than at the end. Both settings that
+		// declare it — `projectTrust` and `pathRules` — had shipped with the group
+		// unregistered, which `getSettingsForTab` ranked last (`order.length`) instead
+		// of rejecting: the rows rendered, just with no heading above them and out of
+		// the declared order. That is why this is a registration and not a rename.
+		"Trust",
 		"Developer",
 	],
 	tasks: ["Modes", "Subagents", "Isolation", "Commands & Skills"],
@@ -106,6 +115,12 @@ export type SubmenuOption<V extends string = string> = {
 	value: V;
 	label: string;
 	description?: string;
+	/**
+	 * Set when the choice exists but cannot be selected — a capability the host may
+	 * not have. The row still renders (so the user can see the choice and learn why
+	 * it is inert) but navigation skips it. Renders as `SelectItem.disabled`.
+	 */
+	unavailableReason?: string;
 };
 
 export interface UiBase {
@@ -142,15 +157,45 @@ export interface SettingsDisplayEntry {
 	condition?: () => boolean;
 }
 
+/**
+ * Which layer supplies a setting's effective value, highest precedence first.
+ *
+ * `runtime` is a programmatic override, `overlay` is `--config` /
+ * `PI_CONFIG_FILES`, `project` is the workspace's own file, `global` is the user
+ * config, and `default` is the schema. An environment variable is not a member:
+ * it is consulted ahead of these and applies only while it is set, so a host
+ * reports it through {@link SettingsHost.provenance} only where it is the answer.
+ */
+export type SettingsProvenance = "env" | "runtime" | "overlay" | "project" | "global" | "default";
+
+/**
+ * What a write did. `shadowed` means the value was rolled back because a higher
+ * layer already supplies the effective one, so keeping it would have shown a
+ * saved value that is not in force.
+ */
+export type SettingsWriteResult =
+	| { status: "applied" }
+	| {
+			status: "shadowed";
+			source: Exclude<SettingsProvenance, "global" | "default">;
+			message: string;
+	  };
+
 export interface SettingsHost {
 	entries: readonly SettingsDisplayEntry[];
 	get(path: string): unknown;
-	set(path: string, value: unknown): void;
+	set(path: string, value: unknown): SettingsWriteResult;
 	/**
 	 * Removes the value from the global config: a project or other layer, or an environment
 	 * variable, that configures the setting still applies; otherwise the default does.
 	 */
 	unset(path: string): void;
+	/**
+	 * Which layer supplies this path's effective value. Callers use it to warn
+	 * *before* a write, so the shadowing is visible rather than discovered after
+	 * the fact by noticing an unchanged field.
+	 */
+	provenance(path: string): SettingsProvenance;
 	normalizeProviderLimits(value: unknown): Record<string, number>;
 	validateProviderLimits(value: unknown): Record<string, number>;
 }

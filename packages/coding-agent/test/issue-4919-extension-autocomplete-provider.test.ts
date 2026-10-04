@@ -1,6 +1,6 @@
 /**
  * Issue #4919: a pi extension calling `ctx.ui.addAutocompleteProvider(...)` in its
- * `session_start` handler crashed at load under omp — the method was absent from
+ * `session_start` handler crashed at load under ultraworkers — the method was absent from
  * `ExtensionUIContext`, so the call threw `TypeError: ... is not a function` and
  * (for extensions that wrap init in try/catch, e.g. @ff-labs/pi-fff) aborted the
  * extension's entire initialization.
@@ -85,7 +85,7 @@ describe("extension autocomplete provider API (#4919)", () => {
 		// One empty temp dir doubles as the project cwd and the (isolated) home
 		// directory, keeping `refreshSlashCommandState`'s capability scan off the
 		// real home dir (mirrors the prompt-template autocomplete harness).
-		tempDir = TempDir.createSync("@pi-ext-autocomplete-");
+		tempDir = TempDir.createSync("@ultraworkers-ext-autocomplete-");
 		originalHome = process.env.HOME;
 		process.env.HOME = tempDir.path();
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });

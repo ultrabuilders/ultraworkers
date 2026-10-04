@@ -76,7 +76,7 @@ afterEach(() => {
 
 describe("task subagent OAuth pin inheritance", () => {
 	it("keeps inherited credentials and metadata on the parent's account affinity", async () => {
-		const tempDir = TempDir.createSync("@pi-subagent-auth-pin-");
+		const tempDir = TempDir.createSync("@ultraworkers-subagent-auth-pin-");
 		const authStorage = createInMemoryAuthStorage();
 		const sessions: AgentSession[] = [];
 		try {

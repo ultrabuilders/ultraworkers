@@ -2,18 +2,68 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `Theme.icon.omp` is now `Theme.icon.mark`. The status-line brand glyph was the one field on the exported `Theme` class named after the old brand rather than after what it draws; every sibling is named for its meaning (`context`, `cost`, `time`, `ghost`), and `glyph-protocol.ts` already called this one "the ultraworkers mark". An extension that reads `theme.icon.omp` now gets `undefined` and renders an empty slot, so **migrate with `theme.icon.mark ?? theme.icon.omp`** to keep working against both. The `icon.omp` *symbol key* is unchanged — `theme.symbols["icon.omp"]` and the bundled presets that define it still resolve, because the symbol vocabulary is theme data rather than brand text, and renaming it would have orphaned three presets at once. In-repo call sites are updated (`status-line/segments.ts`, `status-line-brand-fade.test.ts`), and the only known external consumer of the field name would be an extension that renders the brand glyph itself
+
+- The plugin settings overlay now names a command the user can actually type. It told them to run `omp plugin install <package>`, and no published package ships an `omp` binary — `packages/coding-agent/package.json` declares `bin: { ultraworkers }` and the other three packages ship `metaharness`, `mnemopi` and `omp-stats` — so the instruction could only ever produce "command not found". `omp` survives solely as a legacy config-directory name in `XDG_CONFIG_DIR_CANDIDATES`, which is what made the stale spelling look plausible; `APP_NAME` now supplies the displayed name, the same constant the CLI already uses in its help text, so the two cannot drift again. Five sites carry the instruction and both render paths are covered: the empty-state rows and the native `describe()` projection are separate code, and reverting either one alone leaves the wrong command on screen for whichever path the terminal takes. Two `omp.` role identifiers in the same file are deliberately left alone — they are wire identity, which `dirs.ts:33` marks as a third-party contract value — so a whole-file search-and-replace would have broken exactly the two that must not change
+- Inside tmux, the terminal name now recovers instead of sticking. The client-terminal lookup is cached per process, which is right for a terminal that is not going to change — but it cached "no terminal" for a query that merely ran out of its 500ms budget, and never asked again. On a loaded machine that single slow spawn cost the session its terminal profile for good, with nothing logged about it; the symptom showed up as a rare one-in-a-few full-suite failure and was written off as flake. The timeout and a genuine "there is none" were being folded into one value, so a statement about the machine being busy was stored as a statement about the terminal. Only a conclusive answer is cached now — tmux reporting a type, tmux reporting none, or tmux not being installed — while a query killed by the budget is left uncached so the next call retries. A tmux that exits non-zero is still treated as an answer, because refusing is not the same as not finishing.
+
+- The extension list and inspector can now render a `modified` state, alongside the existing `active` / `disabled` / `shadowed`. A hook whose file changed after the user approved it is refused by the loader, and it now carries that fact all the way to the row that lists it instead of being indistinguishable from one that is running. It reuses `theme.status.warning` rather than introducing a status symbol: a blocked hook _is_ a warning, and a new glyph would mean a fourth preset table entry, a theme-class field and a symbol key to keep in step for one more triangle
+
+### Fixed
+
+- The SIXEL probe no longer overrides an embedder refusal. `resolveImageProtocol` answers `null` for renderers whose xterm.js draws neither Kitty APC nor placeholders — Paseo's and Herdr's — and that answer is the whole reason the probe exists: it only runs when the capability layer came back empty. A positive probe reply then called `setTerminalImageProtocol(Sixel)` unconditionally, so the one path that could reverse that refusal was the path that ran next, and nothing downstream re-read the decision. Images render as text cards in those panes instead of being handed to a renderer that discards them. The check sits at installation rather than at the query, because gating the query cannot help once the reply bytes are already on the wire.
+
+- `sixel-probe.test.ts` no longer inherits the pane it runs in. The suite asserted that a positive capability reply installs SIXEL, which holds only outside an embedder; run inside a Herdr pane the ambient `HERDR_ENV=1` reached the probe and every one of those assertions failed for a reason unrelated to the code under test. `startProbe` now clears the embedder markers it asserts against and takes an `embedder` option for the case that needs one set, and each marker is handed back in `afterEach`. This is the same defect the `glyph-protocol.test.ts` entry below describes, in a file that entry did not reach.
+
+- The `packages/tui` suite no longer reports seven failures that only appeared when the whole package ran together. Six came from `glyph-protocol.test.ts`: it scrubbed `TMUX` but nothing else, so on a machine running under a Herdr pane the real `HERDR_ENV` reached `classifyTerminalMultiplexer`, the probe was correctly skipped as unsafe inside a multiplexer, and every assertion about a support reply failed. The seventh came from `hotkeys-markdown.test.ts`, which pinned the platform but not the symbol preset, so a key hint rendered as `⌃⇧D` instead of `Ctrl+Shift+D` once any earlier test file had loaded a theme. Both files now establish the state they assert against and hand it back: the glyph tests ask `classifyTerminalMultiplexer` which variables it actually reads instead of listing names, so a new marker is picked up automatically and a variable it deliberately ignores cannot be swept in, and the hotkey tests pin the ascii preset their expected bytes come from. Two other test files were leaving a process-global theme behind and are now restored, so neither depends on where it lands in the run order.
+
+- `sanitizeErrorLine` no longer reduces a string argument to `[object String]`. It takes `unknown`,
+  so a string is a valid input, but it normalized every non-`Error` structurally and a message passed
+  as a string came back as its `Object.prototype.toString` tag. An aborted `/btw` session operation
+  reported its whole safety notice — "BTW history could not be saved … the session operation was
+  stopped; retry after fixing storage" — as the literal text `[object String]`, while the underlying
+  `cause` kept the real message. Strings are now sanitized as written; `Error` values take the
+  previous path unchanged
+
+### Added
+
+- A composer shape registered by an extension can now declare that it is unavailable, with the reason it is unavailable. The shape still appears in the composer picker and explains itself, but the cursor no longer lands on it and selecting it does nothing. Register one with `availability: () => boolean` plus `unavailableReason`; omit `availability` and the shape stays selectable exactly as before. A predicate that throws is treated as unavailable rather than being allowed to take the rest of the list down with it.
+
+- `resolveTmuxClientTerminalNameWithReason` reports which branch produced the tmux client-terminal answer — `ok`, `timeout`, or `not-found` — beside the name `resolveTmuxClientTerminalName` already returned. A query killed by the 500ms budget and a tmux reporting no client both arrive as a bare `null`, so the two could only be told apart by re-timing the call, and the rare full-suite failure that exposed this reported a duration rather than a cause. The reason is observation only: what is cached and what is returned are unchanged, and a timeout still leaves the cache untouched so the next call retries. A cached outcome reports the reason it was stored under, so a refusal is never read back later as a timeout.
+
+- `registerCopyTargetProvider`: an extension can now contribute copy targets to the `/copy` picker. Core's target set was a closed function over transcript message roles, so a tool an extension registered produced only the generic `<toolName> result` block and there was no way to add a copy kind, label, or preview language. A provider is asked per entry and returns nothing for entries it does not own; core's extraction runs first and is never displaced, so a provider appends rather than replaces. Provenance is core's, so a contributed block always names the turn it came from; a block with empty content or a blank label, a non-string `href`, a non-array return, or a `collect()` that throws is dropped and recorded against the provider rather than shown broken
+
+- `registerHostRenderStrategy`: an extension can now contribute a rule for how a terminal resize
+  repaints, for hosts omp's closed multiplexer/`TERM_PROGRAM` classifier does not recognise. The
+  precedence is the user's `PI_TUI_RESIZE_IN_PLACE` first, then core's multiplexer/ConPTY safety
+  veto — which a strategy cannot override — then the first strategy that does not `defer`, then the
+  Warp default. `resolveInPlaceResize` is pure, taking the environment as an argument, so every host
+  combination is testable without mutating `process.env`
+
+### Breaking Changes
+
+- `PluginSettingsManager.setEnabled`, `setEnabledFeatures` and `setPluginSetting` now resolve to
+  `PluginChangeResult` (`{ changed, application }`) instead of `void`. Out-of-repo implementors of
+  that interface must widen their return type; the concrete `PluginManager` already satisfies it
+
 ### Added
 
 - `ExtensionTUISurface` — the narrowed surface an extension receives for building a component, with
   repaint scheduling, overlays, focus, viewport dimensions and the image budget
 - `registerTheme(name, theme)` adds a theme at runtime, exported from the package root, and reports a
   name collision with a built-in rather than dropping the theme in silence
+- Transcript search over rendered lines: `TranscriptSearchComponent` (the three-line search bar) and
+  `TranscriptSearchIndex` (the cached, column-accurate match finder), with the `tui.transcript.*`
+  keybindings they read
 
 ### Fixed
 
 - The `RenderStablePrefix` name in the 15.10.11 entry and in `docs/tui.md` has never existed as a type; the frozen-prefix boundary it describes is `Markdown.getLastRenderStableText()`. The docs and the `Component` JSDoc now name the real thing.
 - `ExtensionTUISurface` — the narrowed surface an extension receives for building a component, with `requestRender`, `requestComponentRender`, overlay mounting, focus, `viewportSize`, `imageBudget` and `suspendInput` / `resumeInput`
 - `registerTheme(name, theme)` adds a theme at runtime, exported from the package root so an extension can reach it. A name that collides with a built-in is refused and logged rather than silently resolving to the built-in
+
 ### Added
 
 - Added Tern Surface Protocol (TSP) integration for native terminal rendering
@@ -25,6 +75,7 @@
 - The `RenderStablePrefix` name in the 15.10.11 entry and in `docs/tui.md` has never existed as a type; the frozen-prefix boundary it describes is `Markdown.getLastRenderStableText()`. The docs and the `Component` JSDoc now name the real thing.
 
 ## [18.4.3] - 2026-09-28
+
 ### Added
 
 - Added the native composer and dock redesign for Tern: the composer carries its attachment chips, a `bash`/`python` mode chip (with an eye-off mark for `!!`/`$$`), a thinking-effort chip that cycles on click, and a send keycap that turns into Stop while a turn runs; the working row shows the intent, elapsed time and an `esc Stop` button (a countdown ring and Cancel while retrying, indeterminate progress while compacting); queued messages are pills with a count and an Edit button; todos and running subagents are HUD pills; the status strip draws context as a ring meter with the auto-compaction tick, splits the path into a dim parent and strong leaf, keeps model, context and git longest, and opens the model picker, `/context`, `/git`, `/usage` or the project folder on click; autocomplete items carry named icons, the matched prefix, the full description, live state as a value, and scroll the selection into view
@@ -51,6 +102,7 @@
 
 ### Changed
 
+- The built-in tool renderer registry no longer accepts writes from importers: assigning to it throws instead of silently repainting every tool for the whole process. A plugin that wants its own transcript declares `renderCall`/`renderResult` on its tool definition, which still wins over the built-in presentation.
 - Reduced frame spikes and memory while long assistant replies retire into scrollback mid-stream: retiring rows no longer re-renders the whole published reply once per row, and the transcript no longer rescans the entire session history every frame ([#13650](https://github.com/can1357/oh-my-pi/pull/13650) by [@H4vC](https://github.com/H4vC)).
 - Reduced memory held by finished messages: streamed Markdown blocks release their streaming row caches, frozen lex tokens, and syntax-highlight streams when they finalize, and the Mermaid render cache is now size-bounded ([#13650](https://github.com/can1357/oh-my-pi/pull/13650) by [@H4vC](https://github.com/H4vC)).
 - Reduced per-frame CPU while streaming Markdown, edit previews (header facts are reused across frames; replace previews process only the visible lines), bash previews (highlighting is deferred to paint and the highlight cache is size-bounded), interleaved thinking blocks, and the live bash/ssh output tail ([#13650](https://github.com/can1357/oh-my-pi/pull/13650) by [@H4vC](https://github.com/H4vC)).
@@ -878,7 +930,7 @@
 
 ### Changed
 
- - Improved native scrollback history management by introducing an optional erase-and-replay mechanism to rebuild scrollback when mutated rows (such as finalized tool blocks or collapsed transcripts) diverge. This is now gated behind the `tui.scrollbackRebuild` setting and defaults to off.
+- Improved native scrollback history management by introducing an optional erase-and-replay mechanism to rebuild scrollback when mutated rows (such as finalized tool blocks or collapsed transcripts) diverge. This is now gated behind the `tui.scrollbackRebuild` setting and defaults to off.
 
 ### Fixed
 
@@ -1227,7 +1279,7 @@
 - Added `ctrl+j` as a second default binding for the `tui.input.newLine` action alongside `shift+enter`, so terminals that cannot emit `shift+enter` still have a newline key. On terminals with Kitty-protocol / `modifyOtherKeys` disambiguation `ctrl+j` inserts a newline while `Enter` still submits; on legacy terminals where `ctrl+j` and `Enter` are both byte-identical `LF` it submits (documented limitation). User keybinding overrides still take precedence ([#2473](https://github.com/can1357/oh-my-pi/issues/2473))
 - Added an `Editor.onLargePaste(text, lineCount)` hook, fired for a "marker-sized" paste (the point where the editor would otherwise collapse it into a `[Paste #N]` token). Returning `true` lets the host intercept the paste — e.g. to offer wrap-in-code-block / wrap-in-XML / attach-as-file choices — and suppresses the default marker (no undo state is recorded). Added `Editor.insertPaste(content)` so the host can re-insert a (possibly transformed) collapsed paste marker without re-triggering the hook.
 - Added `Editor.deleteBeforeCursor(count)`, which removes up to `count` characters immediately before the cursor on the current line (capped at the cursor column, single line, records one undo state). Hosts use it to "track back" optimistically-inserted characters — e.g. the coding-agent hold-`Space` push-to-talk gesture deleting the space-bar auto-repeat burst.
-- Added an optional `getNativeScrollbackSnapshotSafeEnd()` to the `NativeScrollbackLiveRegion` contract: a *durable* commit boundary (D ≥ the byte-stable `commitSafeEnd`) for live rows whose current snapshot is permanent content but may still drift bytes later (a streaming markdown table re-aligning its columns). The engine commits these rows when they scroll above the window — never dropping them — but **audit-exempt** (tracked via a new byte-stable `auditRows` prefix), so a later layout change of an already-committed row freezes a stale row in history (duplication never loss) instead of re-anchoring the committed-prefix audit and spraying duplicate snapshots. Components that omit it are unchanged: `durableBoundary === byteStableBoundary` and `auditRows === committedRows`, so the ledger math is byte-identical.
+- Added an optional `getNativeScrollbackSnapshotSafeEnd()` to the `NativeScrollbackLiveRegion` contract: a _durable_ commit boundary (D ≥ the byte-stable `commitSafeEnd`) for live rows whose current snapshot is permanent content but may still drift bytes later (a streaming markdown table re-aligning its columns). The engine commits these rows when they scroll above the window — never dropping them — but **audit-exempt** (tracked via a new byte-stable `auditRows` prefix), so a later layout change of an already-committed row freezes a stale row in history (duplication never loss) instead of re-anchoring the committed-prefix audit and spraying duplicate snapshots. Components that omit it are unchanged: `durableBoundary === byteStableBoundary` and `auditRows === committedRows`, so the ledger math is byte-identical.
 
 ### Fixed
 
@@ -1468,7 +1520,7 @@
 
 ### Fixed
 
-- Fixed Windows ConPTY session-resume painting the transcript with the last several rows truncated below the viewport until Alt+Tab forced a host repaint. After `sessionReplace`/`historyRebuild`/`overlayRebuild` paints that scroll-push content into native scrollback, the renderer now arms a 150 ms ConPTY settle window that coalesces spinner/blink-driven `requestRender(false)` calls into a single trailing render — Windows Terminal's viewport-follow logic no longer falls further behind the cursor on every tick of the post-paint storm. The arm also reclaims any render request queued *during* the in-flight composition (notably `ImageBudget.endPass()` calling `requestRender()` synchronously when a frame trips the live-graphics cap): without that, the queued request sat on the standard 30 Hz throttle and fired at ~33 ms — well inside the 150 ms quiet window — defeating the coalescing. Bumped the ConPTY per-`WriteFile` chunk cap from 8 KiB to 16 KiB so a multi-megabyte resume paint emits half as many writes (still well under the ~32 KiB threshold from #2034 that the original cap defends against), and made the cap measure encoded UTF-8 bytes instead of JS code units so a CJK-heavy transcript can't silently inflate a 16-KiB-of-code-units chunk into ~48 KiB of `WriteFile` traffic and reintroduce the #2034 viewport bug ([#2095](https://github.com/can1357/oh-my-pi/issues/2095)).
+- Fixed Windows ConPTY session-resume painting the transcript with the last several rows truncated below the viewport until Alt+Tab forced a host repaint. After `sessionReplace`/`historyRebuild`/`overlayRebuild` paints that scroll-push content into native scrollback, the renderer now arms a 150 ms ConPTY settle window that coalesces spinner/blink-driven `requestRender(false)` calls into a single trailing render — Windows Terminal's viewport-follow logic no longer falls further behind the cursor on every tick of the post-paint storm. The arm also reclaims any render request queued _during_ the in-flight composition (notably `ImageBudget.endPass()` calling `requestRender()` synchronously when a frame trips the live-graphics cap): without that, the queued request sat on the standard 30 Hz throttle and fired at ~33 ms — well inside the 150 ms quiet window — defeating the coalescing. Bumped the ConPTY per-`WriteFile` chunk cap from 8 KiB to 16 KiB so a multi-megabyte resume paint emits half as many writes (still well under the ~32 KiB threshold from #2034 that the original cap defends against), and made the cap measure encoded UTF-8 bytes instead of JS code units so a CJK-heavy transcript can't silently inflate a 16-KiB-of-code-units chunk into ~48 KiB of `WriteFile` traffic and reintroduce the #2034 viewport bug ([#2095](https://github.com/can1357/oh-my-pi/issues/2095)).
 
 ## [15.10.3] - 2026-06-08
 
@@ -1711,7 +1763,7 @@
 
 ### Fixed
 
-- Fixed native Windows + Windows Terminal freezing the editor on the wrap keystroke, on `/plan`/`/resume`/model-switch/status-line toggles, and on any other offscreen structural mutation until the next prompt submit. The `15.7.5` `#1635` fix routed every viewport-saturating pure-append and structural mutation through `deferredMutation` (a literal no-op) whenever `isNativeViewportAtBottom()` returned `undefined` — which it always does under `WT_SESSION` because the kernel32 probe can't see WT host scrollback. The deferral was only ever meant for the *confirmed-scrolled* case; an unknown viewport now falls back to a non-destructive `viewportRepaint` instead, so the live UI keeps updating without emitting `\x1b[3J` and without yanking a possibly-scrolled reader. Confirmed-scrolled frames (probe returns `false`) still defer.
+- Fixed native Windows + Windows Terminal freezing the editor on the wrap keystroke, on `/plan`/`/resume`/model-switch/status-line toggles, and on any other offscreen structural mutation until the next prompt submit. The `15.7.5` `#1635` fix routed every viewport-saturating pure-append and structural mutation through `deferredMutation` (a literal no-op) whenever `isNativeViewportAtBottom()` returned `undefined` — which it always does under `WT_SESSION` because the kernel32 probe can't see WT host scrollback. The deferral was only ever meant for the _confirmed-scrolled_ case; an unknown viewport now falls back to a non-destructive `viewportRepaint` instead, so the live UI keeps updating without emitting `\x1b[3J` and without yanking a possibly-scrolled reader. Confirmed-scrolled frames (probe returns `false`) still defer.
 - Removed the hard-coded 20-result cap on `@`-prefixed fuzzy file completion in `CombinedAutocompleteProvider.#getFuzzyFileSuggestions`. The dropdown now honors the existing `maxResults: 100` ceiling already configured for `fuzzyFind`, so projects with many files sharing a common stem (e.g. `@controller`, `@test`) surface all relevant matches instead of being silently truncated. ([#1652](https://github.com/can1357/oh-my-pi/issues/1652))
 
 ## [15.7.5] - 2026-06-01

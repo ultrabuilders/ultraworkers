@@ -16,7 +16,7 @@ import {
 	Spacer,
 	Text,
 } from "../index";
-import { logger } from "@oh-my-pi/pi-utils";
+import { APP_NAME, logger } from "@oh-my-pi/pi-utils";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme";
 import { shortenPath } from "../render/render-utils";
 import { OverlayPanel } from "../chrome/overlay-box";
@@ -29,6 +29,11 @@ import { col, node, span, text } from "../native/describe";
 import type { TspPrefsControl, TspPrefsSection } from "@oh-my-pi/pi-wire";
 import { actionHint, hintsRow, overlayCard } from "../native/overlay";
 
+// Frozen on the pre-rebrand spelling on purpose: a third party compares this exact
+// string, and `APP_NAME` must never be substituted into it. Guarded by
+// packages/tui/test/plugin-install-command-name.test.ts. Note the HYPHEN in
+// `plugin-settings` — a role matcher built from `[a-zA-Z0-9.]` silently truncates at
+// the dash and renames the frozen value along with every other role.
 const PLUGIN_SETTINGS_ROLE = "omp.overlay.plugin-settings";
 /** A plugin row's control on the native settings page: open the plugin's settings. */
 const PLUGIN_CONFIGURE: TspPrefsControl = { k: "action", label: "Configure", act: "open" };
@@ -66,7 +71,7 @@ function prefsDetailPage(title: string, lead: string, list: SettingsList | undef
 		})),
 		focus: list.prefsFocus().row ?? null,
 		editing: null,
-		editor: open ? col([open.component], { role: "omp.prefs.editor" }) : undefined,
+		editor: open ? col([open.component], { role: "ultraworkers.prefs.editor" }) : undefined,
 	};
 }
 
@@ -133,14 +138,29 @@ export interface InstalledPluginSummary {
 }
 
 /** Runtime plugin manager capabilities required by the settings UI. */
+/**
+ * Outcome of a plugin-config mutation, as observed on disk.
+ *
+ * Declared here rather than imported from the coding-agent package: TUI is a
+ * lower layer, so importing upward would invert the dependency. The concrete
+ * manager satisfies this structurally — the members are identical, and a
+ * manager returning a different shape fails to type-check at the call site.
+ */
+export interface PluginChangeResult {
+	/** False when the mutation was a no-op, so nothing was written. */
+	changed: boolean;
+	/** Whether the running session already reflects the write. */
+	application: "applied" | "restart-required";
+}
+
 export interface PluginSettingsManager {
 	list(): Promise<InstalledPlugin[]>;
 	getPlugin(name: string, options?: { path?: string }): Promise<InstalledPlugin | undefined>;
 	getPluginSettings(name: string): Promise<Record<string, unknown>>;
-	setEnabled(name: string, enabled: boolean): Promise<void>;
+	setEnabled(name: string, enabled: boolean): Promise<PluginChangeResult>;
 	getEnabledFeatures(name: string): Promise<string[] | null>;
-	setEnabledFeatures(name: string, features: string[] | null): Promise<void>;
-	setPluginSetting(name: string, key: string, value: unknown): Promise<void>;
+	setEnabledFeatures(name: string, features: string[] | null): Promise<PluginChangeResult>;
+	setPluginSetting(name: string, key: string, value: unknown): Promise<PluginChangeResult>;
 }
 
 /** Marketplace manager capabilities required by the settings UI. */
@@ -307,9 +327,15 @@ export class PluginListComponent extends OverlayPanel {
 		if (entries.length === 0) {
 			this.addChild(new Text(theme.fg("muted", "No plugins installed"), 0, 0));
 			this.addChild(new Spacer(1));
-			this.addChild(new Text(theme.fg("dim", "Install npm plugins:        omp plugin install <package>"), 0, 0));
 			this.addChild(
-				new Text(theme.fg("dim", "Install marketplace plugins: omp plugin install <name>@<marketplace>"), 0, 0),
+				new Text(theme.fg("dim", `Install npm plugins:        ${APP_NAME} plugin install <package>`), 0, 0),
+			);
+			this.addChild(
+				new Text(
+					theme.fg("dim", `Install marketplace plugins: ${APP_NAME} plugin install <name>@<marketplace>`),
+					0,
+					0,
+				),
 			);
 			this.addChild(new Spacer(1));
 
@@ -378,7 +404,7 @@ export class PluginListComponent extends OverlayPanel {
 			lead:
 				rows.length > 0
 					? "Plugins installed for you and this project. Configure one to turn it or its features on and off."
-					: "No plugins installed. Install one with omp plugin install <package>, or <name>@<marketplace>.",
+					: `No plugins installed. Install one with ${APP_NAME} plugin install <package>, or <name>@<marketplace>.`,
 			sections: rows.length > 0 ? [{ id: "installed", title: "Installed", rows }] : [],
 			focus: this.#selectList.getSelectedItem()?.value ?? null,
 			editing: null,
@@ -403,10 +429,10 @@ export class PluginListComponent extends OverlayPanel {
 						text([span("No plugins installed", "muted")]),
 						node("kv", {
 							items: [
-								{ k: "Install npm plugins", v: [span("omp plugin install <package>", "code")] },
+								{ k: "Install npm plugins", v: [span(`${APP_NAME} plugin install <package>`, "code")] },
 								{
 									k: "Install marketplace plugins",
-									v: [span("omp plugin install <name>@<marketplace>", "code")],
+									v: [span(`${APP_NAME} plugin install <name>@<marketplace>`, "code")],
 								},
 							],
 						}),
@@ -963,8 +989,11 @@ export class PluginSettingsComponent extends Container {
 
 		this.#viewComponent = new PluginDetailComponent(plugin, this.#manager, {
 			onEnabledChange: async enabled => {
-				await this.#manager.setEnabled(plugin.name, enabled);
-				await this.callbacks.onPluginChanged();
+				// Only refresh when the lockfile actually moved. A no-op write
+				// leaves the list identical, and re-rendering it would present an
+				// unchanged state as though the toggle had taken effect.
+				const result = await this.#manager.setEnabled(plugin.name, enabled);
+				if (result.changed) await this.callbacks.onPluginChanged();
 			},
 			onFeatureChange: async (feature, enabled) => {
 				const current = new Set((await this.#manager.getEnabledFeatures(plugin.name)) ?? []);
@@ -973,12 +1002,12 @@ export class PluginSettingsComponent extends Container {
 				} else {
 					current.delete(feature);
 				}
-				await this.#manager.setEnabledFeatures(plugin.name, [...current]);
-				await this.callbacks.onPluginChanged();
+				const result = await this.#manager.setEnabledFeatures(plugin.name, [...current]);
+				if (result.changed) await this.callbacks.onPluginChanged();
 			},
 			onConfigChange: async (key, value) => {
-				await this.#manager.setPluginSetting(plugin.name, key, value);
-				await this.callbacks.onPluginChanged();
+				const result = await this.#manager.setPluginSetting(plugin.name, key, value);
+				if (result.changed) await this.callbacks.onPluginChanged();
 			},
 			onBack: () => this.#showPluginList(),
 			requestRender: this.callbacks.requestRender,

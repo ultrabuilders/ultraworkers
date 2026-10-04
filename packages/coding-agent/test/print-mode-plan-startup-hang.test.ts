@@ -14,7 +14,7 @@ import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manage
 import { createTools, type ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { Snowflake } from "@oh-my-pi/pi-utils";
 
-// Regression for #8272: with plan.defaultOnStartup:true, a headless `omp -p`
+// Regression for #8272: with plan.defaultOnStartup:true, a headless `ultraworkers -p`
 // used to arm plan mode before the initial prompt. The only headless plan-exit
 // was a watcher that fires on a successful `xd://propose` execute-dispatch, so a
 // model that never emits exactly that dispatch (the natural plan-mode behavior:
@@ -32,7 +32,7 @@ describe("print mode + plan.defaultOnStartup (#8272)", () => {
 	const holder: { session?: AgentSession } = {};
 
 	beforeEach(async () => {
-		tempDir = path.join(os.tmpdir(), `omp-8272-${Snowflake.next()}`);
+		tempDir = path.join(os.tmpdir(), `ultraworkers-8272-${Snowflake.next()}`);
 		fs.mkdirSync(tempDir, { recursive: true });
 		stdoutOutput = [];
 		vi.spyOn(process.stdout, "write").mockImplementation((...args: unknown[]) => {

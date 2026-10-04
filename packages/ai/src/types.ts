@@ -35,6 +35,7 @@ import type {
 	WriteResult,
 } from "@oh-my-pi/pi-catalog/discovery/cursor-proto";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
+import type { JsonValue } from "./judgment/types";
 import type { Api, FetchImpl, KnownApi, Model, Provider, ThinkingBudgets, Usage } from "@oh-my-pi/pi-catalog/types";
 import type { ApiKey } from "./auth-retry";
 import type { BedrockOptions } from "./providers/amazon-bedrock";
@@ -59,7 +60,7 @@ export type { StopDetails } from "./providers/anthropic-wire";
 export type { AssistantMessageEventStream } from "./utils/event-stream";
 
 /**
- * Ceiling on the output-token count omp requests from any OpenAI-family endpoint
+ * Ceiling on the output-token count ultraworkers requests from any OpenAI-family endpoint
  * (openai-responses, azure/xai responses, and openai-completions).
  *
  * Catalog `maxTokens` frequently reflects a model's context window rather than a
@@ -533,7 +534,7 @@ export interface StreamOptions {
 	/**
 	 * Optional per-provider concurrent request cap for LLM stream calls. Keys are
 	 * provider ids (`model.provider`); positive numeric values cap in-flight
-	 * requests across local OMP processes that share the same config root. Omitted
+	 * requests across local ultraworkers processes that share the same config root. Omitted
 	 * providers are unlimited. Non-chat provider APIs that bypass stream helpers
 	 * are not covered.
 	 */
@@ -670,6 +671,21 @@ export interface SimpleStreamOptions extends Omit<StreamOptions, "apiKey"> {
 	 */
 	apiKey?: ApiKey;
 	reasoning?: Effort;
+	/**
+	 * Ask a capable provider to return a durable handle and continue the request asynchronously.
+	 *
+	 * The handle arrives on the result as {@link AssistantMessage.deferred} with
+	 * `stopReason: "deferred"`, and is resumed through `fetchDeferred`. Declared here rather than on
+	 * {@link StreamOptions} because only the simple entry points carry it: `pi` puts it in this same
+	 * interface, and a provider reading `options.deferred` off a raw {@link StreamOptions} has
+	 * nothing to read.
+	 *
+	 * Without this field the request is silently dropped, not rejected: a caller spreading a wider
+	 * options bag (`{...streamOptions}` in pi-durable's generation path) type-checks against this
+	 * interface while the field goes unread, so `stopReason: "deferred"` never arrives and the
+	 * deferred poll loop stays unreachable.
+	 */
+	deferred?: boolean | { window?: "15m" | "1h" | "24h" };
 	/**
 	 * Force-disable reasoning for the request even when the model supports it.
 	 * Takes precedence over `reasoning`. Useful for fast utility calls
@@ -824,6 +840,27 @@ export interface AnthropicServerToolContent {
 		  };
 }
 
+/**
+ * A provider's handle to an assistant response that has not finished streaming.
+ *
+ * Providers that accept a request and finish it later (batch APIs, long-running
+ * generations) hand back an identifier plus whatever reconstruction data the
+ * final assistant message needs. `expiresAt` and `pollAfterMs` let the caller
+ * schedule the next poll without re-reading provider documentation for the
+ * lifetime of each provider's handle.
+ */
+export interface DeferredHandle {
+	provider: string;
+	modelId: string;
+	api: string;
+	/** Provider token, such as a response id or batch id plus row id. */
+	id: string;
+	expiresAt?: number;
+	pollAfterMs?: number;
+	/** Provider conversion data required to reconstruct the final assistant message. */
+	data?: JsonValue;
+}
+
 /** Provider-native uploaded file reference for image reuse without retransmitting bytes. */
 export interface ProviderFileReference {
 	provider: "openai" | "anthropic" | "google";
@@ -925,7 +962,7 @@ export interface ToolCall {
 	providerMetadata?: ToolCallProviderMetadata;
 }
 
-export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
+export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
 
 export interface OpenAIResponsesHistoryPayload {
 	type: "openaiResponsesHistory";
@@ -1125,6 +1162,8 @@ export interface AssistantMessage {
 	upstreamModel?: string;
 	usage: Usage;
 	stopReason: StopReason;
+	/** Present when `stopReason` is `"deferred"`: the handle a later poll resumes from. */
+	deferred?: DeferredHandle;
 	stopDetails?: StopDetails | null;
 	errorMessage?: string;
 	/** Stable recovery-classification text when errorMessage includes display-only diagnostics. */
@@ -1485,7 +1524,7 @@ export type AssistantMessageEvent =
 	| {
 			type: "done";
 			contentIndex?: undefined;
-			reason: Extract<StopReason, "stop" | "length" | "toolUse">;
+			reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">;
 			message: AssistantMessage;
 	  }
 	| {

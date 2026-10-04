@@ -1,7 +1,7 @@
 /**
  * Client half of the pi-native auth-gateway protocol.
  *
- * Dispatches a {@link streamSimple}-shaped request to an `omp auth-gateway`
+ * Dispatches a {@link streamSimple}-shaped request to an `ultraworkers auth-gateway`
  * via `POST /v1/pi/stream`, reads the SSE event stream back, and pushes the
  * parsed events into a local {@link AssistantMessageEventStream} — the same
  * stream type every other provider client produces. Callers downstream of
@@ -11,7 +11,7 @@
  *
  * Activated when a {@link Model} has `transport: "pi-native"` set; the
  * dispatch hook lives in `streamSimple()` (see `../stream.ts`). Used by
- * containerized omp deployments (such as robomp slots) that
+ * containerized ultraworkers deployments (such as robomp slots) that
  * route every LLM call through a credential-holding sidecar so the slot
  * itself stays credential-free.
  */
@@ -51,8 +51,9 @@ const NON_WIRE_KEYS = new Set<keyof SimpleStreamOptions>([
 	"cursorOnToolResult",
 	"providerSessionState",
 ]);
-const PI_NATIVE_STREAM_IDLE_TIMEOUT_ERROR = "pi-native stream stalled while waiting for the next event";
-const PI_NATIVE_STREAM_FIRST_EVENT_TIMEOUT_ERROR = "pi-native stream timed out while waiting for the first event";
+export const PI_NATIVE_STREAM_IDLE_TIMEOUT_ERROR = "pi-native stream stalled while waiting for the next event";
+export const PI_NATIVE_STREAM_FIRST_EVENT_TIMEOUT_ERROR =
+	"pi-native stream timed out while waiting for the first event";
 
 function isPiNativeProgressEvent(event: unknown): boolean {
 	if (typeof event !== "object" || event === null || !("type" in event)) return true;
@@ -134,7 +135,7 @@ function buildHeaders(model: Model<Api>, apiKey: string | undefined): Record<str
 }
 
 /**
- * Stream a turn through an `omp auth-gateway` over the pi-native protocol.
+ * Stream a turn through an `ultraworkers auth-gateway` over the pi-native protocol.
  *
  * The returned {@link AssistantMessageEventStream} receives each parsed
  * `AssistantMessageEvent` verbatim from the gateway; the terminal `done` /

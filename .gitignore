@@ -98,3 +98,36 @@ packages/coding-agent/bench/boot-baseline.json
 # Scratch working files for this session. Ignored, not committed: `git clean -fd`
 # does not touch ignored paths, which is what keeps them from being swept away.
 .lavish-wip/
+
+# Artifacts `omp` writes into the CWD when a run is exercised end-to-end from a
+# scratch session (`omp session`, browser recording). They are output, not source:
+# a `git add -A` in a repo root that has one on disk would commit a stray `.probe`
+# and a pair of frames.
+#
+# Matched at ANY depth, not just the repo root. These land wherever omp ran, and
+# a run from `packages/coding-agent/` writes them *there* — the root-anchored
+# form let exactly those through, so they showed up as untracked noise. That noise
+# is not cosmetic: a peer read `git status` mid-session, saw files no owner
+# recognised, and drew the wrong conclusion about who was working on what.
+# `session.jsonl` is runtime output too, but it is NOT matched at any depth: the
+# tests build fixtures named exactly `session.jsonl` under `test/`, and a `**/`
+# pattern would silently untrack the day one of those landed. Scoped to the
+# package root instead, which is where a run from the repo leaves it.
+**/omp-session-*.md
+**/omp-session-*.markdown
+**/omp-session-*.probe
+**/omp-browser-recording-*/
+packages/*/session.jsonl
+packages/*/.session.jsonl.lock*
+
+# Scratch directories a throwaway probe gets written into. These keep recurring —
+# `.probe`, then the session artifacts above, then `.scratch` — and each time the
+# fix blocked exactly ONE instance. `bun test` scans `test/`, so an untracked
+# scratch dir under it runs as a passing test that protects nothing, and a
+# `git add -A` commits it. Matched at ANY depth: the location is the point, not
+# the name, and a scratch dir is scratch wherever it is created.
+**/.probe/
+**/.scratch/
+
+# bv (beads viewer) local config and caches
+.bv/

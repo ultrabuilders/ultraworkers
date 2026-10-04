@@ -74,8 +74,8 @@ describe("/mcp enable and disable", () => {
 	});
 
 	beforeEach(async () => {
-		projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-mcp-toggle-project-"));
-		agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-mcp-toggle-agent-"));
+		projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-mcp-toggle-project-"));
+		agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-mcp-toggle-agent-"));
 		setProjectDir(projectDir);
 		setAgentDir(agentDir);
 	});
@@ -118,6 +118,10 @@ describe("/mcp enable and disable", () => {
 		expect(connectServers).toHaveBeenCalledTimes(1);
 		const [configs] = connectServers.mock.calls[0]!;
 		expect(Object.keys(configs)).toEqual(["mcp1"]);
-		expect(configs.mcp1).toEqual({ type: "stdio", command: "mcp-one", enabled: true });
+		// `envPolicy: "literal"` is GAP-D9, not incidental: this config came from the
+		// project file and never passed through `loadAllMCPConfigs`, so this connect
+		// path is the only place the policy can be attached. Asserted explicitly
+		// rather than loosened to a partial match, so its removal is still caught.
+		expect(configs.mcp1).toEqual({ type: "stdio", command: "mcp-one", enabled: true, envPolicy: "literal" });
 	});
 });

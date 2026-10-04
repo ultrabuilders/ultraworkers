@@ -87,7 +87,7 @@ export async function createReportBundle(options: ReportBundleOptions): Promise<
 	await fs.mkdir(reportsDir, { recursive: true });
 
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-	const outputPath = path.join(reportsDir, `omp-report-${timestamp}.tar.gz`);
+	const outputPath = path.join(reportsDir, `ultraworkers-report-${timestamp}.tar.gz`);
 
 	const data: Record<string, string | Uint8Array> = {};
 	const files: string[] = [];
@@ -210,8 +210,11 @@ export async function getLogText(): Promise<string> {
 
 /**
  * Concatenate the tail of every same-day process log so a report generated
- * after a crash still captures the fatal PID's `omp.<date>.<pid>.log`. Files
- * are ordered oldest-first by mtime and separated by a filename header.
+ * after a crash still captures the fatal PID's log for that day. The name is
+ * described rather than quoted: it is `APP_NAME` + the local day + the pid,
+ * and a literal prefix here outlives neither the next rename nor the constant
+ * it is copied from. Files are ordered oldest-first by mtime and separated by
+ * a filename header.
  */
 async function collectSameDayLogs(linesPerFile: number): Promise<string> {
 	const logsDir = getLogsDir();

@@ -21,7 +21,7 @@ import type { ToolExecutionHandle } from "./tool-execution";
 import { formatUsageRow } from "../overlays/usage-row";
 import { formatCount } from "@oh-my-pi/pi-utils";
 import type { TspCardStatus, TspSpan, TspText } from "@oh-my-pi/pi-wire";
-import type { NativeToolHead } from "../tools/renderer";
+import type { NativeToolHead, RawToolArgs } from "../tools/renderer";
 import { card, code, keyed, node, span, text, withHidden } from "../native/describe";
 import {
 	type DescribeContext,
@@ -68,6 +68,29 @@ export function readArgsCollapseIntoGroup(args: unknown): boolean {
 }
 
 /**
+ * Whether a tool call renders as part of the compact {@link ReadToolGroupComponent}.
+ *
+ * The complete membership decision, and the only place it should be written.
+ * {@link readArgsCollapseIntoGroup} answers the half that depends on arguments —
+ * files and external targets collapse, registered internal-URL schemes render
+ * full — while the other half is the tool's name. Every call site needs both,
+ * so splitting the decision left each one re-deriving the name check in whatever
+ * shape suited it: `name === "read" && …`, `name !== "read" || !…`, or an
+ * enclosing `if`. Those are the same rule written three ways, which is how they
+ * drift apart.
+ *
+ * `name` is the *rendered* name (`toolRenderName`), not the raw tool name: a
+ * renamed or bridged tool is grouped by what it presents as, not by what it is
+ * called underneath.
+ *
+ * @param name - The rendered tool name.
+ * @param args - The raw tool arguments.
+ */
+export function isReadToolGroupMember(name: string, args: unknown): boolean {
+	return name === "read" && readArgsCollapseIntoGroup(args);
+}
+
+/**
  * Return the collapsed read calls that can own a turn's usage row. Mixed-tool
  * turns and visible content after a read keep the standalone row so request
  * metrics retain their transcript ordering.
@@ -77,7 +100,7 @@ export function groupedReadUsageCallIds(message: AssistantMessage): string[] | u
 	let sawToolCall = false;
 	for (const content of message.content) {
 		if (content.type === "toolCall") {
-			if (content.name !== "read" || !readArgsCollapseIntoGroup(content.arguments)) return undefined;
+			if (!isReadToolGroupMember(content.name, content.arguments)) return undefined;
 			sawToolCall = true;
 			toolCallIds.push(content.id);
 			continue;
@@ -540,6 +563,15 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		this.#updateDisplay();
 	}
 
+	/**
+	 * The group has no raw-args consumer: it renders the resolved read targets
+	 * from `details`, not the unparsed argument stream, and `updateArgs`
+	 * already repaints on every change to the decoded path. Repainting here
+	 * would be work for a signal this component deliberately ignores, so the
+	 * channel is accepted and dropped.
+	 */
+	setRawArgs(_raw: RawToolArgs | undefined, _toolCallId?: string): void {}
+
 	setExpanded(expanded: boolean): void {
 		if (this.#expanded !== expanded) this.#blockVersion++;
 		this.#expanded = expanded;
@@ -576,7 +608,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	/**
 	 * The read run as one inline `tool` on terminals that list the kind, else
-	 * the fallback: a bare `card` (role `omp.tool.read`) with `Read <path>` or
+	 * the fallback: a bare `card` (role `ultraworkers.tool.read`) with `Read <path>` or
 	 * `Read (N)` in the head, a `list` of path items (status tone, link,
 	 * correction and conflict detail, nested usage) and, with content previews
 	 * on, a `code` block per read clamped by the card's preview while collapsed.
@@ -591,7 +623,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	/**
 	 * The data-first read (§7.3 read, read group, read error): one inline
-	 * `tool` (role `omp.tool.read`). One file: `Read path:13-36`, a failure's
+	 * `tool` (role `ultraworkers.tool.read`). One file: `Read path:13-36`, a failure's
 	 * message in the head. Several: `Read 3 files` over one 22px row per file
 	 * (glyph, dim dir, strong name, range). Content previews are numbered
 	 * `code` (a section per file in a group), trimmed while collapsed.
@@ -649,7 +681,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 			"tool",
 			{
 				...head,
-				role: "omp.tool.read",
+				role: "ultraworkers.tool.read",
 				name: "read",
 				title: "Read",
 				status,
@@ -729,7 +761,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		const hidden = lines.length - shown;
 		if (hidden > 0) {
 			blocks.push(
-				keyed(text([span(formatCount("more line", hidden), "muted")], { role: "omp.tool.stats" }), "more"),
+				keyed(text([span(formatCount("more line", hidden), "muted")], { role: "ultraworkers.tool.stats" }), "more"),
 			);
 		}
 		return blocks;
@@ -788,7 +820,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 				node(
 					"card",
 					{
-						role: "omp.tool.read.preview",
+						role: "ultraworkers.tool.read.preview",
 						tone: READ_STATUS_TONE[entry.status],
 						head: pathValue ? [title, span(" "), span(pathValue, "path")] : [title],
 						collapsible: true,
@@ -810,7 +842,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		}
 		return card(
 			{
-				role: "omp.tool.read",
+				role: "ultraworkers.tool.read",
 				// A group is plain rows: the per-file previews are the only frames.
 				variant: "bare",
 				status,
@@ -851,7 +883,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	#nativeUsage(usage: ReadUsageRow, key: string): NativeNode {
 		const line = formatUsageRow(usage.usage, usage.durationMs, usage.ttftMs, usage.timestamp, usage.turnElapsedMs);
-		return text([span(plainText(line), "dim")], { wrap: "word", key, role: "omp.usage" });
+		return text([span(plainText(line), "dim")], { wrap: "word", key, role: "ultraworkers.usage" });
 	}
 
 	#updateDisplay(): void {

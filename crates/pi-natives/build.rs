@@ -30,7 +30,7 @@ fn build_applefm_bridge() {
 	for file in ["build-bridge.sh", "bridge.swift", "stub.c"] {
 		println!("cargo:rerun-if-changed={}", sources.join(file).display());
 	}
-	for variable in ["OMP_APPLEFM_SWIFTC", "OMP_APPLEFM_MODULE_CACHE", "SDKROOT", "DEVELOPER_DIR"] {
+	for variable in ["ULTRAWORKERS_APPLEFM_SWIFTC", "ULTRAWORKERS_APPLEFM_MODULE_CACHE", "SDKROOT", "DEVELOPER_DIR"] {
 		println!("cargo:rerun-if-env-changed={variable}");
 	}
 	// SDK installs and upgrades change which toolchain is detected. Watch files,
@@ -61,7 +61,7 @@ fn build_applefm_bridge() {
 	} else {
 		None
 	};
-	let library = out_dir.join("libomp_applefm.a");
+	let library = out_dir.join("libultraworkers_applefm.a");
 	let mut command = Command::new("/bin/sh");
 	command
 		.arg(&script)
@@ -90,7 +90,7 @@ fn build_applefm_bridge() {
 	);
 
 	println!("cargo:rustc-link-search=native={}", out_dir.display());
-	println!("cargo:rustc-link-lib=static=omp_applefm");
+	println!("cargo:rustc-link-lib=static=ultraworkers_applefm");
 	if let Some((swiftc, sdk)) = &toolchain {
 		for argument in applefm_link_args(swiftc, sdk) {
 			println!("cargo:rustc-link-arg={argument}");
@@ -154,7 +154,7 @@ fn build_oauth_callback_relay(target_os: &str) {
 	let target = env::var("TARGET").expect("TARGET should be set");
 	let rustc = env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
 	let mut output = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR should be set"))
-		.join("omp-oauth-callback-relay");
+		.join("ultraworkers-oauth-callback-relay");
 	if target_os == "windows" {
 		output.set_extension("exe");
 	}
@@ -170,7 +170,7 @@ fn build_oauth_callback_relay(target_os: &str) {
 	command
 		.current_dir(&manifest_dir)
 		.arg("--crate-name")
-		.arg("omp_oauth_callback_relay")
+		.arg("ultraworkers_oauth_callback_relay")
 		.arg("--crate-type=bin")
 		.arg("--edition=2024")
 		.arg("--target")
@@ -211,7 +211,7 @@ fn build_oauth_callback_relay(target_os: &str) {
 		String::from_utf8_lossy(&result.stdout),
 		String::from_utf8_lossy(&result.stderr)
 	);
-	println!("cargo:rustc-env=OMP_OAUTH_RELAY_BINARY={}", output.display());
+	println!("cargo:rustc-env=ULTRAWORKERS_OAUTH_RELAY_BINARY={}", output.display());
 }
 
 #[path = "src/oauth_callback/darwin_compiler.rs"]
@@ -222,7 +222,7 @@ fn build_darwin_oauth_callback_helper() {
 		PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set"));
 	let source = manifest_dir.join("src/oauth_callback/darwin-helper.m");
 	let output = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR should be set"))
-		.join("omp-oauth-callback-darwin-helper");
+		.join("ultraworkers-oauth-callback-darwin-helper");
 	let architecture = match env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
 		Ok("aarch64") => "arm64",
 		Ok("x86_64") => "x86_64",
@@ -266,7 +266,7 @@ fn build_darwin_oauth_callback_helper() {
 		String::from_utf8_lossy(&result.stdout),
 		String::from_utf8_lossy(&result.stderr)
 	);
-	println!("cargo:rustc-env=OMP_OAUTH_DARWIN_HELPER={}", output.display());
+	println!("cargo:rustc-env=ULTRAWORKERS_OAUTH_DARWIN_HELPER={}", output.display());
 }
 
 fn target_linker(target: &str) -> Option<OsString> {

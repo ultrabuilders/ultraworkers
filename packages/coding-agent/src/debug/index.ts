@@ -17,7 +17,7 @@ import {
 	type TerminalNotification,
 	Text,
 } from "@oh-my-pi/pi-tui";
-import { getSessionsDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getSessionsDir } from "@oh-my-pi/pi-utils";
 import { editorKey } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
 import { DynamicBorder } from "@oh-my-pi/pi-tui/chrome/dynamic-border";
 import { OverlayPanel } from "@oh-my-pi/pi-tui/chrome/overlay-box";
@@ -35,6 +35,7 @@ import { resolveRawSseDebugBuffer } from "@oh-my-pi/pi-tui/apps/debug/raw-sse-bu
 import { getRemoteDebugger, type RemoteDebuggerInfo, startRemoteDebuggerServer } from "./remote-debugger";
 import { clearArtifactCache, createDebugLogSource, createReportBundle, getArtifactCacheStats } from "./report-bundle";
 import { collectSystemInfo, formatSystemInfo } from "./system-info";
+import { buildEnvironmentDoctorReport } from "../extensibility/plugins/doctor-report";
 import { collectTerminalState, formatTerminalState } from "@oh-my-pi/pi-tui/apps/debug/terminal-info";
 
 /** Debug menu options */
@@ -46,6 +47,11 @@ const DEBUG_MENU_ITEMS: SelectItem[] = [
 	{ value: "memory", label: "Report: memory issue", description: "Memory statistics + bundle" },
 	{ value: "logs", label: "View: recent logs", description: "Show last 50 log entries" },
 	{ value: "system", label: "View: system info", description: "Show environment details" },
+	{
+		value: "doctor",
+		label: "Check: environment health",
+		description: `Run the same checks as \`${APP_NAME} doctor\``,
+	},
 	{ value: "terminal", label: "View: terminal state", description: "Subprotocols, geometry, scrollback strategy" },
 	{
 		value: "protocols",
@@ -132,6 +138,9 @@ export class DebugSelectorComponent extends OverlayPanel {
 				break;
 			case "system":
 				await this.#handleViewSystemInfo();
+				break;
+			case "doctor":
+				await this.#handleEnvironmentDoctor();
 				break;
 			case "terminal":
 				await this.#handleViewTerminalState();
@@ -441,6 +450,29 @@ export class DebugSelectorComponent extends OverlayPanel {
 		this.ctx.present(block);
 	}
 
+	/**
+	 * The environment report, rendered into the transcript.
+	 *
+	 * Deliberately calls the shared builder rather than collecting checks here.
+	 * This is the second exit the bead asked for, and the property worth having is
+	 * not "a doctor entry exists in /debug" — it is that this entry and `ultraworkers
+	 * doctor` print the SAME check set. Two collectors would each be correct and
+	 * would drift the moment a check is added, with no test able to see it. One
+	 * builder makes the drift unrepresentable instead of merely untested.
+	 */
+	async #handleEnvironmentDoctor(): Promise<void> {
+		try {
+			const report = await buildEnvironmentDoctorReport();
+			const block = new TranscriptBlock();
+			block.addChild(new DynamicBorder());
+			for (const line of report.lines) block.addChild(new Text(line, 1, 0));
+			block.addChild(new DynamicBorder());
+			this.ctx.present(block);
+		} catch (err) {
+			this.ctx.showError(`Failed to run environment checks: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
 	async #handleViewSystemInfo(): Promise<void> {
 		try {
 			const info = await collectSystemInfo();
@@ -479,7 +511,7 @@ export class DebugSelectorComponent extends OverlayPanel {
 		if (!suppressed) {
 			const sessionName = this.ctx.sessionManager.getSessionName();
 			const notification: TerminalNotification = {
-				title: sessionName || "omp",
+				title: sessionName || APP_NAME,
 				body: "Terminal protocol test",
 				type: "test",
 				actions: "focus",

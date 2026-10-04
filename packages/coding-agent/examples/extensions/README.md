@@ -36,7 +36,8 @@ cp permission-gate.ts ~/.omp/agent/extensions/
 
 | Extension          | Description                                                                    |
 | ------------------ | ------------------------------------------------------------------------------ |
-| `plan-mode.ts`     | Claude Code-style plan mode for read-only exploration with `/plan` command     |
+| `plan-mode.ts`     | A mode declared with `registerMode` — read-only exploration, `/plan` toggle   |
+| `plan-todos.ts`    | Tracks plan steps from the agent's own messages, with a status chip and panel |
 | `tools.ts`         | Interactive `/tools` command to enable/disable tools with session persistence  |
 | `handoff.ts`       | Transfer context to a new focused session via `/handoff <goal>`                |
 | `qna.ts`           | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |
@@ -69,6 +70,24 @@ cp permission-gate.ts ~/.omp/agent/extensions/
 ## Writing Extensions
 
 See [docs/extensions.md](../../docs/extensions.md) for full documentation.
+
+### Do not import packages — use what the host injects
+
+An installed extension lives in `~/.omp/agent/extensions/<name>/`, and **nothing above
+that directory has a `node_modules`**. So this fails at load time:
+
+```typescript
+import { z } from "@oh-my-pi/omptype/zod"; // ✗ Cannot find module
+```
+
+The host injects the same builders on the API object, and they always resolve:
+`pi.zod`, `pi.typebox`, `pi.arktype`, plus `pi.logger` and `pi.pi`. Everything else
+on the API is a method, so an extension needs no import at all beyond the
+`import type` below.
+
+This is not a style preference. Measured: the same file resolves inside the repo and
+fails from a config directory, so the breakage appears only once the extension is
+actually installed — the worst moment to find it.
 
 ```typescript
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";

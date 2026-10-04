@@ -1,7 +1,7 @@
 # MLX tiny-model worker: one process per local model, owning that model's
 # socket and speaking the same JSON-lines protocol as the ONNX worker
 # (`title-protocol.ts`). Started by `title-client.ts` from the mlx-lm venv;
-# serves every omp process on the machine; exits on its own once idle.
+# serves every ultraworkers process on the machine; exits on its own once idle.
 #
 # Requests (one object per line):
 #   {"type": "ping", "id"}                        -> pong (with the launch tag)
@@ -49,7 +49,12 @@ DOWNLOAD_PATTERNS = (
     "*.safetensors.index.json",
     "*.tiktoken",
 )
-COMPLETE_MARKER = ".omp-complete.json"
+COMPLETE_MARKER = ".ultraworkers-complete.json"
+# The marker an older build wrote, still read so an existing install keeps its
+# model: this file is the ONLY skip path in download_repo (see _is_complete), and
+# there is no "the files are present, call it done" fallback. Dropping this name
+# would send every already-downloaded user back to the Hub for the full model.
+LEGACY_COMPLETE_MARKER = ".omp-complete.json"
 PROGRESS_INTERVAL_S = 0.1
 CHUNK_BYTES = 1 << 20
 IDLE_POLL_S = 5.0
@@ -64,7 +69,7 @@ def log(message):
 
 
 def _request(url):
-    headers = {"User-Agent": "omp-tiny-mlx"}
+    headers = {"User-Agent": "uw-tiny-mlx"}
     if HF_TOKEN:
         headers["Authorization"] = f"Bearer {HF_TOKEN}"
     return urllib.request.Request(url, headers=headers)
@@ -85,11 +90,20 @@ def list_repo_files(repo):
     return files
 
 
+def _read_marker(model_dir):
+    """The completion marker, from the current name or the one older builds wrote."""
+    for name in (COMPLETE_MARKER, LEGACY_COMPLETE_MARKER):
+        try:
+            with open(os.path.join(model_dir, name), encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def _is_complete(model_dir, files):
-    try:
-        with open(os.path.join(model_dir, COMPLETE_MARKER), encoding="utf-8") as fh:
-            marker = json.load(fh)
-    except (OSError, ValueError):
+    marker = _read_marker(model_dir)
+    if marker is None:
         return False
     if marker.get("files") != [name for name, _ in files]:
         return False
@@ -319,7 +333,7 @@ class Server:
         self.socket_path = socket_path
         server = self._bind(socket_path)
         threading.Thread(target=self._idle_watchdog, daemon=True).start()
-        sys.stdout.write(f"omp tiny worker listening on {socket_path}\n")
+        sys.stdout.write(f"ultraworkers tiny worker listening on {socket_path}\n")
         sys.stdout.flush()
         while True:
             conn, _ = server.accept()

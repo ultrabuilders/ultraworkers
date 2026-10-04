@@ -23,7 +23,7 @@ describe("AgentSession openai-completions provider session eviction", () => {
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		tempDir = TempDir.createSync("@pi-completions-eviction-");
+		tempDir = TempDir.createSync("@ultraworkers-completions-eviction-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});

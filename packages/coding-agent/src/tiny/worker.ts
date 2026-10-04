@@ -1,9 +1,9 @@
 /**
  * ONNX tiny-model worker: one process per local model, owning the model's
- * socket (see `title-protocol.ts`), serving every omp process on the machine,
+ * socket (see `title-protocol.ts`), serving every ultraworkers process on the machine,
  * and exiting on its own once idle. Entered from `cli.ts` via
  * {@link TINY_WORKER_ARG} with the socket/model/tag env set by
- * `title-client.ts`. Runs `onnxruntime-node` outside every omp process so its
+ * `title-client.ts`. Runs `onnxruntime-node` outside every ultraworkers process so its
  * NAPI finalizer never runs in a shared address space.
  */
 import * as path from "node:path";
@@ -13,7 +13,7 @@ import type {
 	TextGenerationStringOutput,
 	StoppingCriteria as TransformersStoppingCriteria,
 } from "@huggingface/transformers";
-import { getTinyModelsCacheDir, logger, setProcessName } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getTinyModelsCacheDir, logger, setProcessName } from "@oh-my-pi/pi-utils";
 import {
 	errorMessage,
 	errorText,
@@ -40,7 +40,7 @@ import {
 } from "./models";
 import {
 	TINY_WORKER_IDLE_MS,
-	TINY_WORKER_IDLE_MS_ENV,
+	readTinyWorkerIdleMsEnv,
 	TINY_WORKER_MODEL_ENV,
 	TINY_WORKER_SOCKET_ENV,
 	TINY_WORKER_TAG_ENV,
@@ -260,11 +260,11 @@ export async function startTinyWorkerFromEnvironment(): Promise<void> {
 	if (!isTinyLocalModelKey(modelKey)) throw new Error(`Unknown tiny local model: ${modelKey}`);
 	const spec = getTinyLocalModelSpec(modelKey);
 	if (!spec) throw new Error(`Unknown tiny local model: ${modelKey}`);
-	setProcessName(`omp tiny ${modelKey}`);
+	setProcessName(`${APP_NAME} tiny ${modelKey}`);
 	const model = new OnnxModel(modelKey, spec, resolveTinyModelDevicePreference(), resolveTinyModelDtypeOverride());
 	const server = new TinyWorkerServer({
 		tag,
-		idleMs: Number(process.env[TINY_WORKER_IDLE_MS_ENV]) || TINY_WORKER_IDLE_MS,
+		idleMs: Number(readTinyWorkerIdleMsEnv(process.env)) || TINY_WORKER_IDLE_MS,
 		async handle(request, reply) {
 			if (request.type === "load") {
 				await model.pipeline(reply, request.id);

@@ -9,6 +9,7 @@
  * regression that motivated the split.
  */
 import type { CommandEntry } from "@oh-my-pi/pi-utils/cli";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import * as commandHelp from "./cli/command-help";
 import {
 	EXTENSION_SHADOWABLE_STRING_FLAGS,
@@ -17,6 +18,7 @@ import {
 	STRING_VALUE_FLAGS,
 	VALUELESS_FLAGS,
 } from "./cli/flag-tables";
+
 import type * as LaunchHelp from "./commands/launch-help";
 
 function loadLaunchHelp(): typeof LaunchHelp.launchHelp {
@@ -100,9 +102,24 @@ export const commands: CommandEntry[] = [
 		help: commandHelp.configHelp,
 	},
 	{
+		name: "extensions-triage",
+		load: () => import("./commands/extensions-triage").then(m => m.default),
+		help: commandHelp.extensionsTriageHelp,
+	},
+	{
+		name: "approval-audit",
+		load: () => import("./commands/approval-audit").then(m => m.default),
+		help: commandHelp.approvalAuditHelp,
+	},
+	{
 		name: "dry-balance",
 		load: () => import("./commands/dry-balance").then(m => m.default),
 		help: commandHelp.dryBalanceHelp,
+	},
+	{
+		name: "doctor",
+		load: () => import("./commands/doctor").then(m => m.default),
+		help: commandHelp.doctorHelp,
 	},
 	{
 		name: "find",
@@ -202,6 +219,11 @@ export const commands: CommandEntry[] = [
 		help: commandHelp.shareHelp,
 	},
 	{
+		name: "session",
+		load: () => import("./commands/session").then(m => m.default),
+		help: commandHelp.sessionHelp,
+	},
+	{
 		name: "setup",
 		load: () => import("./commands/setup").then(m => m.default),
 		help: commandHelp.setupHelp,
@@ -294,68 +316,261 @@ for (const command of commands) {
 	}
 }
 
+// =============================================================================
+// Extension-registered top-level verbs
+// =============================================================================
+//
+// `SUBCOMMAND_NAMES` is a snapshot: it is built when this module is first
+// evaluated, and pushing onto the exported `commands` array afterwards changes
+// nothing, because every lookup reads the closed Set. A `registerSubcommand`
+// that only appended there would compile, export a correctly-named function,
+// and dispatch nothing — the verb keeps falling through to `launch` and the
+// argv reaches the model as a prompt. Nothing throws and nothing logs.
+//
+// So extension verbs are held in a Map that is read per call, never snapshotted.
+// This is the shape `cli/extension-flags.ts` already uses for flags: the
+// registry is consulted at the point of use, and there is no built-in name list
+// for a plugin author to collide with.
+//
+// Two extensions claiming one verb is a mistake worth surfacing rather than a
+// race to win, following the tool-collision contract WI-2 set: the collision
+// records *both* claimants and the first registration still routes, so dispatch
+// stays deterministic. Silent last-writer-wins is the invisible-override class
+// WI-2 called out by name.
+
+/**
+ * Runs a registered verb, receiving the argv that follows it.
+ *
+ * The handler closes over whatever it captured from the extension API at
+ * registration time, so it needs nothing from core to reach its own state.
+ */
+export type SubcommandHandler = (argv: string[]) => Promise<void>;
+
+interface RegisteredSubcommand {
+	owner: string;
+	handler: SubcommandHandler;
+}
+
+const registeredSubcommands = new Map<string, RegisteredSubcommand>();
+const subcommandCollisions: Array<{ verb: string; owner: string; existingOwner: string }> = [];
+
+/**
+ * Register a top-level verb owned by an extension, plus the handler `ultraworkers <verb>`
+ * runs.
+ *
+ * Returns `false` when `verb` was already claimed so the caller can surface the
+ * collision; the existing registration is kept, keeping dispatch deterministic.
+ * A verb shadowing a *built-in* command is refused for the same reason, with the
+ * installed app name as the other claimant: {@link extensionCommandEntries} entries
+ * are matched after the static table, so a handler registered under a built-in name
+ * would never be reached — and a silently-unreachable handler is precisely the
+ * invisible override this registry exists to make loud.
+ */
+export function registerSubcommand(verb: string, owner: string, handler: SubcommandHandler): boolean {
+	const existing = registeredSubcommands.get(verb);
+	if (existing !== undefined) {
+		subcommandCollisions.push({ verb, owner, existingOwner: existing.owner });
+		return false;
+	}
+	if (SUBCOMMAND_NAMES.has(verb)) {
+		subcommandCollisions.push({ verb, owner, existingOwner: APP_NAME });
+		return false;
+	}
+	registeredSubcommands.set(verb, { owner, handler });
+	return true;
+}
+
+/** Whether an extension has registered `verb`. Read per call — never cached. */
+function isRegisteredSubcommand(verb: string): boolean {
+	return registeredSubcommands.has(verb);
+}
+
+/** Every verb collision seen so far, naming both claimants. */
+export function subcommandCollisionDiagnostics(): ReadonlyArray<{
+	verb: string;
+	owner: string;
+	existingOwner: string;
+}> {
+	return subcommandCollisions;
+}
+
+/** Test-only: drop all registrations so one file cannot poison another's. */
+export function resetSubcommandRegistry(): void {
+	registeredSubcommands.clear();
+	subcommandCollisions.length = 0;
+}
+
+/**
+ * Whether `first` could name an extension verb, and so whether extensions must
+ * be loaded before routing decides.
+ *
+ * A verb is a single bare token, so a token containing whitespace cannot be one
+ * — and such a token only arrives if the user quoted it, which is the ordinary
+ * way to send a multi-word prompt. Priming the registry for those would buy
+ * nothing. Every other bare word *could* be a verb, so it must be asked.
+ */
+export function couldBeExtensionSubcommand(first: string | undefined): boolean {
+	if (!first || first.startsWith("-") || first.startsWith("@")) return false;
+	return !/\s/.test(first);
+}
+
+/**
+ * Load extensions far enough that their `registerSubcommand` calls have run.
+ *
+ * Extensions are otherwise loaded *inside* the session `run()` dispatches to, so
+ * a verb an extension registers cannot be known at routing time: without this,
+ * the two wait on each other and every extension verb stays unreachable.
+ * Priming the registry here closes that loop and leaves `run()` untouched.
+ *
+ * Discovery runs ambient-only — user, project, and installed-plugin extensions.
+ * Paths configured in settings belong to the session that owns them and are
+ * deliberately not read here; doing so would pull the settings manager onto a
+ * path that currently costs one filesystem scan.
+ */
+export async function preloadExtensionSubcommands(): Promise<void> {
+	// Lazy for the same reason every command entry above is lazy: this module is
+	// reached by `ultraworkers --version` and `ultraworkers --help`, and a static import of the
+	// loader would drag its whole graph onto those paths.
+	const { discoverAndLoadExtensions } = await import("./extensibility/extensions/loader");
+	await discoverAndLoadExtensions([], process.cwd(), undefined, undefined, { includeAmbientHooks: false });
+}
+
+/**
+ * The registered verbs, shaped as the command entries `run()` dispatches on.
+ *
+ * `run()` matches `argv[0]` against a static `CommandEntry[]` and knows nothing
+ * about extensions. Rather than teach it a second concept, each verb becomes a
+ * real entry whose class calls the handler from `run()` — so an extension verb
+ * reaches the same dispatch path, with the same argv slicing and the same
+ * `CliUsageError` handling, as every built-in command.
+ */
+export function extensionCommandEntries(): CommandEntry[] {
+	return Array.from(registeredSubcommands, ([verb, { handler }]) => ({
+		name: verb,
+		// Lazy through `load`, like every other entry in the table above: the class
+		// is only needed once a verb actually dispatches. That also keeps `Command` a
+		// type-only edge here — importing it as a value would drag
+		// `@oh-my-pi/pi-utils/cli` into the `cli.ts` entry graph and break its
+		// budget. See `cli/extension-subcommand.ts`.
+		load: () => import("./cli/extension-subcommand").then(module => module.createSubcommandClass(handler)),
+	}));
+}
+
 /** Commands that accept launch-global flags before their command token. */
 export const LAUNCH_FLAG_COMMANDS: Readonly<Record<string, true>> = { launch: true, acp: true };
 
 /** Whether a token names a registered top-level command or alias. */
 export function isSubcommand(first: string | undefined): boolean {
 	if (!first || first.startsWith("-") || first.startsWith("@")) return false;
-	return SUBCOMMAND_NAMES.has(first);
+	// Extension-registered verbs are read live. `SUBCOMMAND_NAMES` is a snapshot
+	// taken when this module loaded, so a verb registered later is only visible
+	// here — consulting the registry is what makes the seam real rather than a
+	// function that type-checks and dispatches nothing.
+	return SUBCOMMAND_NAMES.has(first) || isRegisteredSubcommand(first);
 }
 
 // Documented-looking plugin/marketplace verbs that are NOT registered top-level
-// commands. Without a guard `resolveCliArgv` rewrites e.g. `omp marketplace add
-// xyz` to `omp launch marketplace add xyz`, silently forwarding the argv to the
+// commands. Without a guard `resolveCliArgv` rewrites e.g. `ultraworkers marketplace add
+// xyz` to `ultraworkers launch marketplace add xyz`, silently forwarding the argv to the
 // model as a prompt instead of managing plugins (#4845; same class as the
 // `list`/`remove` leak fixed in #2935 and the `install` leak in #1496/#1498).
-// The real commands live under `omp plugin <action>`; each entry maps a verb to
+// The real commands live under `ultraworkers plugin <action>`; each entry maps a verb to
 // a hint pointing there. See {@link reservedTopLevelWordMessage} for when a hint
 // fires vs. when the argv still falls through to `launch`.
+//
+// `{invoked}` is replaced with the name the CLI was actually started under, in
+// BOTH clauses of every message below.
+//
+// It is NOT a synonym for the product name, and that is the whole point. A
+// message has two jobs: echo what the user typed, and tell them what to run
+// next. Hardcoding the binary in the second job told a user who installed by
+// `bun install` / `npm i -g` / `install.sh` / nix to run `ultraworkers plugin list`,
+// which is a command none of those four paths creates — so the advice was
+// wrong for exactly the users who did a normal install. Those four paths are
+// measured in epic-4yhd; all four produce `ultraworkers`, and
+// `test/bin-name-matches-app-name.test.ts` asserts the manifest's bin map is
+// EXACTLY `[APP_NAME]`, so a second installed name would be a contract change
+// rather than a silent extra entry.
+//
+// Substituting rather than hardcoding `ultraworkers` is what makes this correct
+// without pre-empting epic-4yhd. If that bead ends up shipping an `ultraworkers` alias,
+// a user who ran `ultraworkers` is told `ultraworkers plugin list`, which then exists; if it does
+// not, a user who ran `ultraworkers` is still told the name that does exist for them.
+// Deriving the advice beats choosing a winner: the previous version hardcoded
+// the recommendation while substituting the echo, which meant the two halves
+// could disagree about which command the user was running.
+//
+// The one thing this does NOT do is change which commands exist. It cannot make
+// `ultraworkers` appear on someone's PATH, and it is not meant to.
 const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 	extensions:
-		'`omp extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',
-	list: '`omp list` is not a top-level command. Use `omp plugin list` to list installed plugins, or run `omp launch list` if you meant to send "list" as a prompt.',
+		'`{invoked} extensions` is not a management command. Use `{invoked} plugin list` / `{invoked} plugin install`, or run `{invoked} launch extensions` if you meant to send "extensions" as a prompt.',
+	list: '`{invoked} list` is not a top-level command. Use `{invoked} plugin list` to list installed plugins, or run `{invoked} launch list` if you meant to send "list" as a prompt.',
 	remove:
-		'`omp remove` is not a top-level command. Use `omp plugin uninstall <name>` to remove a plugin, or run `omp launch remove` if you meant to send "remove" as a prompt.',
+		'`{invoked} remove` is not a top-level command. Use `{invoked} plugin uninstall <name>` to remove a plugin, or run `{invoked} launch remove` if you meant to send "remove" as a prompt.',
 	uninstall:
-		'`omp uninstall` is not a top-level command. Use `omp plugin uninstall <name@marketplace>` to remove a plugin, or run `omp launch uninstall` if you meant to send "uninstall" as a prompt.',
+		'`{invoked} uninstall` is not a top-level command. Use `{invoked} plugin uninstall <name@marketplace>` to remove a plugin, or run `{invoked} launch uninstall` if you meant to send "uninstall" as a prompt.',
 	marketplace:
-		'`omp marketplace` is not a top-level command. Use `omp plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `omp launch marketplace` if you meant to send "marketplace" as a prompt.',
+		'`{invoked} marketplace` is not a top-level command. Use `{invoked} plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `{invoked} launch marketplace` if you meant to send "marketplace" as a prompt.',
 	discover:
-		'`omp discover` is not a top-level command. Use `omp plugin discover [marketplace]` to browse available plugins, or run `omp launch discover` if you meant to send "discover" as a prompt.',
+		'`{invoked} discover` is not a top-level command. Use `{invoked} plugin discover [marketplace]` to browse available plugins, or run `{invoked} launch discover` if you meant to send "discover" as a prompt.',
 	upgrade:
-		'`omp upgrade` is not a top-level command. Use `omp plugin upgrade [name@marketplace]` to upgrade plugins, or run `omp launch upgrade` if you meant to send "upgrade" as a prompt.',
+		'`{invoked} upgrade` is not a top-level command. Use `{invoked} plugin upgrade [name@marketplace]` to upgrade plugins, or run `{invoked} launch upgrade` if you meant to send "upgrade" as a prompt.',
 	enable:
-		'`omp enable` is not a top-level command. Use `omp plugin enable <name@marketplace>` to enable a plugin, or run `omp launch enable` if you meant to send "enable" as a prompt.',
+		'`{invoked} enable` is not a top-level command. Use `{invoked} plugin enable <name@marketplace>` to enable a plugin, or run `{invoked} launch enable` if you meant to send "enable" as a prompt.',
 	disable:
-		'`omp disable` is not a top-level command. Use `omp plugin disable <name@marketplace>` to disable a plugin, or run `omp launch disable` if you meant to send "disable" as a prompt.',
-	doctor:
-		'`omp doctor` is not a top-level command. Use `omp plugin doctor` to run the health check, or run `omp launch doctor` if you meant to send "doctor" as a prompt.',
+		'`{invoked} disable` is not a top-level command. Use `{invoked} plugin disable <name@marketplace>` to disable a plugin, or run `{invoked} launch disable` if you meant to send "disable" as a prompt.',
 };
 
-// Sub-actions that make `omp marketplace <sub>` unambiguously a management
-// command even when multi-word (the reporter's `omp marketplace add xyz`,
+// Sub-actions that make `ultraworkers marketplace <sub>` unambiguously a management
+// command even when multi-word (the reporter's `ultraworkers marketplace add xyz`,
 // #4845). Mirrors the switch in `handleMarketplace` (cli/plugin-cli.ts).
 const MARKETPLACE_SUBCOMMANDS: Record<string, true> = { add: true, remove: true, rm: true, update: true, list: true };
+
+/**
+ * The name the CLI was started under, used to echo the user's own invocation
+ * back to them in a hint.
+ *
+ * `process.argv[1]` is the resolved entry, so a symlinked launcher reports the
+ * binary it points at rather than the link's name — which is the right answer
+ * here, because that binary is the one that produced the message. A source-file
+ * entry (`bun src/cli.ts`) is not a command name at all, so it falls back to
+ * {@link APP_NAME} instead of telling the user they typed `cli.ts`.
+ */
+function invokedBinaryName(): string {
+	const entry = process.argv[1];
+	if (!entry) return APP_NAME;
+	const base = entry.split(/[/\\]/).pop() ?? entry;
+	if (base.length === 0 || /\.(ts|js|mjs|cjs)$/.test(base)) return APP_NAME;
+	return base;
+}
 
 /**
  * Hint for a reserved plugin/marketplace verb used as a top-level command, or
  * `undefined` when the argv should fall through to `launch`.
  *
- * A bare verb (`omp marketplace`) always hints. A multi-word invocation only
+ * A bare verb (`ultraworkers marketplace`) always hints. A multi-word invocation only
  * hints when the arguments follow the documented plugin grammar — a marketplace
- * sub-action (`omp marketplace add …`) or a `name@marketplace` plugin id
- * (`omp uninstall foo@bar`) — so genuine prompts that merely begin with one of
- * these words (`omp list all my files`, `omp upgrade the deps`) still launch.
+ * sub-action (`ultraworkers marketplace add …`) or a `name@marketplace` plugin id
+ * (`ultraworkers uninstall foo@bar`) — so genuine prompts that merely begin with one of
+ * these words (`ultraworkers list all my files`, `ultraworkers upgrade the deps`) still launch.
  *
  * Flags (`-…`) and `@file` arguments in the verb slot are never management
  * commands; those fall through to the default `launch` command.
+ *
+ * `invokedAs` names the binary in the echoed clause. It is a parameter rather
+ * than an inline read of the process so the echo contract can be asserted
+ * directly, and so an embedded SDK call can say which name to echo.
  */
-export function reservedTopLevelWordMessage(argv: readonly string[]): string | undefined {
+export function reservedTopLevelWordMessage(
+	argv: readonly string[],
+	invokedAs: string = invokedBinaryName(),
+): string | undefined {
 	const first = argv[0];
 	if (!first || first.startsWith("-") || first.startsWith("@")) return undefined;
-	const hint = RESERVED_TOP_LEVEL_WORDS[first];
-	if (!hint) return undefined;
+	const template = RESERVED_TOP_LEVEL_WORDS[first];
+	if (!template) return undefined;
+	const hint = template.replaceAll("{invoked}", invokedAs);
 	const second = argv[1];
 	if (second === undefined) return hint;
 	if (first === "marketplace" && MARKETPLACE_SUBCOMMANDS[second]) return hint;
@@ -366,7 +581,10 @@ export function reservedTopLevelWordMessage(argv: readonly string[]): string | u
 	return undefined;
 }
 
-export type ResolvedCliArgv = { argv: string[] } | { error: string };
+/** The `--config` overlay flag, as spelled on the launch surface. */
+const CONFIG_FLAG = "--config";
+
+export type ResolvedCliArgv = { argv: string[]; configFiles?: string[] } | { error: string };
 
 /**
  * Index of the first argv token that names a registered subcommand, skipping
@@ -404,18 +622,46 @@ function isLaunchGlobalFlag(arg: string): boolean {
  * whose strict parser would otherwise reject them with a cryptic
  * `node:util.parseArgs` error (#8891). Tokens the launch tables don't recognize
  * are kept, so a subcommand's own leading flags still reach it.
+ *
+ * `--config` is the one dropped flag whose value the command still needs, so it
+ * is reported rather than discarded with the rest. Reporting it HERE rather than
+ * re-parsing the original argv is what keeps one answer: this loop already decided
+ * which tokens are launch-global and, via {@link flagConsumesValue}, which token is
+ * that flag's value — a second parse would have to re-derive both and could
+ * disagree with the stripping it is trying to explain.
  */
-function stripLaunchGlobalFlags(leading: readonly string[]): string[] {
+function stripLaunchGlobalFlags(leading: readonly string[]): { kept: string[]; configFiles: string[] } {
 	const kept: string[] = [];
+	const configFiles: string[] = [];
 	for (let index = 0; index < leading.length; index += 1) {
 		const arg = leading[index];
 		if (isLaunchGlobalFlag(arg)) {
-			if (flagConsumesValue(arg, leading[index + 1])) index += 1;
+			const consumesNext = flagConsumesValue(arg, leading[index + 1]);
+			if (arg === CONFIG_FLAG || arg.startsWith(`${CONFIG_FLAG}=`)) {
+				// `--config=<path>` carries its value inline; `--config <path>` carries
+				// the next token. Both spellings load the overlay, so both are reported
+				// rather than only the one this loop happens to see most often.
+				//
+				// Recorded only when a value is actually there. A bare trailing `--config`
+				// consumes nothing, and reporting a synthetic empty path would hand
+				// settings a filename that was never typed — which, because overlays are
+				// strict, turns a flag the user typed with no operand into a hard error
+				// about a file they never named.
+				//
+				// A blank operand is dropped by the overlay reader, not here: `--config=`
+				// after the command token never reaches this parser at all, so filtering
+				// upstream would cover the launch path and silently leave that one broken.
+				// `Settings.#loadOverlayYaml` is the one point every producer reaches.
+				const inline = arg.startsWith(`${CONFIG_FLAG}=`) ? arg.slice(CONFIG_FLAG.length + 1) : undefined;
+				const value = inline ?? (consumesNext ? leading[index + 1] : undefined);
+				if (value !== undefined) configFiles.push(value);
+			}
+			if (consumesNext) index += 1;
 			continue;
 		}
 		kept.push(arg);
 	}
-	return kept;
+	return { kept, configFiles };
 }
 
 /**
@@ -428,26 +674,39 @@ function stripLaunchGlobalFlags(leading: readonly string[]): string[] {
  */
 export function resolveCliArgv(argv: string[]): ResolvedCliArgv {
 	const first = argv[0];
-	const reservedMessage = reservedTopLevelWordMessage(argv);
-	if (reservedMessage) return { error: reservedMessage };
 	if (first === "--help" || first === "-h" || first === "--version" || first === "-v" || first === "help") {
 		return { argv };
 	}
+	// A registered verb dispatches *before* the reserved-word hint is consulted.
+	// The hint exists to explain a word core cannot route; once an extension
+	// supplies a real handler for that word, the honest answer is to run it, and
+	// the hint would otherwise turn a working command back into an error.
 	if (isSubcommand(first)) return { argv };
+	const reservedMessage = reservedTopLevelWordMessage(argv);
+	if (reservedMessage) return { error: reservedMessage };
 	// A subcommand can hide behind leading global option flags
-	// (`omp --approval-mode=yolo acp`). `run` dispatches strictly on argv[0], so
+	// (`ultraworkers --approval-mode=yolo acp`). `run` dispatches strictly on argv[0], so
 	// hoist the subcommand to the front. Launch-shaped commands share the launch
 	// flag surface, so their leading flags are forwarded and applied; every other
 	// subcommand parses only its own flags, so launch-global flags placed before
-	// it (`omp --cwd <dir> update`) are stripped rather than forwarded into a
+	// it (`ultraworkers --cwd <dir> update`) are stripped rather than forwarded into a
 	// crash (#8891). Genuine launch prompts (no trailing subcommand) are untouched.
 	const subIndex = leadingSubcommandIndex(argv);
 	if (subIndex >= 0) {
 		const sub = argv[subIndex];
 		const leading = argv.slice(0, subIndex);
 		const trailing = argv.slice(subIndex + 1);
-		const forwardedLeading = LAUNCH_FLAG_COMMANDS[sub] === true ? leading : stripLaunchGlobalFlags(leading);
-		return { argv: [sub, ...forwardedLeading, ...trailing] };
+		if (LAUNCH_FLAG_COMMANDS[sub] === true) {
+			// Launch-shaped commands share the launch flag surface and re-parse it
+			// themselves, so their leading tokens are forwarded untouched and their own
+			// parse stays the authority for every value. They are deliberately NOT routed
+			// through the recorded global channel: they pass their parsed `--config` as
+			// their own `options.configFiles`, which lands in the last merge slot, so
+			// reporting it here as well would apply one overlay twice.
+			return { argv: [sub, ...leading, ...trailing] };
+		}
+		const { kept, configFiles } = stripLaunchGlobalFlags(leading);
+		return { argv: [sub, ...kept, ...trailing], ...(configFiles.length > 0 ? { configFiles } : {}) };
 	}
 	return { argv: ["launch", ...argv] };
 }

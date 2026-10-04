@@ -14,6 +14,7 @@ import {
 	buildNpmInstallArgs,
 	buildRenameCleanupPackages,
 	downloadVerifiedBinary,
+	getBinaryName,
 	type InstalledVersionVerification,
 	isMuslLinuxForTest,
 	type ManagerUpdateSteps,
@@ -38,7 +39,7 @@ import {
 	updateViaShimTakeover,
 } from "@oh-my-pi/pi-coding-agent/cli/update-cli";
 import Update from "@oh-my-pi/pi-coding-agent/commands/update";
-import { $which, removeWithRetries } from "@oh-my-pi/pi-utils";
+import { $which, APP_NAME, removeWithRetries, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import type { CliConfig } from "@oh-my-pi/pi-utils/cli";
 import { getThemeByName, setThemeInstance } from "@oh-my-pi/pi-tui/theme";
 
@@ -169,14 +170,84 @@ describe("GitHub update credentials", () => {
 	});
 });
 
+describe("the release asset name", () => {
+	// Every `binary_path` the release workflow publishes, as basenames.
+	async function publishedAssetNames(): Promise<Set<string>> {
+		const workflow = Bun.YAML.parse(
+			await Bun.file(new URL("../../../.github/workflows/ci.yml", import.meta.url)).text(),
+		);
+		const names = new Set<string>();
+		const walk = (node: unknown): void => {
+			if (Array.isArray(node)) {
+				node.forEach(walk);
+				return;
+			}
+			if (node === null || typeof node !== "object") return;
+			const record = node as Record<string, unknown>;
+			const published = record.binary_path;
+			if (typeof published === "string" && published.includes("/")) {
+				names.add(path.basename(published));
+			}
+			Object.values(record).forEach(walk);
+		};
+		walk(workflow);
+		return names;
+	}
+
+	it("is a name the release actually publishes", async () => {
+		// The updater resolves its download by EXACT asset name, and every other
+		// test in this file passes `binaryName` in explicitly — which is why the
+		// default had no coverage at all. When it returned the display identity
+		// instead of the wire one, `resolveReleaseBinaryAsset` matched zero assets
+		// and every binary update threw for every user, with nothing red anywhere.
+		//
+		// Asserting "it starts with WIRE_NAME" would be the same constant on both
+		// sides of the equals sign and could not fail for the reason that actually
+		// broke. This compares the two independent declarations instead: the code
+		// that downloads, and the workflow that uploads.
+		const published = await publishedAssetNames();
+		expect(published.size).toBeGreaterThan(0);
+
+		const wanted = getBinaryName();
+		expect([...published], `release publishes ${[...published].join(", ")}`).toContain(wanted);
+	});
+
+	// A row that used to live here asserted `getBinaryName()` does not contain
+	// APP_NAME — a proxy for "the asset name is the wire name, not the display
+	// name", written back when those were two different strings ("omp" and
+	// "ultraworkers"). The rename made them one value, so the proxy became
+	// unsatisfiable rather than wrong, and the distinction it stood in for is no
+	// longer there to assert.
+	//
+	// Its comment recorded the failure it was written for: the three places — the
+	// exe installed, the shims retired beside it, the asset downloaded — drifted
+	// apart, leaving a silent no-op on Windows where `.ps1` outranks `.exe`. That
+	// contract did not go away with the row; it is what the test above now proves
+	// directly, by comparing the name against what CI actually uploads rather
+	// than against another constant.
+});
+
 describe("parseReportedVersion", () => {
-	it("preserves the prerelease suffix so a canary launcher verifies as up to date", () => {
+	// The identity strings are written as LITERALS here on purpose. Interpolating
+	// the constant would make the row pass for any value it is given — including
+	// a wrong one — so it could never detect the constant being wrong, which is
+	// the only thing this function is in a position to get wrong.
+	it("reads the identity a current build reports", () => {
 		// Regression: dropping `-canary.1` made a correctly installed canary
 		// build look like a stale `X.Y.Z` launcher, triggering a binary repair
 		// that rejects the prerelease GitHub release.
-		expect(parseReportedVersion("omp/18.0.6-canary.1")).toBe("18.0.6-canary.1");
-		expect(parseReportedVersion("omp/18.0.5")).toBe("18.0.5");
+		expect(parseReportedVersion("ultraworkers/18.0.6-canary.1")).toBe("18.0.6-canary.1");
+		expect(parseReportedVersion("ultraworkers/18.0.5")).toBe("18.0.5");
 		expect(parseReportedVersion("not a version")).toBeUndefined();
+	});
+
+	it("still reads the wire identity a pre-rebrand build reports", () => {
+		// Both populations exist right now — measured: the installed
+		// `~/.bun/bin/omp` prints `omp/18.2.4` while the current source prints
+		// `ultraworkers/18.4.3`. Refusing the older one makes `validateExistingUpdateTarget`
+		// call a user's own binary "not an OMP binary" and decline the update.
+		expect(parseReportedVersion("omp/18.2.4")).toBe("18.2.4");
+		expect(parseReportedVersion("omp/18.0.6-canary.1")).toBe("18.0.6-canary.1");
 	});
 
 	it("rejects version output from a different executable", () => {
@@ -426,7 +497,7 @@ describe("update-cli install target detection", () => {
 	);
 
 	it.skipIf(process.platform === "win32")(
-		"refuses a foreign native target that does not report an OMP version",
+		"refuses a foreign native target that does not report an ultraworkers version",
 		async () => {
 			const dir = await makeTempDir();
 			const aliasPath = path.join(dir, "omp");
@@ -443,7 +514,7 @@ describe("update-cli install target detection", () => {
 					fetchImpl,
 					validateExistingTarget: target.validateExistingTarget,
 				}),
-			).rejects.toThrow("does not report an OMP version when run directly");
+			).rejects.toThrow("does not report an ultraworkers version when run directly");
 			expect(fetchImpl).not.toHaveBeenCalled();
 		},
 	);
@@ -552,6 +623,19 @@ describe("update-cli package manager commands", () => {
 	it("targets the Homebrew tap formula and switches to reinstall for forced updates", () => {
 		expect(buildHomebrewUpdateArgs(false)).toEqual(["upgrade", "can1357/tap/omp"]);
 		expect(buildHomebrewUpdateArgs(true)).toEqual(["reinstall", "can1357/tap/omp"]);
+	});
+
+	// The detector probes BOTH spellings, so the upgrade has to be able to name
+	// the one that answered. Pinning only the constant above would stay green
+	// against the defect this covers: the detected name never reached the
+	// command, so an install living under the other spelling was upgraded by
+	// name rather than in place.
+	it("upgrades the formula it was told was installed, not the hardcoded one", () => {
+		expect(buildHomebrewUpdateArgs(false, "ultraworkers")).toEqual(["upgrade", "ultraworkers"]);
+		expect(buildHomebrewUpdateArgs(true, "ultraworkers")).toEqual(["reinstall", "ultraworkers"]);
+		// The default is the historical command, so a caller that never probed is
+		// unaffected — stated here so the fallback cannot quietly change.
+		expect(buildHomebrewUpdateArgs(false, undefined)).toEqual(["upgrade", "can1357/tap/omp"]);
 	});
 
 	it("targets the mise GitHub backend and overrides release-age settings for attended updates", () => {
@@ -1141,8 +1225,8 @@ describe("update-cli release binary integrity", () => {
 	it("rejects an altered version-reporting executable before replacing the installed binary", async () => {
 		const dir = await makeTempDir();
 		const targetPath = path.join(dir, binaryName);
-		const installed = "#!/bin/sh\necho omp/17.0.8\n";
-		const altered = "#!/bin/sh\necho omp/17.1.2\n";
+		const installed = `#!/bin/sh\necho ${APP_NAME}/17.0.8\n`;
+		const altered = `#!/bin/sh\necho ${APP_NAME}/17.1.2\n`;
 		const expectedDigest = `sha256:${Bun.SHA256.hash("x".repeat(Buffer.byteLength(altered)), "hex")}`;
 		await Bun.write(targetPath, installed);
 		await fs.chmod(targetPath, 0o755);
@@ -1218,7 +1302,7 @@ describe("update-cli binary replacement", () => {
 				expectedVersion: "15.1.8",
 				verifyInstalledVersion: async () => ({ ok: false, path: targetPath }),
 			}),
-		).rejects.toThrow("restored previous omp binary");
+		).rejects.toThrow(`restored previous ${APP_NAME} binary`);
 
 		expect(await Bun.file(targetPath).text()).toBe("old binary");
 		expect(await Bun.file(tempPath).exists()).toBe(false);
@@ -1494,13 +1578,13 @@ describe("update-cli script-shim takeover", () => {
 		}
 	}
 
-	it("installs omp.exe beside the shims and retires them", async () => {
+	it("installs the exe beside the shims and retires them", async () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
 		// Real executable, no injected verifier: the takeover must verify the
 		// exe by explicit path — $which cached the shim path before it was
 		// renamed away, so a PATH re-resolution would fail here.
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho ${APP_NAME}/${version}\n`;
 
 		await updateViaShimTakeover(path.join(dir, "omp.cmd"), version, {
 			binaryName,
@@ -1508,7 +1592,7 @@ describe("update-cli script-shim takeover", () => {
 			githubToken: "test-token",
 		});
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).text()).toBe(exe);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).exists()).toBe(false);
 		}
@@ -1519,7 +1603,7 @@ describe("update-cli script-shim takeover", () => {
 	it("installs a canary prerelease binary only when the caller opts in", async () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho ${APP_NAME}/${version}\n`;
 
 		// A canary release is published as a prerelease: without opt-in the
 		// takeover refuses the asset and leaves the shims intact.
@@ -1530,7 +1614,7 @@ describe("update-cli script-shim takeover", () => {
 				githubToken: "test-token",
 			}),
 		).rejects.toThrow("is a prerelease");
-		expect(await Bun.file(path.join(dir, "omp.exe")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).exists()).toBe(false);
 
 		// allowPrerelease threads through to the asset resolver, so the canary
 		// exe installs and the shims are retired.
@@ -1540,7 +1624,7 @@ describe("update-cli script-shim takeover", () => {
 			allowPrerelease: true,
 			githubToken: "test-token",
 		});
-		expect(await Bun.file(path.join(dir, "omp.exe")).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).text()).toBe(exe);
 	});
 
 	it("drops bun's launcher metadata when the standalone binary takes the .exe over", async () => {
@@ -1553,7 +1637,7 @@ describe("update-cli script-shim takeover", () => {
 		const marker = path.join(dir, "omp.bunx");
 		await Bun.write(targetPath, "bun shim");
 		await Bun.write(marker, "bun launcher metadata");
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho ${APP_NAME}/${version}\n`;
 
 		await updateViaBinaryAt(targetPath, version, {
 			binaryName,
@@ -1569,7 +1653,7 @@ describe("update-cli script-shim takeover", () => {
 	it.skipIf(process.platform === "win32")("reports the physical binary path verified after an update", async () => {
 		const dir = await makeTempDir();
 		const targetPath = path.join(dir, "omp");
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho ${APP_NAME}/${version}\n`;
 		await Bun.write(targetPath, "old binary");
 		const logSpy = spyOn(console, "log").mockImplementation(() => {});
 
@@ -1590,7 +1674,7 @@ describe("update-cli script-shim takeover", () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
 		// Executable runs but reports the previous version -> full rollback.
-		const exe = "#!/bin/sh\necho omp/17.2.12\n";
+		const exe = `#!/bin/sh\necho ${APP_NAME}/17.2.12\n`;
 
 		await expect(
 			updateViaShimTakeover(path.join(dir, "omp.cmd"), version, {
@@ -1598,9 +1682,11 @@ describe("update-cli script-shim takeover", () => {
 				fetchImpl: makeFetch(exe),
 				githubToken: "test-token",
 			}),
-		).rejects.toThrow(/still reports 17\.2\.12 \(expected 18\.0\.0\); restored previous omp launcher/);
+		).rejects.toThrow(
+			new RegExp(`still reports 17\\.2\\.12 \\(expected 18\\.0\\.0\\); restored previous ${APP_NAME} launcher`),
+		);
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).exists()).toBe(false);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).text()).toBe(shims[name]);
 		}
@@ -1621,7 +1707,7 @@ describe("update-cli script-shim takeover", () => {
 	it("rewrites an immovable precedence-winning shim as a forwarder to the exe", async () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho ${APP_NAME}/${version}\n`;
 		const renameSpy = renameLockingPs1();
 		try {
 			await updateViaShimTakeover(path.join(dir, "omp.cmd"), version, {
@@ -1633,18 +1719,18 @@ describe("update-cli script-shim takeover", () => {
 			renameSpy.mockRestore();
 		}
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).text()).toBe(exe);
 		expect(await Bun.file(path.join(dir, "omp")).exists()).toBe(false);
 		expect(await Bun.file(path.join(dir, "omp.cmd")).exists()).toBe(false);
 		// PowerShell resolves .ps1 before .exe: the locked shim must now exec
 		// the new binary instead of keeping its old body.
-		expect(await Bun.file(path.join(dir, "omp.ps1")).text()).toContain('& "$PSScriptRoot\\omp.exe" @args');
+		expect(await Bun.file(path.join(dir, "omp.ps1")).text()).toContain(`& "$PSScriptRoot\\${WIRE_NAME}.exe" @args`);
 	});
 
 	it("restores a forwarded shim's original body when verification fails", async () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
-		const exe = "#!/bin/sh\necho omp/17.2.12\n";
+		const exe = `#!/bin/sh\necho ${APP_NAME}/17.2.12\n`;
 		const renameSpy = renameLockingPs1();
 		try {
 			await expect(
@@ -1653,12 +1739,12 @@ describe("update-cli script-shim takeover", () => {
 					fetchImpl: makeFetch(exe),
 					githubToken: "test-token",
 				}),
-			).rejects.toThrow("restored previous omp launcher");
+			).rejects.toThrow(`restored previous ${APP_NAME} launcher`);
 		} finally {
 			renameSpy.mockRestore();
 		}
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).exists()).toBe(false);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).text()).toBe(shims[name]);
 		}

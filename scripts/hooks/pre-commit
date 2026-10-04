@@ -1,0 +1,98 @@
+#!/bin/sh
+# A commit must not read the repository's shared index.
+#
+# WHY THIS EXISTS. Several agents work this tree at once, so the index belongs to
+# the whole tree rather than to whoever staged last. `git commit` with no pathspec
+# takes every staged row in it. Measured twice on 2026-10-03: `d985fe7dc9` and
+# `f9b23a9cba` each carried another session's rows under a subject that described
+# only the committer's own change. Nothing warned — git reported success.
+#
+# WHY A HOOK AND NOT A DOCUMENT. AGENTS.md already forbade a bare `git commit`,
+# and it was still done twice in one day. A rule with no enforcement is a slogan;
+# this is the enforcement.
+#
+# HOW IT DISTINGUISHES. A hook cannot be told which paths the caller meant, but
+# git does leak the discriminator: when a commit is path-scoped (`--only`, or any
+# tool that builds its own index) git runs the hook with GIT_INDEX_FILE pointing at
+# a temporary index. A bare commit runs it with the repository's real one. Measured:
+#
+#   git commit -m msg                        GIT_INDEX_FILE=.git/index
+#   git commit -m msg --only -- path         GIT_INDEX_FILE=.git/next-index-21904.lock
+#
+# So the shared index is exactly the case where the rows cannot be attributed, and
+# it is exactly the case this refuses.
+
+set -eu
+
+git_dir=$(git rev-parse --git-dir)
+
+# Resolve both paths so a relative GIT_INDEX_FILE and an absolute one compare equal.
+abs() {
+	case "$1" in
+		/*) printf '%s' "$1" ;;
+		*) printf '%s/%s' "$(pwd)" "$1" ;;
+	esac
+}
+
+shared_index=$(abs "$git_dir/index")
+
+if [ -n "${GIT_INDEX_FILE:-}" ]; then
+	case_index=$(abs "$GIT_INDEX_FILE")
+	case_name=${case_index##*/}
+	# A path-scoped commit runs against a throwaway index holding exactly the rows
+	# the caller named, and git names that file `next-index-<pid>.lock`. It is the
+	# NAME that identifies it, not the directory: `git commit -a` and
+	# `git commit --include` also run against something other than `$git_dir/index`
+	# -- they get `$git_dir/index.lock` -- so comparing paths alone let them
+	# through, and each of them stages every tracked file in the tree, which is
+	# this hazard wearing a flag. Measured, all three forms:
+	#
+	#   git commit -qm msg                    GIT_INDEX_FILE=.git/index
+	#   git commit -qam msg                   GIT_INDEX_FILE=.git/index.lock
+	#   git commit -qm msg --only -- path     GIT_INDEX_FILE=.git/next-index-<pid>.lock
+	case "$case_name" in
+	next-index-*.lock)
+		# Path-scoped: git built a throwaway index for this invocation, so the
+		# rows in it are the ones the caller named and nobody else's.
+		exit 0
+		;;
+	index | index.lock)
+		# The shared index, or the bulk-stage forms that lock and rewrite it in
+		# place. Both hold every row on this tree, so both fall through to the
+		# refusal below.
+		;;
+	*)
+		# Any other index is one git built for this invocation.
+		exit 0
+		;;
+	esac
+fi
+
+# A commit with nothing staged is git's own error to report. Refusing here would
+# replace a clear message with a confusing one.
+if [ -z "$(git diff --cached --name-only)" ]; then
+	exit 0
+fi
+
+# The first commit has no peers to collide with: its index is the initial import,
+# not a shared staging area. `commit-scoped.ts` needs a HEAD to build against, so
+# refusing here would leave no correct tool at all.
+if ! git rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
+	exit 0
+fi
+
+staged=$(git diff --cached --name-only | wc -l | tr -d ' ')
+echo "refusing a bare commit: the index holds $staged staged path(s), and on this" >&2
+echo "tree it belongs to every agent, not to you. A bare commit takes all of them." >&2
+echo >&2
+echo "  stage only your own work, then commit with the scoped tool:" >&2
+echo "    bun scripts/stage-files.ts <file>...        # a file you own end to end" >&2
+echo "    bun scripts/rename/stage-lines.ts <file> <line>...   # a file a peer is editing" >&2
+echo "    bun scripts/commit-scoped.ts <file>... -m \"<msg>\"" >&2
+echo >&2
+echo "  git commit --only is NOT the answer: it rebuilds each path from the" >&2
+echo "  working tree, so it takes a peer's uncommitted edit inside a file you name." >&2
+echo >&2
+echo "  If every one of those rows really is yours, commit-scoped.ts names them" >&2
+echo "  explicitly and records the same content." >&2
+exit 1

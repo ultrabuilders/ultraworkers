@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { CONFIG_DIR_NAME, getConfigAgentDirName, getProjectDir } from "@oh-my-pi/pi-utils";
+import { CONFIG_DIR_NAME, getConfigAgentDirName, getProjectDir, PROJECT_AGENT_DIR_NAME } from "@oh-my-pi/pi-utils";
 import { isUserSourceEnabled } from "./capability";
 import { resolveClaudePaths } from "./config/claude-paths";
 import { expandTilde } from "./tools/path-utils";
@@ -9,7 +9,16 @@ import { expandTilde } from "./tools/path-utils";
 export * from "./config/config-file";
 
 const priorityList = [
-	{ dir: CONFIG_DIR_NAME, globalAgentDir: getConfigAgentDirName },
+	{
+		dir: CONFIG_DIR_NAME,
+		// Project-scoped, and pinned independently of `dir`. This one lives in the
+		// user's repository and is normally committed to it, so the home-side rename
+		// must never reach it — whereas the user-level base above is resolved at
+		// startup and is expected to follow that rename. `dir` remains the identity
+		// both levels compare against, so it stays the home-scoped name.
+		projectDir: PROJECT_AGENT_DIR_NAME,
+		globalAgentDir: getConfigAgentDirName,
+	},
 	{ dir: ".claude" },
 	{ dir: ".codex" },
 	{ dir: ".gemini" },
@@ -51,8 +60,8 @@ export function walkUpForPackageDir(startDir: string): string | undefined {
  *
  * Callers MUST treat `undefined` as "no package assets available" and skip the
  * lookup. NEVER fall back to the user's `cwd` here: that conflates the host
- * project with omp's own assets and was the source of issue #1423 (the host
- * project's `CHANGELOG.md` rendered as omp's startup changelog).
+ * project with ultraworkers' own assets and was the source of issue #1423 (the host
+ * project's `CHANGELOG.md` rendered as ultraworkers' startup changelog).
  */
 export function getPackageDir(): string | undefined {
 	const envDir = process.env.PI_PACKAGE_DIR;
@@ -63,7 +72,7 @@ export function getPackageDir(): string | undefined {
 }
 
 /**
- * Path to omp's own `CHANGELOG.md`, or `undefined` when the package directory
+ * Path to ultraworkers' own `CHANGELOG.md`, or `undefined` when the package directory
  * cannot be resolved (e.g. inside `bun --compile` binaries that don't bundle
  * package assets). Callers MUST skip changelog parsing when this is undefined;
  * see issue #1423.
@@ -87,8 +96,8 @@ const USER_CONFIG_BASES = priorityList.map(({ dir, globalAgentDir }) => ({
 	name: dir,
 }));
 
-const PROJECT_CONFIG_BASES = priorityList.map(({ dir }) => ({
-	base: dir,
+const PROJECT_CONFIG_BASES = priorityList.map(({ dir, projectDir }) => ({
+	base: projectDir ?? dir,
 	name: dir,
 }));
 

@@ -271,7 +271,7 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const releaseFirstRebuild = Promise.withResolvers<void>();
 		const releaseSecondRebuild = Promise.withResolvers<void>();
 		let rebuildCount = 0;
-		const { session } = newSession(async toolNames => {
+		const { session, toolRegistry } = newSession(async toolNames => {
 			rebuildCount++;
 			if (rebuildCount === 1) {
 				firstRebuildStarted.resolve();
@@ -295,8 +295,17 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 
 		releaseFirstRebuild.resolve();
 		await Promise.all([olderRefresh, newerRefresh]);
-		expect(rebuildCount).toBe(2);
-		expect(session.systemPrompt).toEqual(["tools:read,mcp__nucleus_search,mcp__nucleus_fetch"]);
+		// The second refresh pushes `fetch` but does not activate it, so the active
+		// set is unchanged and there is nothing new to commit: one rebuild, not two.
+		expect(rebuildCount).toBe(1);
+		// `fetch` is REGISTERED but NOT ACTIVE — that boundary is the whole point of
+		// the trust fix. Asserting only "the registry has it" would pass on the
+		// unpatched tree, so both halves are asserted: the model can see the tool in
+		// the registry, but it never reached the prompt, because activating it is the
+		// user's decision and this server was already trusted when it pushed it.
+		expect([...toolRegistry.keys()]).toContain(fetch.name);
+		expect(session.getEnabledToolNames()).not.toContain(fetch.name);
+		expect(session.systemPrompt).toEqual(["tools:read,mcp__nucleus_search"]);
 	});
 
 	it("serializes explicit prompt refreshes with registry mutations", async () => {
@@ -413,8 +422,12 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const uninstructed = createMcpCustomTool("mcp__silent_ping", "silent", "ping", "Ping silently");
 		const searchPrompt = 'mounted:"search"=xd://mcp__nucleus_search';
 		const searchAndUninstructedPrompt = 'mounted:"search"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping';
-		const searchFetchAndUninstructedPrompt =
-			'mounted:"search"=xd://mcp__nucleus_search,"fetch"=xd://mcp__nucleus_fetch,"ping"=xd://mcp__silent_ping';
+		// Only `ping`'s route is mounted once `search` leaves the catalog.
+		const uninstructedOnlyPrompt = 'mounted:"ping"=xd://mcp__silent_ping';
+		// The projection lists routes in the order they were MOUNTED, not catalog
+		// order: `search` and `ping` were mounted before `fetch` was pushed.
+		const searchPingFetchPrompt =
+			'mounted:"search"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping,"fetch"=xd://mcp__nucleus_fetch';
 
 		await session.refreshMCPTools([search]);
 		expect(rebuildCount).toBe(1);
@@ -430,23 +443,45 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 
 		// Global route guidance is independent of optional server instructions.
 		// Adding a route for a server absent from the instructions map must rebuild.
+		// `2aac13437d` gates activation, so this refresh is a push: `uninstructed`
+		// arrives registered but NOT mounted. What this test measures is the MOUNTED
+		// route projection, so the mount has to be declared for the route to exist —
+		// added to the current sets rather than replacing them, because that is what a
+		// real activation does.
 		await session.refreshMCPTools([equivalentSearch, uninstructed]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), uninstructed.name],
+			[...session.getMountedXdevToolNames(), uninstructed.name],
+		);
 		expect(rebuildCount).toBe(2);
 		expect(session.systemPrompt).toEqual([searchAndUninstructedPrompt]);
 
 		await session.refreshMCPTools([equivalentSearch, fetch, uninstructed]);
+		// `fetch` arrives on a PUSH, so `2aac13437d` registers it without mounting it;
+		// declaring the mount is what adds its route. It lands LAST because the
+		// mounted set keeps the order names were mounted in — `search` and `ping`
+		// were already there — not the order the catalog happens to list them.
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		expect(rebuildCount).toBe(3);
-		expect(session.systemPrompt).toEqual([searchFetchAndUninstructedPrompt]);
+		expect(session.systemPrompt).toEqual([searchPingFetchPrompt]);
 
-		const fetchSearchAndUninstructedPrompt =
-			'mounted:"fetch"=xd://mcp__nucleus_fetch,"search"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping';
+		// Reordering the arriving catalog does NOT reorder the projection. The trust
+		// fix made the mounted set follow the order the USER already selected —
+		// `#applyToolPresentation` intersects against the existing mount set, so a
+		// name already mounted keeps its position and a genuinely new one appends.
+		// The pre-fix expectation was `fetch` first; that shape is no longer
+		// reachable, so what is asserted here is the retention itself: the same
+		// projection, and a rebuild that is a no-op rather than a reorder.
 		await session.refreshMCPTools([fetch, equivalentSearch, uninstructed]);
-		expect(rebuildCount).toBe(4);
-		expect(session.systemPrompt).toEqual([fetchSearchAndUninstructedPrompt]);
+		expect(session.systemPrompt).toEqual([searchPingFetchPrompt]);
 
 		const replacementSearch = createMcpCustomTool("mcp__nucleus_search", "nucleus", "search", "Search nucleus");
+		// `fetch` is absent from this catalog, so the refresh drops its route: a
+		// server that stops advertising a tool must stop mounting it.
 		await session.refreshMCPTools([replacementSearch, uninstructed]);
-		expect(rebuildCount).toBe(5);
 		expect(session.systemPrompt).toEqual([searchAndUninstructedPrompt]);
 		const stableLabel = replacementSearch.label;
 		const reownedSearch = {
@@ -455,7 +490,10 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		};
 		// Ownership alone is not rendered in the global route projection.
 		await session.refreshMCPTools([reownedSearch, uninstructed]);
-		expect(rebuildCount).toBe(5);
+		// One lower than the pre-fix sequence: the refresh that dropped `fetch`
+		// rebuilt nothing (the mounted set no longer mentioned it), so the counter
+		// never advanced for that step.
+		expect(rebuildCount).toBe(4);
 		expect(session.systemPrompt).toEqual([searchAndUninstructedPrompt]);
 
 		const renamedOriginalSearch = {
@@ -465,15 +503,23 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const renamedOriginalAndUninstructedPrompt =
 			'mounted:"lookup"=xd://mcp__nucleus_search,"ping"=xd://mcp__silent_ping';
 		await session.refreshMCPTools([renamedOriginalSearch, uninstructed]);
-		expect(rebuildCount).toBe(6);
+		expect(rebuildCount).toBe(5);
 		expect(session.systemPrompt).toEqual([renamedOriginalAndUninstructedPrompt]);
 
 		const remountedSearch = {
 			...createMcpCustomTool("mcp__archive_lookup", "archive", "lookup", "Search nucleus"),
 			label: stableLabel,
 		};
-		const remountedAndUninstructedPrompt = 'mounted:"lookup"=xd://mcp__archive_lookup,"ping"=xd://mcp__silent_ping';
+		// `ping` keeps its earlier mount position; the re-mounted lookup appends after it.
+		const remountedAndUninstructedPrompt = 'mounted:"ping"=xd://mcp__silent_ping,"lookup"=xd://mcp__archive_lookup';
+		// `mcp__archive_lookup` is a DIFFERENT NAME from `mcp__nucleus_search` — the
+		// owner changed, not just the label — so the trust fix treats it as a push and
+		// mounts nothing. Declaring the mount is what puts its route back.
 		await session.refreshMCPTools([remountedSearch, uninstructed]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), remountedSearch.name],
+			[...session.getMountedXdevToolNames(), remountedSearch.name],
+		);
 		expect(rebuildCount).toBe(7);
 		expect(session.systemPrompt).toEqual([remountedAndUninstructedPrompt]);
 
@@ -493,10 +539,10 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		expect(renderedPrompts).toEqual([
 			searchPrompt,
 			searchAndUninstructedPrompt,
-			searchFetchAndUninstructedPrompt,
-			fetchSearchAndUninstructedPrompt,
+			searchPingFetchPrompt,
 			searchAndUninstructedPrompt,
 			renamedOriginalAndUninstructedPrompt,
+			uninstructedOnlyPrompt,
 			remountedAndUninstructedPrompt,
 			remountedPrompt,
 		]);
@@ -587,10 +633,17 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const a = createMcpCustomTool("mcp__nucleus_search", "nucleus", "search", "Search");
 		const b = createMcpCustomTool("mcp__nucleus_explain", "nucleus", "explain", "Explain");
 
-		// Connected MCP tools are all enabled after refresh.
+		// NOT "connected MCP tools are all enabled after refresh" — `2aac13437d` made that
+		// false. The trust fix treats a refresh as a *push* whenever the registry already held
+		// MCP tools, so `explain` arrives registered and visible but NOT active. This session
+		// already carries `search`, so the push branch is the one under test. The boundary is
+		// registered ≠ active, so activate it the way a user would rather than asserting the
+		// refresh did it: everything below then measures the active set, which is what the
+		// shrink/restore cycle is actually about.
 		await session.refreshMCPTools([a, b]);
+		await session.setActiveToolsByName(["read", "mcp__nucleus_search", "mcp__nucleus_explain"]);
 		const baseline = rebuildCount;
-		expect(baseline).toBeGreaterThanOrEqual(1);
+		expect(session.getEnabledToolNames()).toEqual(["read", "mcp__nucleus_search", "mcp__nucleus_explain"]);
 
 		// Remove one active tool: the active list shrinks, so rebuild must fire.
 		await session.setActiveToolsByName(["read", "mcp__nucleus_search"]);
@@ -790,7 +843,7 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		expect(session.getSkillHintVisible()).toBe(true);
 	});
 
-	it("rebuilds when the refresh argument tool order changes", async () => {
+	it("ignores the refresh argument tool order once the tools are active", async () => {
 		let rebuildCount = 0;
 		const { session } = newSession(async toolNames => {
 			rebuildCount++;
@@ -803,10 +856,21 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		// All connected MCP tools are active, so their ordering contributes to the
 		// rendered prompt and changing it must rebuild.
 		await session.refreshMCPTools([a, b]);
-		expect(rebuildCount).toBe(1);
+		await session.setActiveToolsByName([...session.getActiveToolNames(), a.name, b.name]);
+		const activeBefore = [...session.getActiveToolNames()];
+		const promptBefore = [...session.systemPrompt];
+		const countBefore = rebuildCount;
 
+		// Reordering the arriving catalog changes nothing the model or the user can
+		// observe: a refresh carries the active set over in the order the user
+		// already selected, so the rebuilt signature is unchanged and no rebuild
+		// fires. Asserting the old "ordering must rebuild" would pin a behaviour the
+		// trust fix deliberately dropped — retention is by prior selection, not by
+		// the order the server happened to answer in.
 		await session.refreshMCPTools([b, a]);
-		expect(rebuildCount).toBe(2);
+		expect(session.getActiveToolNames()).toEqual(activeBefore);
+		expect(session.systemPrompt).toEqual(promptBefore);
+		expect(rebuildCount).toBe(countBefore);
 	});
 
 	it("rebuilds when an MCP tool's label changes", async () => {
@@ -1019,6 +1083,10 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		await firstCallStarted.promise;
 		await session.refreshMCPTools([search]);
 		await session.refreshMCPTools([search, fetch]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		releaseFirstCall.resolve();
 		await firstPrompt;
 		expect(rebuildCount).toBe(2);
@@ -1117,6 +1185,15 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 			.spyOn(SessionMaintenance.prototype, "runPrePromptCompactionIfNeeded")
 			.mockImplementationOnce(async () => {
 				await session.refreshMCPTools([search, fetch]);
+				// `2aac13437d` gates activation: this refresh is a push, so `fetch` is
+				// registered and visible but not mounted. The notice under test is the
+				// MOUNTED-route delta, so the mount has to be declared for the delta to
+				// exist — adding it to the current mounted set rather than replacing it,
+				// because that is what a real activation does.
+				await session.setActiveToolPresentation(
+					[...session.getEnabledToolNames(), fetch.name],
+					[...session.getMountedXdevToolNames(), fetch.name],
+				);
 			});
 		await session.prompt("first");
 
@@ -1242,6 +1319,13 @@ These tools became available:
 
 		// The already-announced device reconnects: no new notice is spliced in.
 		await session.refreshMCPTools([search]);
+		// "Reconnects" means it becomes mounted again. `2aac13437d` gates activation, so
+		// the refresh alone leaves it registered-but-unmounted and nothing reconnects —
+		// which would make this case pass for the wrong reason.
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), search.name],
+			[...session.getMountedXdevToolNames(), search.name],
+		);
 		await session.prompt("hello");
 		const afterReconnect = session.agent.state.messages.filter(
 			message => message.role === "custom" && message.customType === "xdev-mount-notice",
@@ -1251,6 +1335,10 @@ These tools became available:
 
 		// A genuinely new device still announces, and only for itself.
 		await session.refreshMCPTools([search, fetch]);
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		await session.prompt("again");
 		const afterNewDevice = session.agent.state.messages.filter(
 			(message): message is CustomMessage => message.role === "custom" && message.customType === "xdev-mount-notice",
@@ -1284,6 +1372,13 @@ These tools became available:
 
 		// A later device the next rebuild also exposes stays notice-free too.
 		await session.refreshMCPTools([search, fetch]);
+		// Same push branch: `fetch` is registered but unmounted until the presentation says
+		// so. The assertion below is about the mounted catalog the rebuild renders into the
+		// base prompt, so the mount is a precondition here rather than the subject.
+		await session.setActiveToolPresentation(
+			[...session.getEnabledToolNames(), fetch.name],
+			[...session.getMountedXdevToolNames(), fetch.name],
+		);
 		await session.prompt("again");
 		expect(session.systemPrompt.join("\n")).toContain("mcp__nucleus_fetch");
 		expect(
@@ -1604,6 +1699,14 @@ These tools became available:
 		const oldTool = createMcpCustomTool("mcp__nucleus_old", "nucleus", "old", "Old tool");
 		const newTool = createMcpCustomTool("mcp__nucleus_new", "nucleus", "new", "New tool");
 		await session.refreshMCPTools([oldTool]);
+		// `2aac13437d` gates activation, and this registry already held MCP tools, so the
+		// refresh above was a push: `oldTool` arrived registered but neither active nor
+		// mounted. Declare the presentation the way a first connection would, so the swap
+		// below genuinely changes both the active set and the mounted-route projection.
+		// Without this the active set never moves, no rebuild runs, and a rebuild that never
+		// runs cannot fail — the rollback this test exists for would be asserted against a
+		// promise that quietly resolves.
+		await session.setActiveToolPresentation([...session.getEnabledToolNames(), oldTool.name], [oldTool.name]);
 		failRebuild = true;
 
 		await expect(session.refreshMCPTools([newTool])).rejects.toThrow("rebuild failed");
@@ -1613,6 +1716,10 @@ These tools became available:
 
 		failRebuild = false;
 		await session.refreshMCPTools([newTool]);
+		// Same push branch on the way out: `newTool` is registered but not mounted until the
+		// presentation says so, so the mounted assertion below is about an explicit step
+		// rather than about the refresh having done it implicitly.
+		await session.setActiveToolPresentation([...session.getEnabledToolNames(), newTool.name], [newTool.name]);
 		expect(session.getToolByName(oldTool.name)).toBeUndefined();
 		expect(session.getToolByName(newTool.name)).toBeDefined();
 		expect(session.getMountedXdevToolNames()).toContain(newTool.name);

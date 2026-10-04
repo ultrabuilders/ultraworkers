@@ -28,7 +28,7 @@ describe("AgentSession tool-call loop guard", () => {
 	let session: AgentSession | undefined;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-tool-call-loop-guard-");
+		tempDir = TempDir.createSync("@ultraworkers-tool-call-loop-guard-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("openai", "openai-test-key");
 	});

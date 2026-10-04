@@ -36,7 +36,7 @@ describe("AgentSession bash session ownership", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-bash-session-owner-");
+		tempDir = TempDir.createSync("@ultraworkers-bash-session-owner-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");

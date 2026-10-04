@@ -3,11 +3,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { FileType, glob } from "@oh-my-pi/pi-natives";
 import {
-	CONFIG_DIR_NAME,
 	getAgentDir,
 	getConfigDirName,
+	PROJECT_AGENT_DIR_NAME,
 	getPluginsDir,
 	getProjectDir,
+	logger,
 	parseFrontmatter,
 	tryParseJson,
 } from "@oh-my-pi/pi-utils";
@@ -44,7 +45,7 @@ export const SOURCE_PATHS = {
 		get userAgent() {
 			return `${getConfigDirName()}/agent`;
 		},
-		projectDir: CONFIG_DIR_NAME,
+		projectDir: PROJECT_AGENT_DIR_NAME,
 	},
 	claude: {
 		userBase: ".claude",
@@ -428,8 +429,8 @@ export interface ScanSkillsFromDirOptions {
 	includeSelf?: boolean;
 	/**
 	 * Registry/CLI origin of the plugin root supplying these skills, forwarded
-	 * to {@link SourceMeta.origin} so user-scope gating can tell omp's own
-	 * installs (`omp`, `plugin-dir`) from the foreign Claude tree (`claude`).
+	 * to {@link SourceMeta.origin} so user-scope gating can tell ultraworkers' own
+	 * installs (`ultraworkers`, `plugin-dir`) from the foreign Claude tree (`claude`).
 	 */
 	origin?: string;
 	/**
@@ -775,7 +776,16 @@ async function discoverLinkedExtensionModuleFiles(dir: string): Promise<{
 	indexFiles: Array<{ path: string }>;
 	packageJsonFiles: Array<{ path: string }>;
 }> {
-	const entries = await readDirEntries(dir);
+	// `readDirEntries` hands back the module-level `dirCache` array BY REFERENCE, so
+	// sorting it in place would reorder the cache for every other consumer sharing it
+	// (builtin, cline, gemini, ultraworkers-extension-roots, ultraworkers-plugins) and for this file's
+	// own three other call sites. Copy first.
+	//
+	// This sort is load-bearing on its own: the `Promise.all` below pushes into the
+	// shared arrays from inside its callbacks, so the result order is I/O-completion
+	// order. A post-sort in `discoverExtensionPaths` cannot repair that, because by
+	// then the ordering information is already lost.
+	const entries = [...(await readDirEntries(dir))].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 	const indexFiles: Array<{ path: string }> = [];
 	const packageJsonFiles: Array<{ path: string }> = [];
 
@@ -814,10 +824,31 @@ async function readExtensionModuleManifest(
 	const content = await readFile(packageJsonPath);
 	if (!content) return null;
 
-	const pkg = tryParseJson<{ omp?: ExtensionModuleManifest; pi?: ExtensionModuleManifest }>(content);
-	const manifest = pkg?.omp ?? pkg?.pi;
+	const pkg = tryParseJson<Record<string, unknown>>(content);
+	const manifest = (pkg?.omp ?? pkg?.pi) as ExtensionModuleManifest | undefined;
 	if (manifest && typeof manifest === "object") {
 		return manifest;
+	}
+	// A manifest filed under a key this loader does not read produces an extension
+	// that never loads and says nothing: no error, no warning, the subdirectory is
+	// just skipped. That is worth a warning only when the value actually has the
+	// shape of a manifest — an `extensions` array — so that the many ordinary
+	// package.json files under an extensions directory (name, version, main, …)
+	// stay silent. Naming the key that was found and the keys that are read is the
+	// whole fix: an author who filed it under the brand name learns the real key.
+	const unreadKeys = Object.keys(pkg ?? {}).filter(key => {
+		if (key === "omp" || key === "pi") return false;
+		const value = pkg?.[key];
+		return (
+			typeof value === "object" && value !== null && Array.isArray((value as { extensions?: unknown }).extensions)
+		);
+	});
+	if (unreadKeys.length > 0) {
+		logger.warn(
+			`${packageJsonPath}: ignoring extension manifest key(s) ${unreadKeys
+				.map(k => `"${k}"`)
+				.join(", ")}; only "omp" and "pi" are read, so nothing was loaded from this package.json`,
+		);
 	}
 	return null;
 }
@@ -828,7 +859,13 @@ async function readExtensionModuleManifest(
  * Discovery rules:
  * 1. Direct files: `extensions/*.ts` or `*.js` → load
  * 2. Subdirectory with index: `extensions/<ext>/index.ts` or `index.js` → load
- * 3. Subdirectory with package.json: `extensions/<ext>/package.json` with "omp"/"pi" field → load declared paths
+ * 3. Subdirectory with package.json: `extensions/<ext>/package.json` with an
+ *    `"omp"` or `"pi"` field → load declared paths
+ *
+ * "ultraworkers" is this project's brand, not a manifest key: it appears throughout
+ * this file in prose and as a plugin-root origin tag, and none of those are read
+ * from a package.json here. A manifest filed under it loads nothing, and is now
+ * warned about rather than skipped in silence (see {@link readExtensionModuleManifest}).
  *
  * No recursion beyond one level. Complex packages must use package.json manifest.
  * Uses native glob for fast filesystem scanning with gitignore support.
@@ -1044,9 +1081,9 @@ export async function resolveActiveProjectRegistryPath(cwd: string): Promise<str
 	let dir = path.resolve(cwd);
 	while (dir !== homeDir) {
 		try {
-			const stat = await fs.promises.stat(path.join(dir, getConfigDirName()));
+			const stat = await fs.promises.stat(path.join(dir, PROJECT_AGENT_DIR_NAME));
 			if (stat.isDirectory()) {
-				return path.join(dir, getConfigDirName(), "plugins", "installed_plugins.json");
+				return path.join(dir, PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json");
 			}
 		} catch {
 			// not found at this level — continue up
@@ -1061,7 +1098,7 @@ export async function resolveActiveProjectRegistryPath(cwd: string): Promise<str
 	while (dir !== homeDir) {
 		try {
 			await fs.promises.stat(path.join(dir, ".git"));
-			return path.join(dir, getConfigDirName(), "plugins", "installed_plugins.json");
+			return path.join(dir, PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json");
 		} catch {
 			// not found at this level — continue up
 		}
@@ -1091,7 +1128,7 @@ export async function resolveOrDefaultProjectRegistryPath(cwd: string): Promise<
 	// getInstalledPluginsRegistryPath(), causing MarketplaceManager to load the same file
 	// as both user and project registry and producing duplicates / disambiguation errors.
 	if (path.resolve(cwd) === os.homedir()) return undefined;
-	return path.join(cwd, getConfigDirName(), "plugins", "installed_plugins.json");
+	return path.join(cwd, PROJECT_AGENT_DIR_NAME, "plugins", "installed_plugins.json");
 }
 
 async function canonicalClaudeProjectPath(projectPath: string): Promise<string | null> {
@@ -1149,7 +1186,7 @@ export function registerPluginCacheInvalidator(invalidator: () => void): void {
  * List all installed Claude Code plugin roots from its active plugin cache and
  * ~/.omp/plugins/installed_plugins.json, plus the nearest project registry when present.
  *
- * Results are cached per Claude and OMP config directories, project registry, and canonical active project.
+ * Results are cached per Claude and ultraworkers config directories, project registry, and canonical active project.
  */
 export async function listClaudePluginRoots(
 	home: string,
@@ -1232,12 +1269,12 @@ export async function listClaudePluginRoots(
 		}
 	}
 
-	// ── OMP installed plugins registry ───────────────────────────────────────
-	// OMP registry is authoritative: its entries replace Claude's entries for the same plugin ID.
+	// ── ultraworkers installed plugins registry ─────────────────────────────
+	// Our registry is authoritative: its entries replace Claude's entries for the same plugin ID.
 	// In production `home` is `os.homedir()`, so `getPluginsDir(home)` resolves to the
 	// same XDG-aware path the marketplace writer uses (reads and writes always agree).
 	// Tests pass a temp dir, which short-circuits the resolver for deterministic isolation.
-	// Computed before the cache lookup because isolated SDK homes select distinct OMP registries.
+	// Computed before the cache lookup because isolated SDK homes select distinct registries.
 	const ompContent = await readFile(ompRegistryPath);
 	if (ompContent) {
 		const ompRegistry = parseClaudePluginsRegistry(ompContent);
@@ -1253,7 +1290,7 @@ export async function listClaudePluginRoots(
 				const pluginName = pluginId.slice(0, atIndex);
 				const marketplace = pluginId.slice(atIndex + 1);
 
-				// OMP is authoritative: drop all Claude-sourced entries for this plugin ID
+				// Our registry is authoritative: drop all Claude-sourced entries for this plugin ID
 				const filtered = roots.filter(r => r.id !== pluginId);
 				roots.length = 0;
 				roots.push(...filtered);
@@ -1279,11 +1316,11 @@ export async function listClaudePluginRoots(
 				}
 			}
 		} else {
-			warnings.push(`Failed to parse OMP plugin registry: ${ompRegistryPath}`);
+			warnings.push(`Failed to parse ultraworkers plugin registry: ${ompRegistryPath}`);
 		}
 	}
 
-	// ── Project-scoped OMP registry ────────────────────────────────────────
+	// ── Project-scoped registry ────────────────────────────────────────────
 	// Loaded from the nearest .omp/plugins/installed_plugins.json relative to cwd.
 	// Project entries take precedence over user entries for the same plugin ID.
 	if (resolvedProjectPath) {

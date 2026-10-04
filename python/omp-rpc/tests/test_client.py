@@ -1125,7 +1125,6 @@ class RpcClientTests(unittest.TestCase):
 
     def test_command_builder_supports_common_rpc_options(self) -> None:
         client = RpcClient(
-            executable="omp",
             model="openrouter/anthropic/claude-sonnet-4.6",
             cwd="/tmp/workspace",
             thinking="high",
@@ -1142,7 +1141,10 @@ class RpcClientTests(unittest.TestCase):
         self.assertEqual(
             client.command,
             (
-                "omp",
+                # No `executable=` is passed above, so this is the client's own
+                # default rather than an argument echoed back: swapping the literal
+                # for any other name the test supplied would still pass.
+                "ultraworkers",
                 "--mode",
                 "rpc",
                 "--model",
@@ -1330,7 +1332,7 @@ class RpcClientTests(unittest.TestCase):
     def test_xd_dispatched_custom_tool_events_carry_host_tool_name(self) -> None:
         """Events for an xd:// device dispatch are renamed to the executed host tool.
 
-        With `tools.xdev` on, omp invokes a custom tool through `write
+        With `tools.xdev` on, ultraworkers invokes a custom tool through `write
         xd://<name>` and the wire events carry the transport tool (`write`).
         Consumers must observe the host-tool name on update/end events
         regardless of transport — roboomp's terminal-action detection
@@ -1891,12 +1893,12 @@ class StopUnblocksPromptAndWaitTests(unittest.TestCase):
 
 class TerminatesProcessGroupTests(unittest.TestCase):
     """Regression: stop() must reap descendants the agent spawned, not only
-    the omp leader.
+    the ultraworkers leader.
 
     A `bun test` launched by the agent's `bash` tool runs as a grandchild of
-    the omp process. Before the fix, stop() signalled only the leader pid, so
+    the ultraworkers process. Before the fix, stop() signalled only the leader pid, so
     such grandchildren reparented to the container init and kept running —
-    once ballooning to tens of GB of RAM. omp is now spawned in its own
+    once ballooning to tens of GB of RAM. ultraworkers is now spawned in its own
     session and stop() tears down the whole process group.
     """
 
@@ -1931,7 +1933,7 @@ class TerminatesProcessGroupTests(unittest.TestCase):
 
         self.addCleanup(_reap_leaked_grandchild)
 
-        # Fake omp server: spawn the long-lived grandchild, signal ready, then
+        # Fake ultraworkers server: spawn the long-lived grandchild, signal ready, then
         # idle until torn down (sleep past stdin EOF so the group is still
         # alive when stop() fires).
         server = textwrap.dedent(

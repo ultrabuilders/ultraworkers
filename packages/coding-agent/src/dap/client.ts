@@ -1,5 +1,5 @@
 import * as fs from "node:fs/promises";
-import { isEnoent, logger, ptree } from "@oh-my-pi/pi-utils";
+import { isEnoent, logger, normalizeErrorMessage, ptree } from "@oh-my-pi/pi-utils";
 import { NON_INTERACTIVE_ENV } from "../exec/non-interactive-env";
 import { MessageFramer, MessageFramingError } from "../jsonrpc/message-framing";
 import { ToolAbortError } from "../tools/tool-errors";
@@ -46,9 +46,14 @@ const WRITE_MESSAGE_TIMEOUT_MS = 30_000;
 /** Default wait for socket-mode adapters to become reachable. */
 const SOCKET_READY_TIMEOUT_MS = 10_000;
 
+/**
+ * Kept as a local, private function rather than deleted in favour of
+ * {@link normalizeErrorMessage}: this sits on the debugger interface, where a
+ * reshaped failure string is a hard-to-reproduce regression for whoever is
+ * attaching a DAP client.
+ */
 function toErrorMessage(value: unknown): string {
-	if (value instanceof Error) return value.message;
-	return String(value);
+	return normalizeErrorMessage(value);
 }
 
 export class DapClient {

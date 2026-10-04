@@ -1,7 +1,9 @@
 export { once, untilAborted } from "./abortable";
 export * from "./async";
+export * from "./atomic-write";
 export * from "./binary";
 export * from "./color";
+export * from "./config-migrate";
 export * from "./dirs";
 export * from "./env";
 export * from "./executable";
@@ -20,6 +22,7 @@ export * from "./math-delimiters";
 export * from "./materialize-string";
 export * from "./mermaid-ascii";
 export * from "./mime";
+export * from "./normalize-error";
 export * from "./path";
 export * from "./path-tree";
 export * from "./peek-file";

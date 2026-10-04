@@ -8,6 +8,7 @@ import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { resetSettingsForTest, Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { ExtensionUIContext } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
 import { resolveLocalUrlToPath } from "@oh-my-pi/pi-coding-agent/internal-urls";
+import type { McpCatalogRefreshReason } from "@oh-my-pi/pi-coding-agent/mcp/types";
 import {
 	ACP_BOOTSTRAP_RACE_GUARD_MS,
 	AcpAgent,
@@ -23,7 +24,7 @@ import { SILENT_ABORT_MARKER } from "@oh-my-pi/pi-coding-agent/session/messages"
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { TaskTool } from "@oh-my-pi/pi-coding-agent/task";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
-import { getConfigRootDir, setAgentDir } from "@oh-my-pi/pi-utils";
+import { getConfigRootDir, setAgentDir, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import type {
 	AgentSideConnection,
 	ClientCapabilities,
@@ -298,7 +299,25 @@ class FakeAgentSession {
 		this.isStreaming = false;
 	}
 
-	async refreshMCPTools(_tools: unknown[]): Promise<void> {}
+	/**
+	 * Every reason the host passed to `refreshMCPTools`, in arrival order.
+	 *
+	 * Producer-side evidence. The RECEIVER already has coverage — `mcp-tool-activation-
+	 * {gate,session}.test.ts` drive `refreshMCPTools` directly and pin what each reason
+	 * does to the active set. What had no coverage is the ACP host forwarding the reason
+	 * at all: `mcp-tool-activation-*.test.ts` call the session directly, so dropping
+	 * `reason` on the ACP path left every one of them green. The defect it caused was real
+	 * — on ACP a server's first connection never activated its tools — and invisible.
+	 *
+	 * Recorded even when `undefined`, because the absent case IS the defect: the receiver
+	 * handles a missing reason as `"push"`, so a dropped reason is indistinguishable from a
+	 * push at the far end, which is exactly why only the producer can catch it.
+	 */
+	readonly mcpRefreshReasons: (McpCatalogRefreshReason | undefined)[] = [];
+
+	async refreshMCPTools(_tools: unknown[], reason?: McpCatalogRefreshReason): Promise<void> {
+		this.mcpRefreshReasons.push(reason);
+	}
 
 	getContextUsage(): undefined {
 		return undefined;
@@ -571,8 +590,30 @@ async function advanceBootstrapGuard(): Promise<void> {
 	await Promise.resolve();
 }
 
+// `AcpAgent.extMethod` dispatches on `` `_${WIRE_NAME}/…` ``, so the method name is a
+// wire value the product owns. Spelling it as a literal here left these tests calling a
+// name the switch can never match: `_omp/usage` fell through to `default:` and every
+// assertion after it measured the throw, not the handler. Deriving from the same
+// constant keeps the test on the name that is actually dispatched.
+//
+// The pin below is deliberately a *different kind of expression* from the value it
+// checks — one is a template, one is a literal — so editing `WIRE_NAME` alone turns this
+// file red. That is the whole contract, and it is worth being precise about its reach,
+// because a wider claim would be false:
+//
+//   PIN          catches a change to the CONSTANT (a rename sweep, a refactor).
+//   the behaviour tests below catch a change to the PRODUCT (the dispatch itself).
+//
+// So the pin does not verify the product, and is not meant to. Someone who edits both
+// the constant and this literal defeats it — that is true of every literal pin, and it
+// is not a defect to fix here. What the pin buys is that the common failure, a rename
+// nobody intended, cannot pass silently.
+const ACP_EXT_PREFIX = `_${WIRE_NAME}/`;
+const ACP_EXT_LIST_ALL = `${ACP_EXT_PREFIX}sessions/listAll`;
+const PIN_ACP_EXT_PREFIX = "_ultraworkers/";
+
 describe("ACP agent", () => {
-	it("scopes _omp/usage to the session the caller named", async () => {
+	it("scopes the usage report to the session the caller named", async () => {
 		const harness = await createHarness();
 		const first = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
 		const second = await harness.agent.newSession({ cwd: harness.cwdB, mcpServers: [] });
@@ -585,7 +626,7 @@ describe("ACP agent", () => {
 		// Ask about the SECOND session. Taking the first entry of the session map
 		// would answer about the first one and still return a well-formed report —
 		// the failure is invisible unless the two payloads differ.
-		const secondReport = await harness.agent.extMethod("_omp/usage", { sessionId: second.sessionId });
+		const secondReport = await harness.agent.extMethod(`${ACP_EXT_PREFIX}usage`, { sessionId: second.sessionId });
 		expect(secondReport).toBeDefined();
 		expect(JSON.stringify(secondReport)).toContain(second.sessionId);
 		expect(JSON.stringify(secondReport)).not.toContain(first.sessionId);
@@ -653,6 +694,66 @@ describe("ACP agent", () => {
 		harness.abortController.abort();
 		await Bun.sleep(0);
 	});
+
+	it("forwards the MCP catalog refresh reason, so a first ACP connect and a later server push stay distinguishable", async () => {
+		// The defect this pins: the ACP host received the manager's declared reason and
+		// dropped it on the way to the session. The receiver handles an ABSENT reason as
+		// `"push"`, so the drop was invisible at the far end — every ACP server's FIRST
+		// connection registered its tools and never activated them, while `sdk.ts` (which
+		// forwards the reason) was correct. The same MCP server behaved differently on the
+		// two hosts.
+		//
+		// Both directions are asserted because a host that returned `"connect"` for
+		// everything would satisfy the first assertion alone. Only the second proves the
+		// value is the manager's DECLARATION rather than a constant that happens to be
+		// right on the first refresh.
+		//
+		// The gate is passed as the SERVER's env rather than through `process.env`, so
+		// nothing process-wide is mutated: bun runs every file of a suite in one process,
+		// and an unrestored env var would leak into unrelated files.
+		const harness = await createHarness();
+		const addGate = path.join(harness.cwdA, "rug-pull-add-gate");
+
+		const created = await harness.agent.newSession({
+			cwd: harness.cwdA,
+			mcpServers: [
+				{
+					name: "rugpull",
+					command: process.execPath,
+					args: [path.join(import.meta.dir, "fixtures", "rug-pull-mcp.ts")],
+					env: [{ name: "RUG_PULL_ADD_UNTIL", value: addGate }],
+				},
+			],
+		} as unknown as Parameters<typeof harness.agent.newSession>[0]);
+
+		const session = harness.findSession(created.sessionId) as unknown as FakeAgentSession;
+
+		const waitForReasons = async (count: number): Promise<void> => {
+			const deadline = Date.now() + 15_000;
+			while (Date.now() < deadline) {
+				if (session.mcpRefreshReasons.length >= count) return;
+				await Bun.sleep(25);
+			}
+			// Report what actually arrived: "expected 2 refreshes" alone cannot tell a
+			// host that never fired from one that fired with the wrong reason.
+			throw new Error(
+				`timed out waiting for ${count} MCP refresh(es); got ${JSON.stringify(session.mcpRefreshReasons)}`,
+			);
+		};
+
+		// The server's initial catalog: the user asked for this connection, so the
+		// manager declares `"connect"` and the arriving tools must be activated.
+		await waitForReasons(1);
+		expect(session.mcpRefreshReasons[0]).toBe("connect");
+
+		// The same server now adds a tool and notifies on its own. The user approved
+		// the CONNECTION, not the new tool, so this must read as a push — and a push
+		// must never be laundered into the connect that activates a catalog.
+		await Bun.write(addGate, "");
+		await waitForReasons(2);
+		expect(session.mcpRefreshReasons.at(-1)).toBe("push");
+		expect(session.mcpRefreshReasons.slice(1)).not.toContain("connect");
+	}, 30_000);
 
 	it("advertises plan mode and emits schema-valid mode updates", async () => {
 		const harness = await createHarness();
@@ -1174,12 +1275,44 @@ describe("ACP agent", () => {
 	it("accepts OMP extension methods and rejects unknown unprefixed methods", async () => {
 		const harness = await createHarness();
 
-		const result = await harness.agent.extMethod("_omp/sessions/listAll", { limit: 2 });
+		// The pin is the point of this test: the derived name above tracks whatever
+		// `WIRE_NAME` says, so on its own it would still pass if the product's prefix
+		// were renamed in lockstep. Asserting the literal wire spelling is what makes a
+		// rename of the prefix a visible failure here instead of a silent one.
+		expect(ACP_EXT_PREFIX).toBe(PIN_ACP_EXT_PREFIX);
+
+		const result = await harness.agent.extMethod(ACP_EXT_LIST_ALL, { limit: 2 });
 
 		expect(Array.isArray(result.sessions)).toBe(true);
 		expect(typeof result.total).toBe("number");
+		// Unprefixed, and deliberately not derived: this asserts the switch rejects a
+		// name that lost its `_` prefix, so building it from `ACP_EXT_PREFIX` would
+		// assert the opposite of what it claims.
 		await expect(harness.agent.extMethod("omp/sessions/listAll", { limit: 2 })).rejects.toThrow(
 			"Unknown ACP ext method",
+		);
+
+		harness.abortController.abort();
+		await Bun.sleep(0);
+	});
+
+	// The `_<wire>/*` names are a wire contract: a client calls them by literal string.
+	// The dispatch is a `switch`, so a name that loses its prefix or picks up a typo
+	// falls straight through to `default:` and the caller gets "Unknown ACP ext
+	// method" — the method silently stops existing. Two of these validate their own
+	// params, so the error they throw IS the proof they reached a handler body.
+	it("routes every wire extension method to a handler rather than the unknown-method fallthrough", async () => {
+		const harness = await createHarness();
+
+		const projects = await harness.agent.extMethod(`${ACP_EXT_PREFIX}projects/list`, {});
+		expect(Array.isArray(projects.projects)).toBe(true);
+
+		const extensions = await harness.agent.extMethod(`${ACP_EXT_PREFIX}extensions`, {});
+		expect(Array.isArray(extensions.extensions)).toBe(true);
+
+		await expect(harness.agent.extMethod(`${ACP_EXT_PREFIX}chats/byCwd`, {})).rejects.toThrow("cwd required");
+		await expect(harness.agent.extMethod(`${ACP_EXT_PREFIX}extensions/toggle`, {})).rejects.toThrow(
+			"providerId required",
 		);
 
 		harness.abortController.abort();
@@ -3480,6 +3613,45 @@ describe("ACP agent MCP server configuration (late-connecting servers)", () => {
 			// server's tool. Before the fix, this late arrival was dropped.
 			await pollUntil(() => refreshSpy.mock.calls.length > 1);
 			expect(namesOf(refreshSpy.mock.calls.at(-1)?.[0] ?? [])).toEqual([`mcp__delayed_${DELAYED_MCP_TOOL_NAME}`]);
+		} finally {
+			refreshSpy.mockRestore();
+		}
+	}, 15_000);
+
+	/**
+	 * Producer-side guard for the catalog refresh REASON, on the ACP host.
+	 *
+	 * The row above proves the late tools *arrive*; it says nothing about why. That is
+	 * the whole defect: `acp-agent.ts` once took `(_tools)` and called
+	 * `refreshMCPTools(manager.getTools())` with no reason, so every ACP refresh fell to
+	 * the absent-reason branch — which the receiver handles as `"push"`. A server's FIRST
+	 * connection then registered and displayed its tools without ever becoming callable.
+	 * `sdk.ts` forwarded the reason all along, so the two hosts disagreed about the same
+	 * event, and only ACP was broken.
+	 *
+	 * The receiver is already covered by `mcp-tool-activation-*.test.ts`, which call
+	 * `refreshMCPTools` directly and so cannot see a producer that drops its argument.
+	 * This row is the other half: it goes through `setOnToolsChanged`, so removing `reason`
+	 * from the ACP handler turns it red.
+	 */
+	it("declares `connect` when a server's first connection lands its catalog", async () => {
+		const harness = await createHarness();
+		const refreshSpy = spyOn(FakeAgentSession.prototype, "refreshMCPTools");
+		const namesOf = (tools: unknown[]) => (tools as Array<{ name: string }>).map(tool => tool.name);
+
+		try {
+			await harness.agent.newSession({
+				cwd: harness.cwdA,
+				mcpServers: [{ name: "delayed", command: BUN_EXEC, args: [FIXTURE_PATH], env: [] }],
+			});
+
+			await pollUntil(() => refreshSpy.mock.calls.length > 1);
+			const arriving = refreshSpy.mock.calls.at(-1);
+			expect(namesOf(arriving?.[0] ?? [])).toEqual([`mcp__delayed_${DELAYED_MCP_TOOL_NAME}`]);
+			// The load-bearing assertion. `undefined` is the bug's own signature: the
+			// receiver reads an absent reason as "push", which is exactly backwards for a
+			// first connection.
+			expect(arriving?.[1]).toBe("connect");
 		} finally {
 			refreshSpy.mockRestore();
 		}

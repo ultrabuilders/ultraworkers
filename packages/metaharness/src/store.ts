@@ -363,7 +363,7 @@ export class RunStore {
 		if (!fs.existsSync(jobDir)) return this.getRun(jobName);
 		const row = this.getRun(jobName);
 		if (!row) return null;
-		const snapshot = readBenchmarkSnapshot(row.benchmark, jobDir);
+		const snapshot = readBenchmarkSnapshot(row.benchmark, jobDir, row.agent);
 		const now = Date.now();
 		const upsert = this.#db.query(
 			`INSERT INTO trials
@@ -594,7 +594,27 @@ function rowToRun(r: Record<string, unknown>): RunRow {
 	};
 }
 
-/** Best-effort launch metadata for historical (CLI-launched) job dirs. */
+/**
+ * Best-effort launch metadata for historical (CLI-launched) job dirs.
+ *
+ * The two `"omp"` defaults below are NOT interchangeable — do not "sync" them.
+ *
+ * `:606` — the config parsed, the field is merely absent. `"omp"` is the same default
+ * `Config.agent` uses (`runner.ts:139`), so this is half of a deliberate default pair
+ * and stays.
+ *
+ * `:catch` — the config could not be read AT ALL. Substituting `"omp"` here asserted an
+ * agent it had no evidence for: a `--agent pi` job with an unreadable `config.json` was
+ * stored as `agent="omp"`, and `syncRun` then probed `omp.txt` — a transcript that run
+ * never writes. `probeTrialCost` returned null and `?? 0` reported that trial at zero
+ * cost, with no error and no log. That is the same silent zero as the hardcoded-name bug
+ * in `transcriptFilename`, reached by substituting the wrong field instead of the wrong
+ * string.
+ *
+ * `""` instead: an agent nobody can name. `readTrials` recognises it, logs the job dir,
+ * and reports no trials — so the run shows zero trials rather than trials at a cost of
+ * zero, which is the honest reading of "we could not read this".
+ */
 function readHarborConfig(jobDir: string): { dataset: string; agent: string; models: string } {
 	try {
 		const raw = JSON.parse(fs.readFileSync(path.join(jobDir, "config.json"), "utf8")) as Record<string, unknown>;
@@ -607,7 +627,7 @@ function readHarborConfig(jobDir: string): { dataset: string; agent: string; mod
 		const models = (agents?.[0]?.model_name as string | undefined) ?? "";
 		return { dataset: String(dataset), agent, models };
 	} catch {
-		return { dataset: "", agent: "omp", models: "" };
+		return { dataset: "", agent: "", models: "" };
 	}
 }
 

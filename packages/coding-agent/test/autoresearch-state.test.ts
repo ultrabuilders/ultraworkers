@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 function makeTempDir(): TempDir {
-	return TempDir.createSync("@pi-autoresearch-test-");
+	return TempDir.createSync("@ultraworkers-autoresearch-test-");
 }
 
 function makeResult(partial: Partial<ExperimentResult>): ExperimentResult {
@@ -521,7 +521,7 @@ describe("autoresearch slash command", () => {
 	let dbOverride: TempDir | undefined;
 
 	beforeEach(() => {
-		dbOverride = TempDir.createSync("@pi-autoresearch-cmd-");
+		dbOverride = TempDir.createSync("@ultraworkers-autoresearch-cmd-");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride.path();
 		cleanups.push(dbOverride);
 	});
@@ -588,7 +588,7 @@ describe("autoresearch tool-call hook", () => {
 	let dbOverride: TempDir;
 
 	beforeEach(() => {
-		dbOverride = TempDir.createSync("@pi-autoresearch-hook-");
+		dbOverride = TempDir.createSync("@ultraworkers-autoresearch-hook-");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride.path();
 		cleanups.push(dbOverride);
 	});

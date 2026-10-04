@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { format } from "@oh-my-pi/pi-utils/dates";
 import { type ReactNode, useMemo, useState } from "react";
 import { getProviderDashboardStats, getProviderWindowStats } from "../api";
@@ -66,7 +67,29 @@ const TOKEN_MIX = [
 	{ key: "output", label: "Output", color: "var(--chart-secondary)" },
 ] as const;
 
-const SNAPSHOT_HINT = "Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, omp usage).";
+// A COMMAND name, not a display name — yet it still reads APP_NAME, deliberately.
+//
+// `omp` is not a typo here: it is a committed install path (`bun run setup` →
+// scripts/link-omp.sh:30, with a native Windows fallback in scripts/setup.ts). But it is
+// only THAT path. Install paths that start from a published package do not create it —
+// packages/coding-agent ships `ultraworkers`, packages/stats ships `omp-stats` — so a user
+// who installed the product has no `omp` on PATH at all. The literal spelling therefore
+// fails for exactly the users who did a normal install, while APP_NAME is right on every
+// path.
+//
+// The honest defect is not "APP_NAME is the wrong constant". It would be a real one only if
+// APP_NAME could drift from the installed binary name — and it cannot, silently.
+// `test/bin-name-matches-app-name.test.ts` asserts the manifest's bin map is EXACTLY
+// `[APP_NAME]`: rename the binary without moving the constant and that gate goes red, so the
+// rename cannot land while this string keeps naming the old command. Measured, not assumed —
+// renaming `bin.coding-agent` to `ultraworkers-renamed` with APP_NAME untouched turns that
+// test red. An exact key set rather than containment, so adding an `omp` alias is also a
+// contract change rather than a silent second install name.
+//
+// This note previously said nothing enforced the binding and that the fix was a separate
+// command constant tracked by epic-grse. That gate was committed six minutes after this
+// comment, which is why the claim outlived the thing that answered it.
+const SNAPSHOT_HINT = `Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, ${APP_NAME} usage).`;
 
 interface WindowRef {
 	provider: string;

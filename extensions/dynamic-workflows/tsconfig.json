@@ -1,0 +1,11 @@
+// NOTHING IN THIS REPO RUNS THIS FILE — same situation, and for the same reason, as
+// ../workflow/tsconfig.json: this project is not a workspace member (root package.json
+// declares `workspaces.packages = ["packages/*", "python/robomp/web"]`), so
+// `check:ts`'s `--filter './packages/*'` structurally cannot reach it. Measured: a type
+// error planted here leaves that command exiting 0.
+//
+// Typecheck explicitly with:  bunx tsc --noEmit -p tsconfig.json
+{
+	"extends": "../../tsconfig.base.json",
+	"include": ["."]
+}

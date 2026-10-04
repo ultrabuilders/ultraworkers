@@ -44,7 +44,7 @@ const AI_CHAT_AVAILABLE_MODELS_QUERY = `query lsp_aiChatAvailableModels($rootNam
   }
 }`;
 
-const ProjectRootNamespaceQuery = `query omp_gitlabDuoWorkflowProjectRootNamespace($fullPath: ID!) {
+const ProjectRootNamespaceQuery = `query ultraworkers_gitlabDuoWorkflowProjectRootNamespace($fullPath: ID!) {
   project(fullPath: $fullPath) {
     namespace {
       id

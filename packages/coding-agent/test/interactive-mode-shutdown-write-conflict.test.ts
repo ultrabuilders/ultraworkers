@@ -47,7 +47,7 @@ describe("InteractiveMode shutdown when the session write conflicts (#12238)", (
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@omp-shutdown-conflict-");
+		tempDir = TempDir.createSync("@ultraworkers-shutdown-conflict-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

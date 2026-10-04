@@ -1,7 +1,13 @@
-import { editInspect } from "@oh-my-pi/pi-natives";
 import { isRecord, stringProperty } from "@oh-my-pi/pi-utils";
 import { resolveToCwd } from "../tools/path-utils";
 import type { ClientBridgePermissionOption } from "./client-bridge";
+import { canonicalizeApprovalKey, getEditDestructiveIntent } from "../tools/approval";
+// Re-exported, not merely imported: this is where the ACP gate, its tests, and
+// anything reading the gate's public surface have always found it, and moving the
+// implementation down a layer is not a reason to move its address too. `wrapper.ts`
+// imports it from `tools/approval` directly, which is what keeps `extensibility`
+// from depending on `session`.
+export { canonicalizeApprovalKey };
 
 /** Tools that require user permission before execution when an ACP client is connected. */
 export const PERMISSION_REQUIRED_TOOLS: Record<string, true> = {
@@ -22,26 +28,100 @@ export const PERMISSION_OPTIONS: ClientBridgePermissionOption[] = [
 /** Permission options indexed by their wire identifiers; unknown IDs miss and fail closed. */
 export const PERMISSION_OPTIONS_BY_ID = new Map(PERMISSION_OPTIONS.map(option => [option.optionId, option]));
 
-function getEditDestructiveIntent(args: unknown): { kind: "delete" | "move"; paths: string[] } | undefined {
-	if (!isRecord(args)) return undefined;
-
-	const argsJson = JSON.stringify(args);
-	const modes = Array.isArray(args.edits) ? ["patch"] : ["hashline", "apply_patch"];
-	for (const mode of modes) {
-		try {
-			const fileOps = editInspect(mode, argsJson).fileOps;
-			const op =
-				fileOps.find(candidate => candidate.kind === "delete") ??
-				fileOps.find(candidate => candidate.kind === "move");
-			if (!op || (op.kind !== "delete" && op.kind !== "move")) continue;
-			const paths = op.kind === "move" && op.to ? [op.path, op.to] : [op.path];
-			return { kind: op.kind, paths };
-		} catch {
-			// The payload does not use this edit mode's syntax.
-		}
+/**
+ * The scope, in the words the user reads before choosing "always".
+ *
+ * A narrower key is worthless while the button still reads "Always allow": the
+ * grant gets smaller and the user is none the wiser. So this string goes into the
+ * option label, and it names the same thing the key does.
+ *
+ * ## The fallback branch
+ *
+ * `canonicalizeApprovalKey` keys an unrecognised tool on its whole argument
+ * payload, so two calls differing in any argument are two different grants.
+ * Saying `every <tool> call` about that is not rounding: it describes a grant an
+ * order of magnitude wider than the one the user is about to get, and it breaks
+ * the contract this function states for itself.
+ *
+ * So the fallback names the payload. It keeps `every <tool> call` for the one
+ * case where that is true — a call with nothing to tell apart, where every call
+ * really does share one key.
+ *
+ * When the readable part is cut, a short digest goes with it. Truncation is the
+ * one way two genuinely different payloads can read alike, and a label that
+ * cannot tell two scopes apart is the defect this branch exists to remove,
+ * reintroduced one character earlier.
+ */
+export function describeApprovalScope(toolName: string, args: unknown): string {
+	const input = isRecord(args) ? args : {};
+	if (toolName === "bash") {
+		const command = stringProperty(input, "command");
+		const squeezed = command?.replace(/\s+/g, " ").trim();
+		return squeezed ? squeezed.slice(0, 60) : toolName;
 	}
+	if (toolName === "delete") {
+		const filePath = stringProperty(input, "path");
+		return filePath ? `delete ${filePath}` : toolName;
+	}
+	if (toolName === "move") {
+		const from = stringProperty(input, "oldPath") ?? stringProperty(input, "path") ?? stringProperty(input, "from");
+		const to =
+			stringProperty(input, "newPath") ?? stringProperty(input, "to") ?? stringProperty(input, "destination");
+		if (from && to) return `move ${from} to ${to}`;
+		return from ? `move ${from}` : toolName;
+	}
+	if (toolName === "edit") {
+		const intent = getEditDestructiveIntent(args);
+		return intent ? `every ${intent.kind} in an edit` : toolName;
+	}
+	return describeUnrecognizedToolScope(toolName, args);
+}
+/** How much of an unrecognised tool's payload the label shows before it stops. */
+const SCOPE_SUMMARY_LIMIT = 60;
 
-	return undefined;
+/**
+ * Name the scope of a tool with no branch above, from the payload its key hashes.
+ *
+ * Every call of such a tool that shares a payload shares a grant, and every call
+ * with a different payload is a separate grant — so the label has to distinguish
+ * exactly as the key does, and in the same direction: never wider.
+ */
+function describeUnrecognizedToolScope(toolName: string, args: unknown): string {
+	if (!isRecord(args)) return `every ${toolName} call`;
+	// Rendered in insertion order, which is the order `JSON.stringify` hands the
+	// key's hash, so the summary reads the same way round as the key naming it.
+	const pairs = Object.entries(args).filter(([, value]) => value !== undefined);
+	if (pairs.length === 0) return `every ${toolName} call`;
+
+	const squeeze = (text: string): string => text.replace(/\s+/g, " ").trim();
+	const summary = pairs
+		.map(([key, value]) => {
+			const rendered = typeof value === "string" ? value : (JSON.stringify(value) ?? "");
+			return `${key}=${squeeze(rendered)}`;
+		})
+		.join(" ");
+	if (summary.length <= SCOPE_SUMMARY_LIMIT) return `${toolName} ${summary}`;
+
+	const digest = Bun.hash
+		.wyhash(JSON.stringify(args) ?? "")
+		.toString(16)
+		.slice(0, 8);
+	return `${toolName} ${summary.slice(0, SCOPE_SUMMARY_LIMIT)}… (${digest})`;
+}
+
+/**
+ * The options for one prompt, with the scope spelled out on the two that persist.
+ *
+ * Option ids and kinds are identical to {@link PERMISSION_OPTIONS}; only the
+ * labels carry the scope, so {@link PERMISSION_OPTIONS_BY_ID} still resolves a
+ * returned id to its kind unchanged.
+ */
+export function permissionOptions(scope: string): ClientBridgePermissionOption[] {
+	return PERMISSION_OPTIONS.map(option =>
+		option.kind === "allow_always" || option.kind === "reject_always"
+			? { ...option, name: `${option.name} \`${scope}\` for the rest of this session` }
+			: option,
+	);
 }
 
 /** Describes the permission prompt required for a destructive tool call. */
@@ -52,7 +132,7 @@ export function getPermissionIntent(
 	const input = isRecord(args) ? args : {};
 	if (toolName === "bash") {
 		const command = stringProperty(input, "command")?.slice(0, 80);
-		return { toolName, title: command || toolName, cacheKey: toolName };
+		return { toolName, title: command || toolName, cacheKey: canonicalizeApprovalKey(toolName, args) };
 	}
 	if (toolName === "delete") {
 		const filePath = stringProperty(input, "path");
@@ -60,19 +140,25 @@ export function getPermissionIntent(
 			toolName,
 			title: filePath ? `Delete ${filePath}` : toolName,
 			paths: filePath ? [filePath] : undefined,
-			cacheKey: toolName,
+			cacheKey: canonicalizeApprovalKey(toolName, args),
 		};
 	}
 	if (toolName === "move") {
 		const from = stringProperty(input, "oldPath") ?? stringProperty(input, "path") ?? stringProperty(input, "from");
 		const to =
 			stringProperty(input, "newPath") ?? stringProperty(input, "to") ?? stringProperty(input, "destination");
-		if (from && to) return { toolName, title: `Move ${from} to ${to}`, paths: [from, to], cacheKey: toolName };
+		if (from && to)
+			return {
+				toolName,
+				title: `Move ${from} to ${to}`,
+				paths: [from, to],
+				cacheKey: canonicalizeApprovalKey(toolName, args),
+			};
 		return {
 			toolName,
 			title: from ? `Move ${from}` : toolName,
 			paths: from ? [from] : undefined,
-			cacheKey: toolName,
+			cacheKey: canonicalizeApprovalKey(toolName, args),
 		};
 	}
 	if (toolName === "edit") {
@@ -83,7 +169,7 @@ export function getPermissionIntent(
 				toolName,
 				title: `Delete ${intent.paths[0] ?? "edit target"}`,
 				paths: intent.paths,
-				cacheKey: "edit:delete",
+				cacheKey: canonicalizeApprovalKey(toolName, args),
 			};
 		}
 		const from = intent.paths[0];
@@ -92,7 +178,7 @@ export function getPermissionIntent(
 			toolName,
 			title: from && to ? `Move ${from} to ${to}` : `Move ${from ?? to ?? "edit target"}`,
 			paths: intent.paths,
-			cacheKey: "edit:move",
+			cacheKey: canonicalizeApprovalKey(toolName, args),
 		};
 	}
 	return undefined;

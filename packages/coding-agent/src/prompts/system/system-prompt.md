@@ -31,6 +31,9 @@ Matching skill → MUST read `skill://<name>` first.
 {{#each skills}}
 - {{name}}: {{description}}
 {{/each}}
+{{#if skillsOmitted}}
+- …and {{skillsOmitted}} more. List them with manage_skill action="list".
+{{/if}}
 </skills>
 {{/if}}
 

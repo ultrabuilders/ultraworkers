@@ -212,7 +212,7 @@ describe("parseMarketplaceCatalog", () => {
 		it("accepts config that merely differs from expectation, without losing a server", () => {
 			// Strict rejects what would VANISH, not what is merely unfamiliar. An
 			// optional key spelled wrongly costs an override, not a server — and a
-			// copied key list would reject this valid catalog the moment omp grows a
+			// copied key list would reject this valid catalog the moment ultraworkers grows a
 			// field, blaming the author for our staleness.
 			const catalog = parseMarketplaceCatalog(
 				catalogWith({ lspServers: { rust: { ...VALID_LSP, warmupTimoutMs: 500 } } }, true),
@@ -326,7 +326,7 @@ describe("fetchMarketplace", () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-fetcher-test-"));
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-fetcher-test-"));
 	});
 
 	afterEach(() => {

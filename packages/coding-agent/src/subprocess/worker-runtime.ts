@@ -45,9 +45,11 @@ export function errorText(error: unknown): string {
 	return error instanceof Error ? (error.stack ?? error.message) : String(error);
 }
 
-export function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+export { errorMessage } from "@oh-my-pi/pi-utils/errors";
+import { errorMessage as sharedErrorMessage } from "@oh-my-pi/pi-utils/errors";
+
+/** Local alias: this module uses the shared total implementation below. */
+const errorMessage = sharedErrorMessage;
 
 // ── Structured logging ──────────────────────────────────────────────
 
@@ -166,7 +168,7 @@ export function replayCachedReady<K, M>(
  */
 export async function installSharpStubResolver(runtimeDir: string): Promise<string> {
 	const nodeModules = path.join(runtimeDir, "node_modules");
-	const sharpStub = path.join(runtimeDir, "omp-sharp-stub.cjs");
+	const sharpStub = path.join(runtimeDir, "uw-sharp-stub.cjs");
 	await Bun.write(sharpStub, "module.exports = {};\n");
 	installRuntimeModuleResolver({ runtimeNodeModules: nodeModules, stubs: { sharp: sharpStub } });
 	return nodeModules;

@@ -87,7 +87,7 @@ env:
    # the SQLite/subprocess-heavy coding-agent suites 1.5-2x slower, which put
    # several cases (model-registry refresh, session fork, credential bridge)
    # over the 30 s default; 120 s still catches a real hang.
-   OMP_TEST_TIMEOUT: "120"
+   ULTRAWORKERS_TEST_TIMEOUT: "120"
 
 permissions:
    contents: read
@@ -188,6 +188,22 @@ jobs:
               cargo deny --locked --offline check licenses sources
          - name: Type check workspace
            run: bun run ci:check:full
+         # The R0 reorganisation beads (`r0-grp-a-102`, `r0-grp-b-103`,
+         # `r0-grp-c-104`) all quote an `importers` column that no tool produced, and
+         # all three require a baseline gate to exist *before* the first merge. This is
+         # that gate: it fails when a directory's fan-in rises above the committed
+         # baseline, or when the tracked file count under packages/ falls — the
+         # deletion the R0 invariant forbids.
+         - name: Fan-in baseline (R0)
+           run: bun run measure:fan-in:check
+         # The ledger is generated from the patch files themselves, so a patch
+         # merged without regenerating it leaves the human half describing a
+         # different tree than the machine half verifies. It had a script and no
+         # job: unlike the fan-in gate above, nothing in CI called it, so merging
+         # a patch without the regenerate step stayed green. Regenerate and diff —
+         # the check is that the committed ledger is what the generator produces.
+         - name: Patch ledger is current
+           run: bun run gen:patch-ledger:check
          - name: Build collab web
            run: bun run collab:web:build
 
@@ -589,8 +605,9 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test coding-agent native/unit bucket
            env:
-              OMP_TEST_CONCURRENCY: "4"
-              OMP_TEST_SHARD: ${{ matrix.shard }}
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_SHARD: ${{ matrix.shard }}
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:native
 
    test_workspace:
@@ -608,13 +625,23 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test workspace packages and repo scripts (TS)
            env:
-              OMP_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: |
               bun run ci:test:ts:workspace
-              # Not `test:scripts`: scripts/musl-release.test.ts fails on main
-              # (its install.sh smoke-check executes a fake binary), so running
-              # the whole group here would red this job on an unrelated break.
-              bun test scripts/ci-test-ts.test.ts scripts/release.test.ts
+              # The whole classified group, through the manifest, instead of three
+              # hand-named files. That hardcoded list and `test:scripts` were two
+              # lists with no single place that had to be right: measured, 16 test
+              # files existed, the two lists covered 7 between them, and 9 ran
+              # nowhere — including gen-patch-ledger.test.ts, which was green and
+              # gating nothing. `run-script-tests.ts` refuses to run at all when a
+              # file on disk is unclassified, so a new test cannot be committed
+              # without a decision about it.
+              #
+              # The old comment here excluded musl-release.test.ts for failing on
+              # main. Measured, it passes (2 pass), so the exclusion no longer held
+              # and it is now run rather than carried on a stale reason.
+              bun run test:scripts
 
    test_coding_agent_singleton:
       name: Test coding-agent singleton/global-state (TS)
@@ -632,6 +659,8 @@ jobs:
          - name: Test coding-agent singleton/global-state bucket
            # Keep global Settings/env/fake-timer tests serial; native addon
            # artifacts are still available like every other coding-agent bucket.
+           env:
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:singleton
 
    test_ts_native:
@@ -649,7 +678,8 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test native/TUI/browser-ish packages (TS)
            env:
-              OMP_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:ts:native
 
    test_coding_agent_ui:
@@ -667,7 +697,8 @@ jobs:
               stash: ${{ needs.native_addons.outputs.stash }}
          - name: Test coding-agent UI/TUI bucket
            env:
-              OMP_TEST_CONCURRENCY: "2"
+              ULTRAWORKERS_TEST_CONCURRENCY: "2"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:ui
 
    test_coding_agent_runtime:
@@ -687,7 +718,8 @@ jobs:
            # Runtime/session tests import native-backed barrels too; keep this
            # separate for concurrency, not as a native-free guardrail.
            env:
-              OMP_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_CONCURRENCY: "4"
+              ULTRAWORKERS_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:runtime
 
    test_smoke:
@@ -740,7 +772,22 @@ jobs:
          needs.test_coding_agent_native.result == 'success' &&
          needs.test_smoke.result == 'success' && needs.check.result == 'success' &&
          needs.install_methods.result == 'success' }}
-      needs: [release_metadata, check, rust_validate, native_addons, native_addons_cross, test_workspace, test_coding_agent_singleton, test_ts_native, test_coding_agent_ui, test_coding_agent_runtime, test_coding_agent_native, test_smoke, install_methods]
+      needs:
+         [
+            release_metadata,
+            check,
+            rust_validate,
+            native_addons,
+            native_addons_cross,
+            test_workspace,
+            test_coding_agent_singleton,
+            test_ts_native,
+            test_coding_agent_ui,
+            test_coding_agent_runtime,
+            test_coding_agent_native,
+            test_smoke,
+            install_methods,
+         ]
       runs-on: ubuntu-22.04
       steps:
          - uses: actions/checkout@v4
@@ -773,7 +820,7 @@ jobs:
                     platform: linux,
                     arch: x64,
                     target_id: linux-x64,
-                    binary_path: packages/coding-agent/binaries/omp-linux-x64,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-linux-x64,
                     native_targets: linux-x64-baseline linux-x64-modern,
                  }
                - {
@@ -782,7 +829,7 @@ jobs:
                     libc: musl,
                     arch: x64,
                     target_id: linux-musl-x64,
-                    binary_path: packages/coding-agent/binaries/omp-linux-musl-x64,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-linux-musl-x64,
                     native_targets: linux-musl-x64-baseline,
                  }
                - {
@@ -790,7 +837,7 @@ jobs:
                     platform: linux,
                     arch: arm64,
                     target_id: linux-arm64,
-                    binary_path: packages/coding-agent/binaries/omp-linux-arm64,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-linux-arm64,
                     native_targets: linux-arm64,
                  }
                - {
@@ -799,7 +846,7 @@ jobs:
                     libc: musl,
                     arch: arm64,
                     target_id: linux-musl-arm64,
-                    binary_path: packages/coding-agent/binaries/omp-linux-musl-arm64,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-linux-musl-arm64,
                     native_targets: linux-musl-arm64,
                  }
                - {
@@ -807,7 +854,7 @@ jobs:
                     platform: win32,
                     arch: x64,
                     target_id: win32-x64,
-                    binary_path: packages/coding-agent/binaries/omp-windows-x64.exe,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-windows-x64.exe,
                     native_targets: win32-x64-baseline,
                  }
                # Addon cross-built by Bazel (clang-cl + xwin arm64 splat) in
@@ -818,7 +865,7 @@ jobs:
                     platform: win32,
                     arch: arm64,
                     target_id: win32-arm64,
-                    binary_path: packages/coding-agent/binaries/omp-windows-arm64.exe,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-windows-arm64.exe,
                     native_targets: win32-arm64,
                  }
       runs-on: ${{ matrix.os }}
@@ -861,16 +908,16 @@ jobs:
               binary="$(realpath "${{ matrix.binary_path }}")"
               # Bun's musl-target binaries link libstdc++/libgcc dynamically;
               # Alpine users install them alongside the binary (same as bun itself).
-              docker run --rm -v "$binary:/usr/local/bin/omp:ro" alpine:3.22 sh -ec '
+              docker run --rm -v "$binary:/usr/local/bin/ultraworkers:ro" alpine:3.22 sh -ec '
                 apk add --no-cache libstdc++ libgcc >/dev/null
                 runtime_dir="$(mktemp -d)"
-                HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" omp --version
-                HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" omp --smoke-test
+                HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" ultraworkers --version
+                HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" ultraworkers --smoke-test
               '
          - name: Upload release binary artifact
            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
            with:
-              name: omp-binary-${{ matrix.target_id }}
+              name: ultraworkers-binary-${{ matrix.target_id }}
               path: ${{ matrix.binary_path }}
          # Main-only save, after the build so it is off the leg's critical
          # path: caches saved on a tag or branch are readable only by that ref
@@ -906,7 +953,7 @@ jobs:
                     os: macos-15,
                     platform: darwin,
                     target_id: darwin-x64,
-                    binary_path: packages/coding-agent/binaries/omp-darwin-x64,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-darwin-x64,
                     native_targets: darwin-x64-baseline,
                     cache_scope: release-darwin-x64,
                     fallback_scope: "",
@@ -918,7 +965,7 @@ jobs:
                     os: xcode-27,
                     platform: darwin,
                     target_id: darwin-arm64,
-                    binary_path: packages/coding-agent/binaries/omp-darwin-arm64,
+                    binary_path: packages/coding-agent/binaries/ultraworkers-darwin-arm64,
                     native_targets: darwin-arm64,
                     cache_scope: release-darwin-arm64-xcode27,
                     fallback_scope: "",
@@ -995,7 +1042,7 @@ jobs:
          - name: Upload release binary artifact
            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
            with:
-              name: omp-binary-${{ matrix.target_id }}
+              name: ultraworkers-binary-${{ matrix.target_id }}
               path: ${{ matrix.binary_path }}
          # Main-only save, after the build so it is off the critical path.
          - name: Save bun store
@@ -1020,21 +1067,108 @@ jobs:
       steps:
          - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
            with:
-              name: omp-binary-win32-arm64
+              name: ultraworkers-binary-win32-arm64
               path: packages/coding-agent/binaries
          - name: Smoke release binary (Windows)
            shell: pwsh
            run: |
-              $runtimeDir = Join-Path $env:RUNNER_TEMP "omp-smoke"
+              $runtimeDir = Join-Path $env:RUNNER_TEMP "ultraworkers-smoke"
               $env:HOME = Join-Path $runtimeDir "home"
               $env:USERPROFILE = $env:HOME
               $env:LOCALAPPDATA = Join-Path $runtimeDir "local"
               $env:XDG_DATA_HOME = Join-Path $runtimeDir "xdg"
               New-Item -ItemType Directory -Force -Path $env:HOME, $env:LOCALAPPDATA, $env:XDG_DATA_HOME | Out-Null
-              & "packages/coding-agent/binaries/omp-windows-arm64.exe" --version
+              & "packages/coding-agent/binaries/ultraworkers-windows-arm64.exe" --version
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              & "packages/coding-agent/binaries/omp-windows-arm64.exe" --smoke-test
+              & "packages/coding-agent/binaries/ultraworkers-windows-arm64.exe" --smoke-test
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+   # Gate 6 of the process-hardening bead: `hardenProcess()` must be a CLEAN
+   # no-op where prctl and setrlimit do not exist. Nothing could check that —
+   # the only Windows job above runs a release binary's `--version`, and its
+   # addon comes from the release artifact, so on Windows the hardening path was
+   # asserted nowhere. It needed a job of its own: `procmgr` and `dirs` both
+   # dlopen the native addon, so the test cannot even import on a host without
+   # one, and `setCoreLimit` returns its "no equivalent" sentinel there rather
+   # than a syscall code.
+   #
+   # Fail-closed on purpose. A Windows job that could go quietly missing is the
+   # exact failure this one exists to end, so a broken runner is a red build to
+   # investigate, not a warning to scroll past.
+   windows_arm64_unit:
+      name: "Test process hardening (Windows ARM64)"
+      runs-on: windows-11-arm
+      needs: [native_addons_cross]
+      # `native_addons_cross` publishes only on non-PR events, so on a PR its
+      # result is legitimately `skipped` rather than a failure. Both are accepted
+      # because the PR path below sources the addon from npm instead. What is NOT
+      # accepted is `failure` — that means the addon could not be built at all,
+      # and testing against last release's binary would hide a native break.
+      if: ${{ !cancelled() && (needs.native_addons_cross.result == 'success' || needs.native_addons_cross.result == 'skipped') }}
+      timeout-minutes: 20
+      steps:
+         - uses: actions/checkout@v4
+           # Not ./.github/actions/bun-install: that action installs Bun with
+           # `curl bun.sh/install | bash`, whose Windows pick under Git Bash is not
+           # something this repo can verify. Bun publishes a native Windows ARM64
+           # build (`bun-windows-aarch64.zip`), so take that asset directly. The
+           # repo pins `bun@>=1.4`, a floor — latest satisfies it by construction,
+           # and the assertion below proves it rather than assuming it.
+         - name: Install Bun (Windows ARM64 build)
+           shell: pwsh
+           run: |
+              $ErrorActionPreference = "Stop"
+              $release = Invoke-RestMethod "https://api.github.com/repos/oven-sh/bun/releases/latest"
+              $asset = $release.assets | Where-Object { $_.name -eq "bun-windows-aarch64.zip" } | Select-Object -First 1
+              if (-not $asset) { throw "bun-windows-aarch64.zip missing from bun $($release.tag_name); Windows ARM64 unit runs cannot install Bun" }
+              $zip = Join-Path $env:RUNNER_TEMP "bun.zip"
+              Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+              $dest = Join-Path $env:RUNNER_TEMP "bun"
+              Expand-Archive -Path $zip -DestinationPath $dest -Force
+              # The archive nests a `bun-windows-aarch64/` directory; put the real
+              # executable on PATH rather than depending on that layout.
+              $exe = Get-ChildItem -Path $dest -Filter "bun.exe" -Recurse | Select-Object -First 1
+              if (-not $exe) { throw "bun.exe not found inside $zip" }
+              echo "$($exe.DirectoryName)" >> $env:GITHUB_PATH
+         - name: Report Bun version
+           shell: pwsh
+           run: |
+              $ErrorActionPreference = "Stop"
+              $version = & bun --version
+              echo "bun $version on $env:RUNNER_OS/$env:RUNNER_ARCH"
+              if ($version -notmatch '^1\.(\d+)\.') { throw "unexpected bun version: $version" }
+              if ([int]$Matches[1] -lt 4) { throw "repo pins bun@>=1.4; runner has $version" }
+         - name: Install dependencies
+           shell: pwsh
+           run: bun install --frozen-lockfile
+           # PR runs publish only natives-linux-x64, so the cross artifact this job
+           # would otherwise restore does not exist. Same fallback `native_addons`
+           # uses, and the same tradeoff it documents: the addon then reflects the
+           # last release rather than this branch's Rust. Native changes are
+           # validated post-merge on main and at release. What is still checked on
+           # every PR is the TypeScript contract — which is what gate 6 is about.
+         - name: Fetch the Windows ARM64 addon (PR runs)
+           if: github.event_name == 'pull_request'
+           shell: pwsh
+           run: |
+              $ErrorActionPreference = "Stop"
+              $tarball = (& npm view "@oh-my-pi/pi-natives-win32-arm64@latest" dist.tarball).Trim()
+              echo "Fetching $tarball"
+              $tgz = Join-Path $env:RUNNER_TEMP "addon.tgz"
+              Invoke-WebRequest -Uri $tarball -OutFile $tgz
+              & tar -xzf $tgz -C $env:RUNNER_TEMP
+              Copy-Item "$env:RUNNER_TEMP/package/pi_natives.win32-arm64.node" "packages/natives/native/"
+         - name: Install the native addon
+           if: github.event_name != 'pull_request'
+           uses: ./.github/actions/native-artifacts
+           with:
+              targets: win32-arm64
+           # The point of the job. `bun test <file>` rather than a ci:test:* bucket:
+           # a full Windows unit run is a much wider claim, and this one file is the
+           # only thing currently asserted nowhere.
+         - name: Test process hardening (Windows)
+           shell: pwsh
+           run: bun test packages/coding-agent/test/harden-process.test.ts
 
    # Publishes the six @oh-my-pi/pi-natives-<tag> leaf packages once
    # validation passes and every binary built. Runs on one linux runner: leaf
@@ -1163,7 +1297,7 @@ jobs:
          - name: Download release binaries
            uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
            with:
-              pattern: omp-binary-*
+              pattern: ultraworkers-binary-*
               path: packages/coding-agent/binaries
               merge-multiple: true
          # Dependency-free build (bun APIs + zip only), so no `bun install`
@@ -1176,7 +1310,7 @@ jobs:
          - name: Generate checksums
            run: |
               bun run ci:release:checksums SHA256SUMS.txt \
-                packages/coding-agent/binaries/omp-* \
+                packages/coding-agent/binaries/ultraworkers-* \
                 packages/browser-relay/dist/omp-browser-relay-extension.zip \
                 LICENSE \
                 THIRD-PARTY-NOTICES.txt
@@ -1186,7 +1320,7 @@ jobs:
               tag_name: ${{ needs.release_metadata.outputs.release-tag }}
               prerelease: ${{ needs.release_metadata.outputs.channel == 'canary' }}
               files: |
-                 packages/coding-agent/binaries/omp-*
+                 packages/coding-agent/binaries/ultraworkers-*
                  packages/browser-relay/dist/omp-browser-relay-extension.zip
                  LICENSE
                  THIRD-PARTY-NOTICES.txt
@@ -1207,26 +1341,26 @@ jobs:
       steps:
          - name: Download published macOS arm64 binary
            run: |
-              curl -fsSL -o omp-darwin-arm64 "https://github.com/${{ github.repository }}/releases/download/${{ needs.release_metadata.outputs.release-tag }}/omp-darwin-arm64"
-              chmod +x omp-darwin-arm64
+              curl -fsSL -o ultraworkers-darwin-arm64 "https://github.com/${{ github.repository }}/releases/download/${{ needs.release_metadata.outputs.release-tag }}/ultraworkers-darwin-arm64"
+              chmod +x ultraworkers-darwin-arm64
          - name: Verify published macOS arm64 binary
            run: |
-              codesign -dvvv ./omp-darwin-arm64
-              codesign --verify --strict --verbose=4 ./omp-darwin-arm64
+              codesign -dvvv ./ultraworkers-darwin-arm64
+              codesign --verify --strict --verbose=4 ./ultraworkers-darwin-arm64
               runtime_dir="$(mktemp -d)"
-              HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" ./omp-darwin-arm64 --version
-              HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" ./omp-darwin-arm64 --smoke-test
+              HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" ./ultraworkers-darwin-arm64 --version
+              HOME="$runtime_dir/home" XDG_DATA_HOME="$runtime_dir/xdg" ./ultraworkers-darwin-arm64 --smoke-test
          - name: Assert signed release is not ad-hoc
            if: env.MACOS_SIGNING == 'true'
            run: |
-              if codesign -dvvv ./omp-darwin-arm64 2>&1 | grep -qE "flags=.*adhoc|Signature=adhoc"; then
+              if codesign -dvvv ./ultraworkers-darwin-arm64 2>&1 | grep -qE "flags=.*adhoc|Signature=adhoc"; then
                 echo "published binary is still ad-hoc signed (Developer ID signing did not run)" >&2
                 exit 1
               fi
               # Gatekeeper assessment: a notarized Developer ID binary is accepted.
               # Informational — a bare (unstapled) Mach-O relies on the online ticket
               # lookup, so surface the result without gating the release on it.
-              spctl -a -t exec -vv ./omp-darwin-arm64 || echo "spctl non-zero (expected for unstapled bare binary; ticket served online)"
+              spctl -a -t exec -vv ./ultraworkers-darwin-arm64 || echo "spctl non-zero (expected for unstapled bare binary; ticket served online)"
 
    release_npm:
       name: Publish to npm
@@ -1240,7 +1374,15 @@ jobs:
       # release_native_leaves must finish first: the core package lists the
       # leaf packages as lockstep-versioned optionalDependencies, so installs
       # resolve them the moment the core version is live.
-      needs: [release_metadata, release_binary, release_binary_hosted, release_smoke_win32_arm64, release_github_verify, release_native_leaves]
+      needs:
+         [
+            release_metadata,
+            release_binary,
+            release_binary_hosted,
+            release_smoke_win32_arm64,
+            release_github_verify,
+            release_native_leaves,
+         ]
       runs-on: ubuntu-22.04
       # `id-token: write` lets npm mint the GitHub OIDC token it exchanges for a
       # short-lived publish token (trusted publishing + provenance). When a
@@ -1322,13 +1464,47 @@ jobs:
            env:
               GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
            run: |
-              bun scripts/ci-update-brew-formula.ts "${{ needs.release_metadata.outputs.release-tag }}" --out homebrew-tap/Formula/omp.rb
+              bun scripts/ci-update-brew-formula.ts "${{ needs.release_metadata.outputs.release-tag }}" --out homebrew-tap/Formula/ultraworkers.rb
               cd homebrew-tap
-              if git diff --quiet -- Formula/omp.rb; then
+              if git diff --quiet -- Formula/ultraworkers.rb; then
                 echo "formula already up to date for ${{ needs.release_metadata.outputs.release-tag }}"
                 exit 0
               fi
               git -c user.name="github-actions[bot]" \
                   -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-                  commit -m "omp ${{ needs.release_metadata.outputs.release-tag }}" -- Formula/omp.rb
+                  commit -m "ultraworkers ${{ needs.release_metadata.outputs.release-tag }}" -- Formula/ultraworkers.rb
               git push origin HEAD:main
+
+   # Report the perf threshold ledger. Advisory by default: every threshold in
+   # it is report-only until it carries variance characterisation, a passed
+   # before/after benchmark, and human approval — so this job measures and
+   # merges, and never blocks a PR over a threshold nobody chose. Set
+   # PERF_LEDGER_MODE=hard to opt into gating.
+   perf_report:
+      name: Perf threshold report
+      runs-on: ubuntu-22.04
+      env:
+         PERF_LEDGER_MODE: ${{ vars.PERF_LEDGER_MODE || 'advisory' }}
+      steps:
+         - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+         - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+           with:
+              bun-version: ${{ vars.BUN_VERSION }}
+         - name: Report perf threshold ledger
+           run: |
+              # Advisory (the default) reports and merges even when every
+              # threshold is under-evidenced. Only `hard` turns the same ledger
+              # into a gate, and only then may this step fail the job.
+              flag=""
+              if [ "$PERF_LEDGER_MODE" = "hard" ]; then flag="--hard"; fi
+              bun scripts/perf-threshold-report.ts $flag > perf-threshold-report.txt 2>&1 || {
+                 code=$?
+                 cat perf-threshold-report.txt
+                 exit "$code"
+              }
+              cat perf-threshold-report.txt
+         - name: Upload perf threshold report
+           uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+           with:
+              name: perf-threshold-report
+              path: perf-threshold-report.txt

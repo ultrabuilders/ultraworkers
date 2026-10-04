@@ -16,7 +16,7 @@ Primary implementation:
 ## Startup
 
 ```bash
-omp --mode rpc [regular CLI options]
+ultraworkers --mode rpc [regular CLI options]
 ```
 
 Behavior notes:
@@ -38,11 +38,11 @@ The initial ready frame uses protocol v1 and advertises the opt-in lossless tran
 
 ```json
 {
-  "type": "ready",
-  "protocolVersion": 1,
-  "supportedProtocolVersions": [1, 2],
-  "maxFrameBytes": 1048576,
-  "maxReassembledFrameBytes": 67108864
+	"type": "ready",
+	"protocolVersion": 1,
+	"supportedProtocolVersions": [1, 2],
+	"maxFrameBytes": 1048576,
+	"maxReassembledFrameBytes": 67108864
 }
 ```
 
@@ -56,12 +56,12 @@ After the success response, oversized stdout objects are emitted losslessly as a
 
 ```json
 {
-  "type": "rpc_chunk",
-  "chunkId": "rpc-1",
-  "index": 0,
-  "count": 7,
-  "byteLength": 1600042,
-  "data": "eyJ0eXBlIjoicmVzcG9uc2UiLC4uLn0="
+	"type": "rpc_chunk",
+	"chunkId": "rpc-1",
+	"index": 0,
+	"count": 7,
+	"byteLength": 1600042,
+	"data": "eyJ0eXBlIjoicmVzcG9uc2UiLC4uLn0="
 }
 ```
 
@@ -84,9 +84,9 @@ Clients MUST continue reading stdout after closing stdin. Normal EOF and extensi
 7. Extension errors (`{ type: "extension_error", extensionPath, event, error }`)
 8. Available-commands updates (`{ type: "available_commands_update", commands }`), emitted at startup and whenever command metadata changes
 9. Prompt completion (`{ type: "prompt_result", id?, agentInvoked, status, error?, sessionSettled }`), one per accepted prompt; see [`prompt` payload](#prompt-payload)
-10. Session quiescence (`{ type: "session_settled" }`); see [Yield vs settled](#yield-vs-settled)
-11. Subagent frames (`subagent_lifecycle`, `subagent_progress`, `subagent_event`), gated by `set_subagent_subscription`
-12. Builtin slash-command side channels (`command_output`, `session_info_update`, `config_update`)
+10.   Session quiescence (`{ type: "session_settled" }`); see [Yield vs settled](#yield-vs-settled)
+11.   Subagent frames (`subagent_lifecycle`, `subagent_progress`, `subagent_event`), gated by `set_subagent_subscription`
+12.   Builtin slash-command side channels (`command_output`, `session_info_update`, `config_update`)
 
 ### Inbound frame categories (stdin)
 
@@ -228,11 +228,11 @@ Data payloads are command-specific and defined in `rpc-types.ts`.
 
 ```json
 {
-  "id": "req_1",
-  "type": "response",
-  "command": "prompt",
-  "success": true,
-  "data": { "agentInvoked": false }
+	"id": "req_1",
+	"type": "response",
+	"command": "prompt",
+	"success": true,
+	"data": { "agentInvoked": false }
 }
 ```
 
@@ -245,7 +245,7 @@ Data payloads are command-specific and defined in `rpc-types.ts`.
 - `agentInvoked: false`: the prompt finished locally (an extension or custom command that started no turn) or failed before reaching the agent.
 - `agentInvoked: true`: the prompt reached the agent and the agent **yielded** — see [Yield vs settled](#yield-vs-settled). A prompt dispatched as a fresh turn reports the first run that started after it was accepted, so a late `agent_end` from an earlier run never completes it. A prompt queued into a live run (`streamingBehavior`) reports at the first yield after its message left the queue. An `agent_end` with `yielded: false` (the agent is retrying, compacting, or answering a stop-time reminder) never completes a prompt.
 - `status`: `"completed"`, `"aborted"` (interrupted by `abort`, `abort_and_prompt`, or a session transition, or dropped by an abort before dispatch), or `"error"`.
-- `error` (only with `status: "error"`): `{ message, provider?, model?, httpStatus?, retryable }`. `message` is the provider's error text with OMP-local diagnostics (such as saved request-dump paths) removed. `retryable` marks a transient failure; OMP's own automatic retries have already been exhausted. A prompt that fails before reaching the agent also gets the legacy error response with the same `id` before its `prompt_result`.
+- `error` (only with `status: "error"`): `{ message, provider?, model?, httpStatus?, retryable }`. `message` is the provider's error text with OMP-local diagnostics (such as saved request-dump paths) removed. `retryable` marks a transient failure; ultraworkers' own automatic retries have already been exhausted. A prompt that fails before reaching the agent also gets the legacy error response with the same `id` before its `prompt_result`.
 - `sessionSettled`: whether the session is already done when the result is written — see [Yield vs settled](#yield-vs-settled). `false` means background work can still wake the agent; a `session_settled` frame follows once it has.
 
 A failed provider turn is not a failed command: the prompt response is still `success: true`, and the turn ends with a normal terminal `agent_end` whose last assistant message has `stopReason: "error"`. Use `prompt_result.status` rather than parsing that message.
@@ -256,7 +256,7 @@ Local-only slash commands may emit `command_output` frames before completing. Th
 
 A prompt's `prompt_result` means the **agent yielded**: it finished its turn (`agent_end` with `yielded: true`). The **session is done** only when, in addition, nothing can wake it again — no run is live or admitted, no steer/follow-up is queued, and no background job (auto-backgrounded `bash`, async `task`, `eval`) or pending delivery will inject its result and start a follow-up turn.
 
-- `session_settled` is written once per stretch of agent activity, when the session becomes done. If background work was pending at the yield, OMP waits it out; any follow-up runs it triggers stream normally (`agent_start` … `agent_end`) before `session_settled`. It always follows the `prompt_result` frames of the final yield, and is not emitted for prompts that never reached the agent.
+- `session_settled` is written once per stretch of agent activity, when the session becomes done. If background work was pending at the yield, ultraworkers waits it out; any follow-up runs it triggers stream normally (`agent_start` … `agent_end`) before `session_settled`. It always follows the `prompt_result` frames of the final yield, and is not emitted for prompts that never reached the agent.
 - `prompt_result.sessionSettled` answers the same question at the yield, so a host can tear down immediately when it is `true`.
 - `get_state` reports `isSettled` (same predicate) and `hasPendingAsyncWork`, for hosts that attach mid-stream.
 
@@ -310,49 +310,49 @@ is re-armed.
 
 ```json
 {
-  "model": { "provider": "...", "id": "..." },
-  "thinkingLevel": "off|minimal|low|medium|high|xhigh|max",
-  "isStreaming": false,
-  "isCompacting": false,
-  "steeringMode": "all|one-at-a-time",
-  "followUpMode": "all|one-at-a-time",
-  "interruptMode": "immediate|wait",
-  "sessionFile": "...",
-  "sessionId": "...",
-  "sessionName": "...",
-  "fastModeEnabled": false,
-  "tokensPerSecond": null,
-  "fastModeActive": false,
-  "autoCompactionEnabled": true,
-  "messageCount": 0,
-  "queuedMessageCount": 0,
-  "queuedMessages": { "steering": [], "followUp": [] },
-  "todoPhases": [
-    {
-      "id": "phase-1",
-      "name": "Todos",
-      "tasks": [
-        {
-          "id": "task-1",
-          "content": "Map the tool surface",
-          "status": "in_progress"
-        }
-      ]
-    }
-  ],
-  "systemPrompt": ["..."],
-  "dumpTools": [
-    {
-      "name": "read",
-      "description": "Read files and URLs",
-      "parameters": {}
-    }
-  ],
-  "contextUsage": {
-    "tokens": 1100,
-    "contextWindow": 200000,
-    "percent": 0.55
-  }
+	"model": { "provider": "...", "id": "..." },
+	"thinkingLevel": "off|minimal|low|medium|high|xhigh|max",
+	"isStreaming": false,
+	"isCompacting": false,
+	"steeringMode": "all|one-at-a-time",
+	"followUpMode": "all|one-at-a-time",
+	"interruptMode": "immediate|wait",
+	"sessionFile": "...",
+	"sessionId": "...",
+	"sessionName": "...",
+	"fastModeEnabled": false,
+	"tokensPerSecond": null,
+	"fastModeActive": false,
+	"autoCompactionEnabled": true,
+	"messageCount": 0,
+	"queuedMessageCount": 0,
+	"queuedMessages": { "steering": [], "followUp": [] },
+	"todoPhases": [
+		{
+			"id": "phase-1",
+			"name": "Todos",
+			"tasks": [
+				{
+					"id": "task-1",
+					"content": "Map the tool surface",
+					"status": "in_progress"
+				}
+			]
+		}
+	],
+	"systemPrompt": ["..."],
+	"dumpTools": [
+		{
+			"name": "read",
+			"description": "Read files and URLs",
+			"parameters": {}
+		}
+	],
+	"contextUsage": {
+		"tokens": 1100,
+		"contextWindow": 200000,
+		"percent": 0.55
+	}
 }
 ```
 
@@ -382,11 +382,11 @@ the sticky rejection fallback, even when fast mode was already enabled.
 
 ```json
 {
-  "id": "req_fast_on",
-  "type": "response",
-  "command": "set_fast_mode",
-  "success": true,
-  "data": { "enabled": true, "active": true }
+	"id": "req_fast_on",
+	"type": "response",
+	"command": "set_fast_mode",
+	"success": true,
+	"data": { "enabled": true, "active": true }
 }
 ```
 
@@ -395,11 +395,11 @@ exact error below:
 
 ```json
 {
-  "id": "req_fast_on",
-  "type": "response",
-  "command": "set_fast_mode",
-  "success": false,
-  "error": "Fast mode is unavailable for the current model."
+	"id": "req_fast_on",
+	"type": "response",
+	"command": "set_fast_mode",
+	"success": false,
+	"error": "Fast mode is unavailable for the current model."
 }
 ```
 
@@ -413,11 +413,11 @@ priority keeps the computed active state true:
 
 ```json
 {
-  "id": "req_fast_off",
-  "type": "response",
-  "command": "set_fast_mode",
-  "success": true,
-  "data": { "enabled": false, "active": true }
+	"id": "req_fast_off",
+	"type": "response",
+	"command": "set_fast_mode",
+	"success": true,
+	"data": { "enabled": false, "active": true }
 }
 ```
 
@@ -425,8 +425,8 @@ The corresponding `get_state` result reports the same computed state:
 
 ```json
 {
-  "fastModeEnabled": false,
-  "fastModeActive": true
+	"fastModeEnabled": false,
+	"fastModeActive": true
 }
 ```
 
@@ -436,26 +436,26 @@ Replaces the in-memory todo state for the current session and returns the normal
 
 ```json
 {
-  "id": "req_2",
-  "type": "set_todos",
-  "phases": [
-    {
-      "id": "phase-1",
-      "name": "Evaluation",
-      "tasks": [
-        {
-          "id": "task-1",
-          "content": "Map the read tool surface",
-          "status": "in_progress"
-        },
-        {
-          "id": "task-2",
-          "content": "Exercise edit operations",
-          "status": "pending"
-        }
-      ]
-    }
-  ]
+	"id": "req_2",
+	"type": "set_todos",
+	"phases": [
+		{
+			"id": "phase-1",
+			"name": "Evaluation",
+			"tasks": [
+				{
+					"id": "task-1",
+					"content": "Map the read tool surface",
+					"status": "in_progress"
+				},
+				{
+					"id": "task-2",
+					"content": "Exercise edit operations",
+					"status": "pending"
+				}
+			]
+		}
+	]
 }
 ```
 
@@ -468,23 +468,23 @@ into over stdio:
 
 ```json
 {
-  "id": "req_3",
-  "type": "set_host_tools",
-  "tools": [
-    {
-      "name": "echo_host",
-      "label": "Echo Host",
-      "description": "Echo a value from the embedding host",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "message": { "type": "string" }
-        },
-        "required": ["message"],
-        "additionalProperties": false
-      }
-    }
-  ]
+	"id": "req_3",
+	"type": "set_host_tools",
+	"tools": [
+		{
+			"name": "echo_host",
+			"label": "Echo Host",
+			"description": "Echo a value from the embedding host",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"message": { "type": "string" }
+				},
+				"required": ["message"],
+				"additionalProperties": false
+			}
+		}
+	]
 }
 ```
 
@@ -492,7 +492,7 @@ The response payload is:
 
 ```json
 {
-  "toolNames": ["echo_host"]
+	"toolNames": ["echo_host"]
 }
 ```
 
@@ -511,16 +511,16 @@ dispatch reads/writes through:
 
 ```json
 {
-  "id": "req_4",
-  "type": "set_host_uri_schemes",
-  "schemes": [
-    {
-      "scheme": "db",
-      "description": "Virtual db row files",
-      "writable": true,
-      "immutable": false
-    }
-  ]
+	"id": "req_4",
+	"type": "set_host_uri_schemes",
+	"schemes": [
+		{
+			"scheme": "db",
+			"description": "Virtual db row files",
+			"writable": true,
+			"immutable": false
+		}
+	]
 }
 ```
 
@@ -528,7 +528,7 @@ The response payload is:
 
 ```json
 {
-  "schemes": ["db"]
+	"schemes": ["db"]
 }
 ```
 
@@ -538,7 +538,7 @@ previous set — schemes missing from the new list are unregistered.
 
 Every built-in scheme (`local://`, `skill://`, `artifact://`, `security://`,
 `mcp://`, …) is reserved: RPC hosts cannot register or shadow one, and the
-request fails with `Host URI scheme is reserved by OMP: <scheme>://`.
+request fails with `Host URI scheme is reserved by ultraworkers: <scheme>://`.
 
 ## Event Stream Schema
 
@@ -581,10 +581,10 @@ Extension runner errors are emitted separately as:
 
 ```json
 {
-  "type": "extension_error",
-  "extensionPath": "...",
-  "event": "...",
-  "error": "..."
+	"type": "extension_error",
+	"extensionPath": "...",
+	"event": "...",
+	"error": "..."
 }
 ```
 
@@ -592,7 +592,7 @@ Extension runner errors are emitted separately as:
 
 `message_start`, `message_update`, and `message_end` carry a `messageId` string assigned by RPC mode. One message keeps the same id from its start through every update to its end; ids are unique within the process. Records injected mid-stream (advisor cards, IRC messages) get their own id and do not disturb the id of the reply streaming around them.
 
-`set_event_filter` restricts which session event frames are written: pass the event `type` strings to forward, or `null` to forward everything (the default). The response echoes the active selection as `{ events }`. The filter applies only to the session events listed above; every other outbound category (responses, `prompt_result`, `session_settled`, extension UI and host tool/URI requests, `extension_error`, `available_commands_update`, subagent frames, builtin slash-command side channels, and session-persistence `notice` frames) is always written. Hosts that fail closed on unknown event kinds can pin the set they understand here instead of breaking when OMP adds an event.
+`set_event_filter` restricts which session event frames are written: pass the event `type` strings to forward, or `null` to forward everything (the default). The response echoes the active selection as `{ events }`. The filter applies only to the session events listed above; every other outbound category (responses, `prompt_result`, `session_settled`, extension UI and host tool/URI requests, `extension_error`, `available_commands_update`, subagent frames, builtin slash-command side channels, and session-persistence `notice` frames) is always written. Hosts that fail closed on unknown event kinds can pin the set they understand here instead of breaking when ultraworkers adds an event.
 
 `agent_end` has this session-level shape (in addition to optional telemetry fields):
 
@@ -619,18 +619,18 @@ in `available_commands_update` frames at startup and after command metadata
 changes. Each command has `name`, `source`, and optional `aliases`,
 `description`, `input.hint`, and `subcommands`.
 
-Command discovery is intentionally an OMP dialect: Pi's `get_commands` (a
+Command discovery is intentionally an ultraworkers dialect: Pi's `get_commands` (a
 `RpcSlashCommand[]` projection over extensions → prompt templates → skills) is
-not served because OMP's richer catalog (builtins/custom/MCP/file commands,
+not served because ultraworkers' richer catalog (builtins/custom/MCP/file commands,
 broader `source` enum, no Pi `sourceInfo`) is not wire-compatible with it.
 
 ### Pi-compatible history/tree commands with OMP-native entry payloads
 
 The commands and reconciliation semantics below are Pi-compatible, but the
 returned `SessionEntry` payload union is OMP-native, not wire-identical to
-Pi. Concretely: Pi `model_change` carries `provider` + `modelId` while OMP
+Pi. Concretely: Pi `model_change` carries `provider` + `modelId` while ultraworkers
 carries a combined `model` plus role/fallback metadata; Pi uses a `usage`
-entry where OMP uses `model_usage`; and OMP has additional entry types (for
+entry where ultraworkers uses `model_usage`; and ultraworkers has additional entry types (for
 example service-tier, title, mode, credential, and reset records). A
 permissive client that consumes the common structural subset
 (`id`/`parentId` plus message entries) can share one durable-history
@@ -649,10 +649,10 @@ for the live model with `"off"` first (it is accepted by
 `set_thinking_level` but excluded from the effort-only model helper). OMP-only
 `auto`/`inherit` selectors are intentionally omitted from discovery.
 
-Lifecycle stays OMP: terminal settle is `agent_end` with
+Lifecycle stays ultraworkers: terminal settle is `agent_end` with
 `isTerminal !== false`, not Pi's `agent_settled`; `prompt_result`/
 `agentInvoked`, `open_session`, `set_event_filter`, `messageId`, `ready`,
-negotiation, chunking, host tools, and subagents are OMP extensions a
+negotiation, chunking, host tools, and subagents are ultraworkers extensions a
 Pi-family adapter must dialect around.
 
 ### Subagent subscriptions
@@ -709,11 +709,11 @@ From `packages/agent/src/agent.ts` defaults:
 ### Mode semantics
 
 - `set_steering_mode` / `set_follow_up_mode`
-  - `"one-at-a-time"`: dequeue one queued message per turn
-  - `"all"`: dequeue entire queue at once
+   - `"one-at-a-time"`: dequeue one queued message per turn
+   - `"all"`: dequeue entire queue at once
 - `set_interrupt_mode`
-  - `"immediate"`: tool execution checks steering between tool calls; pending steering can abort remaining tool calls in the turn
-  - `"wait"`: defer steering until turn completion
+   - `"immediate"`: tool execution checks steering between tool calls; pending steering can abort remaining tool calls in the turn
+   - `"wait"`: defer steering until turn completion
 
 ## Extension UI Sub-Protocol
 
@@ -724,10 +724,10 @@ Extensions in RPC mode use request/response UI frames. A host that cannot answer
 `RpcExtensionUIRequest` (`type: "extension_ui_request"`) methods:
 
 - `select`, `confirm`, `input`, `editor`, `cancel`
-  - `select` keeps labels in `options: string[]` and, when any option has a
-    description, emits a positionally aligned
-    `optionDetails: Array<{ description?: string }>` array. Hosts that do not
-    render descriptions can continue using `options` alone.
+   - `select` keeps labels in `options: string[]` and, when any option has a
+     description, emits a positionally aligned
+     `optionDetails: Array<{ description?: string }>` array. Hosts that do not
+     render descriptions can continue using `options` alone.
 - `notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`
 - `open_url` (emitted by RPC login flows)
 
@@ -742,12 +742,12 @@ Example:
 
 ```json
 {
-  "type": "extension_ui_request",
-  "id": "123",
-  "method": "confirm",
-  "title": "Confirm",
-  "message": "Continue?",
-  "timeout": 30000
+	"type": "extension_ui_request",
+	"id": "123",
+	"method": "confirm",
+	"title": "Confirm",
+	"message": "Continue?",
+	"timeout": 30000
 }
 ```
 
@@ -772,11 +772,11 @@ When the agent wants the host to execute one of those tools, RPC mode emits:
 
 ```json
 {
-  "type": "host_tool_call",
-  "id": "host_1",
-  "toolCallId": "toolu_123",
-  "toolName": "echo_host",
-  "arguments": { "message": "hello" }
+	"type": "host_tool_call",
+	"id": "host_1",
+	"toolCallId": "toolu_123",
+	"toolName": "echo_host",
+	"arguments": { "message": "hello" }
 }
 ```
 
@@ -784,9 +784,9 @@ If the tool execution is later aborted, RPC mode emits:
 
 ```json
 {
-  "type": "host_tool_cancel",
-  "id": "host_cancel_1",
-  "targetId": "host_1"
+	"type": "host_tool_cancel",
+	"id": "host_cancel_1",
+	"targetId": "host_1"
 }
 ```
 
@@ -796,11 +796,11 @@ Hosts can optionally stream progress:
 
 ```json
 {
-  "type": "host_tool_update",
-  "id": "host_1",
-  "partialResult": {
-    "content": [{ "type": "text", "text": "working" }]
-  }
+	"type": "host_tool_update",
+	"id": "host_1",
+	"partialResult": {
+		"content": [{ "type": "text", "text": "working" }]
+	}
 }
 ```
 
@@ -808,11 +808,11 @@ Completion uses:
 
 ```json
 {
-  "type": "host_tool_result",
-  "id": "host_1",
-  "result": {
-    "content": [{ "type": "text", "text": "done" }]
-  }
+	"type": "host_tool_result",
+	"id": "host_1",
+	"result": {
+		"content": [{ "type": "text", "text": "done" }]
+	}
 }
 ```
 
@@ -831,10 +831,10 @@ When a session tool resolves a host-owned URL, RPC mode emits:
 
 ```json
 {
-  "type": "host_uri_request",
-  "id": "uri_1",
-  "operation": "read",
-  "url": "db://users/42"
+	"type": "host_uri_request",
+	"id": "uri_1",
+	"operation": "read",
+	"url": "db://users/42"
 }
 ```
 
@@ -846,9 +846,9 @@ emits:
 
 ```json
 {
-  "type": "host_uri_cancel",
-  "id": "uri_cancel_1",
-  "targetId": "uri_1"
+	"type": "host_uri_cancel",
+	"id": "uri_cancel_1",
+	"targetId": "uri_1"
 }
 ```
 
@@ -858,12 +858,12 @@ For successful reads:
 
 ```json
 {
-  "type": "host_uri_result",
-  "id": "uri_1",
-  "content": "id=42\nname=Alice\n",
-  "contentType": "text/plain",
-  "notes": ["fresh from cache"],
-  "immutable": false
+	"type": "host_uri_result",
+	"id": "uri_1",
+	"content": "id=42\nname=Alice\n",
+	"contentType": "text/plain",
+	"notes": ["fresh from cache"],
+	"immutable": false
 }
 ```
 
@@ -878,10 +878,10 @@ a message or fall back to `content` for textual error surfacing:
 
 ```json
 {
-  "type": "host_uri_result",
-  "id": "uri_1",
-  "isError": true,
-  "error": "row 42 not found"
+	"type": "host_uri_result",
+	"id": "uri_1",
+	"isError": true,
+	"error": "row 42 not found"
 }
 ```
 
@@ -906,11 +906,11 @@ Failures are `success: false` with string `error`.
 
 ```json
 {
-  "id": "req_2",
-  "type": "response",
-  "command": "set_model",
-  "success": false,
-  "error": "Model not found: provider/model"
+	"id": "req_2",
+	"type": "response",
+	"command": "set_model",
+	"success": false,
+	"error": "Model not found: provider/model"
 }
 ```
 
@@ -949,10 +949,10 @@ stdin:
 
 ```json
 {
-  "id": "req_2",
-  "type": "prompt",
-  "message": "Also include risks",
-  "streamingBehavior": "followUp"
+	"id": "req_2",
+	"type": "prompt",
+	"message": "Also include risks",
+	"streamingBehavior": "followUp"
 }
 ```
 
@@ -972,11 +972,11 @@ stdout:
 
 ```json
 {
-  "type": "extension_ui_request",
-  "id": "ui_7",
-  "method": "input",
-  "title": "Branch name",
-  "placeholder": "feature/..."
+	"type": "extension_ui_request",
+	"id": "ui_7",
+	"method": "input",
+	"title": "Branch name",
+	"placeholder": "feature/..."
 }
 ```
 
@@ -1013,4 +1013,4 @@ with RpcClient(provider="anthropic", model="claude-sonnet-4-5") as client:
     print(turn.require_assistant_text())
 ```
 
-By default, `RpcClient` starts `omp --mode rpc`; pass `command=[...]` to own the exact child command. It handles request correlation, typed notifications, v2 negotiation and chunk reassembly, message pagination, extension UI, and host-owned tools and URI schemes. The Python package owns that client API and process lifecycle; this document and `rpc-types.ts` remain the canonical wire contract. Use raw protocol frames when a client library does not wrap the surface you need.
+By default, `RpcClient` starts `ultraworkers --mode rpc`; pass `command=[...]` to own the exact child command. It handles request correlation, typed notifications, v2 negotiation and chunk reassembly, message pagination, extension UI, and host-owned tools and URI schemes. The Python package owns that client API and process lifecycle; this document and `rpc-types.ts` remain the canonical wire contract. Use raw protocol frames when a client library does not wrap the surface you need.

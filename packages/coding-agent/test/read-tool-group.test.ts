@@ -5,7 +5,11 @@ import { resetSettingsForTest, Settings, settings } from "@oh-my-pi/pi-coding-ag
 // Installs the pi-tui scheme host that decides which reads collapse into the group.
 import "@oh-my-pi/pi-coding-agent/internal-urls/router";
 
-import { ReadToolGroupComponent, readArgsCollapseIntoGroup } from "@oh-my-pi/pi-tui/chat/read-tool-group";
+import {
+	isReadToolGroupMember,
+	ReadToolGroupComponent,
+	readArgsCollapseIntoGroup,
+} from "@oh-my-pi/pi-tui/chat/read-tool-group";
 import * as themeModule from "@oh-my-pi/pi-tui/theme";
 import { cfgReadToolResultPreview } from "@oh-my-pi/pi-coding-agent/tools/settings";
 import { cfgTuiHyperlinks } from "@oh-my-pi/pi-coding-agent/modes/settings";
@@ -421,5 +425,37 @@ describe("readArgsCollapseIntoGroup", () => {
 		expect(readArgsCollapseIntoGroup(["xd://x"])).toBe(false);
 		expect(readArgsCollapseIntoGroup({})).toBe(false);
 		expect(readArgsCollapseIntoGroup({ path: 42 })).toBe(false);
+	});
+});
+
+describe("isReadToolGroupMember", () => {
+	// The membership rule has two halves and a call site needs both. Splitting
+	// them is what let the rule drift, so the case that matters most is the one
+	// where the halves disagree.
+
+	it("a file read collapses: both halves agree", () => {
+		expect(isReadToolGroupMember("read", { path: path.resolve("/tmp/example.ts") })).toBe(true);
+	});
+
+	it("a non-read tool with identical read-shaped arguments does not collapse", () => {
+		// The name half, isolated. The args are byte-identical to the case above, so
+		// this goes red the moment the predicate is implemented as the args check
+		// alone — which is precisely the half-extraction this replaced.
+		expect(isReadToolGroupMember("edit", { path: path.resolve("/tmp/example.ts") })).toBe(false);
+		expect(isReadToolGroupMember("bash", { path: path.resolve("/tmp/example.ts") })).toBe(false);
+	});
+
+	it("a read against a registered internal URL renders full: the args half decides", () => {
+		// The other direction — name says read, arguments say render in full.
+		expect(isReadToolGroupMember("read", { path: "skill://my-skill" })).toBe(false);
+		expect(isReadToolGroupMember("read", { path: "issue://123" })).toBe(false);
+	});
+
+	it("a read whose arguments are not yet parseable does not collapse", () => {
+		// Streaming reads route here before the path resolves. Treating them as
+		// members would create the group card before its shape is known.
+		expect(isReadToolGroupMember("read", undefined)).toBe(false);
+		expect(isReadToolGroupMember("read", {})).toBe(false);
+		expect(isReadToolGroupMember("read", { path: 42 })).toBe(false);
 	});
 });

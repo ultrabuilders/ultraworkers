@@ -27,7 +27,7 @@ describe("AgentSession manual retry", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		tempDir = TempDir.createSync("@pi-manual-retry-");
+		tempDir = TempDir.createSync("@ultraworkers-manual-retry-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);

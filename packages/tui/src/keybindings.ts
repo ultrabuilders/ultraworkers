@@ -40,6 +40,9 @@ export interface Keybindings {
 	"tui.select.pageDown": true;
 	"tui.select.confirm": true;
 	"tui.select.cancel": true;
+	// Transcript search
+	"tui.transcript.searchNext": true;
+	"tui.transcript.searchPrevious": true;
 }
 
 export type Keybinding = keyof Keybindings;
@@ -50,6 +53,17 @@ export type { KeyId };
 export interface KeybindingDefinition {
 	defaultKeys: KeyId | KeyId[];
 	description?: string;
+	/**
+	 * A default key that yields to the user: when the user has bound this exact
+	 * key to a *different* action, it is dropped from this action's resolved keys.
+	 *
+	 * Declared on the definition rather than in a lookup table beside it. The table
+	 * this replaced held two entries, and every action that wanted to yield had to
+	 * be added to it as a separate edit in a different file from the one declaring
+	 * the key — so "this default yields" was a fact that existed in one place and
+	 * the behaviour in another, and a new action silently did not yield.
+	 */
+	fallbackKey?: KeyId;
 }
 
 export type KeybindingDefinitions = Record<string, KeybindingDefinition>;
@@ -138,6 +152,20 @@ export const TUI_KEYBINDINGS = {
 	"tui.select.cancel": {
 		defaultKeys: ["escape", "ctrl+c"],
 		description: "Cancel selection",
+	},
+	// Defaults from pi-ref's `tui.altScreen.*` search bindings, MINUS the ones that
+	// are already taken here. pi binds next to ["enter", "ctrl+g"], but `ctrl+g` is
+	// `app.editor.external` in app-keybindings.ts, so only `enter` carries over.
+	//
+	// `enter`/`shift+enter` are also bound to input/select actions elsewhere; that is
+	// intended — the search overlay resolves them while it holds focus.
+	"tui.transcript.searchNext": {
+		defaultKeys: ["enter"],
+		description: "Select the next search match",
+	},
+	"tui.transcript.searchPrevious": {
+		defaultKeys: ["shift+enter"],
+		description: "Select the previous search match",
 	},
 } as const satisfies KeybindingDefinitions;
 
@@ -334,6 +362,35 @@ export class KeybindingsManager {
 			resolved[id] = keys.length === 1 ? keys[0]! : [...keys];
 		}
 		return resolved;
+	}
+
+	/**
+	 * Every key currently bound to an action — the built-in defaults together
+	 * with the user's remaps.
+	 *
+	 * This is the answer to "may an extension own this key?", derived from the
+	 * bindings themselves. The alternative is a hand-maintained reserved list, and
+	 * a hand-maintained list is wrong the moment a user remaps a default onto a
+	 * key it does not mention: the extension then claims a key the user has
+	 * already given to a built-in, and the remap silently stops working. A
+	 * caller that wanted this had to keep its own copy, which is the table this
+	 * method exists to delete.
+	 *
+	 * Declared here rather than only on the app-level subclass because
+	 * {@link getKeybindings} is typed as the base, so a caller reaching the
+	 * manager through it had no way to ask. Reading
+	 * {@link getResolvedBindings} rather than a private snapshot is what lets the
+	 * subclass — which folds inherited profiles into that method — answer
+	 * correctly from this one body instead of keeping a second copy of the loop.
+	 */
+	claimedKeyIds(): Set<KeyId> {
+		const claimed = new Set<KeyId>();
+		for (const keys of Object.values(this.getResolvedBindings())) {
+			for (const key of Array.isArray(keys) ? keys : [keys]) {
+				if (typeof key === "string") claimed.add(key.toLowerCase() as KeyId);
+			}
+		}
+		return claimed;
 	}
 }
 

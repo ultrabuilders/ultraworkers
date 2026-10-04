@@ -45,7 +45,7 @@ CustomTool.execute(toolCallId, params, onUpdate, ctx, signal)
 `discoverAndLoadCustomTools(configuredPaths, cwd, builtInToolNames, pushPendingAction?, agentDir?)` merges:
 
 1. Capability providers (`toolCapability`), including:
-   - Native OMP config (`<agentDir>/tools`, default `~/.omp/agent/tools`; `.omp/tools`)
+   - Native ultraworkers config (`<agentDir>/tools`, default `~/.omp/agent/tools`; `.omp/tools`)
    - Claude config (`~/.claude/tools`, `.claude/tools`)
    - Codex config (`~/.codex/tools`, `.codex/tools`)
    - Claude marketplace plugin cache provider
@@ -56,7 +56,7 @@ CustomTool.execute(toolCallId, params, onUpdate, ctx, signal)
 
 - Duplicate resolved paths are deduplicated.
 - Tool name conflicts are rejected against built-ins and already-loaded custom tools.
-- Automatic tool-directory scans discover `.ts` and `.js` modules; native OMP discovery also checks immediate subdirectories for `index.ts`. Executable discovery excludes `.d.ts` and filters out metadata and scripts before tool-name deduplication. Declarative metadata such as `.md` and `.json` remains available to capability consumers but is not loaded as executable tools.
+- Automatic tool-directory scans discover `.ts` and `.js` modules; native ultraworkers discovery also checks immediate subdirectories for `index.ts`. Executable discovery excludes `.d.ts` and filters out metadata and scripts before tool-name deduplication. Declarative metadata such as `.md` and `.json` remains available to capability consumers but is not loaded as executable tools.
 - `.mjs` and `.cjs` modules can be loaded through explicitly configured paths or declared plugin tool entries, but the tool-directory scans above do not discover them automatically. Explicitly configured `.md` or `.json` paths still produce a load error.
 - Relative configured paths are resolved from `cwd`; `~` is expanded.
 
@@ -67,44 +67,40 @@ A custom tool module must export a function (default export preferred):
 ```ts
 import type { CustomToolFactory } from "@oh-my-pi/pi-coding-agent";
 
-const factory: CustomToolFactory = (pi) => ({
-  name: "repo_stats",
-  label: "Repo Stats",
-  description: "Counts tracked TypeScript files",
-  parameters: pi.zod.object({
-    glob: pi.zod.string().optional(),
-  }),
+const factory: CustomToolFactory = pi => ({
+	name: "repo_stats",
+	label: "Repo Stats",
+	description: "Counts tracked TypeScript files",
+	parameters: pi.zod.object({
+		glob: pi.zod.string().optional(),
+	}),
 
-  async execute(toolCallId, params, onUpdate, ctx, signal) {
-    onUpdate?.({
-      content: [{ type: "text", text: "Scanning files..." }],
-      details: { phase: "scan" },
-    });
+	async execute(toolCallId, params, onUpdate, ctx, signal) {
+		onUpdate?.({
+			content: [{ type: "text", text: "Scanning files..." }],
+			details: { phase: "scan" },
+		});
 
-    const result = await pi.exec(
-      "git",
-      ["ls-files", params.glob ?? "**/*.ts"],
-      { signal, cwd: pi.cwd },
-    );
-    if (result.killed) {
-      throw new Error("Scan was cancelled");
-    }
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "git ls-files failed");
-    }
+		const result = await pi.exec("git", ["ls-files", params.glob ?? "**/*.ts"], { signal, cwd: pi.cwd });
+		if (result.killed) {
+			throw new Error("Scan was cancelled");
+		}
+		if (result.code !== 0) {
+			throw new Error(result.stderr || "git ls-files failed");
+		}
 
-    const files = result.stdout.split("\n").filter(Boolean);
-    return {
-      content: [{ type: "text", text: `Found ${files.length} files` }],
-      details: { count: files.length, sample: files.slice(0, 10) },
-    };
-  },
+		const files = result.stdout.split("\n").filter(Boolean);
+		return {
+			content: [{ type: "text", text: `Found ${files.length} files` }],
+			details: { count: files.length, sample: files.slice(0, 10) },
+		};
+	},
 
-  onSession(event) {
-    if (event.reason === "shutdown") {
-      // cleanup resources if needed
-    }
-  },
+	onSession(event) {
+		if (event.reason === "shutdown") {
+			// cleanup resources if needed
+		}
+	},
 });
 
 export default factory;
@@ -168,7 +164,7 @@ Optional rendering hooks:
 
 The normal SDK and filesystem-discovery paths wrap custom tools as extensions. On those paths, `renderResult` receives only the three arguments above; the bridge does not forward the original tool arguments. The public `CustomTool` type retains an optional fourth `args` parameter for direct `CustomToolAdapter` consumers.
 
-`renderCall`'s `options` argument additionally answers the `Theme` API, so a renderer written against upstream pi's `renderCall(args, theme, context)` order styles correctly under omp.
+`renderCall`'s `options` argument additionally answers the `Theme` API, so a renderer written against upstream pi's `renderCall(args, theme, context)` order styles correctly under ultraworkers.
 
 Runtime behavior in TUI:
 

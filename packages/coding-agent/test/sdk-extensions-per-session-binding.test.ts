@@ -73,8 +73,10 @@ describe("loadExtensions per-session binding (#2190 review fix)", () => {
 
 		// Distinct Extension instances — the subagent must never share with parent.
 		expect(subagent.extensions[0]).not.toBe(parent.extensions[0]);
-		// Distinct ExtensionRuntime instances — flagValues and pendingProviderRegistrations
-		// MUST NOT be shared, or per-session flags/registrations bleed across.
+		// Distinct ExtensionRuntime instances — pendingProviderRegistrations MUST NOT be
+		// shared, or per-session registrations bleed across. (A flag's value used to be
+		// the other half of this claim, held in a `flagValues` map; 68cb6c3ade moved it
+		// onto the declaration, so identity is now the only thing to assert.)
 		expect(subagent.runtime).not.toBe(parent.runtime);
 
 		// Each factory saw the eventBus passed to its own loadExtensions call.

@@ -9,6 +9,7 @@ import path from "node:path";
 import type { AgentEvent, AgentIdentity, AgentMessage, AgentTelemetryConfig } from "@oh-my-pi/pi-agent-core";
 import { AgentBusyError, EventLoopKeepalive, recordHandoff, resolveTelemetry } from "@oh-my-pi/pi-agent-core";
 import type { Api, Model, ServiceTierByFamily, Usage } from "@oh-my-pi/pi-ai";
+import { addUsageInto, emptyUsage } from "@oh-my-pi/pi-catalog/usage-merge";
 import { logger, popLoopPhase, prompt, pushLoopPhase, untilAborted } from "@oh-my-pi/pi-utils";
 import { ASYNC_JOB_MANAGER_SHUTDOWN_REASON, AsyncJobError, AsyncJobManager, type AsyncJobRunResult } from "../async";
 import type { Rule } from "../capability/rule";
@@ -1289,16 +1290,11 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 	let yieldTurnStopRequested = false;
 	let yieldTurnStopPromise: Promise<void> | null = null;
 
-	// Accumulate usage incrementally from message_end events (no memory for streaming events)
-	const accumulatedUsage: Usage = {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		totalTokens: 0,
-		reasoningTokens: 0,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-	};
+	// Accumulate usage incrementally from message_end events (no memory for streaming events).
+	// Seeded by the canonical empty, which deliberately carries NO `reasoningTokens`:
+	// the field documents `undefined` as "unknown, NOT zero", so seeding it `0` here
+	// stamped every sub-task record with a reasoning count no provider ever reported.
+	const accumulatedUsage: Usage = emptyUsage();
 	let hasUsage = false;
 	let budgetSteerSent = false;
 	let budgetLimitExceeded = false;
@@ -1923,21 +1919,24 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 					if (role === "assistant") {
 						const costRecord = isRecord(messageUsage.cost) ? messageUsage.cost : undefined;
 						hasUsage = true;
-						accumulatedUsage.input += getNumberField(messageUsage, "input") ?? 0;
-						accumulatedUsage.output += getNumberField(messageUsage, "output") ?? 0;
-						accumulatedUsage.cacheRead += getNumberField(messageUsage, "cacheRead") ?? 0;
-						accumulatedUsage.cacheWrite += getNumberField(messageUsage, "cacheWrite") ?? 0;
-						accumulatedUsage.totalTokens += getNumberField(messageUsage, "totalTokens") ?? 0;
-						accumulatedUsage.reasoningTokens =
-							(accumulatedUsage.reasoningTokens ?? 0) + (getNumberField(messageUsage, "reasoningTokens") ?? 0);
-						if (costRecord) {
-							accumulatedUsage.cost.input += getNumberField(costRecord, "input") ?? 0;
-							accumulatedUsage.cost.output += getNumberField(costRecord, "output") ?? 0;
-							accumulatedUsage.cost.cacheRead += getNumberField(costRecord, "cacheRead") ?? 0;
-							accumulatedUsage.cost.cacheWrite += getNumberField(costRecord, "cacheWrite") ?? 0;
-							accumulatedUsage.cost.total += getNumberField(costRecord, "total") ?? 0;
-							progress.cost = accumulatedUsage.cost.total;
-						}
+						addUsageInto(accumulatedUsage, {
+							input: getNumberField(messageUsage, "input"),
+							output: getNumberField(messageUsage, "output"),
+							cacheRead: getNumberField(messageUsage, "cacheRead"),
+							cacheWrite: getNumberField(messageUsage, "cacheWrite"),
+							totalTokens: getNumberField(messageUsage, "totalTokens"),
+							reasoningTokens: getNumberField(messageUsage, "reasoningTokens"),
+							cost: costRecord
+								? {
+										input: getNumberField(costRecord, "input") ?? 0,
+										output: getNumberField(costRecord, "output") ?? 0,
+										cacheRead: getNumberField(costRecord, "cacheRead") ?? 0,
+										cacheWrite: getNumberField(costRecord, "cacheWrite") ?? 0,
+										total: getNumberField(costRecord, "total") ?? 0,
+									}
+								: undefined,
+						});
+						progress.cost = accumulatedUsage.cost.total;
 					}
 					// Accumulate tokens for progress display
 					progress.tokens += getUsageTokens(messageUsage);

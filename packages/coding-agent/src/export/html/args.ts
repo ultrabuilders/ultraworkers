@@ -10,11 +10,49 @@ export interface ExportThemeNames {
 	light: string;
 }
 
-/** Parse `/export [--themes] [path]`; paths containing spaces were never supported. */
-export function parseExportArgs(args: string): { outputPath?: string; useUserThemes: boolean } {
+/** Parsed `/export` arguments: where to write, and which format to render. */
+export interface ExportArgs {
+	outputPath?: string;
+	useUserThemes: boolean;
+	/** Id of an extension-registered output format; built-in HTML when absent. */
+	formatId?: string;
+}
+
+/**
+ * Parse `/export [--themes] [--format <id>] [path]`; paths containing spaces were
+ * never supported.
+ *
+ * `--format` names an id an extension registered with `registerOutputFormat`. An
+ * id nobody registered is not an error here: the export layer already treats an
+ * unknown `formatId` as "write the built-in HTML", and this parser does not know
+ * which extensions are loaded, so rejecting it would make the same command fail
+ * or succeed depending on what happened to be installed.
+ *
+ * The cost of that choice is worth stating: `/export --format out.html` cannot be
+ * told apart from `/export --format notes`, so the parser reads `out.html` as the
+ * id and there is no output path left — the export then falls back to its default
+ * path and the file the user named is never created. The exporter RETURNS the
+ * path it wrote, so the command is not silent, but the name typed is not the name
+ * used. To write a named file, put it before the flag: `/export out.html --format
+ * notes`.
+ */
+export function parseExportArgs(args: string): ExportArgs {
 	const parts = args.trim().split(/\s+/).filter(Boolean);
 	const useUserThemes = parts.includes("--themes");
-	const paths = parts.filter(part => part !== "--themes");
-	if (paths.length > 1) throw new Error("Usage: /export [--themes] [path]");
-	return { outputPath: paths[0], useUserThemes };
+
+	const formatIndex = parts.indexOf("--format");
+	let formatId: string | undefined;
+	if (formatIndex !== -1) {
+		formatId = parts[formatIndex + 1];
+		if (formatId === undefined || formatId.startsWith("--")) {
+			throw new Error("Usage: /export [--themes] [--format <id>] [path]");
+		}
+	}
+
+	const paths = parts.filter(
+		(part, index) =>
+			part !== "--themes" && (formatIndex === -1 || (index !== formatIndex && index !== formatIndex + 1)),
+	);
+	if (paths.length > 1) throw new Error("Usage: /export [--themes] [--format <id>] [path]");
+	return { outputPath: paths[0], useUserThemes, formatId };
 }

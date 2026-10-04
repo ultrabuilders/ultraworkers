@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
 
+import { readdirSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { $ } from "bun";
+import { PROBE_PREFIX } from "@oh-my-pi/pi-utils/probe";
 
 type Mode =
 	| "all"
@@ -85,7 +88,7 @@ const codingAgentBucketPlans: Record<CodingAgentBucket, { label: string; paralle
 // Smaller workspace packages stay separate from native/TUI/integration suites so
 // their short TS suites can run together. CI still downloads the Linux x64 native
 // addon before this bucket: shared utility barrels may load native-backed modules.
-const fastWorkspacePackages = [
+export const fastWorkspacePackages = [
 	"packages/omptype",
 	"packages/utils",
 	"packages/catalog",
@@ -93,21 +96,103 @@ const fastWorkspacePackages = [
 	"packages/snapcompact",
 	"packages/agent",
 	"packages/mnemopi",
+	"packages/evals",
+	// codemode runs QuickJS through WASI: 3 test files, no Bun.spawn/child_process
+	// and no Bun.serve/listen, so it is the short pure-TS shape this bucket is for.
+	// The rule that decides the split is suite shape, not what the code executes —
+	// WASI is in-process and holds no native addon. Measured: 57 pass / 0 fail in
+	// 1.8s on its own.
+	"packages/codemode",
+	// `packages/protocol` is a pure CBOR codec and framing layer: 3 test files,
+	// no Bun.spawn/child_process and no Bun.serve/listen, so it is the short
+	// pure-TS shape this bucket is for. Measured green on its own — 142 pass /
+	// 0 fail in ~75ms.
+	"packages/protocol",
+	// `packages/telemetry` is vendor-neutral contracts and typed schema helpers:
+	// zero runtime dependencies, no Bun.serve/listen, no child_process. Same
+	// short pure-TS shape as protocol above. Measured green on its own — 15 pass /
+	// 0 fail in ~19ms.
+	//
+	// Its two test files ran in NO CI bucket at all before this entry: the package
+	// ships no `test` script, and this runner invokes `bun test` directly in the
+	// package directory rather than through that script, so the missing script was
+	// never the obstacle — the absence from this list was.
+	"packages/telemetry",
+	// The workflow plugin. Outside `packages/` on purpose — the epic's own structural guard
+	// (check-extension-core-diff) fails on any byte under `packages/`, so its tests cannot live
+	// there without the guard flagging its own test suite.
+	//
+	// Listed here because the alternative was worse: for its whole life these tests ran only
+	// when someone typed the path by hand, and `bun test` does not descend into dot-directories
+	// without an explicit `./` prefix. A suite nobody runs is a green gate that proves nothing,
+	// which is the `epic-jwsy.11` shape this repo has already shipped twice.
+	".claude/plugins/workflow",
 ];
 
 // These suites cover the native package, TUI/browser-ish behavior, local servers,
 // or coding-agent-adjacent benchmark paths. Keep them low-concurrency and in jobs
 // that have downloaded the Linux x64 native addon artifacts.
-const nativeAndIntegrationPackages = [
+// Bucket rule, so the next package added here does not need a ruling: the split is
+// the SHAPE of the suite, not whether it happens to load a native addon. The
+// `fast` bucket above still downloads the native addon before it runs, so
+// "no pi-natives dependency" is not an argument for `fast`. What decides it is
+// whether the suite is a short pure-TS library that can share a runner with its
+// peers — anything UI, web, TUI, a local server, or a harness that drives other
+// packages belongs here, at low concurrency.
+export const nativeAndIntegrationPackages = [
 	"packages/natives",
 	"packages/tui",
 	"packages/collab-web",
 	"packages/typescript-edit-benchmark",
+	// A react dashboard, so the same shape as collab-web above.
+	"packages/stats",
+	// An integration harness: drives pi-natives, pi-coding-agent and
+	// typescript-edit-benchmark, the last of which is already in this bucket.
+	"packages/metaharness",
+	// chord's suite is heap- and subprocess-sensitive rather than a short pure
+	// library: delta-tracker/retention.worker.ts asserts retained heap after a
+	// forced GC (a concurrent neighbour perturbs the measurement), and
+	// bundle.test.ts drives esbuild as a real child process. Both want the
+	// low-concurrency runner this bucket already provides.
+	"packages/chord",
+	// `packages/server` is the "a local server" case the bucket rule above names
+	// outright: it binds unix sockets in test/listener.test.ts and
+	// test/unix-connection.test.ts. `packages/client` is its transport counterpart
+	// and binds the other end (test/unix-transport.test.ts). Both are socket- and
+	// subprocess-bound rather than short pure-TS, and both depend on chord, which
+	// already sits here. Measured green individually — server 44 pass / 0 fail in
+	// ~148ms, client 27 pass / 0 fail in ~358ms.
+	"packages/server",
+	"packages/client",
+	// `packages/peer` is subprocess-bound for the same reason: three of its suites
+	// race REAL `bun` processes rather than mocking them, because the behaviour
+	// under test is a row-level race that one process cannot produce.
+	// `lease-store.test.ts` runs two children against one SQLite file to show only
+	// one wins the path; `inbox-crash.test.ts` kills a writer mid-append;
+	// `injection-e2e-premise.test.ts` boots the actual CLI. `bun:sqlite` plus real
+	// process boundaries is not the short pure-TS shape the fast bucket is for.
+	// Measured: 250 pass / 0 fail, ~8s.
+	//
+	// It was in NEITHER bucket, so `epic-jwsy`'s whole family — 15 beads, 12 of
+	// them closed — was typechecked by `check:ts` and never tested by the merge
+	// gate. That is precisely the failure `epic-jwsy.14` exists to prevent: the gate
+	// that makes the other beads measurable was not measuring these. A package's
+	// `check:types` running is not evidence its tests ran, and only the bucket list
+	// decides that.
+	"packages/peer",
+	// `packages/durable` was in neither bucket either — 31 test files, 526 pass,
+	// and no CI step ran any of it. Found by the bucket-coverage test added with
+	// `packages/peer` above, which is the argument for having that test: the second
+	// instance turned up the moment the guard could see the first.
+	//
+	// Here rather than the fast bucket because 2 of its 31 files spawn or serve, and
+	// the bucket rule is suite shape rather than what most files happen to do.
+	"packages/durable",
 ];
 
 // Packages the CI buckets deliberately skip but a local full run should still
 // cover. robomp-web lives under python/robomp and is outside every CI TS bucket.
-const localOnlyWorkspacePackages = ["python/robomp/web"];
+export const localOnlyWorkspacePackages = ["python/robomp/web"];
 
 const codingAgentNativePathPatterns = [
 	/(^|\/)[^/]*(bash|native|browser|cmux|mnemopi|hindsight|memory)[^/]*\.test\.ts$/i,
@@ -214,6 +299,29 @@ function workspaceTestCommand(pkg: string, parallel: number, options: { extraArg
 // Rust under the same progress stream / failure report. Delegates to
 // run-rs-task.ts, which self-skips when no Rust-affecting files changed locally
 // (printing a one-line notice) and resolves the cargo/nextest invocation.
+// The packaging gates under `scripts/` are Node's own `node:test` files, not
+// `bun test` ones — `check-runtime-deps` drives typescript/unstable/sync, which
+// needs a real Node child-process stream. They therefore run as one `node --test`
+// process rather than through the `bun test` workspace fan-out, and declare no
+// `parallel` width so `applyChunkBudget` leaves their argv alone.
+//
+// Collected from disk rather than listed, so a new gate's test is picked up by
+// adding the test file and nothing else: a hand-maintained list is exactly the
+// kind that silently stops protecting anything.
+const nodeInvariantTestCommand = (): TestCommand => ({
+	label: "packaging gates (node:test)",
+	cwd: ".",
+	command: ["node", "--test", ...discoverNodeInvariantTests()],
+});
+
+function discoverNodeInvariantTests(): string[] {
+	const entries = readdirSync(path.join(repoRoot, "scripts"), { withFileTypes: true });
+	return entries
+		.filter(entry => entry.isFile() && entry.name.endsWith(".test.mjs"))
+		.map(entry => path.join("scripts", entry.name))
+		.sort();
+}
+
 function rustTestCommand(): TestCommand {
 	return {
 		label: "rust (cargo nextest; skipped if no Rust changes)",
@@ -348,6 +456,7 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 				...(await commandsForMode("workspace")),
 				...(await commandsForMode("native")),
 				...(await commandsForMode("coding-agent-heavy")),
+				nodeInvariantTestCommand(),
 			];
 		// `local-ts` is the full local TypeScript run that root `bun run test:ts`
 		// drives: every package the old `--workspaces` fan-out covered (the CI
@@ -360,6 +469,7 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 				...nativeAndIntegrationPackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
 				...localOnlyWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
 				...(await commandsForMode("coding-agent-heavy")),
+				nodeInvariantTestCommand(),
 			];
 		// `local` is what root `bun run test` drives: the full TS suite plus the
 		// Rust task, so a single invocation reports TS and Rust together. The Rust
@@ -480,9 +590,9 @@ function buildChildEnv(): Record<string, string | undefined> {
 // parallel path awaits the child's stdout/stderr pipes, which stay open as
 // long as the wedged process — or any grandchild that inherited them — lives.
 // After this many seconds the child is SIGKILLed and reported as a failure.
-// Override with OMP_TEST_CHUNK_TIMEOUT (seconds).
+// Override with ULTRAWORKERS_TEST_CHUNK_TIMEOUT (seconds).
 function chunkTimeoutMs(): number {
-	const raw = Number(Bun.env.OMP_TEST_CHUNK_TIMEOUT?.trim());
+	const raw = Number(Bun.env.ULTRAWORKERS_TEST_CHUNK_TIMEOUT?.trim());
 	if (Number.isFinite(raw) && raw >= 1) return raw * 1000;
 	return 600_000;
 }
@@ -513,10 +623,10 @@ const MAX_CHUNK_ATTEMPTS = 3;
 // two very different ways -- the per-chunk watchdog firing, or the kernel OOM
 // killer reaping a chunk that outgrew the runner -- and the bare exit code
 // cannot tell them apart. Which one it was is the difference between "raise
-// OMP_TEST_CHUNK_TIMEOUT" and "lower this bucket's chunkSize", so say it.
+// ULTRAWORKERS_TEST_CHUNK_TIMEOUT" and "lower this bucket's chunkSize", so say it.
 export function describeChunkFailure(exitCode: number, timedOut: boolean): string {
 	if (timedOut) {
-		return `exceeded the ${Math.round(chunkTimeoutMs() / 1000)}s chunk watchdog and was killed (exit ${exitCode}; OMP_TEST_CHUNK_TIMEOUT to change)`;
+		return `exceeded the ${Math.round(chunkTimeoutMs() / 1000)}s chunk watchdog and was killed (exit ${exitCode}; ULTRAWORKERS_TEST_CHUNK_TIMEOUT to change)`;
 	}
 	if (exitCode === 137) {
 		return "was SIGKILLed (exit 137) without reaching the chunk watchdog, which on a CI runner means the OOM killer; lower this bucket's chunkSize";
@@ -536,11 +646,11 @@ function isCI(): boolean {
 }
 
 // Fan-out width for the local parallel path, clamped to the command count.
-// Defaults to the machine's available parallelism; `OMP_TEST_CONCURRENCY`
+// Defaults to the machine's available parallelism; `ULTRAWORKERS_TEST_CONCURRENCY`
 // overrides it — a positive integer to pick an exact width (dial down on a
 // memory-constrained laptop), or `all`/`max` to launch every chunk at once.
 function testConcurrency(total: number): number {
-	const raw = Bun.env.OMP_TEST_CONCURRENCY?.trim().toLowerCase();
+	const raw = Bun.env.ULTRAWORKERS_TEST_CONCURRENCY?.trim().toLowerCase();
 	if (!raw) return Math.min(Math.max(1, os.availableParallelism()), total);
 	if (raw === "all" || raw === "max") {
 		return total;
@@ -549,7 +659,9 @@ function testConcurrency(total: number): number {
 	if (Number.isFinite(override) && override >= 1) {
 		return Math.min(Math.floor(override), total);
 	}
-	throw new Error(`Invalid OMP_TEST_CONCURRENCY=${JSON.stringify(raw)}; expected a positive integer, all, or max`);
+	throw new Error(
+		`Invalid ULTRAWORKERS_TEST_CONCURRENCY=${JSON.stringify(raw)}; expected a positive integer, all, or max`,
+	);
 }
 
 // Test files interleave real IO — sqlite writes, temp dirs, spawned CLIs — with
@@ -579,9 +691,9 @@ function budgetedParallel(requested: number, poolWidth: number): number {
 // timeout that says nothing about the code. Timing out is still worth catching,
 // so keep a ceiling — just one loose enough to only fire on a real hang. The
 // per-chunk watchdog (chunkTimeoutMs) remains the backstop for a wedged process.
-// Override with OMP_TEST_TIMEOUT (seconds); per-test `it(name, fn, ms)` still wins.
+// Override with ULTRAWORKERS_TEST_TIMEOUT (seconds); per-test `it(name, fn, ms)` still wins.
 function testTimeoutMs(): number {
-	const raw = Number(Bun.env.OMP_TEST_TIMEOUT?.trim());
+	const raw = Number(Bun.env.ULTRAWORKERS_TEST_TIMEOUT?.trim());
 	if (Number.isFinite(raw) && raw >= 1) return raw * 1000;
 	return 30_000;
 }
@@ -611,6 +723,9 @@ const paint = (code: string, value: string): string => (useColor ? `\x1b[${code}
 const style = {
 	green: (s: string) => paint("32", s),
 	red: (s: string) => paint("31", s),
+	// Warnings are neither success nor failure, and reusing `red` for them is how a
+	// warning stops being read as anything but a second failure.
+	yellow: (s: string) => paint("33", s),
 	bold: (s: string) => paint("1", s),
 	dim: (s: string) => paint("2", s),
 };
@@ -769,13 +884,31 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	const env = buildChildEnv();
 	const queue = [...commands];
 	const failures: ChunkOutcome[] = [];
+	// Probe entries that ran in a chunk this run then withheld. Counted while the output is
+	// still in hand, because afterwards the runner cannot tell them from the hundreds of
+	// ordinary bun lines it discarded alongside them.
+	let discardedProbeEntries = 0;
+	let discardedProbeChunks = 0;
 	let completed = 0;
 	const fileWidths = [...new Set(commands.map(c => c.parallel).filter(p => p !== undefined))].sort((a, b) => a - b);
 	console.log(
 		`Running ${commands.length} test command(s), up to ${concurrency} in parallel ` +
-			`(OMP_TEST_CONCURRENCY=<n>|all to change); ${os.availableParallelism()} cores, ` +
+			`(ULTRAWORKERS_TEST_CONCURRENCY=<n>|all to change); ${os.availableParallelism()} cores, ` +
 			`--parallel=${fileWidths.join("/") || "n/a"} per chunk.`,
 	);
+
+	// Which files each chunk was given, on disk before the first chunk starts. A quiet
+	// run names no file on a passing chunk, so without this a file that never executed is
+	// indistinguishable from one that passed. See formatChunkManifest.
+	const manifestPath = path.join(os.tmpdir(), `uw-test-chunks-${process.pid}.txt`);
+	try {
+		await Bun.write(manifestPath, formatChunkManifest(commands));
+		console.log(`chunk manifest: ${manifestPath}`);
+	} catch (error) {
+		// The manifest is a record, not a gate: failing to write it must not stop the run,
+		// but the reader has to know it is missing rather than assume there is one.
+		console.log(style.dim(`chunk manifest: unavailable (${error instanceof Error ? error.message : String(error)})`));
+	}
 
 	// Incremental, cancellable drain into a mutable sink, so a watchdog-killed
 	// chunk still reports whatever the child managed to print before it wedged.
@@ -821,7 +954,7 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	// can't keep the runner's event loop alive.
 	async function runAttempt(
 		testCommand: TestCommand,
-	): Promise<{ exitCode: number; output: string; timedOut: boolean }> {
+	): Promise<{ exitCode: number; output: string; timedOut: boolean; probeEntries: number }> {
 		const proc = Bun.spawn(testCommand.command, {
 			cwd: path.join(repoRoot, testCommand.cwd),
 			env,
@@ -850,7 +983,12 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 		return {
 			exitCode,
 			timedOut,
-			output: `${stdout.text}${stderr.text}${timedOut ? `\n[watchdog] chunk exceeded ${Math.round(chunkTimeoutMs() / 1000)}s; killed with SIGKILL (OMP_TEST_CHUNK_TIMEOUT to change)\n` : ""}`,
+			// Counted per stream rather than on the concatenation below. stdout and stderr
+			// are joined with no separator, so a stdout that does not end in a newline would
+			// glue itself onto the front of the first probe line and hide it from a
+			// start-of-line anchor — the probe would then be reported as never run.
+			probeEntries: countProbeEntries(stdout.text) + countProbeEntries(stderr.text),
+			output: `${stdout.text}${stderr.text}${timedOut ? `\n[watchdog] chunk exceeded ${Math.round(chunkTimeoutMs() / 1000)}s; killed with SIGKILL (ULTRAWORKERS_TEST_CHUNK_TIMEOUT to change)\n` : ""}`,
 		};
 	}
 
@@ -886,6 +1024,11 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 				let msg = `${formatProgressLine(outcome)}\n`;
 				if (result.exitCode !== 0 || result.timedOut) {
 					msg += `${formatChunkFailure(outcome, true)}\n`;
+				} else if (result.probeEntries > 0) {
+					// Passing and quiet means the output carrying these is about to be
+					// dropped on the floor. Take the count now.
+					discardedProbeEntries += result.probeEntries;
+					discardedProbeChunks += 1;
 				}
 				process.stdout.write(msg);
 			} else {
@@ -911,12 +1054,227 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	} else if (failures.length > 0) {
 		process.stdout.write(style.bold(style.red(`\n${failures.length} of ${commands.length} test chunk(s) FAILED\n`)));
 	}
+	// Reported after the footer, and only in quiet mode — a verbose run already showed the
+	// probes on screen, so there is nothing discarded to apologize for.
+	if (discardedProbeEntries > 0) {
+		process.stdout.write(
+			`${formatDiscardedProbeWarning(discardedProbeEntries, discardedProbeChunks, discardWarningSuppressed())}\n`,
+		);
+	}
 	if (failures.length > 0) {
 		process.exitCode = 1;
 	}
 }
 
-// `OMP_TEST_SHARD=i/n` splits a mode's chunk commands across n CI jobs; job i
+// Repo-wide files that can break any suite regardless of which package owns
+// the change: the lockfile pins every dependency, the workspace manifest and
+// the shared TS config feed every build. A diff touching one of these must run
+// everything — the alternative is silently skipping a suite because a rename
+// moved its trigger somewhere the package map does not cover.
+// Config files whose effect is the whole repository, not the directory holding
+// them. `bunfig.toml` is here because it carries `[run] bun = true`, which is
+// precisely what `run-node-invariants.mjs` generates in order to side-step it:
+// a change to that key alters how every test in the repo executes, and a
+// selector that missed it would run none of them.
+const repoWideAffectedFiles = new Set([
+	"bun.lock",
+	"package.json",
+	"tsconfig.json",
+	"bunfig.toml",
+	".oxfmtrc.json",
+	".oxlintrc.json",
+	// This file decides which chunks run at all, so a change to it cannot be
+	// mapped by the very mapping it implements. `--dry-run` reported it as
+	// "(no test covers this)" until it was listed here — a selector blind to its
+	// own edits, which is the failure mode the other entries above guard against.
+	"ci-test-ts.ts",
+]);
+
+// One chunk's worth of test files, recovered from its argv. Chunks are built
+// as `["bun", "test", ...onlyFailuresArgs, ...testFiles]`, so the trailing
+// arguments that are not runner flags are the files. Read back off the command
+// rather than kept in a parallel field so a chunk can never drift between the
+// label it reports and the files it actually runs.
+function chunkTestFiles(testCommand: TestCommand): string[] {
+	const rest = testCommand.command.slice(1);
+	// Drop the `bun test` invocation prefix before reading the argv as files.
+	// Filtering on "not a flag" alone keeps the runner binary itself, which would
+	// make every package-level chunk look like a chunk that names its own files
+	// and so stop reacting to its whole package.
+	//
+	// Dropping just that binary is not enough either. `["bun",
+	// "scripts/run-rs-task.ts", "test:rs"]` names no test file at all, yet neither
+	// entry is a flag and neither equals "test" — so the Rust chunk was read as a
+	// chunk listing its own files and reacted only to a file literally named
+	// `scripts/run-rs-task.ts`. A commit touching one `.rs` file then ran no Rust
+	// at all.
+	//
+	// Membership is therefore claimed only by arguments that actually are test
+	// files, in either runner's extension: the TS chunks name `.test.ts`, and the
+	// packaging gates run under `node --test` over `.test.mjs`.
+	return rest
+		.filter(arg => arg !== "test" && !onlyFailuresArgs.includes(arg) && !arg.startsWith("-"))
+		.filter(arg => /\.test\.(?:[cm]?[jt]sx?)$/.test(arg));
+}
+
+/**
+ * How many probe entries a captured stream contains.
+ *
+ * Anchored at the start of a line, which is what {@link PROBE_PREFIX} is written as. The
+ * alternative — counting the bare substring — would match a probe line quoted inside
+ * someone else's error message and report a probe that never ran.
+ */
+export function countProbeEntries(output: string): number {
+	let count = 0;
+	for (const line of output.split("\n")) if (line.startsWith(PROBE_PREFIX)) count += 1;
+	return count;
+}
+
+/**
+ * The line reporting probe entries that a quiet run threw away.
+ *
+ * Three properties are load-bearing, and each one exists because the opposite was
+ * tempting:
+ *
+ * - **It names the count.** The failure being defended is invisible by construction, so
+ *   the report has to be a number. "Some probes may have run" is indistinguishable from
+ *   the silence it is warning about.
+ * - **Suppression still prints.** `ULTRAWORKERS_TEST_QUIET_DISCARD_WARN=0` mutes the alarm, not
+ *   the fact. A configuration that produced no output at all would be a quieter way to
+ *   rebuild the exact hole this closes, so opting out leaves a line saying so.
+ * - **It names the way out.** `--full` already replays everything; a warning that did
+ *   not say which flag does that is a complaint with no remedy.
+ */
+export function formatDiscardedProbeWarning(entries: number, chunks: number, suppressed: boolean): string {
+	if (entries === 0) return "";
+	const scope = `${entries} probe ${entries === 1 ? "entry" : "entries"} from ${chunks} passing ${
+		chunks === 1 ? "chunk" : "chunks"
+	}`;
+	if (suppressed) {
+		return style.dim(
+			`⚠ ${scope} were discarded because the ${chunks === 1 ? "chunk" : "chunks"} passed` +
+				` (warning muted by ULTRAWORKERS_TEST_QUIET_DISCARD_WARN=0; --full replays them).`,
+		);
+	}
+	return style.yellow(
+		`⚠ ${scope} were discarded because the ${chunks === 1 ? "chunk" : "chunks"} passed.` +
+			` Silence here is not a result — re-run with --full to see them.`,
+	);
+}
+
+/** Whether the discarded-probe warning is muted. Opting out never silences the fact. */
+function discardWarningSuppressed(): boolean {
+	return Bun.env.ULTRAWORKERS_TEST_QUIET_DISCARD_WARN?.trim() === "0";
+}
+
+/**
+ * Whether a chunk actually invokes a test runner.
+ *
+ * Distinct from "names no test files", and the distinction is the whole point. A
+ * whole-package chunk (`bun test` with no path) names **no** files and still runs
+ * hundreds of them; `selectAffected` keeps those chunks whenever a change lands in
+ * their package. So a warning keyed on "no files named" would fire on ordinary
+ * diff-scoped runs — a false alarm on every normal run is a warning nobody reads.
+ *
+ * The Rust chunk (`bun scripts/run-rs-task.ts test:rs`) starts with `bun` but runs a
+ * script, and self-skips when nothing Rust-related changed. That is the shape this has
+ * to catch: a selected chunk that can only ever report success about zero tests.
+ */
+export function chunkRunsTests(testCommand: TestCommand): boolean {
+	const [bin, sub] = testCommand.command;
+	return (bin === "bun" || bin === "node") && (sub === "test" || sub === "--test");
+}
+
+/**
+ * Every chunk and the files it was given, as text.
+ *
+ * A quiet run prints one line per chunk and **that line names no file**:
+ *
+ *     ✓ packages/coding-agent (UI/TUI bucket; 352 files; …; 5 files) [19.9s]
+ *
+ * Only a failing chunk names anything, because only a failing chunk is replayed. So
+ * "my test is not in the log" cannot be read as "my test ran and passed" — the two
+ * are indistinguishable, and a chunk that dies importing one file prints only that
+ * one file while the rest of its chunk vanishes without a trace.
+ *
+ * This manifest closes that gap from the side the runner actually knows: the argv.
+ * A chunk that passes ran every file it was handed (an unrunnable file fails the
+ * chunk), so the assignment plus the per-chunk verdict answers "did this file run"
+ * without parsing a single line of child output. It goes to a file rather than to
+ * stdout because 220 chunks × 10 names is noise, and the defect here is a missing
+ * record, not a missing scrollback.
+ *
+ * Each chunk's names are read back off its argv by {@link chunkTestFiles}, which is
+ * the same source the label's own count comes from — so a chunk whose label and
+ * argv disagree shows up here as a mismatch rather than as a silent lie.
+ */
+export function formatChunkManifest(commands: readonly TestCommand[]): string {
+	const lines: string[] = [];
+	for (const [index, command] of commands.entries()) {
+		const files = chunkTestFiles(command);
+		lines.push(`# ${index + 1}/${commands.length} ${command.label}`);
+		lines.push(...files.map(file => `  ${file}`));
+		if (files.length === 0) lines.push("  (no test files in argv)");
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+// Decides whether a chunk is affected by a diff, given the changed file and
+// the chunk's package root. Returns the reason so the caller can log which
+// file selected which chunk instead of only counting matches.
+function chunkIsAffected(testCommand: TestCommand, changedFile: string): string | undefined {
+	const packageRoot = testCommand.cwd === "." ? "" : `${testCommand.cwd}/`;
+	// A chunk that names its own test files reacts only to those exact files.
+	// Membership, not a path prefix: the chunks of one bucket all share a
+	// package root, so a prefix test would mark every chunk of the bucket
+	// affected the moment any one of its test files changed.
+	const testFiles = chunkTestFiles(testCommand);
+	if (testFiles.length > 0) {
+		return testFiles.includes(
+			changedFile.startsWith(packageRoot) ? changedFile.slice(packageRoot.length) : changedFile,
+		)
+			? "test file"
+			: undefined;
+	}
+	// A chunk that names no files runs its whole package (`bun test` with no
+	// path), so anything under that package — or anything repo-wide — affects it.
+	if (packageRoot === "") return "repo";
+	return changedFile.startsWith(packageRoot) ? "package" : undefined;
+}
+
+/**
+ * Narrow `commands` to the chunks a diff touches, failing CLOSED.
+ *
+ * Every branch that cannot name the affected chunks returns ALL of them. That
+ * direction is the whole point: a selector that guesses low runs a subset of the
+ * suite and reports it as the suite. The previous fallback answered every unknown
+ * with two smoke commands, so an empty diff — a clean checkout, the most ordinary
+ * state there is — ran `--version` and `--smoke-test` and nothing else, green.
+ *
+ * Smoke belongs to a diff that resolved into a small group, never to "I don't
+ * know"; `ci:test:smoke` remains the standalone script for that job.
+ */
+export function selectAffected(commands: TestCommand[], changedFiles: string[] | undefined): TestCommand[] {
+	// `undefined` means the diff itself failed; `[]` means it succeeded and found
+	// nothing to do. Neither is evidence that no test is affected.
+	if (!changedFiles || changedFiles.length === 0) return commands;
+	const normalized = changedFiles.map(file => file.replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean);
+	const repoWide = normalized.filter(file => repoWideAffectedFiles.has(file.split("/").pop() ?? ""));
+	if (repoWide.length > 0) return commands;
+
+	const selected = new Set<TestCommand>();
+	for (const changedFile of normalized) {
+		for (const testCommand of commands) {
+			if (chunkIsAffected(testCommand, changedFile)) {
+				selected.add(testCommand);
+			}
+		}
+	}
+	// Unmapped, not empty: fail closed rather than run a subset and call it green.
+	return selected.size > 0 ? [...selected] : commands;
+}
+
+// `ULTRAWORKERS_TEST_SHARD=i/n` splits a mode's chunk commands across n CI jobs; job i
 // runs every chunk whose index ≡ i-1 (mod n). Round-robin rather than
 // contiguous ranges because the chunk list follows sorted file order, so slow
 // neighbouring suites spread evenly instead of piling into one shard. Every
@@ -928,13 +1286,160 @@ export function selectShard<T>(commands: T[], spec: string | undefined): T[] {
 	const index = match ? Number(match[1]) : 0;
 	const count = match ? Number(match[2]) : 0;
 	if (!match || count < 1 || index < 1 || index > count) {
-		throw new Error(`Invalid OMP_TEST_SHARD=${JSON.stringify(trimmed)}; expected i/n with 1 <= i <= n`);
+		throw new Error(`Invalid ULTRAWORKERS_TEST_SHARD=${JSON.stringify(trimmed)}; expected i/n with 1 <= i <= n`);
 	}
 	const selected = commands.filter((_, i) => i % count === index - 1);
 	if (selected.length === 0) {
-		throw new Error(`OMP_TEST_SHARD=${trimmed} selects no chunks (${commands.length} available)`);
+		throw new Error(`ULTRAWORKERS_TEST_SHARD=${trimmed} selects no chunks (${commands.length} available)`);
 	}
 	return selected;
+}
+
+// Changed-file list for the selector. Two sources, in priority order:
+// `ULTRAWORKERS_TEST_AFFECTED` is a newline/comma-separated list some caller already
+// computed; `ULTRAWORKERS_TEST_DIFF_BASE` is a commit the workflow can see the PR's
+// merge base through (`github.event.pull_request.base.sha`), fetched shallow
+// because CI checks out depth 1. With neither, the working tree is the diff.
+// Every failure returns "no diff", which runs everything — a diff nobody could
+// compute must never turn into a suite nobody ran.
+async function changedFilesForSelection(): Promise<string[] | undefined> {
+	const supplied = Bun.env.ULTRAWORKERS_TEST_AFFECTED?.trim();
+	if (supplied) {
+		return supplied
+			.split(/[\n,]/)
+			.map(file => file.trim())
+			.filter(Boolean);
+	}
+	// Set but empty is the same "caller had nothing to give" shape as a blank
+	// base, and must resolve the same way: run everything. Falling through to
+	// the working tree here would make the two spellings of "no diff" disagree,
+	// and a caller cannot tell which one it used.
+	if (Bun.env.ULTRAWORKERS_TEST_AFFECTED !== undefined) return undefined;
+
+	const base = Bun.env.ULTRAWORKERS_TEST_DIFF_BASE;
+	if (base !== undefined) {
+		// Set but blank means the workflow had no PR base to diff against — a
+		// push to main. That is a full run, never a narrow one: main has no
+		// "changed files" to narrow by, and falling through to the working
+		// tree there would read CI's clean checkout as "nothing changed".
+		const trimmedBase = base.trim();
+		if (!trimmedBase) return undefined;
+		const fetched = await $`git fetch --no-tags --depth=1 origin ${trimmedBase}`.cwd(repoRoot).quiet().nothrow();
+		if (fetched.exitCode !== 0) {
+			console.warn(`Warning: failed to fetch diff base ${trimmedBase}. Running every chunk.`);
+			return undefined;
+		}
+		const diff = await $`git diff --name-only ${trimmedBase}...HEAD`.cwd(repoRoot).quiet().nothrow();
+		if (diff.exitCode !== 0) {
+			console.warn(`Warning: failed to diff against ${trimmedBase}. Running every chunk.`);
+			return undefined;
+		}
+		return new TextDecoder()
+			.decode(diff.stdout)
+			.split("\n")
+			.map(file => file.trim())
+			.filter(Boolean);
+	}
+
+	// Local runs have no merge base, so the working tree is the diff. Same
+	// porcelain shape and same conservative fallback as run-rs-task.ts.
+	const result = await $`git status --porcelain -z`.cwd(repoRoot).quiet().nothrow();
+	if (result.exitCode !== 0) {
+		const stderr = result.stderr.toString().trim();
+		const suffix = stderr === "" ? `exit ${result.exitCode}` : stderr;
+		console.warn(`Warning: failed to inspect the diff: ${suffix}. Running every chunk.`);
+		return undefined;
+	}
+	return getChangedPathsFromPorcelain(result.stdout);
+}
+
+function getChangedPathsFromPorcelain(buf: Uint8Array): string[] {
+	const entries = new TextDecoder().decode(buf).split("\0").filter(Boolean);
+	const changedPaths: string[] = [];
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		if (entry.length < 4) continue;
+		const status = entry.slice(0, 2);
+		const changedPath = entry.slice(3);
+		if (changedPath !== "") {
+			changedPaths.push(changedPath);
+		}
+		if (status.includes("R") || status.includes("C")) {
+			const renamedPath = entries[index + 1];
+			if (renamedPath) {
+				changedPaths.push(renamedPath);
+				index += 1;
+			}
+		}
+	}
+	return changedPaths;
+}
+
+// The per-file mapping lines. Printed one line per changed file — never just
+// a count — because a count cannot tell a reader *which* file fell through the
+// selector, and "the diff had files but none mapped" is the exact shape of the
+// bug this path can introduce.
+function reportDiffSelection(
+	allCommands: TestCommand[],
+	changedFiles: string[] | undefined,
+	selected: TestCommand[],
+): void {
+	if (!changedFiles) {
+		console.log(`diff files: 0 (no diff available) -> running every chunk (${selected.length})`);
+		return;
+	}
+	console.log(`diff files: ${changedFiles.length}`);
+	const normalized = changedFiles.map(file => file.replace(/\\/g, "/").replace(/^\.\//, ""));
+	for (const changedFile of normalized) {
+		// The repo-wide class has to be reported the way `selectAffected` treats it.
+		// This loop used to call `chunkIsAffected` alone, which knows nothing about
+		// `repoWideAffectedFiles`, so `--dry-run` printed "(no test covers this)" for
+		// `package.json` and `bun.lock` — the files that in fact select every chunk.
+		// A dry run that misreports why it selected something is worse than none:
+		// it taught the next reader that a whole repo-wide change was unmapped.
+		if (repoWideAffectedFiles.has(changedFile.split("/").pop() ?? "")) {
+			console.log(`  ${changedFile} -> (repo-wide: every chunk)`);
+			continue;
+		}
+		const matched = allCommands.filter(testCommand => chunkIsAffected(testCommand, changedFile));
+		console.log(
+			`  ${changedFile} -> ${matched.length > 0 ? matched.map(c => c.label).join(", ") : "(no test covers this)"}`,
+		);
+	}
+	// No smoke banner: `selectAffected` no longer has a smoke branch, so printing
+	// one here would describe a fallback that cannot occur.
+}
+
+/**
+ * The tree this run measures, in the two numbers that identify it.
+ *
+ * HEAD alone is not enough on a shared tree. A commit says what was COMMITTED, not what was
+ * EXECUTED: uncommitted work sits in the same directory the tests import, so a run can
+ * execute a commit PLUS half-written code — and the result then belongs to no commit at all.
+ * Measured 2026-10-02: a full-suite failure whose error shape (`{value, reason}` where a
+ * bare string was expected) cannot occur at the commit the run recorded, because that
+ * function was mid-refactor in the working tree. The same commit and the same command gave
+ * two different answers, and the run header could not say which tree it meant.
+ *
+ * So both numbers print, and dirtiness prints a warning.
+ *
+ * This is deliberately NOT a gate. On an actively shared tree it would be permanently red,
+ * and a permanently red gate is one everybody switches off — strictly worse than a header
+ * nobody can miss. Reporting costs one `git status` this runner already runs.
+ */
+async function reportTreeState(): Promise<void> {
+	const head = (await $`git rev-parse --short=10 HEAD`.cwd(repoRoot).quiet().nothrow()).text().trim();
+	const status = await $`git status --porcelain`.cwd(repoRoot).quiet().nothrow();
+	const dirty = status
+		.text()
+		.split("\n")
+		.filter(line => line.length > 0).length;
+	console.log(style.dim(`tree HEAD=${head || "(unknown)"} dirty=${dirty}`));
+	if (dirty > 0) {
+		console.log(
+			`tree WARNING: ${dirty} uncommitted path(s). This result describes the WORKING TREE, not commit ${head || "(unknown)"}.`,
+		);
+	}
 }
 
 // Skipped when imported (e.g. by the runner's own unit tests), where
@@ -946,8 +1451,40 @@ if (import.meta.main) {
 		);
 	}
 
-	const requestedCommands = selectShard(await commandsForMode(requestedMode as Mode), Bun.env.OMP_TEST_SHARD);
-	const explicitConcurrency = Boolean(Bun.env.OMP_TEST_CONCURRENCY?.trim());
+	const allCommands = await commandsForMode(requestedMode as Mode);
+	// Before anything that could be mistaken for a result: which commit, and which tree.
+	await reportTreeState();
+	// Sharding is reported before the diff filter runs, so a wrong chunk set is
+	// visible as a sharding-layer problem rather than a selector-layer one.
+	const shardSpec = Bun.env.ULTRAWORKERS_TEST_SHARD?.trim();
+	const shardedCommands = selectShard(allCommands, shardSpec);
+	console.log(`shard ${shardSpec ?? "(unset)"} of ${allCommands.length} chunks -> ${shardedCommands.length} selected`);
+	const changedFiles = await changedFilesForSelection();
+	const affectedCommands = selectAffected(shardedCommands, changedFiles);
+	reportDiffSelection(allCommands, changedFiles, affectedCommands);
+	const smokeFallback = changedFiles !== undefined && affectedCommands.every(c => c.label.startsWith("smoke:"));
+	console.log(
+		`selected=${affectedCommands.length} mode=${changedFiles === undefined ? "shard-only" : smokeFallback ? "smoke" : "diff"}`,
+	);
+	// A run that selects no test runner exits 0 having executed nothing, and a log that
+	// ends in a green summary is exactly what a caller reads as "the change is fine".
+	// Measured on a one-file change touching no Rust and no test: the diff matched only the
+	// Rust chunk, which self-skipped — 16 log lines, 0 TypeScript tests, EXIT=0. Scoped to
+	// diff mode and to real runs, because a dry run executes nothing at all and saying so
+	// there would be true of every invocation.
+	if (!isDryRun && changedFiles !== undefined && !smokeFallback) {
+		const runners = affectedCommands.filter(chunkRunsTests).length;
+		if (runners === 0) {
+			console.log(
+				style.yellow(
+					`⚠ diff-scoped run selected ${affectedCommands.length} chunk(s) and none of them invokes a test runner — ` +
+						`0 test files will execute and this run cannot fail. Unset ULTRAWORKERS_TEST_AFFECTED to run everything.`,
+				),
+			);
+		}
+	}
+	const requestedCommands = affectedCommands;
+	const explicitConcurrency = Boolean(Bun.env.ULTRAWORKERS_TEST_CONCURRENCY?.trim());
 	// CI defaults to one process at a time, but memory-sized workflow buckets
 	// explicitly opt into bounded process concurrency. Local runs fan out by
 	// default and may use the same override. Resolved before the dry-run check so
@@ -963,4 +1500,8 @@ if (import.meta.main) {
 			await runTestCommand(testCommand);
 		}
 	}
+	// The conclusion line pairs the selection with what it cost. Without the
+	// exit code a green job and a job that selected nothing are both just
+	// "CI passed" in the log.
+	console.log(`exit=${process.exitCode ?? 0}`);
 }

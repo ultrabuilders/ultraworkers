@@ -1,9 +1,21 @@
-import { describe, expect, it, vi } from "bun:test";
+import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as AIError from "@oh-my-pi/pi-ai/error";
-import { setBedrockProviderModule, streamBedrock } from "@oh-my-pi/pi-ai/providers/register-builtins";
+import {
+	resetBedrockProviderModule,
+	setBedrockProviderModule,
+	streamBedrock,
+} from "@oh-my-pi/pi-ai/providers/register-builtins";
 import type { AssistantMessage, Context, Model } from "@oh-my-pi/pi-ai/types";
 import type { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
+
+// The Bedrock override is module-level state, so a double installed here would
+// otherwise stay in place for every later test file in the same process. Later
+// files that await `options.onPayload` would hang until the runner's timeout
+// rather than failing on an assertion.
+afterEach(() => {
+	resetBedrockProviderModule();
+});
 
 async function drainMicrotasksUntil(predicate: () => boolean, errorMessage: string): Promise<void> {
 	for (let i = 0; i < 1000; i++) {

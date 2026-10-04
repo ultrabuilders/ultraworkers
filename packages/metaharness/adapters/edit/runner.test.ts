@@ -6,7 +6,7 @@ import { formatSessionDumpText, SessionManager } from "@oh-my-pi/pi-coding-agent
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { generateReport } from "./report";
 import { buildBenchmarkResult, type TaskRunResult, writeConversationDump } from "./runner";
-import type { EditTask } from "@oh-my-pi/typescript-edit-benchmark/tasks";
+import type { EditTask } from "@ultraworkers/typescript-edit-benchmark/tasks";
 
 const tempDirs: TempDir[] = [];
 

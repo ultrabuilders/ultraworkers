@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "doctor_version": "1.0.0",
+  "doctor_contract_version": "1.0",
+  "tool": "am",
+  "tool_version": "0.3.36",
+  "ok": true,
+  "exit_code": 0,
+  "fm_id": "fm-db-state-files-world-readable-storage-db",
+  "severity": "P0",
+  "subsystem": "db_state_files",
+  "op_pattern": "Op::Chmod",
+  "mode": "fix",
+  "dry_run": false,
+  "run_id": "2026-10-03T01-05-48Z__only_778708",
+  "run_dir": "/Users/tranquangdang21/Projects/ultraworkers/.doctor/runs/2026-10-03T01-05-48Z__only_778708",
+  "duration_ms": 328,
+  "actions_taken": 1,
+  "actions_planned": 1,
+  "summary": {
+    "total_findings": 0,
+    "initial_findings": 1,
+    "actions_taken": 1,
+    "actions_skipped": 0
+  },
+  "post_fix": {
+    "fm_id": "fm-db-state-files-world-readable-storage-db",
+    "findings_count": 0,
+    "actions_planned": 0,
+    "findings": []
+  },
+  "outcome": {
+    "fm_id": "fm-db-state-files-world-readable-storage-db",
+    "findings_count": 1,
+    "actions_taken": 1,
+    "actions_skipped": 0,
+    "quarantined_paths": [],
+    "findings": [
+      {
+        "id": "fm-db-state-files-world-readable-storage-db",
+        "severity": "P0",
+        "subsystem": "db_state_files",
+        "title": "DB file /Users/tranquangdang21/.mcp_agent_mail_git_mailbox_repo/storage.sqlite3 has world/group-readable mode 0o644 (target: 0o600); contains all message bodies",
+        "confidence": 1.0,
+        "evidence": {
+          "path": "/Users/tranquangdang21/.mcp_agent_mail_git_mailbox_repo/storage.sqlite3",
+          "current_mode_octal": "0o644",
+          "current_mode_decimal": 33188,
+          "target_mode_octal": "0o600",
+          "risk": "DB holds all message bodies, agent identities, contact graphs"
+        },
+        "remediation": {
+          "command": "am doctor --fix --only fm-db-state-files-world-readable-storage-db --yes",
+          "explain_command": "am doctor explain fm-db-state-files-world-readable-storage-db",
+          "auto_fixable": true,
+          "estimated_actions": 1
+        }
+      }
+    ]
+  }
+}

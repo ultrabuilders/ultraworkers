@@ -17,7 +17,7 @@ describe("AgentSession idle custom message render", () => {
 	let session: AgentSession | undefined;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-idle-custom-render-");
+		tempDir = TempDir.createSync("@ultraworkers-idle-custom-render-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("openai", "openai-test-key");
 	});

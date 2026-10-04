@@ -160,7 +160,7 @@ describe("InputController skill queue chip metadata", () => {
 	let skillCommands: Map<string, Skill>;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-skill-queue-stub-");
+		tempDir = TempDir.createSync("@ultraworkers-skill-queue-stub-");
 		const skill = await writeSkillFile(tempDir.path(), "test-skill", "Do the thing.");
 		skillCommands = new Map<string, Skill>([["skill:test-skill", skill]]);
 	});
@@ -341,7 +341,7 @@ describe("InputController optimistic skill row (#8895)", () => {
 	let skillCommands: Map<string, Skill>;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-skill-optimistic-stub-");
+		tempDir = TempDir.createSync("@ultraworkers-skill-optimistic-stub-");
 		const skill = await writeSkillFile(tempDir.path(), "test-skill", "Do the thing.");
 		skillCommands = new Map<string, Skill>([["skill:test-skill", skill]]);
 	});
@@ -456,7 +456,7 @@ describe("compaction skill re-invocation", () => {
 	}
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-skill-compaction-stub-");
+		tempDir = TempDir.createSync("@ultraworkers-skill-compaction-stub-");
 		const skill = await writeSkillFile(tempDir.path(), "test-skill", "Do the thing.");
 		skillCommands = new Map<string, Skill>([["skill:test-skill", skill]]);
 	});
@@ -549,7 +549,7 @@ interface SessionFixture {
 }
 
 async function createRealSession(): Promise<SessionFixture> {
-	const tempDir = TempDir.createSync("@pi-skill-queue-real-");
+	const tempDir = TempDir.createSync("@ultraworkers-skill-queue-real-");
 	const authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 	authStorage.keys.setRuntime("anthropic", "test-key");
 	const modelRegistry = new ModelRegistry(authStorage);

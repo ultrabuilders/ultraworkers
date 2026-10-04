@@ -1,36 +1,57 @@
 /**
- * Cross-process contract between omp processes and the broker-supervised IDA host daemon.
+ * Cross-process contract between ultraworkers processes and the broker-supervised IDA host daemon.
  *
  * Each open database runs in one daemon named {@link idaDaemonName} under the project's daemon
- * broker (so it shows up in `omp ps`). The daemon is an omp worker (`host.ts`) that owns the
+ * broker (so it shows up in `ultraworkers ps`). The daemon is an ultraworkers worker (`host.ts`) that owns the
  * IDB lock and one Python worker, and serves NDJSON requests on {@link idaHostEndpoint}.
  */
 import type * as net from "node:net";
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 export { IDA_HOST_WORKER_ARG } from "../cli/worker-selectors";
 
 /** Environment key carrying the JSON {@link IdaHostConfig} for the daemon. */
-export const IDA_HOST_CONFIG_ENV = "OMP_IDA_HOST_CONFIG";
+export const IDA_HOST_CONFIG_ENV = "ULTRAWORKERS_IDA_HOST_CONFIG";
 
-/** Name prefix of every IDA daemon in a broker scope. */
-export const IDA_DAEMON_PREFIX = "omp.ida.";
+/**
+ * Name prefix of every IDA daemon in a broker scope.
+ *
+ * Derived from {@link APP_NAME} rather than spelled out, because this string is
+ * what `ultraworkers ps` shows a user and what both docblocks above this module
+ * describe. A literal here drifts from those claims the moment either moves; the
+ * two clients of this constant (`client.ts` filters and parses by prefix) follow
+ * it automatically, and nothing persists it, so there is no migration to write.
+ */
+export const IDA_DAEMON_PREFIX = `${APP_NAME}.ida.`;
 
 /** Broker daemon names are capped at 48 characters (`broker.ts`). */
 const DAEMON_NAME_MAX = 48;
 
-/** Broker readiness regex matched against the banner the host prints once it listens. */
-export const IDA_HOST_READY_PATTERN = String.raw`omp ida host listening on \S+`;
+/**
+ * Broker readiness regex matched against the banner the host prints once it listens.
+ *
+ * Deliberately carries NO product name. The banner below leads with {@link APP_NAME},
+ * so a brand-free pattern is what keeps the two ends matched across a rename: pinning
+ * a name here would silently desync the client from the host the moment either side
+ * moved. `relay/daemon.ts:26` is the same shape, already brand-free.
+ */
+export const IDA_HOST_READY_PATTERN = String.raw`ida host listening on \S+`;
 
 /** Banner printed on stdout once the host socket accepts connections. */
 export function idaHostReadyBanner(endpoint: string): string {
-	return `omp ida host listening on ${endpoint}`;
+	return `${APP_NAME} ida host listening on ${endpoint}`;
 }
 
-/** Message text of any thrown value, for logs and wire errors. */
-export function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+/**
+ * Message text of any thrown value, for logs and wire errors.
+ *
+ * Re-exported from `@oh-my-pi/pi-utils/errors` rather than kept here: this copy was
+ * byte-identical to two others and none of the three was total — a value whose
+ * `message` or `toString` throws escaped the `catch` meant to contain it. The shared
+ * helper handles that case and cannot drift from its siblings.
+ */
+export { errorMessage } from "@oh-my-pi/pi-utils/errors";
 
 /** Feed every complete newline-terminated, non-blank line received on `socket` to `onLine`. */
 export function readSocketLines(socket: net.Socket, onLine: (line: string) => void): void {
@@ -67,13 +88,13 @@ export function idaDaemonName(id: string): string {
 /** Unix socket or Windows named pipe the host for `daemonName` listens on. */
 export function idaHostEndpoint(projectDir: string, runtimeDir: string, daemonName: string): string {
 	if (process.platform === "win32") {
-		return `\\\\.\\pipe\\omp-ida-${hash16(`${path.resolve(projectDir)}\0${daemonName}`)}`;
+		return `\\\\.\\pipe\\ida-${hash16(`${path.resolve(projectDir)}\0${daemonName}`)}`;
 	}
 	// Hashed to stay under the ~104-byte Unix socket path limit.
 	return path.join(runtimeDir, `ida-${hash16(daemonName)}.sock`);
 }
 
-/** RPC methods an omp process may forward to the worker through `call`. */
+/** RPC methods an ultraworkers process may forward to the worker through `call`. */
 export const IDA_CALL_METHODS = ["view", "exec", "rename", "comment", "set_type", "make_function", "save"] as const;
 
 /** A method forwarded with `call`. */
@@ -139,7 +160,7 @@ const hostStatusSchema = type({
 
 /**
  * A host's database as reported by `open`/`status`. `busy` counts queued and running requests
- * from every omp process; `lastUsed` drives LRU eviction; `dirty` means a close would save.
+ * from every ultraworkers process; `lastUsed` drives LRU eviction; `dirty` means a close would save.
  */
 export type IdaHostStatus = typeof hostStatusSchema.infer;
 
@@ -164,7 +185,7 @@ const hostConfigSchema = type({
 	idleCloseMs: "number",
 });
 
-/** Everything the host needs to open its database; built by the omp process that starts it. */
+/** Everything the host needs to open its database; built by the ultraworkers process that starts it. */
 export type IdaHostConfig = typeof hostConfigSchema.infer;
 
 /** Decode the host config from {@link IDA_HOST_CONFIG_ENV}; throws on a malformed value. */

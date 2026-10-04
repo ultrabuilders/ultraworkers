@@ -82,7 +82,7 @@ function baseOptions(cwd: string) {
 
 describe("/tan extension auth over a shared registry", () => {
 	it("keeps the extension provider's credential resolvable after a forwarded tan-like child is created", async () => {
-		using tempDir = TempDir.createSync("omp-tan-ext-auth-");
+		using tempDir = TempDir.createSync("ultraworkers-tan-ext-auth-");
 		const cwd = path.resolve(tempDir.path());
 		const extPath = path.join(cwd, "provider-ext.ts");
 		await Bun.write(extPath, EXTENSION_SOURCE);
@@ -137,7 +137,7 @@ describe("/tan extension auth over a shared registry", () => {
 	}, 20_000);
 
 	it("preserves auth via the extension-paths fallback when no prepared factories are forwarded", async () => {
-		using tempDir = TempDir.createSync("omp-tan-ext-auth-fallback-");
+		using tempDir = TempDir.createSync("ultraworkers-tan-ext-auth-fallback-");
 		const cwd = path.resolve(tempDir.path());
 		const extPath = path.join(cwd, "provider-ext.ts");
 		await Bun.write(extPath, EXTENSION_SOURCE);
@@ -186,7 +186,7 @@ describe("/tan extension auth over a shared registry", () => {
 		// Suspending already withdraws an extension's tools. Its model provider used
 		// to survive that, so a disabled extension kept offering models and its
 		// stored credential outlived the permission that granted it.
-		using tempDir = TempDir.createSync("omp-suspend-provider-");
+		using tempDir = TempDir.createSync("ultraworkers-suspend-provider-");
 		const cwd = path.resolve(tempDir.path());
 		const extPath = path.join(cwd, "provider-ext.ts");
 		await Bun.write(extPath, EXTENSION_SOURCE);
@@ -230,7 +230,7 @@ describe("/tan extension auth over a shared registry", () => {
 		// earlier one. So after a handoff, the FIRST extension's record is stale —
 		// and unregistering by name resolves to whoever owns it NOW. Without the
 		// ownership check, suspending extension A removes extension B's provider.
-		using tempDir = TempDir.createSync("omp-provider-handoff-");
+		using tempDir = TempDir.createSync("ultraworkers-provider-handoff-");
 		const cwd = path.resolve(tempDir.path());
 		const authStorage = await AuthStorage.create(tempDir.join("auth.db"));
 		const modelRegistry = new ModelRegistry(authStorage, tempDir.join("models.yml"));

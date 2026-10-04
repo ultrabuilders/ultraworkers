@@ -81,7 +81,7 @@ describe("AgentSession snapcompact frame dead-end rescue", () => {
 		 *  re-emitted by buildSessionContext, so the rescue budget must charge it. */
 		preArchiveKeptText?: string;
 	}): Promise<void> {
-		tempDir = TempDir.createSync("@pi-snapcompact-frame-dead-end-");
+		tempDir = TempDir.createSync("@ultraworkers-snapcompact-frame-dead-end-");
 		sessionManager = SessionManager.inMemory(tempDir.path());
 
 		let extensionRunner: ExtensionRunner | undefined;

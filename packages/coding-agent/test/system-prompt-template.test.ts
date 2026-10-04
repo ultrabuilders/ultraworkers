@@ -1,7 +1,7 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
-import { __resetDirsFromEnvForTests, CONFIG_DIR_NAME, getConfigAgentDirName, TempDir } from "@oh-my-pi/pi-utils";
+import { __resetDirsFromEnvForTests, getConfigAgentDirName, PROJECT_AGENT_DIR_NAME, TempDir } from "@oh-my-pi/pi-utils";
 import {
 	buildSystemPrompt,
 	discoverSystemPromptOverride,
@@ -28,7 +28,7 @@ interface DiscoveryPaths {
 }
 
 async function withDiscoveryHome<T>(fn: (paths: DiscoveryPaths) => Promise<T>): Promise<T> {
-	using tempDir = TempDir.createSync("@omp-system-prompt-template-discovery-");
+	using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-discovery-");
 	const home = tempDir.join("home");
 	const homedirSpy = spyOn(os, "homedir").mockReturnValue(home);
 	const previousHome = process.env.HOME;
@@ -39,7 +39,7 @@ async function withDiscoveryHome<T>(fn: (paths: DiscoveryPaths) => Promise<T>): 
 	try {
 		return await fn({
 			cwd: tempDir.join("project"),
-			projectConfig: tempDir.join("project", CONFIG_DIR_NAME),
+			projectConfig: tempDir.join("project", PROJECT_AGENT_DIR_NAME),
 			userConfig: path.join(home, getConfigAgentDirName()),
 		});
 	} finally {
@@ -108,7 +108,7 @@ describe("system prompt Handlebars templates", () => {
 		});
 	});
 
-	for (const directory of [CONFIG_DIR_NAME, ".agents"]) {
+	for (const directory of [PROJECT_AGENT_DIR_NAME, ".agents"]) {
 		it(`preserves ancestor ${directory}/SYSTEM.md over a user template`, async () => {
 			await withDiscoveryHome(async ({ cwd, userConfig }) => {
 				const nestedCwd = path.join(cwd, "nested");
@@ -123,7 +123,7 @@ describe("system prompt Handlebars templates", () => {
 			});
 		});
 	}
-	for (const directory of [CONFIG_DIR_NAME, ".agents"]) {
+	for (const directory of [PROJECT_AGENT_DIR_NAME, ".agents"]) {
 		it(`discovers an ancestor ${directory}/SYSTEM_TEMPLATE.md from a nested cwd`, async () => {
 			await withDiscoveryHome(async ({ cwd, userConfig }) => {
 				const nestedCwd = path.join(cwd, "nested");
@@ -224,7 +224,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("uses the current eager-task flags to select the rendered branch", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-branches-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-branches-");
 		const cwd = tempDir.path();
 
 		const defaultBranch = await render(cwd, eagerTasksTemplate);
@@ -241,7 +241,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("refreshes live tools and device docs while retaining the footer and prelude guidance", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-live-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-live-");
 		const cwd = tempDir.path();
 
 		const first = await render(cwd, liveDataTemplate, {
@@ -275,7 +275,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("claims the xdev catalog when a template renders the xd:// section", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-xdev-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-xdev-");
 		const cwd = tempDir.path();
 
 		const result = await render(cwd, "devices:\n{{xdevDocs}}\nreference xd://fetch here", {
@@ -287,7 +287,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("does not recursively render Handlebars syntax contained in inserted data", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-literal-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-literal-");
 		const inserted = "literal data {{eagerTasks}}";
 		const result = await render(tempDir.path(), literalDataTemplate, {
 			eagerTasks: true,
@@ -299,7 +299,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("rejects a template when customPrompt is also provided", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-conflict-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-conflict-");
 		await expect(
 			buildSystemPrompt(
 				options(tempDir.path(), {
@@ -311,7 +311,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("rejects a template when resolvedCustomPrompt is also provided", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-resolved-conflict-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-resolved-conflict-");
 		await expect(
 			buildSystemPrompt(
 				options(tempDir.path(), {
@@ -323,7 +323,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("surfaces malformed and empty explicit templates", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-invalid-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-invalid-");
 		await expect(
 			buildSystemPrompt(options(tempDir.path(), { systemPromptTemplate: "{{#if eagerTasks}}" })),
 		).rejects.toThrow("Invalid system prompt template");
@@ -336,7 +336,7 @@ describe("system prompt Handlebars templates", () => {
 	});
 
 	it("keeps an existing literal custom prompt unexpanded", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-literal-custom-");
+		using tempDir = TempDir.createSync("@ultraworkers-system-prompt-template-literal-custom-");
 		const literal = "legacy custom {{eagerTasks}}";
 		const result = await buildSystemPrompt(
 			options(tempDir.path(), {

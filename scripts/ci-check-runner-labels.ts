@@ -1,0 +1,361 @@
+#!/usr/bin/env bun
+/**
+ * Every `runs-on:` label a workflow uses must be a label this repo declares as existing.
+ *
+ * ## What it checks — and why the gate is right without knowing the outcome
+ *
+ * A label passes when it is either GitHub-hosted (`ubuntu-*`, `windows-*`, `macos-*`) or listed
+ * in `.github/actionlint.yaml` under `self-hosted-runner.labels`. Anything else is red.
+ *
+ * That rule stands on its own. A label outside the declaration is either a typo, or a real
+ * runner this repo has not recorded — and both mean the declaration and the workflows have
+ * drifted apart, which is the thing worth catching. **Whether the job then fails at submission,
+ * sits queued until it times out, or is picked up by something else is a detail of GitHub's
+ * scheduler, not a premise of this check.** If that detail is described wrong here, the gate is
+ * still correct; if the gate were wrong, it would be wrong on the label-matching rule alone.
+ *
+ * The comment below records the mechanism as understood when this was written. It is context
+ * for a reader who wonders why an allowlist is worth having, not the argument for it.
+ *
+ * ## Why an allowlist is worth having at all
+ *
+ * The runner scale set that serves this repo is deployed with `minRunners: 0` (`infra/docs/
+ * 04-arc-and-caching.md`). As understood here, a job naming a label no runner registers is not
+ * rejected at submission — there is simply nothing that will ever pick it up, so CI stays green
+ * and the only evidence is a job that ran until it hit the 6-hour limit. That behaviour is not
+ * verified from this repository; it is the reason the drift matters rather than the reason the
+ * rule is right.
+ *
+ * The rename sweep cannot cover this. `check-disposition.ts` globs a set of script extensions
+ * that stops at `py` and `sh` — no `yml`, no `yaml` — so a workflow file can be renamed
+ * wholesale without a single gate noticing. That is the hole `disposition.tsv` rows do not
+ * close: a row protects a string inside a file, not the label the workflows ask for.
+ *
+ * Because the check is closed over the repository, renaming a label in a workflow without adding
+ * it to the declaration is caught here — and `actionlint` lints the same file clean either way,
+ * so nothing else would have said anything.
+ *
+ * Expressions are not evaluated: `runs-on: ${{ … }}` is a runtime value, and every string
+ * literal inside one is checked separately below.
+ */
+
+import * as path from "node:path";
+
+/** Files whose `runs-on:` is meaningful. Composite actions have none — they run on the caller's runner. */
+const WORKFLOW_GLOB = ".github/workflows/*.{yml,yaml}";
+const ACTIONLINT_PATH = ".github/actionlint.yaml";
+/**
+ * Where the deployed scale set's name is written down.
+ *
+ * The Helm values that create the runner group are not in this repository, so the label a
+ * runner actually answers to is documented rather than configured here. That makes the doc
+ * the only in-repo statement of the real name, which is worth cross-checking against the
+ * declaration in `actionlint.yaml` — otherwise the two drift and the drift is invisible.
+ */
+const ARC_DOC_PATH = "infra/docs/04-arc-and-caching.md";
+
+/**
+ * GitHub-hosted runner labels. Matched by prefix because GitHub ships new images on new
+ * version strings continuously (`ubuntu-24.04` today, `ubuntu-26.04` tomorrow) and a gate
+ * that had to be amended for each one would rot into being disabled.
+ */
+const GITHUB_HOSTED_PREFIXES = ["ubuntu-", "windows-", "macos-"];
+
+/** Labels GitHub defines that are not OS images. */
+const GITHUB_HOSTED_EXACT = new Set(["self-hosted"]);
+
+interface RunnerLabelUse {
+	readonly label: string;
+	readonly file: string;
+	/** 1-based line, so the failure names a place a human can jump to. */
+	readonly line: number;
+}
+
+/**
+ * Yield every string literal appearing in a `runs-on:` value.
+ *
+ * A `runs-on:` is either a bare label, a sequence of labels, or an expression that picks
+ * between them. All three forms are common here, and the third hides labels that are still
+ * real — `github.event_name == 'pull_request' && 'ubuntu-22.04' || 'omp-kata'` is how 10 of
+ * this repo's jobs select a runner, so ignoring expressions would skip most of the file.
+ */
+export function literalLabels(value: unknown): string[] {
+	if (typeof value === "string") return [value];
+	if (Array.isArray(value)) return value.flatMap(entry => literalLabels(entry));
+	return [];
+}
+
+/**
+ * Pull the string literals out of a `${{ … }}` expression.
+ *
+ * This is deliberately a lexical scan for quoted runs, not an evaluator: an expression is
+ * arbitrary user code and cannot be resolved at lint time. What matters is that a literal
+ * which names a runner still gets checked, so `… || 'omp-kata'` is caught while
+ * `matrix.os` is left alone.
+ *
+ * Not every quoted run is a label. In this repo's common form
+ *
+ *     github.event_name == 'pull_request' && 'ubuntu-22.04' || 'omp-kata'
+ *
+ * `'pull_request'` is the thing being compared, and the branch selector, not a runner. Treating
+ * it as a label made the gate report ten phantom offenders on a clean tree — a scanner that
+ * fires on everything has stopped discriminating, so operands of a comparison are dropped and
+ * only the ternary's result positions are read as labels.
+ */
+export function expressionLabels(value: string): string[] {
+	const labels: string[] = [];
+	const pattern = /'([^']+)'|"([^"]+)"/g;
+	for (const match of value.matchAll(pattern)) {
+		const label = match[1] ?? match[2];
+		if (label === undefined) continue;
+		const before = value.slice(0, match.index).trimEnd();
+		// `== 'x'` / `!= 'x'` compare against the literal; `x` is a value under test.
+		if (/[=!]==?$/.test(before)) continue;
+		labels.push(label);
+	}
+	return labels;
+}
+
+/** Resolve one `runs-on:` value to the labels it can name. */
+export function resolveLabels(value: unknown): string[] {
+	if (typeof value !== "string") return literalLabels(value);
+	if (!value.includes("${{")) return [value];
+	return expressionLabels(value);
+}
+
+/** True when GitHub itself provides a runner for this label. */
+export function isGitHubHosted(label: string): boolean {
+	return GITHUB_HOSTED_EXACT.has(label) || GITHUB_HOSTED_PREFIXES.some(prefix => label.startsWith(prefix));
+}
+
+/**
+ * Self-hosted labels the repo declares, read from `.github/actionlint.yaml`.
+ *
+ * Parsed rather than grepped: the file is YAML with a nested `self-hosted-runner.labels`
+ * sequence, and a regex over its text would also match the comment above it that names the
+ * same label — which would make the gate pass on a file that declares nothing.
+ */
+export function declaredSelfHostedLabels(source: string): Set<string> {
+	const parsed: unknown = Bun.YAML.parse(source);
+	if (parsed === null || typeof parsed !== "object") return new Set();
+	const runner = (parsed as Record<string, unknown>)["self-hosted-runner"];
+	if (runner === null || typeof runner !== "object") return new Set();
+	const labels = (runner as Record<string, unknown>).labels;
+	if (!Array.isArray(labels)) return new Set();
+	return new Set(labels.filter((entry): entry is string => typeof entry === "string"));
+}
+
+/** Walk the parsed workflow tree and collect every `runs-on:` it declares. */
+export function collectRunsOn(parsed: unknown, file: string, lines: readonly string[]): RunnerLabelUse[] {
+	const uses: RunnerLabelUse[] = [];
+	const record = (raw: unknown): void => {
+		for (const label of resolveLabels(raw)) {
+			// `line` is resolved by the caller's text scan; recorded as 0 until then.
+			uses.push({ label, file, line: 0 });
+		}
+	};
+	const visit = (node: unknown): void => {
+		if (Array.isArray(node)) {
+			for (const entry of node) visit(entry);
+			return;
+		}
+		if (node === null || typeof node !== "object") return;
+		for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+			if (key === "runs-on") record(value);
+			else visit(value);
+		}
+	};
+	visit(parsed);
+	// Attach real line numbers by finding the label in the source; a label can repeat, and an
+	// approximate line still points a human at the right job.
+	return uses.map(use => ({ ...use, line: findLine(lines, use.label) }));
+}
+
+function findLine(lines: readonly string[], label: string): number {
+	const quoted = `runs-on: ${label}`;
+	for (const [index, line] of lines.entries()) {
+		if (line.includes(quoted)) return index + 1;
+	}
+	for (const [index, line] of lines.entries()) {
+		if (line.includes(label)) return index + 1;
+	}
+	return 0;
+}
+
+/**
+ * The `runnerScaleSetName:` assignments in the ARC doc — the deployed scale set's real name.
+ *
+ * Anchored to the start of a line and to the whole line being the assignment, because the same
+ * file mentions the key three other ways that are NOT declarations: a bolded prose sentence
+ * naming the value, a sentence that lists the key among fields, and a `--set key=value` form in
+ * a rename example. Matching any of those would either gate on prose — red whenever the
+ * sentence is reworded — or read a placeholder like `<other-repo>-kata` as a real label.
+ */
+export function documentedScaleSetNames(source: string): string[] {
+	const names: string[] = [];
+	const pattern = /^\s*runnerScaleSetName:\s*(\S+)\s*$/gm;
+	for (const match of source.matchAll(pattern)) {
+		const name = match[1];
+		if (name !== undefined) names.push(name);
+	}
+	return names;
+}
+
+export interface ScaleSetDrift {
+	readonly name: string;
+	readonly line: number;
+}
+
+/** A label a workflow asks for that `actionlint.yaml` blesses but the ARC doc never documents. */
+export interface UndocumentedLabel extends RunnerLabelUse {}
+
+export interface CheckResult {
+	readonly offenders: readonly RunnerLabelUse[];
+	readonly checked: number;
+	/** Scale-set names the ARC doc declares that `actionlint.yaml` does not. */
+	readonly drift: readonly ScaleSetDrift[];
+	/** Labels in use that the ARC doc never documents as a deployed scale set. */
+	readonly undocumented: readonly UndocumentedLabel[];
+}
+
+/**
+ * The check itself, over already-read sources.
+ *
+ * Split from the IO so a test can drive it with strings — the failure this gate defends is
+ * invisible in CI precisely because nothing reads the workflow files, so testing it needs
+ * inputs no amount of running the real gate would produce.
+ */
+export function checkRunnerLabels(
+	sources: readonly { file: string; text: string }[],
+	actionlint: string,
+	arcDoc?: string,
+): CheckResult {
+	const declared = declaredSelfHostedLabels(actionlint);
+	const offenders: RunnerLabelUse[] = [];
+	const accepted: RunnerLabelUse[] = [];
+	let checked = 0;
+	for (const { file, text } of sources) {
+		let parsed: unknown;
+		try {
+			parsed = Bun.YAML.parse(text);
+		} catch {
+			// A workflow that does not parse is actionlint's problem, not this gate's. Reporting
+			// it here would blame this check for a syntax error it never got to reason about.
+			continue;
+		}
+		for (const use of collectRunsOn(parsed, file, text.split("\n"))) {
+			checked += 1;
+			if (declared.has(use.label)) {
+				accepted.push(use);
+				continue;
+			}
+			if (isGitHubHosted(use.label)) continue;
+			offenders.push(use);
+		}
+	}
+	const drift: ScaleSetDrift[] = [];
+	const undocumented: UndocumentedLabel[] = [];
+	if (arcDoc !== undefined) {
+		const lines = arcDoc.split("\n");
+		const documented = documentedScaleSetNames(arcDoc);
+		for (const name of documented) {
+			if (declared.has(name)) continue;
+			drift.push({ name, line: findLine(lines, `runnerScaleSetName: ${name}`) });
+		}
+		// The other direction. `actionlint.yaml` is a linting declaration: it says which labels
+		// this repo is *allowed* to write down, not which runners exist. Treating it as proof of
+		// existence is how a fabricated label walks straight in — declare `ghost-label`, use it in
+		// a workflow, and both existing checks stay quiet (it is declared, and the doc's real name
+		// is still declared) while the job queues forever. That is the one failure this gate
+		// exists to prevent, arriving through the front door.
+		//
+		// Restricted to labels a workflow actually *uses*, because the ARC doc enumerates deployed
+		// scale sets rather than every label the linting file may mention. And gated on the doc
+		// naming at least one: a doc with no assignment carries no truth to compare against, and
+		// a check that fails when its input is absent is a check that must not run.
+		if (documented.length > 0) {
+			const known = new Set(documented);
+			for (const use of accepted) {
+				if (known.has(use.label)) continue;
+				if (undocumented.some(entry => entry.label === use.label)) continue;
+				undocumented.push(use);
+			}
+		}
+	}
+	return { offenders, checked, drift, undocumented };
+}
+
+async function collectSources(root: string): Promise<{ file: string; text: string }[]> {
+	const glob = new Bun.Glob(WORKFLOW_GLOB);
+	const sources: { file: string; text: string }[] = [];
+	for await (const relative of glob.scan({ cwd: root, dot: true })) {
+		const file = path.join(root, relative);
+		sources.push({ file: relative, text: await Bun.file(file).text() });
+	}
+	return sources.sort((a, b) => a.file.localeCompare(b.file));
+}
+
+async function main(): Promise<void> {
+	const root = process.cwd();
+	const sources = await collectSources(root);
+	const actionlintPath = path.join(root, ACTIONLINT_PATH);
+	const actionlint = (await Bun.file(actionlintPath).exists()) ? await Bun.file(actionlintPath).text() : "";
+	const arcDocPath = path.join(root, ARC_DOC_PATH);
+	const arcDoc = (await Bun.file(arcDocPath).exists()) ? await Bun.file(arcDocPath).text() : undefined;
+
+	const { offenders, checked, drift, undocumented } = checkRunnerLabels(sources, actionlint, arcDoc);
+
+	if (offenders.length === 0 && drift.length === 0 && undocumented.length === 0) {
+		console.log(`runner-labels: ${checked} runs-on label(s) across ${sources.length} workflow(s) — all resolvable`);
+		return;
+	}
+
+	// Each failure mode reports on its own and exits there. Falling through would print the
+	// "unknown label" heading with an empty list under a drift-only failure, which reads as a
+	// second, unstated problem.
+	if (undocumented.length > 0) {
+		console.error(`runner-labels: a runs-on label is declared but the ARC doc documents no such runner.\n`);
+		for (const use of undocumented) {
+			console.error(`  ${use.file}:${use.line}  ${use.label}`);
+		}
+		console.error(
+			`\n${ACTIONLINT_PATH} lists these under \`self-hosted-runner.labels\`, but ${ARC_DOC_PATH} names\n` +
+				`no deployed scale set by that label. The linting declaration says which labels this repo may\n` +
+				`write down; it is not evidence that a runner answers to them. Declare the scale set in the\n` +
+				`ARC doc, or drop the label and use a GitHub-hosted one.`,
+		);
+		if (offenders.length === 0 && drift.length === 0) process.exit(1);
+	}
+
+	if (drift.length > 0) {
+		console.error(
+			`runner-labels: the runner group the ARC doc declares is not the one this repo declares.\n\n` +
+				`${ARC_DOC_PATH} documents:\n`,
+		);
+		for (const entry of drift) {
+			console.error(`  ${ARC_DOC_PATH}:${entry.line}  runnerScaleSetName: ${entry.name}`);
+		}
+		console.error(
+			`\nbut \`${ACTIONLINT_PATH}\` does not list ${drift.map(entry => `\`${entry.name}\``).join(", ")} under\n` +
+				`\`self-hosted-runner.labels\`. The scale set is deployed outside this repository, so these\n` +
+				`two files are the only in-repo statements of what the runner answers to — if they drift,\n` +
+				`jobs queue forever and nothing reports it.`,
+		);
+		if (offenders.length === 0) process.exit(1);
+	}
+
+	console.error("runner-labels: a runs-on label names no runner this repo declares.\n");
+	for (const use of offenders) {
+		console.error(`  ${use.file}:${use.line}  ${use.label}`);
+	}
+	console.error(
+		`\nA job on an unknown label is not rejected — it queues until it times out, so CI stays green\n` +
+			`while the job never runs. Add the label to \`${ACTIONLINT_PATH}\` under\n` +
+			`\`self-hosted-runner.labels\`, or use a GitHub-hosted one.`,
+	);
+	process.exit(1);
+}
+
+if (import.meta.main) {
+	await main();
+}

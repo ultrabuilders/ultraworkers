@@ -18,6 +18,10 @@ export const SESSION_TITLE_SLOT_ENTRY_TYPE = "title";
 
 export const TITLE_CHANGE_ENTRY_TYPE = "title_change";
 
+export const APPROVAL_ENTRY_TYPE = "approval";
+
+export const TURN_ENTRY_TYPE = "turn";
+
 export type SessionTitleSource = "auto" | "user";
 
 /** Fixed-width first-line slot carrying the mutable current session title. */
@@ -197,11 +201,143 @@ export interface TitleChangeEntry extends SessionEntryBase {
 	trigger?: string;
 }
 
+/**
+ * One half of an approval audit pair: what was asked, and what was decided.
+ *
+ * ## Why this is in the log and not in the model's context
+ *
+ * Structurally, not by a filter. `SessionMessageEntry` is the only union member
+ * that carries an `AgentMessage`, so every other entry is metadata the model
+ * cannot receive — which is why `TitleChangeEntry` needs no special handling
+ * either. That is also why there is deliberately no `EPHEMERAL_*` sentinel here:
+ * that marker exists for `model_change`, which *does* change what the model sees
+ * mid-turn. An approval record changes nothing about the conversation, and adding
+ * a marker for it would be a state nothing reads.
+ *
+ * ## Why a pair rather than one record
+ *
+ * After a crash the question is "who approved this". A record written only at the
+ * answer cannot distinguish a denial from a process that died while the prompt was
+ * open, and a record written only at the ask cannot say what was decided. So both
+ * halves are written, and they share `requestId`.
+ *
+ * ## What is recorded, and from where
+ *
+ * `policyKey` is whatever `resolveApproval` reported — the key that actually
+ * decided this call — rather than the tool name the call site knows. Those differ
+ * whenever a tool declares a narrower policy key or inherits a renamed tool's, and
+ * the audit trail has to name the rule that fired, not the tool that asked.
+ */
+export interface ApprovalEntry extends SessionEntryBase {
+	type: typeof APPROVAL_ENTRY_TYPE;
+	/** Ties the `asked` and `answered` halves of one prompt together. */
+	requestId: string;
+	phase: "asked" | "answered";
+	toolName: string;
+	/** The key `resolveApproval` resolved the policy under. Present on both halves. */
+	policyKey?: string;
+	/** The policy in force when the question was asked. */
+	policy?: string;
+	/** What the user chose. `asked` has none. */
+	decision?: string;
+	/** Whether an ACP client answered rather than a local prompt. */
+	source?: "user" | "mode" | "tool" | "acp";
+}
+
+/**
+ * One half of a turn's durable record: when it opened, and how it closed.
+ *
+ * ## Why it is written on the event, not on the loop's `turnOpen` flag
+ *
+ * Three sites in `runLoopBody` push `turn_start` and then throw
+ * (`agent-loop.ts:1243` `getSteeringMessages`, `:1381` `beforeModelCall`,
+ * `:1397` `onToolChoiceRejected`), so `turn_end` never fires for those turns.
+ * A record written only on close would be missing exactly the turns that died.
+ * `agent-loop.ts:1243` also opens a turn with a bare `stream.push` and never
+ * assigns the flag, so the flag and the stream disagree at one of the three
+ * sites: keying the write on the event cannot inherit that bug, and keying it
+ * on the flag would.
+ *
+ * ## Why `blockedBy` is a reference and not a copy
+ *
+ * `ApprovalEntry` already holds the decision, the policy key, and the source.
+ * Duplicating those fields here would create a second source of truth that can
+ * drift from the first, so this names the `requestId`s and leaves the content
+ * where it is already written.
+ */
+/**
+ * True for the `answered` half of an approval that refused the call.
+ *
+ * A deny-list over what refusal *looks like*, not an allow-list of one
+ * producer's enum, because `decision` has no single vocabulary: the ACP bridge
+ * writes option kinds (`reject_once` / `reject_always`), a tool-level gate can
+ * answer `"denied"`, and an extension may write any string through
+ * `ExtensionRunner.recordApprovalEntry`. `policy: "deny"` is accepted too — it is
+ * the one field a gate denial sets regardless of how the question was answered.
+ *
+ * Only the `answered` half qualifies, so one refusal yields one `requestId` even
+ * though the pair writes two entries.
+ */
+export function isApprovalDenial(entry: SessionEntry): entry is ApprovalEntry {
+	if (entry.type !== APPROVAL_ENTRY_TYPE || entry.phase !== "answered") return false;
+	if (entry.policy === "deny") return true;
+	const decision = entry.decision;
+	if (!decision) return false;
+	return decision === "denied" || decision === "deny" || decision.startsWith("reject");
+}
+
+export interface TurnEntry extends SessionEntryBase {
+	type: typeof TURN_ENTRY_TYPE;
+	/** Index of the turn within the session; matches the loop's `turnIndex`. */
+	turnIndex: number;
+	phase: "started" | "ended";
+	/**
+	 * `ApprovalEntry.requestId` of every approval refused while this turn was open.
+	 *
+	 * "Refused", not "cut short": a rejected tool call does not end the turn — the
+	 * model receives the rejection and continues. The turns that actually die are
+	 * the three sites in `runLoopBody` that push `turn_start` and then throw, and a
+	 * denial is not what kills them. So this records that the turn was *subject to*
+	 * a gate refusal, which is observable, rather than a causal claim about the
+	 * turn's end, which is not.
+	 *
+	 * "While this turn was open" is a window over the log, anchored on the leaf id
+	 * captured when the turn opened — not a diff against the preceding turn. The
+	 * anchor is an id, so a rebuild that moves the leaf (a branch, a resume) can
+	 * strand it; the scan then falls back to the whole log and *over*-reports,
+	 * naming refusals from turns that ran before the rebuild. That direction is
+	 * deliberate: a spurious id resolves against an `ApprovalEntry` the reader can
+	 * go look at, whereas a dropped one is indistinguishable from a turn that was
+	 * never refused at all.
+	 *
+	 * ## Scope: bounded by what `ApprovalEntry` actually records
+	 *
+	 * Read back off the log, so it can only name refusals that reached the log. As
+	 * of this writing exactly two paths append approval halves — the extension tool
+	 * wrapper and the ACP permission path — and the interactive tool path writes
+	 * none: a core tool (bash under a `deny` policy, say) is refused without leaving
+	 * an `ApprovalEntry` to point at. That gap predates this field; it is the audit
+	 * entry's, not this one's.
+	 *
+	 * Stated here rather than left to the name: `blockedBy` is absent or short for
+	 * the refusals nobody recorded, and widening coverage means recording those
+	 * refusals first, not widening this scan.
+	 *
+	 * Deliberately not derived from `ToolResultMessage.isError`: that flag carries
+	 * no policy, so it cannot tell a gate denial from an ordinary tool failure.
+	 * Filling this from it would build a second source that disagrees with
+	 * `ApprovalEntry` in exactly the cases that matter.
+	 */
+	blockedBy?: string[];
+}
+
 declare module "@oh-my-pi/pi-agent-core/compaction/entries" {
 	interface CustomCompactionSessionEntries {
 		titleChange: TitleChangeEntry;
 		credentialPin: CredentialPinEntry;
 		modelUsage: ModelUsageEntry;
+		approval: ApprovalEntry;
+		turn: TurnEntry;
 	}
 }
 
@@ -313,6 +449,8 @@ export type SessionEntry =
 	| SessionInitEntry
 	| ModeChangeEntry
 	| CredentialPinEntry
+	| ApprovalEntry
+	| TurnEntry
 	| ResetBoundaryEntry;
 
 /** Raw logical file entry after loaders strip any fixed-width title slot. */

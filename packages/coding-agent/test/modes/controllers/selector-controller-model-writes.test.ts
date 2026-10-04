@@ -28,7 +28,7 @@ describe("SelectorController model hub writes", () => {
 
 	beforeEach(async () => {
 		state = beginSettingsTest();
-		tempDir = TempDir.createSync("@pi-selector-model-writes-");
+		tempDir = TempDir.createSync("@ultraworkers-selector-model-writes-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 	});

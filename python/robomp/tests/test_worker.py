@@ -2,7 +2,7 @@
 
 These tests swap `robomp.worker.RpcClient` for a recording fake so we can
 observe the `extra_args` and `set_todos` decisions the driver takes based on
-whether the workspace's omp session directory already holds a JSONL transcript.
+whether the workspace's ultraworkers session directory already holds a JSONL transcript.
 """
 
 from __future__ import annotations
@@ -275,12 +275,12 @@ def test_build_extra_env_stages_agent_home(tmp_path: Path, settings: Settings, m
 
     agent_dir = stage_home / ".agent"
     agent_rules_dir = agent_dir / "rules"
-    omp_agent_dir = stage_home / ".omp" / "agent"
+    uw_agent_dir = stage_home / ".omp" / "agent"
     agent_rules_dir.mkdir(parents=True)
-    omp_agent_dir.mkdir(parents=True)
+    uw_agent_dir.mkdir(parents=True)
     (agent_dir / "AGENTS.md").write_text("agent instructions\n", encoding="utf-8")
     (agent_rules_dir / "rule.md").write_text("rule\n", encoding="utf-8")
-    (omp_agent_dir / "models.yml").write_text("models: []\n", encoding="utf-8")
+    (uw_agent_dir / "models.yml").write_text("models: []\n", encoding="utf-8")
 
     env = worker._build_extra_env(settings)
 

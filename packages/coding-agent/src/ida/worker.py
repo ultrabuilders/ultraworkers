@@ -1,4 +1,4 @@
-"""omp IDA worker: drives one idalib database over an NDJSON stdin/stdout protocol.
+"""ultraworkers IDA worker: drives one idalib database over an NDJSON stdin/stdout protocol.
 
 Request:  {"id": int, "method": str, "params": dict}
 Response: {"id", "ok": true, "result"} | {"id", "ok": false, "error": {"type", "message"}}

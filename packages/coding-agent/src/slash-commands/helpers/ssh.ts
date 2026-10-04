@@ -1,5 +1,5 @@
 import { getSSHConfigPath } from "@oh-my-pi/pi-utils";
-import { reset as resetCapabilities } from "../../capability";
+import { invalidateAllCaches } from "../../capability";
 import { addSSHHost, readSSHConfigFile, removeSSHHost, type SSHHostConfig } from "../../ssh/config-writer";
 import { parseCommandArgs } from "../../utils/command-args";
 import type { ParsedSlashCommand, SlashCommandResult, SlashCommandRuntime } from "../types";
@@ -143,7 +143,7 @@ async function handleRemoveCommand(rest: string, runtime: SlashCommandRuntime): 
 	try {
 		const filePath = getSSHConfigPath(parsed.scope, runtime.cwd);
 		await removeSSHHost(filePath, parsed.name);
-		resetCapabilities();
+		invalidateAllCaches();
 		await runtime.output(`Removed SSH host "${parsed.name}" from ${parsed.scope} config.`);
 		return commandConsumed();
 	} catch (err) {
@@ -164,7 +164,7 @@ async function handleAddCommand(rest: string, runtime: SlashCommandRuntime): Pro
 	try {
 		const filePath = getSSHConfigPath(parsed.scope, runtime.cwd);
 		await addSSHHost(filePath, parsed.name, hostConfig);
-		resetCapabilities();
+		invalidateAllCaches();
 		await runtime.output(`Added SSH host "${parsed.name}" (${parsed.scope}).`);
 		return commandConsumed();
 	} catch (err) {

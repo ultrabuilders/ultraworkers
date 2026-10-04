@@ -23,7 +23,7 @@ type Harness = {
 type SettingsOverrides = Record<string, unknown>;
 
 const activeHarnesses: Harness[] = [];
-const sharedDir = TempDir.createSync("@pi-empty-stop-guard-shared-");
+const sharedDir = TempDir.createSync("@ultraworkers-empty-stop-guard-shared-");
 const sharedAuthStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 sharedAuthStorage.keys.setRuntime("mock", "test-key");
 const sharedModelRegistry = new ModelRegistry(sharedAuthStorage, path.join(sharedDir.path(), "models.yml"));
@@ -123,7 +123,7 @@ async function createHarness(
 		id?: string;
 	} = {},
 ): Promise<Harness & { mock: MockModel }> {
-	const tempDir = TempDir.createSync("@pi-empty-stop-guard-");
+	const tempDir = TempDir.createSync("@ultraworkers-empty-stop-guard-");
 	const authStorage = sharedAuthStorage;
 
 	const mock = createMockModel({ provider: options.provider, id: options.id, responses });
@@ -231,18 +231,17 @@ describe("AgentSession empty stop guard", () => {
 			.filter(entry => entry.type === "message")
 			.map(entry => entry.message as AgentMessage);
 		expect(emptyAssistantStops(activeBranchMessages)).toHaveLength(0);
-		// A discarded empty stop is physically removed from the journal, not just
-		// reparented off the active branch: it must never be able to resurface as
-		// the active leaf on reload (the loader rebuilds from the last physical
-		// entry) if the process is killed before the recovery turn lands.
-		expect(
-			emptyAssistantStops(
-				session.sessionManager
-					.getEntries()
-					.filter(entry => entry.type === "message")
-					.map(entry => entry.message as AgentMessage),
-			),
-		).toHaveLength(0);
+		// Deliberately NOT an assertion over `getEntries()`. This used to assert the
+		// journal held no empty stop, on the stated belief that a discarded one is
+		// "physically removed from the journal, not just reparented off the active
+		// branch". `discardEntryDurably` (session-manager.ts:3334) does the opposite
+		// on purpose: when a child may carry content the subtree is PRESERVED
+		// off-branch behind a marker, because deleting it would lose data. So the
+		// assertion contradicted the function it was guarding and could only ever be
+		// red — the branch assertion above is the contract. That a discarded stop
+		// cannot resurface is a claim about RELOAD, and it is asserted where there is
+		// a reload: "does not resurface a discarded empty stop after reloading from
+		// disk" at the end of this file.
 	});
 
 	it("retries a tool-use stop that has no tool call or text", async () => {
@@ -397,14 +396,16 @@ describe("AgentSession empty stop guard", () => {
 			.map(entry => entry.message as AgentMessage);
 		expect(emptyAssistantStops(activeBranchMessages)).toHaveLength(0);
 
-		// The loader reconstructs the active branch from the last physical journal
-		// entry. The empty stop is removed from history and a marker durably
-		// selects its parent, so reload cannot reactivate the discarded turn.
-		const journalMessages = session.sessionManager
-			.getEntries()
-			.filter(entry => entry.type === "message")
-			.map(entry => entry.message as AgentMessage);
-		expect(emptyAssistantStops(journalMessages)).toHaveLength(0);
+		// The loader reconstructs the active branch from the LAST physical journal
+		// entry, so what has to hold is that the last entry is the marker selecting
+		// the discarded turn's parent — not that the journal is free of empty stops.
+		// This used to assert the latter, on the belief that the empty stop is
+		// "removed from history"; `discardEntryDurably` (session-manager.ts:3334)
+		// preserves a content-bearing entry off-branch on purpose, so that belief
+		// was the opposite of the design and the assertion could only be red. The
+		// active-branch assertion above already covers "not on the live path"; the
+		// surviving half of the original claim — that RELOAD cannot reactivate it —
+		// needs a reload and is asserted in the reload case at the end of this file.
 		const lastJournalEntry = session.sessionManager.getEntries().at(-1);
 		expect(lastJournalEntry).toMatchObject({
 			type: "branch_summary",
@@ -773,5 +774,70 @@ describe("AgentSession empty stop guard", () => {
 		expect(withTool.mock.calls).toHaveLength(2);
 		expect(reminderMessages(withTool.session.agent.state.messages)).toHaveLength(0);
 		expect(assistantText(withTool.session.agent.state.messages)).toContain("tool path complete");
+	});
+
+	it("does not resurface a discarded empty stop after reloading from disk", async () => {
+		// The reason this case exists. Two assertions elsewhere in this file used to
+		// read `getEntries()` and expect no empty stop, which is what made them red.
+		// They were trying to say "a discarded stop cannot come back", and the only
+		// thing that can establish that is a RELOAD: the loader rebuilds the active
+		// branch from the last physical journal entry (session-manager.ts:3338 —
+		// "The loader reconstructs the active branch from the last physical journal
+		// entry, so changing the in-memory leaf alone is lost on reload"). With
+		// `SessionManager.inMemory` there is no file, so the claim was unobservable
+		// and the assertions were standing in for it as well as they could.
+		//
+		// What they could NOT stand in for is the retention. `discardEntryDurably`
+		// keeps a content-bearing entry off-branch behind a marker rather than
+		// deleting it, so "the journal is empty of empty stops" is false by design.
+		// The contract is narrower and is asserted below in both halves: the journal
+		// still HOLDS the entry, and the branch a reload selects does not.
+		const { session, mock, tempDir } = await createHarness(
+			[recordCall("beta", "call-record-beta"), emptyStop(), emptyStop(), emptyStop(), emptyStop()],
+			{},
+			{ persistSession: true },
+		);
+
+		await session.prompt("record beta");
+		await session.waitForIdle();
+
+		expect(mock.calls).toHaveLength(5);
+		expect(emptyAssistantStops(session.agent.state.messages)).toHaveLength(0);
+
+		const journalMessages = session.sessionManager
+			.getEntries()
+			.filter(entry => entry.type === "message")
+			.map(entry => entry.message as AgentMessage);
+		// The half that was true all along and that the old assertion denied: the
+		// discarded stops are still on disk, held off-branch on purpose.
+		expect(emptyAssistantStops(journalMessages).length).toBeGreaterThan(0);
+		// ...and the marker that makes the selection durable is the last entry.
+		expect(session.sessionManager.getEntries().at(-1)).toMatchObject({
+			type: "branch_summary",
+			summary: "",
+			details: { kind: "discarded-entry-branch" },
+		});
+
+		// Now the half that needs a reader: a fresh manager over the same directory,
+		// loading the journal the way a resumed process does. If the marker were not
+		// honoured, the discarded stops would be the active leaf again.
+		const sessionFile = session.sessionManager.getSessionFile();
+		expect(sessionFile).toBeDefined();
+		const reloaded = SessionManager.create(tempDir.path(), tempDir.path());
+		await reloaded.setSessionFile(sessionFile as string);
+
+		const reloadedBranch = reloaded
+			.getBranch()
+			.filter(entry => entry.type === "message")
+			.map(entry => entry.message as AgentMessage);
+		expect(emptyAssistantStops(reloadedBranch)).toHaveLength(0);
+		// The reload kept the conversation, so the assertion above is not vacuously
+		// empty. The user turn is what must survive: the assistant turns here WERE the
+		// empty stops, so there is no assistant text to look for.
+		expect(
+			reloadedBranch.some(
+				message => message.role === "user" && JSON.stringify(message.content).includes("record beta"),
+			),
+		).toBe(true);
 	});
 });

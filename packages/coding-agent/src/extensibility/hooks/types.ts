@@ -1,5 +1,18 @@
 import { type HookMessageRenderer } from "@oh-my-pi/pi-tui/chat/extension-types";
 export { type HookMessageRenderOptions, type HookMessageRenderer } from "@oh-my-pi/pi-tui/chat/extension-types";
+
+/**
+ * Renders a CustomEntry a hook appended with {@link HookAPI.appendEntry}.
+ *
+ * Same shape as the extension branch's `EntryRenderer` — copied rather than
+ * reinvented, so one entry draws the same way whether an extension or a hook
+ * appended it. Returning `undefined` falls back to the default renderer.
+ */
+export type HookEntryRenderer<T = unknown> = (
+	entry: CustomEntry<T>,
+	options: EntryRenderOptions,
+	theme: Theme,
+) => Component | undefined;
 import type { type as ArkType } from "@oh-my-pi/omptype";
 import type * as TypeBox from "@oh-my-pi/omptype/typebox";
 import type * as zod from "@oh-my-pi/omptype/zod";
@@ -10,6 +23,8 @@ import type { ModelRegistry } from "../../config/model-registry";
 import type { EditToolDetails } from "@oh-my-pi/pi-tui/tools/edit";
 import type { ExecOptions, ExecResult } from "../../exec/exec";
 import type * as PiCodingAgent from "../../index";
+import type { CustomEntry } from "../../session/session-entries";
+import type { EntryRenderOptions } from "../extensions/types";
 import type { Theme } from "@oh-my-pi/pi-tui/theme";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { ReadonlySessionManager, SessionManager } from "../../session/session-manager";
@@ -389,6 +404,14 @@ export type ToolResultEvent =
 	| CustomToolResultEvent;
 
 /**
+ * Whether a hook may run, decided by comparing its current content against the
+ * hash recorded for it. Declared in `./trust`, re-exported here so it sits with
+ * the rest of the hook vocabulary; there is deliberately no `untrusted` member,
+ * and `./trust` says why.
+ */
+export type { HookState, HookTrustStatus } from "./trust";
+
+/**
  * Union of all hook event types.
  */
 export type HookEvent =
@@ -565,6 +588,14 @@ export interface HookAPI {
 	 * Return nothing to use the default renderer.
 	 */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void;
+
+	/**
+	 * Register a renderer for the entries this hook appends via
+	 * {@link HookAPI.appendEntry}. Without it a hook can put an entry on screen
+	 * but not say what it looks like, which is half the surface: the extension
+	 * branch has had this since the entry renderer landed.
+	 */
+	registerEntryRenderer<T = unknown>(customType: string, renderer: HookEntryRenderer<T>): void;
 
 	/**
 	 * Register a custom slash command.

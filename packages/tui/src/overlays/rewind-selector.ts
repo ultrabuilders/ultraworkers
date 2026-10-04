@@ -788,7 +788,7 @@ export class RewindSelectorComponent implements Component {
 								span(`${theme.sep.dot}${dropped} turn${dropped === 1 ? "" : "s"}`, "dim"),
 							]
 						: [span("Continue from here: nothing below to drop", "warning")],
-					{ role: "omp.rewind.drop" },
+					{ role: "ultraworkers.rewind.drop" },
 				),
 				...(column?.builder ?? this.#builder).container.children.slice(outlined.start, outlined.end),
 			);
@@ -895,7 +895,7 @@ export class RewindSelectorComponent implements Component {
 			),
 		);
 		const root = overlayCard(
-			"omp.overlay.rewind",
+			"ultraworkers.overlay.rewind",
 			[
 				span(`${theme.icon.rewind} `),
 				span("Rewind", "strong"),

@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 //
-// Render the Homebrew formula for `omp` from a published GitHub release and write
+// Render the Homebrew formula for `ultraworkers` from a published GitHub release and write
 // it to a tap checkout. The release publishes per-platform bare binaries
-// (omp-<platform>-<arch>); this reads their sha256 digests straight from the
+// (ultraworkers-<platform>-<arch>); this reads their sha256 digests straight from the
 // release metadata so the formula never drifts from the shipped assets.
 //
 // Usage:
-//   bun scripts/ci-update-brew-formula.ts <tag> --out <path/to/Formula/omp.rb>
+//   bun scripts/ci-update-brew-formula.ts <tag> --out <path/to/Formula/ultraworkers.rb>
 //   bun scripts/ci-update-brew-formula.ts v15.10.3        # prints to stdout
 
 import { $ } from "bun";
@@ -52,20 +52,48 @@ function sha256For(assets: readonly ReleaseAsset[], name: string): string {
 	return asset.digest.slice("sha256:".length);
 }
 
+/**
+ * The formula's filename stem, used when rendering to stdout (no `--out`).
+ * It is also the name the README tells users to install, so it is the single
+ * place the product's Homebrew identity is written down.
+ */
+const FORMULA_STEM = "ultraworkers";
+
+/**
+ * Homebrew resolves `Formula/<name>.rb` by matching the file's basename to the
+ * formula class name, and a mismatch fails at LOAD rather than at download — so
+ * `brew install can1357/tap/ultraworkers` would report an error about a class
+ * the user never named, with nothing installed.
+ *
+ * The class name is therefore DERIVED from the `--out` path rather than written
+ * out separately. A rename that moves the filename but not the class name is
+ * exactly the half-migrated state that breaks the tap, and deriving makes that
+ * state unrepresentable instead of merely detectable.
+ */
+export function formulaClassName(outPath: string | null): string {
+	const base = outPath?.split("/").pop() ?? `${FORMULA_STEM}.rb`;
+	const stem = base.endsWith(".rb") ? base.slice(0, -".rb".length) : base;
+	const pascal = stem
+		.split(/[-_]/)
+		.map(part => part.charAt(0).toUpperCase() + part.slice(1))
+		.join("");
+	return pascal === "" ? FORMULA_STEM : pascal;
+}
+
 // `${...}` is JS interpolation; the literal `#{version}` / `#{bin}` below are
 // Ruby interpolations Homebrew resolves when it evaluates the formula.
-export function renderFormula(version: string, sums: Record<string, string>): string {
+export function renderFormula(version: string, sums: Record<string, string>, className: string): string {
 	// Each `url` carries `using: :nounzip` because the release assets are bare
 	// Mach-O/ELF executables, not archives. Without it Homebrew's default
 	// CurlDownloadStrategy routes through UnpackStrategy::Uncompressed#extract_nestedly,
-	// which nests the file outside the staging CWD; `Dir["omp-*"].first` then
-	// returns `nil` and `bin.install nil => "omp"` raises.
+	// which nests the file outside the staging CWD; `Dir["ultraworkers-*"].first` then
+	// returns `nil` and `bin.install nil => "ultraworkers"` raises.
 	//
 	// `with_env(HOME: buildpath)` redirects the CLI's `os.homedir()` lookup to
 	// the writable staging dir so `generate_completions_from_executable` does
 	// not touch the real `/Users/<user>/.omp` (denied by Homebrew's sandbox
 	// profile, which would otherwise fail the popen).
-	return `class Omp < Formula
+	return `class ${className} < Formula
   desc "${DESC}"
   homepage "${HOMEPAGE}"
   version "${version}"
@@ -73,40 +101,40 @@ export function renderFormula(version: string, sums: Record<string, string>): st
 
   on_macos do
     on_arm do
-      url "https://github.com/${REPO}/releases/download/v#{version}/omp-darwin-arm64",
+      url "https://github.com/${REPO}/releases/download/v#{version}/ultraworkers-darwin-arm64",
           using: :nounzip
-      sha256 "${sums["omp-darwin-arm64"]}"
+      sha256 "${sums["ultraworkers-darwin-arm64"]}"
     end
     on_intel do
-      url "https://github.com/${REPO}/releases/download/v#{version}/omp-darwin-x64",
+      url "https://github.com/${REPO}/releases/download/v#{version}/ultraworkers-darwin-x64",
           using: :nounzip
-      sha256 "${sums["omp-darwin-x64"]}"
+      sha256 "${sums["ultraworkers-darwin-x64"]}"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/${REPO}/releases/download/v#{version}/omp-linux-arm64",
+      url "https://github.com/${REPO}/releases/download/v#{version}/ultraworkers-linux-arm64",
           using: :nounzip
-      sha256 "${sums["omp-linux-arm64"]}"
+      sha256 "${sums["ultraworkers-linux-arm64"]}"
     end
     on_intel do
-      url "https://github.com/${REPO}/releases/download/v#{version}/omp-linux-x64",
+      url "https://github.com/${REPO}/releases/download/v#{version}/ultraworkers-linux-x64",
           using: :nounzip
-      sha256 "${sums["omp-linux-x64"]}"
+      sha256 "${sums["ultraworkers-linux-x64"]}"
     end
   end
 
   def install
-    bin.install Dir["omp-*"].first => "omp"
-    (bin/"omp").chmod 0555
+    bin.install Dir["ultraworkers-*"].first => "ultraworkers"
+    (bin/"ultraworkers").chmod 0555
     with_env(HOME: buildpath) do
-      generate_completions_from_executable(bin/"omp", "completions", shells: [:bash, :zsh, :fish])
+      generate_completions_from_executable(bin/"ultraworkers", "completions", shells: [:bash, :zsh, :fish])
     end
   end
 
   test do
-    assert_match version.to_s, shell_output("#{bin}/omp --version")
+    assert_match version.to_s, shell_output("#{bin}/ultraworkers --version")
   end
 end
 `;
@@ -117,11 +145,16 @@ async function main(): Promise<void> {
 	const version = tag.replace(/^v/, "");
 	const assets = await fetchAssets(tag);
 
-	const targets = ["omp-darwin-arm64", "omp-darwin-x64", "omp-linux-arm64", "omp-linux-x64"];
+	const targets = [
+		"ultraworkers-darwin-arm64",
+		"ultraworkers-darwin-x64",
+		"ultraworkers-linux-arm64",
+		"ultraworkers-linux-x64",
+	];
 	const sums: Record<string, string> = {};
 	for (const name of targets) sums[name] = sha256For(assets, name);
 
-	const formula = renderFormula(version, sums);
+	const formula = renderFormula(version, sums, formulaClassName(out));
 	if (out) {
 		await Bun.write(out, formula);
 		console.log(`wrote ${out} for ${tag}`);

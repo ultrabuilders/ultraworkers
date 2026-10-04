@@ -130,7 +130,7 @@ describe("AgentSession eager prelude re-injection after compaction", () => {
 	const cleanups: Array<() => Promise<void>> = [];
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-agent-session-eager-compaction-shared-");
+		sharedDir = TempDir.createSync("@ultraworkers-agent-session-eager-compaction-shared-");
 		sharedAuthStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 		sharedAuthStorage.keys.setRuntime("anthropic", "test-key");
 		sharedAuthStorage.keys.setRuntime("openai-codex", "test-key");
@@ -143,7 +143,7 @@ describe("AgentSession eager prelude re-injection after compaction", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-agent-session-eager-compaction-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-session-eager-compaction-");
 		cleanups.length = 0;
 	});
 

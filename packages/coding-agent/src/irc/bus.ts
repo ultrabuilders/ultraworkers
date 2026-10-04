@@ -14,6 +14,8 @@ import { logger, Snowflake } from "@oh-my-pi/pi-utils";
 import { AgentLifecycleManager } from "../registry/agent-lifecycle";
 import { AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
 import type { CustomMessage } from "../session/messages";
+import { resolveInboundFenceContext } from "./inbound-fence";
+import { deliverPeerMessage } from "./peer-transport";
 
 interface IrcWaiter {
 	from?: string;
@@ -24,12 +26,129 @@ interface IrcWaiter {
 /** Mailbox cap per agent; oldest messages are dropped beyond it. */
 const MAILBOX_CAP = 100;
 
+/**
+ * The three legal inbound policies.
+ *
+ * DECLARED HERE RATHER THAN IMPORTED from `@ultraworkers/peer`, and the
+ * duplication is deliberate for the reason `peer/settings.ts:9-19` gives: the
+ * peer package already depends on this one, so importing the fence across that
+ * edge closes a cycle. The fence itself is injected as a FUNCTION below for the
+ * same reason — this package never names the peer's types.
+ *
+ * `packages/peer/test/fence-policy.test.ts` asserts the two lists agree from the
+ * peer's side, so a drift here fails a test rather than producing a settings
+ * panel whose values the fence rejects.
+ */
+export const IRC_INBOUND_POLICIES = ["accept", "hold", "refuse"] as const;
+
+export type IrcInboundPolicy = (typeof IRC_INBOUND_POLICIES)[number];
+
+/**
+ * What a wired fence decided about one inbound message.
+ *
+ * Structurally compatible with the peer's `InboundDecision`, declared separately
+ * for the same anti-cycle reason. `hold` and `refuse` both carry a `reason`
+ * because a refusal nobody can explain is one nobody can act on — and the two must
+ * be distinguishable, since one buffers for review and the other does not.
+ */
+export type IrcFenceDecision =
+	| { readonly action: "accept" }
+	| { readonly action: "hold"; readonly reason: string }
+	| { readonly action: "refuse"; readonly reason: string };
+
+/** The message, as the fence sees it. */
+export interface IrcFenceMessage {
+	readonly from: string;
+	readonly chain?: readonly string[];
+	readonly fromMode?: string;
+	readonly selfSent?: boolean;
+}
+
+/** The receiving side, as the fence sees it. */
+export interface IrcFenceReceiver {
+	readonly policy?: IrcInboundPolicy;
+	readonly policySource?: "user" | "managed" | "repo" | "flag";
+	readonly mode: string;
+	readonly killSwitch?: boolean;
+	readonly isBypassPermissionsModeAvailable?: boolean;
+	readonly ownTokens?: ReadonlySet<string>;
+}
+
+/**
+ * The fence itself, injected.
+ *
+ * `fenceInbound` from `@ultraworkers/peer` satisfies this signature. Taking it
+ * as a parameter rather than importing it is what keeps the dependency edge
+ * pointing one way — the peer package depends on THIS package, so an import here
+ * would be a cycle — and it makes the wiring a decision a host makes visibly
+ * rather than one this file makes invisibly.
+ */
+export type IrcFence = (message: IrcFenceMessage, receiver: IrcFenceReceiver) => IrcFenceDecision;
+
+/**
+ * Everything the trust fence needs, resolved per send.
+ *
+ * INJECTED, never read from global config inside the bus — the same reasoning as
+ * the lifecycle accessor below. A bus that reached for settings itself would make
+ * the fence untestable without a config fixture, and would make a second bus in
+ * the same process unable to differ from the first.
+ *
+ * Omitting `fence` entirely means "this bus has no fence": messages are
+ * delivered. That is a real, tested state rather than an accident — it is the
+ * state this bus was in for its whole life, where `crossSessionInbound` was
+ * declared with a full settings UI and read by nobody. A host that wants the
+ * fence passes one; a host that does not is making a decision, and it should be
+ * visible at the construction site.
+ */
+export interface IrcFenceContext {
+	/**
+	 * The fence to consult. Omit to deliver unfenced.
+	 *
+	 * Mutable so a host can swap the fence implementation itself — an extension
+	 * reloading, a test installing a different one — without rebuilding the bus.
+	 */
+	fence?: IrcFence;
+	/**
+	 * What the receiving USER chose. `undefined` is NOT `accept`.
+	 *
+	 * MUTABLE, and this is the field a settings edit actually changes. `readonly` here
+	 * would have made the mutability of `fence` above useless for its stated purpose:
+	 * the accessor's whole reason to exist (see the constructor) is that a user editing
+	 * `crossSessionInbound` mid-session takes effect on the next message, and a
+	 * settings change is a change to THIS value, not to the function. A host hitting
+	 * the type error had two bad options — cast the readonly away, or replace the
+	 * whole context object per edit — and both hide the mistake from the next reader.
+	 */
+	policy?: IrcInboundPolicy;
+	/** Which settings layer decided `policy`, so a held message can name it. */
+	readonly policySource?: IrcFenceReceiver["policySource"];
+	/** The receiver's own permission mode, for the class comparison. */
+	readonly mode?: string;
+	/** Emergency stop, consulted ahead of the user's own setting. */
+	readonly killSwitch?: boolean;
+	/** Whether this build even offers `bypassPermissions`. */
+	readonly isBypassPermissionsModeAvailable?: boolean;
+	/** The receiver's own tokens, for the hop-loop check. */
+	readonly ownTokens?: ReadonlySet<string>;
+	/** Overrides for the sender side of the message, when the transport carries them. */
+	readonly sender?: {
+		readonly fromMode?: string;
+		readonly chain?: readonly string[];
+		readonly selfSent?: boolean;
+	};
+}
+
 export class IrcBus {
 	static #global: IrcBus | undefined;
 
 	static global(): IrcBus {
 		if (!IrcBus.#global) {
-			IrcBus.#global = new IrcBus();
+			// Resolved PER SEND, never captured: a settings change must reach the next
+			// message, and this bus outlives every settings edit a user makes in a
+			// session. The peer extension installs the fence at load time
+			// (`addInboundFence`), so the accessor is what turns "the fence exists"
+			// into "the fence applies" without rebuilding the bus.
+			IrcBus.#global = new IrcBus(undefined, undefined, resolveInboundFenceContext);
 		}
 		return IrcBus.#global;
 	}
@@ -41,16 +160,25 @@ export class IrcBus {
 
 	readonly #registry: AgentRegistry;
 	readonly #lifecycle: () => AgentLifecycleManager;
+	readonly #fence: () => IrcFenceContext | undefined;
 	readonly #mailboxes = new Map<string, IrcMessage[]>();
 	readonly #waiters = new Map<string, IrcWaiter[]>();
 	/** Timestamp of the latest successful send per `from` → `to`; see {@link sentSince}. */
 	readonly #lastSent = new Map<string, Map<string, number>>();
 
-	constructor(registry: AgentRegistry = AgentRegistry.global(), lifecycle?: AgentLifecycleManager) {
+	constructor(
+		registry: AgentRegistry = AgentRegistry.global(),
+		lifecycle?: AgentLifecycleManager,
+		fence?: () => IrcFenceContext | undefined,
+	) {
 		this.#registry = registry;
 		// Lazy: the lifecycle global self-constructs against the global registry,
 		// so only touch it when a parked recipient actually needs reviving.
 		this.#lifecycle = () => lifecycle ?? AgentLifecycleManager.global();
+		// Resolved per send, never captured: a settings change must take effect on
+		// the next message, and a bus built at startup outlives every settings edit
+		// a user makes in a session.
+		this.#fence = fence ?? (() => undefined);
 	}
 
 	/**
@@ -95,8 +223,118 @@ export class IrcBus {
 	}
 
 	async #deliver(message: IrcMessage, opts?: { suppressRelay?: boolean }): Promise<IrcDeliveryReceipt> {
+		// THE FENCE, consulted before any recipient work.
+		//
+		// Placement is the whole design: ahead of the registry lookup, the abort
+		// check, and the lifecycle gate, because all three of those are EFFECTS. A
+		// `refuse` that first revived a parked peer would wake a machine to deliver
+		// a message the user decided not to receive, and the wake is the expensive
+		// irreversible part — the refusal is cheap to undo precisely because nothing
+		// has happened yet.
+		//
+		// Absent a wired context there is no fence and the message is delivered,
+		// which is the honest behaviour for a host that has not opted in — and NOT
+		// the same as a wired `accept`. See {@link IrcFenceContext}.
+		const context = this.#fence();
+		if (context?.fence !== undefined) {
+			const decision = context.fence(
+				{
+					from: message.from,
+					// NOT passed, and deliberately: `IrcMessage` carries no attribution
+					// field, so a sender has nothing to claim here. The fence still has
+					// the parameter because the WIRE may grow one, and its rule — record
+					// it, never honour it — is asserted directly in `fence.test.ts`.
+					//
+					// Inventing a value here would be worse than omitting it: a
+					// synthesised claim would be indistinguishable from one a peer
+					// actually sent, which is exactly the confusion the field exists to
+					// prevent.
+					chain: context.sender?.chain,
+					fromMode: context.sender?.fromMode,
+					selfSent: context.sender?.selfSent,
+				},
+				{
+					killSwitch: context.killSwitch,
+					policy: context.policy,
+					policySource: context.policySource,
+					// `default` rather than a required field: an omitted mode must not
+					// become a reason to skip the fence, and `default` is the
+					// fence's own fail-closed prompting class.
+					mode: context.mode ?? "default",
+					isBypassPermissionsModeAvailable: context.isBypassPermissionsModeAvailable,
+					ownTokens: context.ownTokens,
+				},
+			);
+
+			if (decision.action === "refuse") {
+				// `failed`, and NOT buffered: a refusal is the receiver declining, so
+				// enqueueing it would put the message in the very mailbox the user
+				// closed, and a later `wait` would drain it as if it had been
+				// accepted. The sender is told why rather than asked to reconsider —
+				// that would turn the user's decision into a negotiation.
+				return { to: message.to, outcome: "failed", error: decision.reason };
+			}
+			if (decision.action === "hold") {
+				// Held is a refusal to ACT, not to receive. Buffering is the whole
+				// point of `hold` — so this enqueues and reports `failed`, matching how
+				// a buffered hand-off already reports at the catch below. The reason is
+				// what distinguishes a hold from a plain failure to a reader.
+				//
+				// WHAT THIS IS NOT, stated because the previous version of this comment
+				// claimed the opposite — it promised the message "stays visible for
+				// review", and no review surface exists.
+				//
+				// Two facts, both measured:
+				//
+				// 1. **No hold review surface.** The message stays in the recipient's OWN
+				//    mailbox, and every drain path — `wait()` at :443, `take()` at :527 —
+				//    reads it WITHOUT consulting the fence. So the recipient agent reads
+				//    a held message on its next `wait` like any other. `hold` changes the
+				//    handoff path and the reported outcome; it does not change
+				//    reachability, and it never did.
+				// 2. **A held message is indistinguishable from a failed hand-off.** This
+				//    branch and the catch below both call `#enqueue`, which pushes a bare
+				//    `IrcMessage` into `#mailboxes: Map<string, IrcMessage[]>`. No field
+				//    records that a hold happened and no parameter distinguishes the two
+				//    callers, so after entry the two are the same value in the same place.
+				//    Same `unreadCount`, same `take`, same render.
+				//
+				// So the gap is not that `hold` fails to block — blocking is what `hold`
+				// means, per `peer/settings.ts:46` ("refuses to act but keeps the message
+				// visible"). The gap is that a decision the USER made is unobservable, and
+				// its result is mixed into a path shared with errors: someone who chose
+				// `hold` gets back exactly what they get when a hand-off fails.
+				//
+				// Making it observable means a MARKER on the mailbox entry
+				// (`IrcMessage[]` → `{message, held?: {reason, at}}[]`) plus a surface that
+				// reads it — deliberately NOT a redefinition of `hold`. Adding a check at
+				// the read path cannot work: by then the data is already merged.
+				this.#enqueue(message);
+				return { to: message.to, outcome: "failed", error: decision.reason };
+			}
+		}
+
 		const ref = this.#registry.get(message.to);
 		if (!ref) {
+			// CROSS-PROCESS TRANSPORT, consulted for a target this bus's registry
+			// does not know.
+			//
+			// Placement: after the fence, before the registry error. The fence must
+			// stay first — a transport carries the message to another process, and
+			// that is the most irreversible effect in this method, so it must never
+			// run behind a decision the user already made.
+			//
+			// Scope: only an UNKNOWN target reaches here. An agent this bus owns is
+			// delivered locally whether or not a transport is installed, so an
+			// extension cannot intercept local delivery by registering one.
+			//
+			// A refusal is NOT reported as the outcome. `deliverPeerMessage` refuses
+			// for `no-route` whenever no transport is registered, which is the
+			// common case, and answering that with a transport-shaped error would
+			// replace the actionable roster hint below with a worse message. So a
+			// refusal falls through and the caller gets the registry error.
+			const viaTransport = await this.#deliverViaTransport(message);
+			if (viaTransport) return viaTransport;
 			return {
 				to: message.to,
 				outcome: "failed",
@@ -183,6 +421,29 @@ export class IrcBus {
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}
+	}
+
+	/**
+	 * Hand `message` to the installed peer transport, or `undefined` when no
+	 * transport took it.
+	 *
+	 * `undefined` means "fall through to the caller's own error", which is the
+	 * right answer for every refusal: `no-route` (nothing registered) is the
+	 * common case and not an error worth reporting as one, and
+	 * `peer-unregistered` / `capability-missing` name the transport's own
+	 * misconfiguration rather than the recipient being unknown.
+	 *
+	 * A transport that THROWS is not swallowed. That is a transport bug, and
+	 * converting it into `undefined` would report it as an unknown agent — the
+	 * one diagnosis the sender cannot act on.
+	 */
+	async #deliverViaTransport(message: IrcMessage): Promise<IrcDeliveryReceipt | undefined> {
+		const outcome = await deliverPeerMessage(message.to, message.body);
+		if (outcome.outcome === "refused") return undefined;
+		// `injected`/`woken`/`revived` carry over unchanged; `persisted` needed a
+		// receipt member of its own because folding it into `injected` would
+		// claim a transcript read that a socket cannot promise.
+		return { to: message.to, outcome: outcome.outcome };
 	}
 
 	/**

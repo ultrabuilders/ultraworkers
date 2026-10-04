@@ -3,30 +3,64 @@
  *
  * One mux daemon runs per project scope (launched through the same daemon
  * broker that owns the shared Chromium and `bash` services). It assigns
- * each concurrent OMP link its own language-server process, then retains idle
+ * each concurrent link its own language-server process, then retains idle
  * processes briefly for reuse by later links. The link speaks plain
  * Content-Length-framed LSP JSON-RPC after a one-request handshake
  * ({@link MUX_CONNECT_METHOD}); everything below is shared by the worker
  * entry (`server.ts`), the client connector (`daemon.ts`), and tests.
  */
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 export { LSP_MUX_WORKER_ARG } from "../../cli/worker-selectors";
 
 /** Environment key carrying the socket endpoint the mux must listen on. */
-export const LSP_MUX_SOCKET_ENV = "OMP_LSP_MUX_SOCKET";
+export const LSP_MUX_SOCKET_ENV = "ULTRAWORKERS_LSP_MUX_SOCKET";
 
 /** Environment key carrying the canonical project directory the mux serves. */
-export const LSP_MUX_PROJECT_DIR_ENV = "OMP_LSP_MUX_PROJECT_DIR";
+export const LSP_MUX_PROJECT_DIR_ENV = "ULTRAWORKERS_LSP_MUX_PROJECT_DIR";
 
-/** Stable broker daemon name for the shared LSP mux. */
-export const LSP_MUX_DAEMON_NAME = "omp.lsp.mux";
+/**
+ * Stable broker daemon name for the shared LSP mux — what `ultraworkers ps`
+ * shows the user.
+ *
+ * Derived from {@link APP_NAME} for the reason `ida/protocol.ts` documents at
+ * length: this string is a human-facing label, and spelling the product out
+ * here is what let it drift from the product in the first place. Every consumer
+ * (`daemon.ts` starts, describes and stops by this constant) follows it
+ * automatically, and the broker stores it only as a directory name under the
+ * project scope — nothing outside this repo parses it.
+ */
+export const LSP_MUX_DAEMON_NAME = `${APP_NAME}.lsp.mux`;
 
-/** Broker readiness regex matched against the banner printed by the worker. */
-export const LSP_MUX_READY_PATTERN = String.raw`omp lsp mux listening on \S+`;
+/**
+ * The broker daemon name this service shipped under before the rename.
+ *
+ * Not derived from {@link LSP_MUX_DAEMON_NAME} and not a rename candidate, for
+ * the reason `update-cli.ts` documents on `LEGACY_WIRE_NAME`: the broker keeps
+ * this name as a directory under the project scope, so a daemon started by the
+ * previous version is still registered under it after an upgrade. A lookup that
+ * consults only the current name therefore cannot see that record.
+ *
+ * This is deliberately a lookup fallback and never a spawn target — new daemons
+ * register under {@link LSP_MUX_DAEMON_NAME}, so the wedged-daemon recovery in
+ * `daemon.ts` retires the old record instead of leaving it to accumulate.
+ */
+export const LSP_MUX_DAEMON_NAME_LEGACY = "omp.lsp.mux";
+
+/**
+ * Broker readiness regex matched against the banner printed by the worker.
+ *
+ * Deliberately carries NO product name. The banner below leads with
+ * {@link APP_NAME}, so a brand-free pattern is what keeps the two ends matched
+ * across a rename: pinning a name here would silently desync the broker from the
+ * worker the moment either side moved. `lsp/mux` and `ida` are the same shape,
+ * and `relay/daemon.ts:26` is the same rule already applied.
+ */
+export const LSP_MUX_READY_PATTERN = String.raw`lsp mux listening on \S+`;
 
 /** Banner printed on stdout once the mux socket accepts connections. */
 export function lspMuxReadyBanner(endpoint: string): string {
-	return `omp lsp mux listening on ${endpoint}`;
+	return `${APP_NAME} lsp mux listening on ${endpoint}`;
 }
 
 /** Resolve the Unix socket or Windows named pipe for one project scope. */

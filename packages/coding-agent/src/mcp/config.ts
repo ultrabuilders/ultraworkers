@@ -10,6 +10,7 @@ import type { EffectiveExtensionRoots, SourceMeta } from "../capability/types";
 import type { MCPServer } from "../discovery";
 import { loadCapability } from "../discovery";
 import { readMCPConfigFile } from "./config-writer";
+import { applyScopePolicy } from "./scope-policy";
 import type { MCPConfigFile, MCPServerConfig } from "./types";
 
 /** Options for loading MCP configs */
@@ -158,7 +159,7 @@ export async function loadAllMCPConfigs(cwd: string, options?: LoadMCPConfigsOpt
 	let configs: Record<string, MCPServerConfig> = {};
 	let sources: Record<string, SourceMeta> = {};
 	for (const server of result.items) {
-		configs[server.name] = convertToLegacyConfig(server);
+		configs[server.name] = applyScopePolicy(convertToLegacyConfig(server), server._source.level);
 		sources[server.name] = server._source;
 	}
 

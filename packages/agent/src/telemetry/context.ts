@@ -1,13 +1,13 @@
 /**
  * Vendor-neutral telemetry contract.
  *
- * omp speaks exactly one telemetry backend today, and every call site names OTEL
+ * ultraworkers speaks exactly one telemetry backend today, and every call site names OTEL
  * types directly. That means the only way to add a second backend is to edit every
- * call site — which is the opposite of a contract. These types describe what omp
+ * call site — which is the opposite of a contract. These types describe what ultraworkers
  * actually needs, and an adapter translates.
  *
  * The attribute types are NOT a guess. They are measured from
- * `@opentelemetry/api`'s own `Attributes.d.ts`, because omp's existing OTEL
+ * `@opentelemetry/api`'s own `Attributes.d.ts`, because the existing OTEL
  * attributes must remain assignable — a "neutral" type that the current exporter
  * could not satisfy would be a second source of truth, not a contract.
  */
@@ -52,7 +52,7 @@ export type SpanStatus = "unset" | "ok" | "error";
 // ── Span ────────────────────────────────────────────────────────────────
 
 /**
- * The minimum a backend must supply for omp to record against a span.
+ * The minimum a backend must supply for ultraworkers to record against a span.
  *
  * Only the MUTATING surface is required. The readable properties are optional
  * because OTEL's own `Span` interface does not expose them — `name`,
@@ -77,6 +77,59 @@ export interface TelemetrySpan {
 	setStatus(status: SpanStatus, message?: string): void;
 	end(endTime?: number): void;
 }
+
+// ── Context ────────────────────────────────────────────────────────────
+
+/**
+ * What a telemetry backend hands the code that records against it.
+ *
+ * `startSpan` is a CALLBACK, not a begin/end pair. A begin/end pair leaks a span
+ * whenever the body throws, and the leak is invisible: the caller sees its own
+ * error and has no reason to suspect the span. A callback cannot leak, and it
+ * hands the span to the body without threading it through a return value the
+ * body might forget to produce.
+ *
+ * The span is closed when the body finishes, THROWING OR NOT — a body that throws
+ * never reaches the statement after `startSpan`, so leaving closure to the caller
+ * would leave the span open with nothing to attribute the error to. An explicit
+ * `end()` inside the body is therefore redundant rather than required, and
+ * `endTime` is stamped at the point the body actually finished.
+ *
+ * `fn` MAY return a promise, and nesting survives an `await`: the span stays
+ * current for the whole body, so a span opened after an `await` nests under this
+ * one rather than under whatever happened to be current. A backend must not
+ * restore the enclosing span until the returned promise settles.
+ */
+export interface AgentTelemetryContext {
+	startSpan<T>(name: string, fn: (span: TelemetrySpan) => T): T;
+}
+
+/*
+ * Named `AgentTelemetryContext`, not `TelemetryContext`, and that is the point.
+ * `@oh-my-pi/pi-telemetry` exports a `TelemetryContext` too, and the two are
+ * incompatible: that one is `startSpan(options, cb): Promise<T>` with an options
+ * object and an object-shaped `SpanStatus`; this one is synchronous, takes a bare
+ * name, and uses the string union `"unset" | "ok" | "error"`. Neither is assignable
+ * to the other, so a call site written against one cannot be handed the other by
+ * accident — which is exactly why they must not share a name. Two same-named
+ * contracts in one workspace is an import that type-checks against the wrong one
+ * and fails at the seam.
+ *
+ * The package keeps the bare name deliberately: `pi` names its telemetry contract
+ * `TelemetryContext` (`pi/packages/ai/src/types.ts:135`), so the bare name is the
+ * parity-preserving one and the agent runtime's copy is the one that moves. It also
+ * pairs with `AgentTelemetryConfig`, which this package already exports and
+ * `sdk.ts` already uses.
+ *
+ * These are two different layers that happen to be adjacent, not a fork left
+ * behind. A size comparison is what makes them look like one: this file and
+ * `packages/agent/src/telemetry.ts` hold the OTEL adapter (`toVendorValue`,
+ * `vendorAttributes`, and the `@opentelemetry/api` imports below), while the
+ * package holds the vendor-neutral type vocabulary and the typed-schema helpers.
+ * Deleting either on the strength of "one is newer" would remove a working
+ * contract — this one is covered by `telemetry-contract.test.ts` and
+ * `telemetry-conformance.test.ts`.
+ */
 
 // ── Adapter ──────────────────────────────────────────────────────────────
 //

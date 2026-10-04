@@ -1750,6 +1750,41 @@ function splitPushedHighlightLines(pushed: string): string[] {
 	return lines;
 }
 
+/**
+ * Rewrites Markdown source immediately before it is parsed, with the content
+ * width the frame will draw at.
+ *
+ * Declared here rather than imported from the extension layer: `pi-tui` is the
+ * dependency, not the dependant, and the renderer's contract does not change
+ * based on which extension API produced the function.
+ */
+export type MarkdownRenderTransform = (markdown: string, availableWidth: number) => string;
+
+/**
+ * Fold a list of transforms into one, applying each in isolation.
+ *
+ * A transform is third-party code running inside the render loop, so one that
+ * throws — or returns something that is not a string — must not decide the
+ * transcript for the ones after it, and must not take the frame down. Each is
+ * applied on its own and the running text is what the next one receives.
+ */
+export function foldMarkdownTransforms(
+	markdown: string,
+	context: { messageType: "user" | "assistant" | "assistant-thinking"; isStreaming: boolean; availableWidth: number },
+	transformers: readonly MarkdownRenderTransform[],
+): string {
+	let transformed = markdown;
+	for (const transform of transformers) {
+		try {
+			const next = transform(transformed, context.availableWidth);
+			if (typeof next === "string") transformed = next;
+		} catch {
+			// Keep the current Markdown and continue with the next transform.
+		}
+	}
+	return transformed;
+}
+
 export class Markdown implements Component {
 	#text: string;
 	// Suffix of #text a future append could still complete into a match
@@ -1821,8 +1856,29 @@ export class Markdown implements Component {
 	#lastTailCapture?: { kind: "paragraph"; open: boolean; rowInput: string; rowRaw: string };
 	#ignoreTight = false;
 	#native?: { text: string; stream: boolean; node: NativeNode };
+	#transform?: MarkdownRenderTransform;
 	setIgnoreTight(ignore: boolean): this {
 		this.#ignoreTight = ignore;
+		this.invalidate();
+		return this;
+	}
+
+	/**
+	 * Rewrite the source Markdown immediately before it is parsed, with the exact
+	 * content width this frame will draw at.
+	 *
+	 * Display-only, and it runs at PARSE time rather than after layout, so a
+	 * transform that changes the text changes what gets wrapped. The width is
+	 * passed because a transform that hard-wraps needs it; one that rewrites
+	 * tokens does not.
+	 *
+	 * Nothing on the RPC/JSON transcript sets this, which is what keeps a client
+	 * reading the session from receiving transformed Markdown.
+	 */
+	setTransform(transform?: MarkdownRenderTransform): this {
+		this.#transform = transform;
+		// The cached lines were produced from untransformed source, so they no
+		// longer describe what this component would draw.
 		this.invalidate();
 		return this;
 	}
@@ -2247,7 +2303,8 @@ export class Markdown implements Component {
 		// returns without ever reading these, so streaming frames skip the
 		// whole-document tab scan/copy (the delta-only replaceTabs inside the
 		// branch is the only tab work a streamed frame pays).
-		const tabbed = this.#text.includes("\t") ? replaceTabs(this.#text) : this.#text;
+		const source = this.#transform ? this.#transform(this.#text, contentWidth) : this.#text;
+		const tabbed = source.includes("\t") ? replaceTabs(source) : source;
 		const normalizedText = this.transientRenderCache ? tabbed : repairOrphanClosingFence(tabbed);
 		if (!this.transientRenderCache && normalizedText.length < tabbed.length) {
 			// repairOrphanClosingFence deleted bytes this frame (orphan fence

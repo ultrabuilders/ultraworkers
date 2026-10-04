@@ -3,7 +3,7 @@
  * spawns a TypeScript/JavaScript entry or executable on a Bun-native PTY — a
  * real controlling terminal, so capability probes, SIGWINCH resizes, and
  * immediate-mode hosts all behave as in production — with `OMP_TUI_DEBUG`
- * pointed at the unix socket served by an omp/pi-tui host. Injected input
+ * pointed at the unix socket served by an ultraworkers/pi-tui host. Injected input
  * rides the app's own input path, while renderer and component queries inspect
  * the last painted frame.
  *
@@ -28,7 +28,7 @@ import type { Color, KittyEvent, KittyTerminal } from "kitty-vt-wasm";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-/** Minimal slice of the host schema builder (`omp.zod`) this tool uses. */
+/** Minimal slice of the host schema builder (`host.zod`) this tool uses. */
 interface Schema {
 	describe(text: string): Schema;
 	optional(): Schema;
@@ -237,7 +237,7 @@ function lerpColor(from: number, to: number, t: number): number {
  * Terminal emulation fed every PTY byte: kitty's real core (screen.c +
  * vt-parser.c compiled to wasm via kitty-vt-wasm), so SGR, rewrap-on-resize,
  * scrollback, graphemes, and wide chars behave exactly as in kitty. Any
- * session — omp-tui host or not — can be read as plain text (`snapshot`) or
+ * session — ultraworkers-tui host or not — can be read as plain text (`snapshot`) or
  * rasterized to pixels (`png`). Backs the `screen`/`shot` ops, the socketless
  * `text` fallback, and the after-screenshot on input ops. Query replies the
  * core emits (DA, DECRQSS, XTGETTCAP, OSC color queries) surface on
@@ -746,7 +746,7 @@ function request(
 		return Promise.reject(
 			new Error(
 				`session "${session.name}" has no debug socket — the app is not an ` +
-					"omp-tui host (or exited). screen/raw/send/resize/stop still work.",
+					"ultraworkers-tui host (or exited). screen/raw/send/resize/stop still work.",
 			),
 		);
 	}
@@ -964,7 +964,7 @@ function gated(gate: string, command: string[]): string[] {
 
 // ─── Tool ────────────────────────────────────────────────────────────────────
 
-const factory = (omp: ToolHost) => {
+const factory = (host: ToolHost) => {
 	const startSession = async (params: TuiParams): Promise<string> => {
 		const name = params.name ?? "main";
 		if (sessions.has(name)) {
@@ -973,16 +973,16 @@ const factory = (omp: ToolHost) => {
 		if (params.file && params.bin) {
 			throw new Error("start takes `file` or `bin`, not both");
 		}
-		// Default target: this repo's own TUI, omp itself.
+		// Default target: this repo's own TUI, ultraworkers itself.
 		const file = params.bin ? undefined : (params.file ?? "packages/coding-agent/src/cli.ts");
 		const target = file ?? params.bin ?? "";
 		const command = file
-			? [process.execPath, resolve(omp.cwd, file), ...(params.args ?? [])]
+			? [process.execPath, resolve(host.cwd, file), ...(params.args ?? [])]
 			: [target, ...(params.args ?? [])];
 
 		const rows = params.rows ?? 30;
 		const cols = params.cols ?? 100;
-		const dir = mkdtempSync(join(tmpdir(), `omp-tui-${name}-`));
+		const dir = mkdtempSync(join(tmpdir(), `uw-tui-${name}-`));
 		const sockPath = join(dir, "debug.sock");
 		const gatePath = join(dir, "spawn.gate");
 		const screen = await Screen.create(cols, rows);
@@ -993,7 +993,7 @@ const factory = (omp: ToolHost) => {
 		let proc: Child;
 		try {
 			const spawned = Bun.spawn(gated(gatePath, command), {
-				cwd: omp.cwd,
+				cwd: host.cwd,
 				env: {
 					...process.env,
 					OMP_TUI_DEBUG: sockPath,
@@ -1079,7 +1079,7 @@ const factory = (omp: ToolHost) => {
 			text += `\n${screenshotText(shot)}`;
 		} else {
 			text +=
-				"\n(no debug socket: app is not an omp-tui host; `send` injects " +
+				"\n(no debug socket: app is not an ultraworkers-tui host; `send` injects " +
 				"input, `screen` renders the emulated display)" +
 				`\n${session.screen.snapshot()}`;
 		}
@@ -1090,7 +1090,7 @@ const factory = (omp: ToolHost) => {
 		name: "tui",
 		label: "TUI Debug",
 		description:
-			"Run and debug omp/pi-tui apps headlessly on a real PTY plus the " +
+			"Run and debug ultraworkers/pi-tui apps headlessly on a real PTY plus the " +
 			"OMP_TUI_DEBUG socket. Start defaults to omp itself " +
 			"(packages/coding-agent/src/cli.ts); override with file (a TS/JS entry, e.g. " +
 			"file: \"packages/tui/examples/debug-demo.ts\") or bin (an executable name/path), plus optional rows/cols and args. Any omp/pi-tui app serves " +
@@ -1110,65 +1110,65 @@ const factory = (omp: ToolHost) => {
 			"resize) return an after-screenshot of the resulting display (quiet:true " +
 			"skips it). Sessions persist across calls; injected input rides the " +
 			"app's real input path.",
-		parameters: omp.zod.object({
-			op: omp.zod
+		parameters: host.zod.object({
+			op: host.zod
 				.string()
 				.describe(
 					"operation: start | stop | list | text | screen | shot | frame | tree | values | info | keys | type | paste | mouse | send | resize | raw",
 				),
-			name: omp.zod
+			name: host.zod
 				.string()
 				.optional()
 				.describe("session name (default: main)"),
-			file: omp.zod
+			file: host.zod
 				.string()
 				.optional()
 				.describe("start: TS/JS entry path relative to cwd (default: packages/coding-agent/src/cli.ts — omp itself)"),
-			bin: omp.zod
+			bin: host.zod
 				.string()
 				.optional()
 				.describe("start: executable name or path"),
-			args: omp.zod
-				.array(omp.zod.string())
+			args: host.zod
+				.array(host.zod.string())
 				.optional()
 				.describe("start: program argv"),
-			rows: omp.zod
+			rows: host.zod
 				.number()
 				.optional()
 				.describe("start/resize: pty rows (default 30)"),
-			cols: omp.zod
+			cols: host.zod
 				.number()
 				.optional()
 				.describe("start/resize: pty cols (default 100)"),
-			keys: omp.zod
+			keys: host.zod
 				.string()
 				.optional()
 				.describe("keys: spec, e.g. \"tab tab enter C-c pgdn 'hello'\""),
-			text: omp.zod
+			text: host.zod
 				.string()
 				.optional()
 				.describe("type/paste/send: payload text"),
-			x: omp.zod.number().optional().describe("mouse: zero-based column"),
-			y: omp.zod.number().optional().describe("mouse: zero-based viewport row"),
-			action: omp.zod
+			x: host.zod.number().optional().describe("mouse: zero-based column"),
+			y: host.zod.number().optional().describe("mouse: zero-based viewport row"),
+			action: host.zod
 				.string()
 				.optional()
 				.describe("mouse: gesture (default click)"),
-			peek: omp.zod
+			peek: host.zod
 				.number()
 				.optional()
 				.describe(
 					"screen: scrollback lines to include; raw: tail bytes (default 2000)",
 				),
-			clear: omp.zod
+			clear: host.zod
 				.boolean()
 				.optional()
 				.describe("raw: reset capture after reading"),
-			quiet: omp.zod
+			quiet: host.zod
 				.boolean()
 				.optional()
 				.describe("input ops: skip the after-screenshot"),
-			timeout: omp.zod
+			timeout: host.zod
 				.number()
 				.optional()
 				.describe("start: socket wait seconds (default 15)"),
@@ -1219,7 +1219,7 @@ const factory = (omp: ToolHost) => {
 					const session = need(params.name);
 					const png = join(
 						tmpdir(),
-						`omp-tui-${session.name}-${Date.now()}.png`,
+						`ultraworkers-tui-${session.name}-${Date.now()}.png`,
 					);
 					const bytes = await session.screen.png();
 					writeFileSync(png, bytes);

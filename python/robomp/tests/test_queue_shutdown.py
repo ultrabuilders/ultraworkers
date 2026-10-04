@@ -1,7 +1,7 @@
 """Graceful shutdown drain + kill behavior on WorkerPool.
 
 These tests poke `WorkerPool` directly: they don't spin up a dispatcher loop
-or omp subprocess. The contract under test is `stop()`'s drain-then-kill
+or ultraworkers subprocess. The contract under test is `stop()`'s drain-then-kill
 sequence and `_run_event`'s shutting-down branch that leaves the DB row in
 `running` so `reset_stuck_running()` can requeue it.
 """
@@ -199,7 +199,7 @@ async def test_run_event_skips_mark_event_when_shutting_down(
     )
 
     async def fake_dispatch(self: WorkerPool, r: EventRow, *, slot_uid: int | None = None) -> None:
-        raise RuntimeError("omp died")
+        raise RuntimeError("ultraworkers died")
 
     monkeypatch.setattr(WorkerPool, "_dispatch", fake_dispatch)
     await pool._run_event(_row("d-shutdown"))  # noqa: SLF001

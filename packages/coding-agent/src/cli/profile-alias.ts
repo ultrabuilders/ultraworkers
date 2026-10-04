@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import { normalizeProfileName } from "@oh-my-pi/pi-utils/dirs";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 
 export type ProfileAliasShell = "bash" | "zsh" | "fish" | "powershell" | "pwsh";
 
@@ -26,11 +27,14 @@ export interface ProfileAliasProcessOptions {
 	compiled?: boolean;
 }
 
+// The command the alias points at — the name on PATH, not the brand. The two are
+// separate values on purpose (`WIRE_NAME` vs `APP_NAME`); an alias that resolved to
+// the display name would install a shell function no binary answers to.
 const DEFAULT_ALIAS_COMMAND: ProfileAliasCommand = {
-	display: "omp",
-	posix: "omp",
-	fish: "omp",
-	powerShell: "omp",
+	display: WIRE_NAME,
+	posix: WIRE_NAME,
+	fish: WIRE_NAME,
+	powerShell: WIRE_NAME,
 };
 
 export interface ProfileAliasInstallOptions {
@@ -154,8 +158,11 @@ function validateAliasName(aliasName: string, shell: ProfileAliasShell): string 
 	if (!ALIAS_NAME_RE.test(normalized)) {
 		throw new Error(`Invalid alias "${aliasName}". Alias names must match ${ALIAS_NAME_RE.source}.`);
 	}
-	if (normalized.toLowerCase() === "omp") {
-		throw new Error('Invalid alias "omp". Refusing to shadow the base omp command.');
+	// Compared against the same constant the alias command is built from, so the
+	// guard and the default cannot drift apart: a name the tool installs for itself
+	// must never be one a user is also allowed to claim.
+	if (normalized.toLowerCase() === WIRE_NAME) {
+		throw new Error(`Invalid alias "${normalized}". Refusing to shadow the base ${WIRE_NAME} command.`);
 	}
 	if (getReservedAliasNames(shell).has(normalized.toLowerCase())) {
 		throw new Error(`Invalid alias "${aliasName}". Refusing to create a ${shell} reserved word.`);
@@ -289,7 +296,11 @@ function renderAliasBlock(
 	switch (shell) {
 		case "fish":
 			body = [
-				`function ${aliasName} --wraps omp --description 'OMP profile ${profile}'`,
+				// `--wraps` must name the command the body actually invokes. It was a
+				// hardcoded literal, so after the rename the function body called
+				// `ultraworkers` while fish resolved completions against `omp` — a
+				// binary the alias never runs, and nothing at install time to say so.
+				`function ${aliasName} --wraps ${command.fish} --description 'ultraworkers profile ${profile}'`,
 				`    command ${command.fish} --profile=${profile} $argv`,
 				"end",
 			].join("\n");

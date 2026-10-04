@@ -15,7 +15,7 @@ declare module "@oh-my-pi/pi-agent-core" {
 		fileMention: FileMentionMessage;
 	}
 }
-export { COLLAB_PROMPT_MESSAGE_TYPE, type CollabPromptDetails } from "@oh-my-pi/pi-wire";
+export { COLLAB_PROMPT_MESSAGE_TYPE, PEER_INCOMING_MESSAGE_TYPE, type CollabPromptDetails } from "@oh-my-pi/pi-wire";
 export type { BranchSummaryMessage, CompactionSummaryMessage } from "@oh-my-pi/pi-agent-core/compaction/messages";
 
 export const SKILL_PROMPT_MESSAGE_TYPE = "skill-prompt";
@@ -234,7 +234,36 @@ export interface CustomMessage<T = unknown> {
 	details?: T;
 	/** Who initiated this message for billing/attribution semantics. */
 	attribution?: MessageAttribution;
+	/**
+	 * Provenance for messages that arrived from somewhere other than the user.
+	 *
+	 * Optional because absence is the user case: records written before this field
+	 * existed stay readable, and a reader asking "may I treat this as the user's
+	 * own request?" must get `true` for them rather than an error.
+	 */
+	origin?: CustomMessageOrigin;
 	timestamp: number;
+}
+
+/**
+ * Where a custom message came from.
+ *
+ * The THIRD declaration of this three-field shape (`IrcOrigin` in `./irc.ts`,
+ * `CustomMessageOrigin` in `@oh-my-pi/pi-agent-core/compaction/messages`, and
+ * this one). It cannot be a single import: `pi-agent` depends on `pi-tui`, so
+ * either direction of reuse closes a cycle, and the two packages genuinely own
+ * different message types that happen to agree on these three fields.
+ *
+ * The duplication is the cheaper error, but only if drift is caught rather than
+ * reviewed — so the agreement is asserted by a test, not left to a reader.
+ */
+export interface CustomMessageOrigin {
+	/** `"peer"` for a message from another session; `"user"` for the operator. */
+	readonly kind: "peer" | "user";
+	/** The sending peer, when known. */
+	readonly from?: string;
+	/** The sender's session label, when it supplied one. */
+	readonly session?: string;
 }
 
 /**

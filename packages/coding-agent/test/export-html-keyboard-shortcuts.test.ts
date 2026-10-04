@@ -3,10 +3,22 @@ import { readFileSync } from "node:fs";
 
 const templateJs = readFileSync(new URL("../src/export/html/template.js", import.meta.url), "utf8");
 
+/**
+ * Locate the keydown handler and return its body.
+ *
+ * The anchor is a regex rather than a literal because the handler is found by
+ * its SHAPE, not by its formatting. A literal that hard-codes quote style makes
+ * this file fail the moment `template.js` is run through the formatter — which
+ * changes how the subject is written, not what it does — and that failure is
+ * indistinguishable from the real one it is meant to catch.
+ *
+ * Everything past the anchor is behavioural: the body is executed below against
+ * a synthetic event, so only the locator needs to tolerate formatting.
+ */
 function extractKeydownHandlerBody(source: string): string {
-	const start = source.indexOf("document.addEventListener('keydown', (e) => {");
-	expect(start).toBeGreaterThanOrEqual(0);
-	const bodyStart = source.indexOf("{", start) + 1;
+	const anchor = /document\.addEventListener\(\s*(['"])keydown\1\s*,\s*\(?e\)?\s*=>\s*\{/.exec(source);
+	if (anchor === null) throw new Error("template.js has no keydown handler to exercise");
+	const bodyStart = source.indexOf("{", anchor.index) + 1;
 	let depth = 1;
 	for (let i = bodyStart; i < source.length; i++) {
 		const ch = source[i];

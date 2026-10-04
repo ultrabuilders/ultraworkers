@@ -65,7 +65,7 @@ describe("createAgentSession resolveServiceTierByFamily", () => {
 	}
 
 	it("evaluates the resolver against the model resolved from a deferred pattern and replaces the configured tiers", async () => {
-		using tempDir = TempDir.createSync("@omp-service-tier-resolver-");
+		using tempDir = TempDir.createSync("@ultraworkers-service-tier-resolver-");
 		const authStorage = openAuthStorage();
 		const resolvedModels: Array<Model | undefined> = [];
 		const { session } = await createAgentSession({
@@ -96,7 +96,7 @@ describe("createAgentSession resolveServiceTierByFamily", () => {
 	});
 
 	it("persists an empty resolved tier map so a reopened session does not re-derive tiers from settings", async () => {
-		using tempDir = TempDir.createSync("@omp-service-tier-resolver-reopen-");
+		using tempDir = TempDir.createSync("@ultraworkers-service-tier-resolver-reopen-");
 		const authStorage = openAuthStorage();
 		const sessionFile = path.join(tempDir.path(), "session.jsonl");
 		// The settings a cold revival rebuilds from say `priority`; the spawn's

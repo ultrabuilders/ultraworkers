@@ -8,6 +8,7 @@
  */
 import { type AuthStorage, type FetchImpl, withAuth } from "@oh-my-pi/pi-ai";
 import { withHardTimeout } from "./search/providers/utils";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 
 const KAGI_SEARCH_URL = "https://kagi.com/api/v1/search";
 
@@ -313,7 +314,7 @@ export async function searchWithKagi(
 		},
 		{
 			signal: options.signal,
-			missingKeyMessage: "Kagi credentials not found. Set KAGI_API_KEY or login with 'omp /login kagi'.",
+			missingKeyMessage: `Kagi credentials not found. Set KAGI_API_KEY or login with '${WIRE_NAME} /login kagi'.`,
 		},
 	);
 

@@ -55,15 +55,68 @@ const CONTROL_SOCKET_NAME_BYTES = 40 + ".sock".length;
 const MUX_TEMP_SUFFIX_BYTES = 1 + 16;
 
 /**
- * Whether `controlDir` leaves room for the whole `%C.sock` plus OpenSSH's mux
- * temp bind within `sun_path` (104 bytes on macOS, 108 elsewhere; OpenSSH
- * rejects lengths >= that). The worst case is dir + "/" + expanded `%C.sock`
+ * `sun_path` ceiling for the platform: 104 bytes on macOS, 108 elsewhere.
+ * OpenSSH rejects a length that reaches the limit.
+ */
+export function controlPathSunPathLimit(platform: SshPlatform): number {
+	return platform === "darwin" ? 104 : 108;
+}
+
+/**
+ * Bytes `controlDir` costs at its worst: dir + "/" + expanded `%C.sock`
  * (40-hex digest + ".sock") + the mux temp suffix.
+ *
+ * Exported separately from {@link controlPathFitsBudget} because a boolean
+ * cannot report erosion. Both the canonical path and the shared fallback are
+ * sized by this one budget decision, so a prefix that grows two bytes shortens
+ * the margin on both — and a boolean stays true through the whole slide until
+ * the last byte is gone. Callers that need the margin ask for it here rather
+ * than re-deriving the arithmetic.
+ *
+ * No `platform` argument: what a directory costs is its own byte length. The
+ * platform decides the ceiling it is measured against, which is the other
+ * function.
+ */
+export function controlPathWorstCase(controlDir: string): number {
+	return Buffer.byteLength(controlDir) + 1 + CONTROL_SOCKET_NAME_BYTES + MUX_TEMP_SUFFIX_BYTES;
+}
+
+/**
+ * Signed bytes of `sun_path` left for `controlDir`; negative once it overflows.
+ *
+ * {@link controlPathFitsBudget} is the decision, this is the receipt. The boolean
+ * is blind to erosion by construction: a prefix that grows two bytes shortens
+ * the margin on every path built from it, and the predicate stays true through
+ * the whole slide. The first symptom is therefore OpenSSH refusing the bind with
+ * "... too long for Unix domain socket" — a message that names the socket and
+ * never the budget. Every reference implementation that checks this reports the
+ * byte count in its failure for exactly that reason: `claude-code-ref`'s
+ * `assertValidUnixSocketPath` throws `path is N bytes (max 104)`, and `codex-ref`
+ * compares `path_bytes.len()` straight against `sun_path.len()`.
+ *
+ * None of them pins a minimum headroom, and neither should this one. The margin
+ * is the difference between the ceiling and the cost — and each of those is set
+ * independently: the ceiling is per-platform, the socket overhead tracks
+ * OpenSSH's digest width, the prefix tracks the product name. A pinned floor
+ * therefore goes red on a rename for a reason that has nothing to do with the
+ * budget, and a derived floor (`limit - worstCase`) only restates the predicate.
+ * Reporting the number where it is consumed buys observability without either
+ * trap. (The arithmetic itself is left out of this paragraph on purpose: spelled
+ * out, the operands go stale silently the moment any one of them moves, which is
+ * the same drift this export exists to make visible.)
+ */
+export function controlPathHeadroom(controlDir: string, platform: SshPlatform): number {
+	return controlPathSunPathLimit(platform) - controlPathWorstCase(controlDir);
+}
+
+/**
+ * Whether `controlDir` leaves room for the whole `%C.sock` plus OpenSSH's mux
+ * temp bind within `sun_path`. Kept as a predicate because that is the only
+ * question most call sites ask; the margin behind the answer is
+ * {@link controlPathHeadroom}, which is where the number is read.
  */
 export function controlPathFitsBudget(controlDir: string, platform: SshPlatform): boolean {
-	const sunPathLimit = platform === "darwin" ? 104 : 108;
-	const worstCase = Buffer.byteLength(controlDir) + 1 + CONTROL_SOCKET_NAME_BYTES + MUX_TEMP_SUFFIX_BYTES;
-	return worstCase < sunPathLimit;
+	return controlPathHeadroom(controlDir, platform) > 0;
 }
 
 /**
@@ -73,6 +126,24 @@ export function controlPathFitsBudget(controlDir: string, platform: SshPlatform)
  * their boundaries are unambiguous. This preserves isolation when the same
  * profile resolves through different XDG state roots without spending variable
  * path bytes on the decimal uid.
+ *
+ * The prefix and digest length are one budget decision, not two. This path is
+ * itself a `sun_path` consumer, and every byte of the margin behind that
+ * decision is spent on the product name: the length here is constant
+ * (production never passes `tmpBase`), so a longer name comes straight out of
+ * the budget and cannot be recovered. Trimming the digest to the length the
+ * `slice` below already uses holds the whole path inside the tightest ceiling,
+ * so the rename costs no budget. The remaining bits still separate every
+ * (uid, control dir) pair a machine actually holds, and a collision still has
+ * to pass `assertOwnerPrivateDir`.
+ *
+ * No byte counts are given here, deliberately: they are the difference of
+ * constants that move independently, which is what {@link controlPathHeadroom}
+ * is for. Spelled out, this paragraph drifted once already — it carried a
+ * spare-bytes figure that the socket overhead had quietly invalidated, with
+ * nothing to notice. The digest length stays named because it is a decision
+ * with a rationale rather than a derived quantity, and the slice is right
+ * below.
  */
 export function sshControlFallbackDir(canonicalDir: string, uid: number, tmpBase = "/tmp"): string {
 	const key = new Bun.CryptoHasher("sha256")
@@ -80,8 +151,8 @@ export function sshControlFallbackDir(canonicalDir: string, uid: number, tmpBase
 		.update("\0")
 		.update(canonicalDir)
 		.digest("hex")
-		.slice(0, 20);
-	return path.join(tmpBase, `omp-${key}`);
+		.slice(0, 11);
+	return path.join(tmpBase, `ultraworkers-${key}`);
 }
 
 interface ControlDirChoice {
@@ -105,7 +176,25 @@ export function resolveSshControlDir(opts: {
 	const { canonicalDir, platform, uid, tmpBase } = opts;
 	if (!supportsSshControlMaster(platform) || uid === undefined) return { dir: canonicalDir, shared: false };
 	if (controlPathFitsBudget(canonicalDir, platform)) return { dir: canonicalDir, shared: false };
-	return { dir: sshControlFallbackDir(canonicalDir, uid, tmpBase), shared: true };
+	const fallback = sshControlFallbackDir(canonicalDir, uid, tmpBase);
+	// This function's contract is "a directory that fits", and the fallback is the
+	// last chance to honour it. It cannot be *refused* here — `CONTROL_DIR` is
+	// derived from this call at module load, so throwing would take every importer
+	// of the module down with it. It can be reported, which is the difference
+	// between a budget failure that names its numbers and OpenSSH's "too long for
+	// Unix domain socket", which names neither. Production never passes `tmpBase`,
+	// so this stays quiet on the default and speaks only when a caller supplies a
+	// root that cannot hold the socket.
+	const headroom = controlPathHeadroom(fallback, platform);
+	if (headroom <= 0) {
+		logger.warn("SSH control fallback exceeds sun_path", {
+			dir: fallback,
+			cost: controlPathWorstCase(fallback),
+			limit: controlPathSunPathLimit(platform),
+			platform,
+		});
+	}
+	return { dir: fallback, shared: true };
 }
 
 interface ControlDirGuardStat {

@@ -1,5 +1,5 @@
 /**
- * Regression test for #1496 (bug 2): `omp install ./my-extension` used to be
+ * Regression test for #1496 (bug 2): `ultraworkers install ./my-extension` used to be
  * silently rewritten to `launch install ./my-extension` and forwarded to the
  * LLM as an initial prompt because no top-level `install` subcommand existed.
  *
@@ -18,6 +18,7 @@ import * as path from "node:path";
 import { commands, isSubcommand, resolveCliArgv } from "@oh-my-pi/pi-coding-agent/cli-commands";
 import { looksLikeLocalPath } from "@oh-my-pi/pi-coding-agent/commands/install";
 import { removeSyncWithRetries } from "@oh-my-pi/pi-utils";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 
 describe("install command is registered as a top-level subcommand", () => {
 	test("CLI runner sees `install` as a known command", () => {
@@ -26,8 +27,15 @@ describe("install command is registered as a top-level subcommand", () => {
 	});
 
 	test("CLI runner rejects only bare reserved management words", () => {
+		// The first clause echoes the binary this process is running as, so it is
+		// sourced from `APP_NAME` rather than typed again here — a copied literal is
+		// what made the message accuse users of running a command they never ran.
+		// BOTH halves now derive from APP_NAME — the echo AND the recommendation.
+		// Asserted verbatim, so a change to either half is visible on its own; and
+		// derived, so the expectation cannot itself go stale into a second copy of
+		// the bug this file exists to prevent.
 		expect(resolveCliArgv(["extensions"])).toEqual({
-			error: '`omp extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',
+			error: `\`${APP_NAME} extensions\` is not a management command. Use \`${APP_NAME} plugin list\` / \`${APP_NAME} plugin install\`, or run \`${APP_NAME} launch extensions\` if you meant to send "extensions" as a prompt.`,
 		});
 		expect(resolveCliArgv(["extensions", "are", "not", "loading"])).toEqual({
 			argv: ["launch", "extensions", "are", "not", "loading"],
@@ -61,7 +69,7 @@ describe("looksLikeLocalPath", () => {
 	});
 
 	test("bare names that exist as a local directory are treated as local", () => {
-		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-install-test-"));
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-install-test-"));
 		try {
 			fs.mkdirSync(path.join(tempDir, "vendored-ext"));
 			expect(looksLikeLocalPath("vendored-ext", tempDir)).toBe(true);

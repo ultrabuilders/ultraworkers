@@ -165,8 +165,10 @@ export interface OpenAIResponsesOptions extends StreamOptions {
 }
 
 const OPENAI_RESPONSES_PROVIDER_SESSION_STATE_PREFIX = "openai-responses:";
-const OPENAI_RESPONSES_FIRST_EVENT_TIMEOUT_MESSAGE =
+export const OPENAI_RESPONSES_FIRST_EVENT_TIMEOUT_MESSAGE =
 	"OpenAI responses stream timed out while waiting for the first event";
+export const OPENAI_RESPONSES_STREAM_IDLE_TIMEOUT_MESSAGE =
+	"OpenAI responses stream stalled while waiting for the next event";
 /** Consecutive stale-previous-response failures before chaining is disabled for the session. */
 const OPENAI_RESPONSES_CHAIN_STALE_FAILURE_LIMIT = 3;
 const OPENAI_RESPONSES_MAX_TRANSIENT_STREAM_RETRIES = 1;
@@ -786,7 +788,7 @@ const streamOpenAIResponsesOnce = (
 					idleTimeoutMs,
 					firstItemTimeoutMs: firstEventTimeoutMs,
 					firstItemErrorMessage: OPENAI_RESPONSES_FIRST_EVENT_TIMEOUT_MESSAGE,
-					errorMessage: "OpenAI responses stream stalled while waiting for the next event",
+					errorMessage: OPENAI_RESPONSES_STREAM_IDLE_TIMEOUT_MESSAGE,
 					onFirstItemTimeout: () => abortTracker.abortLocally(firstEventTimeoutAbortError),
 					onIdle: () => requestAbortController.abort(),
 					abortSignal: options?.signal,

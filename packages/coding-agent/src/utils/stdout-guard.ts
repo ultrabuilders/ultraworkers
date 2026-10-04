@@ -17,6 +17,7 @@
 
 import * as stream from "node:stream";
 import { inspect } from "node:util";
+import { logger } from "@oh-my-pi/pi-utils";
 
 // Module-private by virtue of not being exported; ES `#private` fields only
 // exist inside a class body, so they cannot express this at module scope.
@@ -82,8 +83,15 @@ export function releaseStdout(): void {
  * ordering; `flushRawStdout` is how you wait for the whole sequence.
  */
 export function writeRawStdout(writer: NodeJS.WriteStream, text: string): Promise<void> {
-	tail = tail.then(() => writeOnce(writer, text));
-	return tail;
+	const result = tail.then(() => writeOnce(writer, text));
+	// The chain advances on SETTLEMENT, not on success. Assigning `result` to `tail`
+	// directly would let one failed write poison every write after it: `.then` on a
+	// rejected promise never runs its callback, so `writeOnce` would stop being called
+	// and the structured channel would die silently for the rest of the process. The
+	// failure still reaches a caller that awaits — it is only the *chain* that is kept
+	// clean, because the chain's job is ordering, not error reporting.
+	tail = result.catch(() => {});
+	return result;
 }
 
 function writeOnce(writer: NodeJS.WriteStream, text: string): Promise<void> {
@@ -95,9 +103,33 @@ function writeOnce(writer: NodeJS.WriteStream, text: string): Promise<void> {
 	return promise;
 }
 
-/** Resolves only AFTER the tail has settled — never before. */
+/**
+ * Resolves only AFTER the tail has settled — never before.
+ *
+ * A barrier, not an error channel: it resolves even when a write failed, because
+ * `tail` carries ordering only. A caller that needs to know whether a *particular*
+ * record made it awaits that record's own promise from `writeRawStdout`; awaiting
+ * this one tells you the queue is empty, which is a different question and the one
+ * a shutdown path actually has.
+ */
 export function flushRawStdout(): Promise<void> {
 	return tail;
+}
+
+/**
+ * Fire-and-forget write for call sites that have nothing to await.
+ *
+ * The chain fix above is what keeps a dropped record from killing the run:
+ * `writeRawStdout` attaches its own handler to every promise it returns, so a caller
+ * that discards the result cannot manufacture an unhandled rejection. What is still
+ * missing there is *visibility* — a record lost to a closed consumer would vanish
+ * with nothing said, which is the failure mode that costs an afternoon. This logs
+ * the loss and returns, so the run finishes with the truth in the log.
+ */
+export function emitRawStdout(writer: NodeJS.WriteStream, text: string): void {
+	void writeRawStdout(writer, text).catch((error: unknown) => {
+		logger.warn("structured stdout record was not delivered", { error });
+	});
 }
 
 function formatConsoleArgs(args: unknown[]): string {

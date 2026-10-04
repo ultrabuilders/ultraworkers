@@ -369,7 +369,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 	 * The native settings page (`prefs`) when the terminal draws it: a page per
 	 * advisor plus the shared instructions, the advisor's fields as typed rows,
 	 * the file actions, and the model/tools/instructions editors over the page.
-	 * Otherwise the root card `omp.overlay.advisor`: on the roster screen a
+	 * Otherwise the root card `ultraworkers.overlay.advisor`: on the roster screen a
 	 * sidebar (the active `SelectList`) beside the highlighted entry's preview;
 	 * every other screen shows its editor component alone. Key hints close the
 	 * card.
@@ -520,7 +520,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 		const signature = JSON.stringify(props);
 		const prev = this.#nativePrefs;
 		if (prev && prev.signature === signature && prev.editor === editor) return prev.node;
-		const children: NativeChild[] = editor ? [col([editor], { role: "omp.prefs.editor" })] : [];
+		const children: NativeChild[] = editor ? [col([editor], { role: "ultraworkers.prefs.editor" })] : [];
 		const root = node("prefs", props, children);
 		this.#nativePrefs = { signature, editor, node: root };
 		return root;
@@ -624,7 +624,7 @@ export class AdvisorConfigOverlayComponent implements Component {
 			: node("col", { grow: 1 }, [this.#active], "body");
 		const children: NativeChild[] = [body];
 		if (hints) children.push(node("rule", undefined, undefined, "divider"), hints);
-		const card = overlayCard("omp.overlay.advisor", head, children);
+		const card = overlayCard("ultraworkers.overlay.advisor", head, children);
 		this.#nativeRoot = { screen: this.#screen, active: this.#active, title, preview, hints, node: card };
 		return card;
 	}

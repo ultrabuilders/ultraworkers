@@ -29,7 +29,7 @@ function firstTextBlockText(content: Array<TextContent | ImageContent>): string 
 	return block.text;
 }
 
-function makeTempDir(prefix = "@pi-autoresearch-tools-"): TempDir {
+function makeTempDir(prefix = "@ultraworkers-autoresearch-tools-"): TempDir {
 	return TempDir.createSync(prefix);
 }
 
@@ -81,7 +81,7 @@ let templateBranchRepo: TempDir;
 let templateBaselineCommit: string;
 
 beforeAll(async () => {
-	templateRepo = makeTempDir("@pi-autoresearch-template-");
+	templateRepo = makeTempDir("@ultraworkers-autoresearch-template-");
 	await Bun.write(path.join(templateRepo.path(), "README.md"), "# baseline\n");
 	// maintenance.auto/gc.auto off: every template below is copied with cpSync,
 	// and a background `git maintenance run --auto` lock would race the copy.
@@ -91,7 +91,7 @@ beforeAll(async () => {
 	templateBaselineCommit = (await $`git rev-parse HEAD`.cwd(templateRepo.path()).text()).trim();
 	// Second fixture: harness committed and already on an `autoresearch/*` branch,
 	// the baseline for log_experiment's on-branch keep/discard scenarios.
-	templateBranchRepo = makeTempDir("@pi-autoresearch-template-branch-");
+	templateBranchRepo = makeTempDir("@ultraworkers-autoresearch-template-branch-");
 	fs.cpSync(templateRepo.path(), templateBranchRepo.path(), { recursive: true });
 	await Bun.write(path.join(templateBranchRepo.path(), "autoresearch.sh"), "#!/usr/bin/env bash\necho METRIC m=1\n");
 	await $`git add -A && git commit -m harness && git checkout -b autoresearch/base`
@@ -169,7 +169,7 @@ describe("init_experiment", () => {
 	let dbOverride: TempDir;
 
 	beforeEach(() => {
-		dbOverride = makeTempDir("@pi-autoresearch-init-db-");
+		dbOverride = makeTempDir("@ultraworkers-autoresearch-init-db-");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride.path();
 	});
 
@@ -348,7 +348,7 @@ describe("run_experiment", () => {
 	let dbOverride: TempDir;
 
 	beforeEach(() => {
-		dbOverride = makeTempDir("@pi-autoresearch-run-db-");
+		dbOverride = makeTempDir("@ultraworkers-autoresearch-run-db-");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride.path();
 	});
 
@@ -439,7 +439,7 @@ describe("log_experiment", () => {
 	let dbOverride: TempDir;
 
 	beforeEach(() => {
-		dbOverride = makeTempDir("@pi-autoresearch-log-db-");
+		dbOverride = makeTempDir("@ultraworkers-autoresearch-log-db-");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride.path();
 	});
 
@@ -840,7 +840,7 @@ describe("update_notes", () => {
 	let dbOverride: TempDir;
 
 	beforeEach(() => {
-		dbOverride = makeTempDir("@pi-autoresearch-notes-db-");
+		dbOverride = makeTempDir("@ultraworkers-autoresearch-notes-db-");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride.path();
 	});
 

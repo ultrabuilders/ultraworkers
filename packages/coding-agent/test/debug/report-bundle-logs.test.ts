@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createReportBundle } from "@oh-my-pi/pi-coding-agent/debug/report-bundle";
-import { getConfigRootDir, getLogsDir, localDay, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getConfigRootDir, getLogsDir, localDay, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 const originalXdgStateHome = process.env.XDG_STATE_HOME;
@@ -30,7 +30,7 @@ afterEach(async () => {
 
 describe("report bundle logs", () => {
 	it("collects every same-day PID log, not only the current process", async () => {
-		cleanupRoot = await fs.mkdtemp(path.join(os.tmpdir(), "omp-report-logs-"));
+		cleanupRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-report-logs-"));
 		const xdgStateHome = path.join(cleanupRoot, "state");
 		await fs.mkdir(path.join(xdgStateHome, "omp"), { recursive: true });
 		process.env.XDG_STATE_HOME = xdgStateHome;
@@ -40,10 +40,18 @@ describe("report bundle logs", () => {
 		await fs.mkdir(logsDir, { recursive: true });
 		// Log files are named with the local day (RotatingFileSink naming); same-day
 		// collection must match them with the local day too, not the UTC key.
+		//
+		// The name comes from `APP_NAME` rather than a literal because the collector
+		// builds its pattern from that same constant. A hardcoded prefix is a claim
+		// about a value the product owns: when the app was renamed, every fixture
+		// here still wrote `omp.<day>.<pid>.log`, the pattern matched nothing, and the
+		// bundle silently shipped no `logs.txt` at all — the report a crash investigation
+		// depends on, missing, with the suite red for a reason that had nothing to do with
+		// the behaviour under test.
 		const today = localDay(new Date());
-		const crashedName = `omp.${today}.4242.log`;
+		const crashedName = `${APP_NAME}.${today}.4242.log`;
 		const rotatedName = `${crashedName}.1`;
-		const currentName = `omp.${today}.${process.pid}.log`;
+		const currentName = `${APP_NAME}.${today}.${process.pid}.log`;
 		await Bun.write(path.join(logsDir, crashedName), '{"pid":4242,"message":"fatal in crashed pid"}\n');
 		await fs.utimes(path.join(logsDir, crashedName), 1, 1);
 		await Bun.write(path.join(logsDir, rotatedName), '{"pid":4242,"message":"earlier rotated crash output"}\n');
@@ -55,7 +63,7 @@ describe("report bundle logs", () => {
 		const utcToday = new Date().toISOString().slice(0, 10);
 		let staleUtcName: string | undefined;
 		if (utcToday !== today) {
-			staleUtcName = `omp.${utcToday}.4243.log`;
+			staleUtcName = `${APP_NAME}.${utcToday}.4243.log`;
 			await Bun.write(path.join(logsDir, staleUtcName), '{"pid":4243,"message":"stale utc-keyed"}\n');
 			await fs.utimes(path.join(logsDir, staleUtcName), 3, 3);
 		}

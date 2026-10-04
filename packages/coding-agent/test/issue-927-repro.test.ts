@@ -32,7 +32,7 @@ describe("issue #927 optimistic pending spinner", () => {
 		}
 
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-issue-927-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-927-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

@@ -6,6 +6,8 @@ export * from "./auth-gateway/types";
 export * from "./auth-retry";
 export * from "./auth-storage";
 export * from "./error/rate-limit";
+export * from "./error/retryable";
+export * from "./retry";
 export * from "./embeddings";
 export * from "./images";
 export * from "./judgment";

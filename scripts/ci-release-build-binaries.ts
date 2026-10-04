@@ -3,6 +3,7 @@
 import * as fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as path from "node:path";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { COMPILED_EXTERNAL_DEPENDENCIES, compileCodingAgent } from "../packages/coding-agent/scripts/compile-binary";
 
 interface BinaryTarget {
@@ -26,6 +27,17 @@ if (
 	throw new Error("@huggingface/transformers package manifest has no string version");
 }
 const transformersVersion = transformersManifest.version;
+/**
+ * Repo-relative output path for one release artifact. The binary name and the `.exe`
+ * rule live here so a rebrand moves the eight published artifacts with it:
+ * `metaharness` resolves them by name, and when the producer and the consumer drift
+ * apart the lookup misses silently rather than failing loudly.
+ *
+ * `stem` is the artifact's published name component, which is NOT always `id` — the
+ * Windows rows carry the bun spelling `windows-*` while their ids read `win32-*`.
+ */
+const outfileFor = (stem: string, platform: string): string =>
+	`packages/coding-agent/binaries/${APP_NAME}-${stem}${platform === "win32" ? ".exe" : ""}`;
 // Worker threads re-enter the binary's single CLI host entry.
 const isDryRun = process.argv.includes("--dry-run");
 const targets: BinaryTarget[] = [
@@ -34,56 +46,63 @@ const targets: BinaryTarget[] = [
 		platform: "darwin",
 		arch: "arm64",
 		target: "bun-darwin-arm64",
-		outfile: "packages/coding-agent/binaries/omp-darwin-arm64",
+		outfile: outfileFor("darwin-arm64", "darwin"),
 	},
 	{
 		id: "darwin-x64",
 		platform: "darwin",
 		arch: "x64",
 		target: "bun-darwin-x64",
-		outfile: "packages/coding-agent/binaries/omp-darwin-x64",
+		outfile: outfileFor("darwin-x64", "darwin"),
 	},
 	{
 		id: "linux-x64",
 		platform: "linux",
 		arch: "x64",
 		target: "bun-linux-x64-baseline",
-		outfile: "packages/coding-agent/binaries/omp-linux-x64",
+		outfile: outfileFor("linux-x64", "linux"),
 	},
 	{
 		id: "linux-arm64",
 		platform: "linux",
 		arch: "arm64",
 		target: "bun-linux-arm64",
-		outfile: "packages/coding-agent/binaries/omp-linux-arm64",
+		outfile: outfileFor("linux-arm64", "linux"),
 	},
 	{
 		id: "linux-musl-x64",
 		platform: "linux",
 		arch: "x64",
-		target: "bun-linux-x64-musl-baseline",
-		outfile: "packages/coding-agent/binaries/omp-linux-musl-x64",
+		// `bun-linux-x64-musl-baseline` is absent from bun's generated
+		// `CompileTarget` union, but it is not a typo: `bun build --compile
+		// --target=bun-linux-x64-musl-baseline` succeeds and emits an 87 MB
+		// binary, and the value has been here since the initial publish. The type
+		// lags the runtime. Changing the string would silently redefine a shipped
+		// release artifact to satisfy a typechecker, so it stays and the cast
+		// records why.
+		target: "bun-linux-x64-musl-baseline" as Bun.Build.CompileTarget,
+		outfile: outfileFor("linux-musl-x64", "linux"),
 	},
 	{
 		id: "linux-musl-arm64",
 		platform: "linux",
 		arch: "arm64",
 		target: "bun-linux-arm64-musl",
-		outfile: "packages/coding-agent/binaries/omp-linux-musl-arm64",
+		outfile: outfileFor("linux-musl-arm64", "linux"),
 	},
 	{
 		id: "win32-x64",
 		platform: "win32",
 		arch: "x64",
 		target: "bun-windows-x64-baseline",
-		outfile: "packages/coding-agent/binaries/omp-windows-x64.exe",
+		outfile: outfileFor("windows-x64", "win32"),
 	},
 	{
 		id: "win32-arm64",
 		platform: "win32",
 		arch: "arm64",
 		target: "bun-windows-arm64",
-		outfile: "packages/coding-agent/binaries/omp-windows-arm64.exe",
+		outfile: outfileFor("windows-arm64", "win32"),
 	},
 ];
 

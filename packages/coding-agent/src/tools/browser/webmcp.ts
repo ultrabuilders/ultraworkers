@@ -3,7 +3,7 @@ import type { CDPSession, Frame, NewDocumentScriptEvaluation, Page, Realm, WebMC
 
 declare module "puppeteer-core" {
 	interface Frame {
-		/** Puppeteer's page-main JavaScript realm, retained by omp's pinned runtime patch. */
+		/** Puppeteer's page-main JavaScript realm, retained by ultraworkers' pinned runtime patch. */
 		mainRealm(): Realm;
 	}
 }

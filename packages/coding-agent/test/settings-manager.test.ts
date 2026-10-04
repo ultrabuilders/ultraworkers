@@ -120,7 +120,7 @@ describe("Settings", () => {
 
 		// Use TempDir for Windows-safe cleanup (retries on EBUSY from SQLite
 		// file handle release delays).
-		tempDir = TempDir.createSync("@pi-settings-test-");
+		tempDir = TempDir.createSync("@ultraworkers-settings-test-");
 		agentDir = tempDir.join("agent");
 		projectDir = tempDir.join("project");
 

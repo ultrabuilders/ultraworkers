@@ -26,9 +26,17 @@ import {
 	resolveProfileEnv,
 	setProfile,
 	VERSION,
+	WIRE_NAME,
 } from "@oh-my-pi/pi-utils/dirs";
 
-import { declareWorkerHostEntry, installWorkerInbox, isWorkerHostSelector } from "@oh-my-pi/pi-utils/worker-host";
+import {
+	declareWorkerHostEntry,
+	installWorkerInbox,
+	isWorkerHostSelector,
+	WORKER_HOST_SELECTOR_PREFIX,
+} from "@oh-my-pi/pi-utils/worker-host";
+import { resolveIsProcessEntry } from "./cli-process-entry";
+import { hardenProcess } from "./harden-process";
 import { extractProfileFlags } from "./cli/profile-bootstrap";
 import {
 	BLOB_BROKER_WORKER_ARG,
@@ -43,6 +51,11 @@ import {
 import type * as JsProcessEntry from "./eval/js/process-entry";
 import type { WorkerInbound as JsWorkerInbound, WorkerOutbound as JsWorkerOutbound } from "./eval/js/worker-protocol";
 
+// Resolved from THIS module's `import.meta.main`, because that value is
+// per-module: `cli-process-entry` reading its own would answer for itself
+// (always false here) and silently skip the entry block below.
+const isProcessEntry = resolveIsProcessEntry(import.meta.main);
+
 if (Bun.semver.order(Bun.version, MIN_BUN_VERSION) < 0) {
 	process.stderr.write(
 		`error: Bun runtime must be >= ${MIN_BUN_VERSION} (found v${Bun.version}). Please upgrade: bun upgrade\n`,
@@ -50,17 +63,22 @@ if (Bun.semver.order(Bun.version, MIN_BUN_VERSION) < 0) {
 	process.exit(1);
 }
 
+// Harden BEFORE anything else touches the process, and ONLY on the real entry.
+//
+// `bun test` and SDK embedding reach this same module, and an unguarded call
+// would make the test runner itself non-dumpable: a test that crashes on purpose
+// then goes silent, with the evidence nowhere. `hardenProcess` is a no-op on
+// macOS and Windows and swallows its own failures, so the worst case here is that
+// nothing happens.
+if (isProcessEntry) {
+	hardenProcess();
+}
+
+// Naming happens here because `process.title` renames the process and has no
+// bearing on the parent liveness `PR_SET_PDEATHSIG` reads -- the two are orthogonal.
 try {
 	process.title = APP_NAME;
 } catch {}
-
-// `Bun.build`-API compiled Windows executables report `import.meta.main ===
-// false`: the standalone loader keys the entry module with native backslashes
-// (`B:\~BUN\root\cli.js`) but registers the main path with forward slashes
-// (`B:/~BUN/root/cli.js`), so Bun's internal match fails. `bun build --compile`
-// CLI builds are unaffected. A compiled binary's entry module is by definition
-// the process entry, so the define-folded PI_COMPILED marker stands in.
-const isProcessEntry = import.meta.main || process.env.PI_COMPILED === "true";
 
 /**
  * Worker inboxes must attach before this entry module reaches its first await,
@@ -179,14 +197,30 @@ async function runSmokeTest(): Promise<void> {
 	process.stdout.write("smoke-test: ok\n");
 }
 
-const TINY_WORKER_ARG = "__omp_worker_tiny_inference";
-const STATS_SYNC_WORKER_ARG = "__omp_worker_stats_sync";
-const TAB_WORKER_ARG = "__omp_worker_tab";
-const JS_EVAL_WORKER_ARG = "__omp_worker_js_eval";
-const JS_EVAL_PROCESS_ARG = "__omp_worker_js_eval_process";
-const STT_WORKER_ARG = "__omp_worker_stt";
-const TTS_WORKER_ARG = "__omp_worker_tts";
-const MNEMOPI_EMBED_WORKER_ARG = "__omp_worker_mnemopi_embed";
+// Worker argv selectors. These were eight hand-written literals; spelling them
+// out meant a rename had nine places to move and a missed one matched nothing,
+// silently — the worker starts, the entry module matches no branch, and the
+// process exits with no error anywhere.
+//
+// Each worker module also exports its own selector, and `packages/stats` exports
+// its own. They are NOT imported here on purpose: every one of them lives
+// behind a graph this file deliberately loads lazily (see runSmokeTest), and a
+// top-level value import would pull a native addon and the whole worker runtime
+// into every ordinary `ultraworkers launch`. That is a real regression, and
+// process-entry-import.test.ts is what catches it.
+//
+// So all eight derive from the same WORKER_HOST_SELECTOR_PREFIX instead. That
+// leaves one source of truth for the prefix — the thing that actually has to
+// agree — while `worker-selector-parity.test.ts` is what holds every copy of it
+// to that source, including the ones over in the worker modules.
+const TINY_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tiny_inference`;
+const STATS_SYNC_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stats_sync`;
+const TAB_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tab`;
+const JS_EVAL_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}js_eval`;
+const JS_EVAL_PROCESS_ARG = `${WORKER_HOST_SELECTOR_PREFIX}js_eval_process`;
+const STT_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stt`;
+const TTS_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tts`;
+const MNEMOPI_EMBED_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}mnemopi_embed`;
 
 async function runWorkerEntrypoint(arg: string | undefined): Promise<boolean> {
 	if (arg === TINY_WORKER_ARG) {
@@ -405,7 +439,7 @@ async function runIpcSubprocessWorker<In, Out>(
 			}
 		} catch {}
 
-		// Note on container environments (Docker/Kubernetes): omp often runs as
+		// Note on container environments (Docker/Kubernetes): ultraworkers often runs as
 		// PID 1, so workers start with process.ppid === 1. Treating ppid <= 1 as
 		// an orphan at boot would break containerized workers. Instead, we allow
 		// PID 1 to boot normally and detect post-spawn reparenting dynamically via
@@ -466,10 +500,10 @@ async function runIpcSubprocessWorker<In, Out>(
 
 /**
  * Hidden subcommand that boots the ONNX tiny-model worker for one model: a
- * detached process owning that model's socket (`OMP_TINY_WORKER_SOCKET`),
- * shared by every omp process on the machine and exiting on its own when
+ * detached process owning that model's socket (`ULTRAWORKERS_TINY_WORKER_SOCKET`),
+ * shared by every ultraworkers process on the machine and exiting on its own when
  * idle. It exists so `onnxruntime-node` (loaded transitively by
- * `@huggingface/transformers`) never runs in an omp address space — its NAPI
+ * `@huggingface/transformers`) never runs in an ultraworkers address space — its NAPI
  * finalizer segfaults Bun on Windows (issue #1606).
  */
 async function runTinyWorker(): Promise<void> {
@@ -494,7 +528,7 @@ export async function runCli(argv: string[]): Promise<void> {
 			// invalid value to avoid an uncaught throw before this try/catch is in
 			// scope (see `readProfileFromEnvSafe` in dirs.ts), and callers may set
 			// OMP_PROFILE after importing this module (profile aliases/tests). Surfacing
-			// validation here turns `OMP_PROFILE=.. omp --version` into a clean error;
+			// validation here turns `OMP_PROFILE=.. ultraworkers --version` into a clean error;
 			// calling setProfile keeps every later path helper on the env-selected
 			// profile instead of the default agent directory.
 			setProfile(resolveProfileEnv(process.env.OMP_PROFILE, process.env.PI_PROFILE));
@@ -591,10 +625,16 @@ export async function runCli(argv: string[]): Promise<void> {
 	}
 
 	try {
-		const [{ run }, { commands, resolveCliArgv }] = await Promise.all([
-			import("@oh-my-pi/pi-utils/cli"),
-			import("./cli-commands"),
-		]);
+		const [
+			{ run },
+			{ commands, resolveCliArgv, couldBeExtensionSubcommand, preloadExtensionSubcommands, extensionCommandEntries },
+		] = await Promise.all([import("@oh-my-pi/pi-utils/cli"), import("./cli-commands")]);
+		// Extensions load *inside* the session `run()` dispatches to, so a verb they
+		// register cannot be known when routing decides — the two would wait on each
+		// other. Priming the registry first closes that loop; skipped entirely for a
+		// token that cannot be a verb, which keeps `ultraworkers "two word prompt"` off the
+		// extension-loading path.
+		if (couldBeExtensionSubcommand(resolvedArgv[0])) await preloadExtensionSubcommands();
 		// --help and --version are handled by run() directly; --license returned above.
 		// Everything else that isn't a known subcommand routes to "launch".
 		const resolved = resolveCliArgv(resolvedArgv);
@@ -603,8 +643,32 @@ export async function runCli(argv: string[]): Promise<void> {
 			process.exitCode = 1;
 			return;
 		}
+		// A deliberate lazy load (see `bun run check:await-import`, which exempts
+		// this file under AGENTS.md's `entryDispatch` rule): the settings graph stays
+		// out of the entry until a `--config` overlay actually exists. Every verb that
+		// reads settings initializes its own instance with its own `cwd`, so the
+		// overlay is recorded once here rather than threaded through twenty call sites
+		// that would each have to remember it — and skipped entirely on the common run
+		// where no overlay was asked for.
+		if (resolved.configFiles !== undefined && resolved.configFiles.length > 0) {
+			const { setGlobalConfigFiles } = await import("./config/settings");
+			setGlobalConfigFiles(resolved.configFiles);
+		}
 		runningCommand = resolved.argv[0];
-		await run({ bin: APP_NAME, version: VERSION, argv: resolved.argv, commands, metadataHelp: showHelp });
+		await run({
+			bin: APP_NAME,
+			// The command on PATH is `ultraworkers` (see the package `bin`); the brand is not.
+			// Printing the brand in a usage line produced `$ ultraworkers update`,
+			// which a reader cannot paste.
+			command: WIRE_NAME,
+			version: VERSION,
+			argv: resolved.argv,
+			// Built-ins first: `findEntry` takes the first match, so this ordering is
+			// what makes a verb registered under a built-in name inert — which is why
+			// `registerSubcommand` refuses those registrations outright.
+			commands: [...commands, ...extensionCommandEntries()],
+			metadataHelp: showHelp,
+		});
 	} finally {
 		stopStartupComposer?.();
 	}
@@ -625,7 +689,7 @@ if (isProcessEntry || !Bun.isMainThread) {
 	const postmortem: typeof Postmortem | undefined = isProcessEntry
 		? require("@oh-my-pi/pi-utils/postmortem.js")
 		: undefined;
-	// A one-shot CLI run (`omp --help | head`, `omp --version | true`, `omp <sub> | grep -m1`)
+	// A one-shot CLI run (`ultraworkers --help | head`, `ultraworkers --version | true`, `ultraworkers <sub> | grep -m1`)
 	// whose stdout consumer closes before the write drains gets an EPIPE that Bun surfaces as
 	// an unhandled rejection. Treat a vanished stdout peer as an ordinary Unix disconnect
 	// (graceful exit) rather than the fatal path. Interactive launches register their own

@@ -1,5 +1,6 @@
 import { encodeSixel } from "@oh-my-pi/pi-natives";
 import { $env, isBunTestRuntime, isTerminalHeadless, isWsl } from "@oh-my-pi/pi-utils/env";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { sendDesktopNotification, shouldDeliverDesktopNotification } from "./desktop-notify";
 import {
 	detectKittyUnicodePlaceholdersSupport,
@@ -43,7 +44,7 @@ export type TerminalId =
 	| "base"
 	| "trueColor";
 
-const CMUX_NOTIFICATION_TITLE = "omp";
+const CMUX_NOTIFICATION_TITLE = APP_NAME;
 const CMUX_SURFACE_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu;
 
 /** Title and body for an out-of-band multiplexer notification (cmux, Herdr). */
@@ -700,14 +701,21 @@ const KNOWN_TERMINALS = Object.freeze({
 	// the conservative defaults.
 	rio: new TerminalInfo("rio", ImageProtocol.Kitty, true, true),
 	// Tern (Stencil's terminal, `stencil-term`) sets TERM_PROGRAM=tern and
-	// implements Kitty graphics, OSC 8 and OSC 9/99 notifications. Whether omp
+	// implements Kitty graphics, OSC 8 and OSC 9/99 notifications. Whether ultraworkers
 	// renders natively (Tern Surface Protocol) is decided by the `hello`
 	// handshake alone, never by this identity.
 	tern: new TerminalInfo("tern", ImageProtocol.Kitty, true, true, NotifyProtocol.Osc99),
 });
 
-/** Resolve terminal identity from environment markers used by common emulators. */
-export function detectTerminalId(env: NodeJS.ProcessEnv = Bun.env): TerminalId {
+/**
+ * Resolve terminal identity from environment markers used by common emulators.
+ *
+ * `timeoutMs` is forwarded to the tmux client-terminal probe and defaults to that
+ * probe's own budget, so omitting it changes nothing. It exists so a test can drive
+ * the probe's branches — notably the timeout one — without depending on how loaded
+ * the machine is when the suite runs.
+ */
+export function detectTerminalId(env: NodeJS.ProcessEnv = Bun.env, timeoutMs?: number): TerminalId {
 	function caseEq(a: string, b: string): boolean {
 		return a.toLowerCase() === b.toLowerCase(); // For compiler to pattern match
 	}
@@ -752,7 +760,7 @@ export function detectTerminalId(env: NodeJS.ProcessEnv = Bun.env): TerminalId {
 
 	// tmux >= 3.2 replaces the pane's identity with `TERM_PROGRAM=tmux`.
 	// Its server still holds the attached client's terminal-type reply.
-	const clientProgramId = fromProgram(resolveTmuxClientTerminalName(env) ?? undefined);
+	const clientProgramId = fromProgram(resolveTmuxClientTerminalName(env, timeoutMs) ?? undefined);
 	if (clientProgramId) return clientProgramId;
 
 	if (TERM?.toLowerCase().includes("ghostty")) return "ghostty";
@@ -1446,7 +1454,8 @@ function notificationToLine(n: TerminalNotification): string {
 // C0/C1 control characters that are unsafe inside an OSC payload (must base64).
 const OSC99_UNSAFE = /[\x00-\x1f\x7f\x80-\x9f]/u;
 const OSC99_MAX_PAYLOAD_BYTES = 2048;
-const OSC99_APP_NAME = "omp";
+/** The app name as it appears in the OSC 99 payload — protocol data, so it keeps its own name. */
+const OSC99_APP_NAME = APP_NAME;
 let nextOsc99NotificationId = 1;
 
 function base64Utf8(value: string): string {
@@ -1460,7 +1469,7 @@ function sanitizeOsc99Id(id: string | undefined): string {
 }
 
 function osc99Id(id: string | undefined): string {
-	return sanitizeOsc99Id(id) || `omp-${nextOsc99NotificationId++}`;
+	return sanitizeOsc99Id(id) || `${APP_NAME}-${nextOsc99NotificationId++}`;
 }
 
 function utf8CodePointBytes(char: string): number {

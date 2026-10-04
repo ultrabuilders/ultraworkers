@@ -69,7 +69,7 @@ async function getEmbeddedClientFiles(): Promise<Map<string, Blob>> {
 
 	if (!EMBEDDED_CLIENT_ARCHIVE) {
 		throw new Error(
-			"Embedded stats client bundle missing. Rebuild the omp binary or npm bundle with embedded stats assets.",
+			"Embedded stats client bundle missing. Rebuild the ultraworkers binary or npm bundle with embedded stats assets.",
 		);
 	}
 
@@ -369,7 +369,7 @@ function createDashboardServer(port: number, hostname: string): Server<undefined
 			const url = new URL(req.url);
 			const path = url.pathname;
 
-			// The identity header lets another omp session's reuse probe positively
+			// The identity header lets another ultraworkers session's reuse probe positively
 			// recognize this dashboard without allowing cross-origin API reads.
 			const dashboardHeaders: Record<string, string> = {
 				[STATS_DASHBOARD_HEADER]: STATS_DASHBOARD_SECURITY_VERSION,
@@ -461,7 +461,7 @@ function liveEventStream(headers: Record<string, string>): Response {
 }
 
 /**
- * Start the HTTP server, reusing a live dashboard or reclaiming a stale omp listener.
+ * Start the HTTP server, reusing a live dashboard or reclaiming a stale ultraworkers listener.
  */
 export interface StatsServerHandle {
 	hostname: string;

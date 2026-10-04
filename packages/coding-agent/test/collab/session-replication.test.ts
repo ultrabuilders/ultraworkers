@@ -8,7 +8,7 @@ import { TempDir } from "@oh-my-pi/pi-utils";
 const tempDirs: TempDir[] = [];
 
 function makeManager(): { manager: SessionManager; cwd: string } {
-	const dir = TempDir.createSync("@pi-collab-repl-");
+	const dir = TempDir.createSync("@ultraworkers-collab-repl-");
 	tempDirs.push(dir);
 	const cwd = dir.path();
 	return { manager: SessionManager.create(cwd, path.join(cwd, "sessions")), cwd };

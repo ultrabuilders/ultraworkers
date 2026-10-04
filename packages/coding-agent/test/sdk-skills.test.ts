@@ -15,6 +15,7 @@ import { getAgentDir, setAgentDir } from "@oh-my-pi/pi-utils/dirs";
 import { cleanupTempHome } from "./helpers/temp-home-cleanup";
 
 import { cfgAutolearnEnabled } from "@oh-my-pi/pi-coding-agent/autolearn/settings";
+import { getManagedSkillsDir } from "@oh-my-pi/pi-coding-agent/autolearn/managed-skills";
 import { cfgSkillsCustomDirectories } from "@oh-my-pi/pi-coding-agent/extensibility/settings";
 
 function createIsolatedSkillsSettings(extensions: string[] = []): Settings {
@@ -47,6 +48,7 @@ describe("createAgentSession skills option", () => {
 	let skillsDir: string;
 	let tempHomeDir = "";
 	let originalHome: string | undefined;
+	let originalAgentDir = "";
 	// Auth storage (SQLite DB) and the model registry are immutable across these tests: skill
 	// discovery never touches models, and building them per test would make createAgentSession call
 	// modelRegistry.refreshInBackground(), whose online model discovery saturates the event loop and
@@ -77,6 +79,23 @@ describe("createAgentSession skills option", () => {
 		process.env.HOME = tempHomeDir;
 		const nativeUserSkillsDir = path.join(tempHomeDir, ".omp", "agent", "skills");
 		fs.mkdirSync(nativeUserSkillsDir, { recursive: true });
+
+		// Redirecting HOME is not enough. `getManagedSkillsDir()` resolves through the
+		// process-global `getAgentDir()` (src/autolearn/managed-skills.ts), NOT through
+		// the `agentDir` each session is constructed with — so discovery kept walking
+		// the developer's real agent directory and loaded THEIR managed skills into a
+		// test that had seeded its own.
+		//
+		// Measured on a machine whose real agent dir held 117 managed skills: they
+		// filled the `<skills>` list in the system prompt, the test's own skill fell
+		// past the prompt's truncation tail, and the case failed. With an empty HOME
+		// the same file ran 9/9. So the verdict tracked what the developer's home
+		// contained rather than what the code did — the file was red on one machine
+		// and green on another for the same commit.
+		originalAgentDir = getAgentDir();
+		const isolatedAgentDir = path.join(tempHomeDir, ".omp", "agent");
+		fs.mkdirSync(isolatedAgentDir, { recursive: true });
+		setAgentDir(isolatedAgentDir);
 
 		// Create a test skill in the pi skills directory
 		fs.writeFileSync(
@@ -109,7 +128,27 @@ Loaded via symbolic link.
 		fs.symlinkSync(externalSkillDir, path.join(path.dirname(skillsDir), "symlinked-skill-link"), "dir");
 	});
 
-	afterEach(cleanupTempHome(() => ({ tempDir, tempHomeDir, originalHome })));
+	// Restore before the temp home is removed: `setAgentDir` is process-global, and
+	// leaving it pointing into a directory the next step deletes would send every
+	// later test in the run to a path that no longer exists.
+	afterEach(() => {
+		setAgentDir(originalAgentDir);
+		cleanupTempHome(() => ({ tempDir, tempHomeDir, originalHome }))();
+	});
+
+	// The pin above is load-bearing, and nothing else in this file would notice if it
+	// were deleted: every other case asserts that a seeded skill IS present, and a
+	// developer's real managed skills only ever ADD to the list. The case that broke
+	// was the one asserting on rendered prompt text, where the real skills crowded the
+	// seeded one past the truncation tail.
+	//
+	// So the contract is stated directly instead. It holds on every machine — with the
+	// pin removed, `getAgentDir()` returns the real agent directory on CI exactly as it
+	// does on a laptop, so this goes red there too rather than passing only where the
+	// home directory happens to be empty.
+	it("roots managed-skill discovery in this run's temp home, not the developer's", () => {
+		expect(getManagedSkillsDir().startsWith(tempHomeDir + path.sep)).toBe(true);
+	});
 
 	it("should discover skills by default and expose them on session.skills", async () => {
 		const { session } = await createAgentSession({

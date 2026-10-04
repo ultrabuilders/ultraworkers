@@ -436,15 +436,9 @@ fn remove_own_registration(
 }
 
 fn legacy_recovery_path(context: &Context) -> PathBuf {
-	let config_directory = context
-		.env
-		.get("PI_CONFIG_DIR")
-		.map(|value| value.trim())
-		.filter(|value| !value.is_empty())
-		.unwrap_or(".omp");
 	context
 		.home
-		.join(config_directory)
+		.join(super::config_dir_name(&context.env))
 		.join("oauth")
 		.join(LEGACY_RECOVERY_FILE)
 }
@@ -802,7 +796,7 @@ mod tests {
 		let mut context = Context::new(
 			home,
 			directory,
-			"omp-auth".to_owned(),
+			"ultraworkers-auth".to_owned(),
 			"0123456789abcdef0123456789abcdef".to_owned(),
 			BTreeMap::new(),
 			CancelToken::default(),
@@ -876,7 +870,7 @@ mod tests {
 		assert_eq!(fs::read(&staging_executable).unwrap(), b"precompiled helper");
 		let plist = fs::read_to_string(staging_path.join("Contents/Info.plist")).unwrap();
 		assert!(plist.contains(&snapshot.bundle_id));
-		assert!(plist.contains("<string>omp-auth</string>"));
+		assert!(plist.contains("<string>ultraworkers-auth</string>"));
 		assert!(plist.contains(&context.callback_path.to_string_lossy().into_owned()));
 		assert!(!snapshot.app_path.exists());
 		#[cfg(unix)]
@@ -1038,7 +1032,7 @@ mod tests {
 				 "bundleId": legacy_bundle,
 				 "pid": i32::MAX,
 				 "previousHandler": "com.example.browser",
-				 "scheme": "omp-auth"
+				 "scheme": "ultraworkers-auth"
 			}))
 			.unwrap(),
 		)
@@ -1059,7 +1053,7 @@ mod tests {
 		fs::create_dir_all(recovery_path.parent().unwrap()).unwrap();
 		fs::write(
             &recovery_path,
-            br#"{"appPath":"/tmp/unowned.app","bundleId":"dev.omp.oauth-callback.bad","pid":999999,"previousHandler":"","scheme":"omp-auth"}"#,
+            br#"{"appPath":"/tmp/unowned.app","bundleId":"dev.omp.oauth-callback.bad","pid":999999,"previousHandler":"","scheme":"ultraworkers-auth"}"#,
         )
         .unwrap();
 
@@ -1084,7 +1078,7 @@ mod tests {
 				 "bundleId": "dev.omp.oauth-callback.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				 "pid": std::process::id(),
 				 "previousHandler": "",
-				 "scheme": "omp-auth"
+				 "scheme": "ultraworkers-auth"
 			}))
 			.unwrap(),
 		)
@@ -1093,5 +1087,54 @@ mod tests {
 		assert!(prepare(&context).is_err());
 		assert!(recovery_path.exists());
 		assert!(legacy_app.exists());
+	}
+
+	/// Which directory the recovery record is read from and written to.
+	///
+	/// A crash mid-`prepare` leaves a record that the next run must find again,
+	/// and it is found by path. The path is `ULTRAWORKERS_CONFIG_DIR` →
+	/// `PI_CONFIG_DIR` → `.omp`, which mirrors `getConfigDirName()` in
+	/// `packages/utils/src/dirs.ts`; the two must agree or a record written by
+	/// one is looked for somewhere the other never wrote.
+	///
+	/// The precedence is invisible to the compiler — each arm is an `Option`, so
+	/// swapping two of them still builds and still typechecks, exactly as the
+	/// function's own comment says. That makes it a contract with no failure of
+	/// its own, which is what this defends.
+	#[test]
+	fn recovery_record_directory_follows_the_same_precedence_as_dirs() {
+		fn config_dir(env: &[(&str, &str)]) -> String {
+			let map: BTreeMap<String, String> = env
+				.iter()
+				.map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+				.collect();
+			let context = Context::new(
+				PathBuf::from("/home/test"),
+				PathBuf::from("/txn"),
+				"ultraworkers-auth".to_owned(),
+				"0123456789abcdef0123456789abcdef".to_owned(),
+				map,
+				CancelToken::default(),
+			);
+			legacy_recovery_path(&context)
+				.parent()
+				.and_then(Path::parent)
+				.and_then(Path::file_name)
+				.map(|name| name.to_string_lossy().into_owned())
+				.unwrap_or_default()
+		}
+
+		// Newest spelling wins; the legacy env var is honoured only when it is the only
+		// one set, so an existing install keeps reading the directory it already
+		// writes.
+		assert_eq!(config_dir(&[]), ".omp");
+		assert_eq!(config_dir(&[("PI_CONFIG_DIR", "pi-config")]), "pi-config");
+		assert_eq!(
+			config_dir(&[("PI_CONFIG_DIR", "pi-config"), ("ULTRAWORKERS_CONFIG_DIR", "uw-config")]),
+			"uw-config"
+		);
+		// An empty override is not an override: falling through to `.omp` keeps a blank
+		// env var from redirecting the record into the user's home directory itself.
+		assert_eq!(config_dir(&[("ULTRAWORKERS_CONFIG_DIR", "   ")]), ".omp");
 	}
 }

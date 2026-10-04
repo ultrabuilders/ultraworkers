@@ -56,7 +56,7 @@ import type {
 	StatusLineSettings,
 } from "./types";
 
-/** What a click on a native status segment asks omp to open. */
+/** What a click on a native status segment asks ultraworkers to open. */
 export type StatusLineNativeAction = "status.model" | "status.context" | "status.git" | "status.cost" | "status.path";
 
 /** Click action per native segment: quick model picker, `/context`, `/git`, `/usage`, the project directory. */
@@ -146,9 +146,9 @@ const GIT_STATUS_TTL_MS = 10_000;
 const JJ_REFRESH_TTL_MS = 5000;
 const JJ_COMMAND_TIMEOUT_MS = 5_000;
 const WATCHER_FAILURE_POLL_TTL_MS = 5000;
-/** Brand-color fade duration across working-state edges (rust omp's `BRAND_FADE`). */
+/** Brand-color fade duration across working-state edges (rust ultraworkers' `BRAND_FADE`). */
 const BRAND_FADE_MS = 450;
-/** Repaint cadence while the brand fade is in flight (rust omp's `FADE_FRAME`). */
+/** Repaint cadence while the brand fade is in flight (rust ultraworkers' `FADE_FRAME`). */
 const BRAND_FADE_FRAME_MS = 40;
 
 /**
@@ -1211,7 +1211,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 	/**
 	 * Foreground ANSI for the `pi` brand segment: dim gray while idle, fading
 	 * to the accent (session accent when enabled, else theme accent) while a
-	 * turn runs — a port of rust omp's status-band brand fade (450ms cubic
+	 * turn runs — a port of rust ultraworkers' status-band brand fade (450ms cubic
 	 * ease-in-out). A working-state edge retargets the tween from the color
 	 * currently on screen, so interrupting a running fade never jumps, and arms
 	 * a 40ms frame timer so the fade keeps animating after the working loader
@@ -1250,7 +1250,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 			this.#brandFade = null;
 			return settledHex;
 		}
-		// Cubic ease-in-out, matching rust omp's Easing::EaseInOut.
+		// Cubic ease-in-out, matching rust ultraworkers' Easing::EaseInOut.
 		const eased = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 		const from = hexToRgb(fade.fromHex);
 		const to = hexToRgb(fade.toHex);
@@ -2812,7 +2812,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		const leftCapWidth = separatorDef.endCaps && !transparentBg ? visibleWidth(separatorDef.endCaps.right) : 0;
 		const rightCapWidth = separatorDef.endCaps && !transparentBg ? visibleWidth(separatorDef.endCaps.left) : 0;
 		// The band layout opens flush against the terminal edge with a soft cap
-		// (rust omp's status band). Like the other caps it needs an opaque
+		// (rust ultraworkers' status band). Like the other caps it needs an opaque
 		// background to bridge, and only powerline separator styles carry caps.
 		const bandCap = layout === "band" && separatorDef.endCaps && !transparentBg ? theme.sep.powerlineCapLeft : "";
 		const bandCapWidth = visibleWidth(bandCap);
@@ -3371,7 +3371,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 				const view = describeSegment(id, ctx);
 				if (!view) return;
 				const props: TspProps<"seg"> = {
-					role: "omp.composer.fact",
+					role: "ultraworkers.composer.fact",
 					priority: statusSegmentPriority(side, index, ids.length),
 				};
 				facts.push(describeSeg(id, props, view, dim));
@@ -3384,7 +3384,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 			this.#sortedHookStatuses.forEach((status, index) => {
 				const text = sanitizeStatusText(status);
 				if (!text) return;
-				const props: TspProps<"seg"> = { role: "omp.composer.fact", priority: 0 };
+				const props: TspProps<"seg"> = { role: "ultraworkers.composer.fact", priority: 0 };
 				facts.push(describeSeg(`hook-${index}`, props, { spans: [span(text)] }, dim));
 			});
 		}
@@ -3402,7 +3402,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		const context = node(
 			"meter",
 			{
-				role: "omp.composer.context",
+				role: "ultraworkers.composer.context",
 				value: pct === null ? null : Math.min(1, pct / 100),
 				style: "bar",
 				thresholds: getContextMeterThresholds(window),
@@ -3433,7 +3433,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		const usage = node(
 			"text",
 			{
-				role: "omp.composer.usage",
+				role: "ultraworkers.composer.usage",
 				tone: getContextUsageTone(getContextUsageLevel(pct ?? 0, window)),
 				text: cost ? `${share} · ${cost}` : share,
 				wrap: "none",
@@ -3452,7 +3452,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		return {
 			context,
 			model: describeSegment("model", modelCtx) ?? { spans: [] },
-			extras: node("status", { role: "omp.composer.extras", transparent: true, grow: 1 }, facts, "extras"),
+			extras: node("status", { role: "ultraworkers.composer.extras", transparent: true, grow: 1 }, facts, "extras"),
 			usage,
 		};
 	}
@@ -3494,7 +3494,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		const push = (key: string, side: "left" | "right", priority: number, view: SegmentView): void => {
 			const pinned = PINNED_NATIVE_SEGMENTS[key] === true;
 			const props: TspProps<"seg"> = {
-				role: `omp.status.${key}`,
+				role: `ultraworkers.status.${key}`,
 				side,
 				priority: pinned ? PINNED_NATIVE_PRIORITY + priority : priority,
 			};
@@ -3532,7 +3532,7 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 		});
 		const bar = node(
 			"status",
-			{ role: "omp.status", transparent: effectiveSettings.transparent === true },
+			{ role: "ultraworkers.status", transparent: effectiveSettings.transparent === true },
 			segs,
 			"bar",
 		);
@@ -3544,13 +3544,13 @@ export class StatusLineComponent<TSession extends StatusLineSession = StatusLine
 				...this.#sortedHookStatuses.map((status, index) =>
 					node(
 						"text",
-						{ text: sanitizeStatusText(status), wrap: "none", role: "omp.status.hook" },
+						{ text: sanitizeStatusText(status), wrap: "none", role: "ultraworkers.status.hook" },
 						undefined,
 						`hook-${index}`,
 					),
 				),
 			],
-			{ role: "omp.status.panel" },
+			{ role: "ultraworkers.status.panel" },
 		);
 	}
 

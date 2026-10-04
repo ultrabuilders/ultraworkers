@@ -35,7 +35,7 @@ describe("AgentSession aside delivery", () => {
 	let session: AgentSession | undefined;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-aside-delivery-");
+		tempDir = TempDir.createSync("@ultraworkers-aside-delivery-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("openai", "openai-test-key");
 	});

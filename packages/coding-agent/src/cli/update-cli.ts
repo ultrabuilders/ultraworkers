@@ -1,15 +1,15 @@
 /**
  * Update CLI command handler.
  *
- * Handles `omp update` to check for and install updates.
- * Uses the installer that owns the active omp executable when it can be detected.
+ * Handles `ultraworkers update` to check for and install updates.
+ * Uses the installer that owns the active ultraworkers executable when it can be detected.
  */
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { $env, $which, APP_NAME, compareVersions, isEnoent, VERSION } from "@oh-my-pi/pi-utils";
+import { $env, $which, APP_NAME, compareVersions, isEnoent, VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { withFileLock } from "@oh-my-pi/pi-utils/file-lock";
 import { $ } from "bun";
@@ -457,14 +457,29 @@ async function getNpmGlobalBinDir(): Promise<string | undefined> {
 	}
 }
 
-async function getHomebrewFormulaPrefix(): Promise<string | undefined> {
+/**
+ * The Homebrew formula this machine actually has installed.
+ *
+ * The name is carried alongside the prefix because the two are not the same
+ * question: detection probes both spellings, and the formula that answered is
+ * the one `brew upgrade` has to be pointed at. Returning the prefix alone made
+ * the detected name unreachable, so the upgrade silently fell back to the
+ * {@link HOMEBREW_FORMULA} constant — which is wrong for anyone whose install
+ * resolved under the other spelling.
+ */
+interface HomebrewFormulaMatch {
+	prefix: string;
+	formula: string;
+}
+
+async function getHomebrewFormulaPrefix(): Promise<HomebrewFormulaMatch | undefined> {
 	if (!$which("brew")) return undefined;
-	for (const formula of [HOMEBREW_FORMULA, APP_NAME]) {
+	for (const formula of [HOMEBREW_FORMULA, WIRE_NAME]) {
 		try {
 			const result = await $`brew --prefix ${formula}`.quiet().nothrow();
 			if (result.exitCode !== 0) continue;
 			const output = result.text().trim();
-			if (output.length > 0) return output;
+			if (output.length > 0) return { prefix: output, formula };
 		} catch {}
 	}
 	return undefined;
@@ -545,7 +560,7 @@ function isPathInDirectory(filePath: string, directoryPath: string): boolean {
 	if (isPathInDirectoryLexical(filePath, directoryPath)) return true;
 	// Layer realpath resolution on top of the lexical guard. On Windows, ~/.bun
 	// is a junction when Bun is installed via Scoop, so `bun pm bin -g` and the
-	// PATH-resolved omp path can refer to the same directory through different
+	// PATH-resolved ultraworkers path can refer to the same directory through different
 	// strings. path.resolve does not traverse junctions/symlinks; realpath does.
 	// Resolve both the file and its parent directory: the file catches manager
 	// links like Homebrew's `bin/omp -> Cellar/.../bin/omp`; the parent fallback
@@ -585,13 +600,20 @@ type UpdateMethod = "brew" | "mise" | "nix" | "bun" | "npm" | "binary";
 
 interface UpdateMethodResolutionOptions {
 	homebrewPrefix?: string;
+	/**
+	 * The formula {@link homebrewPrefix} came from. Defaults to
+	 * {@link HOMEBREW_FORMULA}, which is what a caller that never probed
+	 * means — but a caller that *did* probe must pass what it found, or the
+	 * upgrade targets a formula the machine may not have.
+	 */
+	homebrewFormula?: string;
 	miseBinDirs?: readonly string[];
 	miseDataDir?: string;
 	npmBinDir?: string;
 	/** Bun's configured global package directory, independent of its bin directory. */
 	bunGlobalDir?: string;
 	/**
-	 * Whether the resolved omp path is a plain file (the standalone binary)
+	 * Whether the resolved ultraworkers path is a plain file (the standalone binary)
 	 * rather than a package-manager symlink. Stops a binary install from being
 	 * misrouted to npm/bun when the global bin dir overlaps the installer's
 	 * target directory.
@@ -620,7 +642,7 @@ interface UpdateMethodResolutionOptions {
 }
 
 type UpdateTarget =
-	| { method: "brew" }
+	| { method: "brew"; formula: string }
 	| { method: "mise" }
 	| { method: "nix" }
 	| { method: "bun"; path?: string }
@@ -656,8 +678,8 @@ function resolveUpdateMethod(
 	// a binary install through npm/bun, whose reinstall then collides with the
 	// existing file (npm EEXIST). Fall through to binary replacement instead.
 	// On Windows every launcher is a regular file, so ownership keys off the
-	// manager's own artifacts instead: npm's script shims (`omp`, `omp.cmd`,
-	// `omp.ps1`) and bun's `omp.bunx` sidecar. A bare `.exe` with neither is the
+	// manager's own artifacts instead: npm's script shims (`ultraworkers`, `ultraworkers.cmd`,
+	// `ultraworkers.ps1`) and bun's `ultraworkers.bunx` sidecar. A bare `.exe` with neither is the
 	// standalone binary a binary-only release installed over the launcher —
 	// routing that back through bun reinstalls a package which no longer owns
 	// the launcher, and bun silently tolerates failing to overwrite the running
@@ -758,6 +780,7 @@ export function resolveUpdateTargetFromPath(
 		};
 	}
 	if (method === "bun" || method === "npm") return { method, path: ompPath };
+	if (method === "brew") return { method, formula: options.homebrewFormula ?? HOMEBREW_FORMULA };
 	return { method };
 }
 /**
@@ -772,7 +795,9 @@ export function resolveUpdateTargetFromPath(
  * binaries and stay valid regardless of how the release is distributed.
  */
 async function resolveUpdateTarget(options: { allowPackageManagers: boolean }): Promise<UpdateTarget> {
-	const homebrewPrefix = await getHomebrewFormulaPrefix();
+	const homebrew = await getHomebrewFormulaPrefix();
+	const homebrewPrefix = homebrew?.prefix;
+	const homebrewFormula = homebrew?.formula;
 	const miseAvailable = $which("mise") !== undefined;
 	const miseBinDirs = miseAvailable ? await getMiseBinDirs() : [];
 	const miseDataDir = miseAvailable ? getMiseDataDir() : undefined;
@@ -792,6 +817,7 @@ async function resolveUpdateTarget(options: { allowPackageManagers: boolean }): 
 			allowPackageManagers: options.allowPackageManagers,
 			bunGlobalDir: probeManagers ? process.env.BUN_INSTALL_GLOBAL_DIR : undefined,
 			homebrewPrefix,
+			homebrewFormula,
 			miseBinDirs,
 			miseDataDir,
 			npmBinDir,
@@ -831,7 +857,7 @@ async function fetchLatestManifest(
 		}
 	};
 	const noCanary = () =>
-		new Error(`No canary release has been published for ${pkg} yet. Try \`${APP_NAME} update --stable\`.`);
+		new Error(`No canary release has been published for ${pkg} yet. Try \`${WIRE_NAME} update --stable\`.`);
 
 	let response = await get(npmRegistryPackageUrl(registry, pkg, tag));
 	let data: unknown;
@@ -1033,7 +1059,7 @@ async function removeCacheEntries(paths: string[]): Promise<number> {
  *
  * Bun stores package cache entries as both a package marker directory
  * (`react/19.2.6@@@1`) and a materialized package directory
- * (`react@19.2.6@@@1`). Global `omp` updates can leave one full copy per
+ * (`react@19.2.6@@@1`). Global `ultraworkers` updates can leave one full copy per
  * release. The marker and materialized entries are removed together so the
  * cache stays internally consistent.
  */
@@ -1171,9 +1197,16 @@ export function isMuslLinuxForTest(options: Required<MuslDetectionOptions>): boo
 }
 
 /**
- * Get the appropriate binary name for this platform.
+ * The release asset this platform downloads.
+ *
+ * Built from `WIRE_NAME`, not the display name: CI publishes `ultraworkers-<platform>-<arch>`
+ * and the updater resolves its download by exact asset name, so a display name here
+ * matches nothing and every binary update throws.
+ *
+ * Exported because it is the one value that must agree with what CI publishes, and
+ * nothing in-process could observe that agreement until it was checked directly.
  */
-function getBinaryName(): string {
+export function getBinaryName(): string {
 	const platform = process.platform;
 	const arch = process.arch;
 
@@ -1205,29 +1238,55 @@ function getBinaryName(): string {
 	}
 
 	if (os === "windows") {
-		return `${APP_NAME}-${os}-${archName}.exe`;
+		return `${WIRE_NAME}-${os}-${archName}.exe`;
 	}
-	return `${APP_NAME}-${os}-${archName}`;
+	return `${WIRE_NAME}-${os}-${archName}`;
 }
 
 /**
- * Resolve the path that `omp` maps to in the user's PATH.
+ * Resolve the path that `ultraworkers` maps to in the user's PATH.
  */
 function resolveOmpPath(): string | undefined {
-	return $which(APP_NAME) ?? undefined;
+	return $which(WIRE_NAME) ?? undefined;
 }
 
 /**
- * Parse the version a launcher reports from `omp --version` output
- * (`omp/X.Y.Z`, or a prerelease such as `omp/X.Y.Z-canary.1`).
+ * Parse the version a launcher reports from `ultraworkers --version` output
+ * (`ultraworkers/X.Y.Z`, or a prerelease such as `ultraworkers/X.Y.Z-canary.1`).
  *
  * The prerelease suffix is preserved so a correctly installed canary build
  * verifies as up to date instead of appearing to report a stale `X.Y.Z` and
  * being mistaken for an unreplaced launcher.
  */
+/**
+ * The wire identity this project shipped under before the rename.
+ *
+ * Not derived from {@link WIRE_NAME} and not a rename candidate: it names
+ * binaries that are already installed on user machines, which is the only
+ * reason anything still has to recognise it.
+ */
+export const LEGACY_WIRE_NAME = "omp";
+
 export function parseReportedVersion(output: string): string | undefined {
-	if (!output.startsWith(`${APP_NAME}/`)) return undefined;
-	return output.slice(APP_NAME.length + 1).match(/^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)?.[1];
+	// Both identities are in the wild at once. Measured on this machine:
+	// `~/.bun/bin/omp --version` prints `ultraworkers/18.2.4` (a pre-rebrand build), while
+	// the current source prints `ultraworkers/18.4.3`. Gating on one alone makes
+	// the updater blind to the other, and `validateExistingUpdateTarget` reads
+	// that blindness as "this is not an ultraworkers binary" and REFUSES to replace it —
+	// so a user on any pre-rebrand build could not self-update at all.
+	//
+	// `LEGACY_WIRE_NAME` is the historical value and cannot be derived from
+	// anything: it names binaries that were already installed, and nothing in
+	// this tree produces one any more. It was previously covered by accident —
+	// WIRE_NAME and APP_NAME used to be the two distinct strings "ultraworkers" and
+	// "ultraworkers" — and the rename made them equal, so the alternation
+	// collapsed to one entry and every pre-rebrand binary went unrecognized.
+	// That is why it is written out here rather than reached through a constant.
+	//
+	// None of the three is a prefix of another, so the order cannot shadow.
+	const identity = [WIRE_NAME, APP_NAME, LEGACY_WIRE_NAME].find(name => output.startsWith(`${name}/`));
+	if (!identity) return undefined;
+	return output.slice(identity.length + 1).match(/^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)?.[1];
 }
 
 async function reportedVersionAtPath(binaryPath: string): Promise<string | undefined> {
@@ -1257,15 +1316,15 @@ async function validateExistingUpdateTarget(targetPath: string): Promise<void> {
 	if (!hasShebang && (await reportedVersionAtPath(targetPath)) !== undefined) return;
 
 	const reason = hasShebang
-		? "is a shebang script, not an OMP binary"
-		: "does not report an OMP version when run directly";
+		? "is a shebang script, not an ultraworkers binary"
+		: "does not report an ultraworkers version when run directly";
 	throw new Error(
-		`Refusing to replace ${targetPath}: the resolved foreign symlink target ${reason}. Point PATH directly at the OMP binary you want to update, or reinstall with: ${installerHint()}`,
+		`Refusing to replace ${targetPath}: the resolved foreign symlink target ${reason}. Point PATH directly at the ultraworkers binary you want to update, or reinstall with: ${installerHint()}`,
 	);
 }
 
 /**
- * Run the PATH-resolved omp binary and check if it reports the expected version.
+ * Run the PATH-resolved ultraworkers binary and check if it reports the expected version.
  */
 async function verifyInstalledVersion(expectedVersion: string): Promise<InstalledVersionVerification> {
 	const ompPath = resolveOmpPath();
@@ -1465,7 +1524,7 @@ function buildVersionedPackageInstallArgs(
 }
 
 /**
- * Build the bun argv used to globally install a specific omp version.
+ * Build the bun argv used to globally install a specific ultraworkers version.
  *
  * The version is selected by querying the resolved registry in
  * {@link getLatestRelease} ({@link ReleaseInfo.registry}), so the install
@@ -1479,7 +1538,7 @@ function buildVersionedPackageInstallArgs(
  * - `--no-cache` tells bun to ignore its on-disk manifest snapshot so it
  *   re-fetches metadata from that registry on every invocation.
  *
- * Together these two flags make `omp update` produce exactly the registry
+ * Together these two flags make `ultraworkers update` produce exactly the registry
  * lookup the version check just performed. See #1686.
  *
  * Also pins {@link NATIVES_PACKAGE} and the platform-specific
@@ -1516,10 +1575,10 @@ export function buildBunInstallArgs(
  * Pins `--registry` to the checked registry for the same reason as
  * {@link buildBunInstallArgs}.
  *
- * `force` is set only for rename migrations: npm refuses to write the `omp`
+ * `force` is set only for rename migrations: npm refuses to write the `ultraworkers`
  * bin while the old package still owns it (`EEXIST`), and the migration
  * installs the new package BEFORE removing the old one so a failed install
- * never leaves the user without a working `omp`.
+ * never leaves the user without a working `ultraworkers`.
  */
 export function buildNpmInstallArgs(
 	expectedVersion: string,
@@ -1536,8 +1595,17 @@ export function buildNpmInstallArgs(
 	];
 }
 
-export function buildHomebrewUpdateArgs(force: boolean): string[] {
-	return [force ? "reinstall" : "upgrade", HOMEBREW_FORMULA];
+/**
+ * Build the attended Homebrew upgrade command.
+ *
+ * `formula` is the spelling the install was actually detected under. It defaults
+ * to {@link HOMEBREW_FORMULA} so a caller that never probed still produces the
+ * historical command, but a caller that probed must pass what it found: the
+ * detector accepts two spellings, and pointing `brew upgrade` at the wrong one
+ * upgrades a formula the machine does not have.
+ */
+export function buildHomebrewUpdateArgs(force: boolean, formula: string = HOMEBREW_FORMULA): string[] {
+	return [force ? "reinstall" : "upgrade", formula];
 }
 
 /**
@@ -1587,11 +1655,11 @@ export function buildRenameCleanupPackages(
 
 /** Injectable shell steps for {@link migrateRenamedInstall}; commands return process exit codes. */
 export interface RenameMigrationSteps {
-	/** Globally install the new package names. MUST be idempotent: re-running re-links the `omp` bin. */
+	/** Globally install the new package names. MUST be idempotent: re-running re-links the `ultraworkers` bin. */
 	install(): Promise<number>;
 	/** Remove the old-name globals. */
 	removeOld(): Promise<number>;
-	/** Check the PATH-resolved `omp` against the expected version. */
+	/** Check the PATH-resolved `ultraworkers` against the expected version. */
 	verify(): Promise<InstalledVersionVerification>;
 }
 
@@ -1632,13 +1700,13 @@ function packageManagerMigrationSteps(manager: "bun" | "npm", release: ReleaseIn
 
 /**
  * Migrate a package-manager install across an `omp.rename` hop without a
- * window where no working `omp` exists:
+ * window where no working `ultraworkers` exists:
  *
  * 1. Install the new package FIRST. Nothing has been removed yet, so a
  *    failure here leaves the old install fully functional.
  * 2. Remove the old-name globals. Failure is non-fatal: a stale package
  *    wastes disk, but the bin already points at the new install.
- * 3. Verify the PATH-resolved `omp`. If the removal deleted the shared bin
+ * 3. Verify the PATH-resolved `ultraworkers`. If the removal deleted the shared bin
  *    link (manager-dependent), re-run the idempotent install to restore it
  *    and verify again; only a repeated failure aborts, with a recovery hint.
  */
@@ -1822,7 +1890,11 @@ export async function updateViaManager(
 	);
 }
 
-async function updateViaHomebrew(expectedVersion: string, force: boolean): Promise<void> {
+async function updateViaHomebrew(
+	expectedVersion: string,
+	force: boolean,
+	formula: string = HOMEBREW_FORMULA,
+): Promise<void> {
 	console.log(chalk.dim("Updating Homebrew formulae..."));
 	const update = await $`brew update`.nothrow();
 	if (update.exitCode !== 0) {
@@ -1830,7 +1902,7 @@ async function updateViaHomebrew(expectedVersion: string, force: boolean): Promi
 	}
 
 	console.log(chalk.dim("Updating via Homebrew..."));
-	const args = buildHomebrewUpdateArgs(force);
+	const args = buildHomebrewUpdateArgs(force, formula);
 	const result = await $`brew ${args}`.nothrow();
 	if (result.exitCode !== 0) {
 		throw new Error(`brew ${args[0]} failed with exit code ${result.exitCode}`);
@@ -1877,14 +1949,14 @@ export async function updateViaBinaryAt(
 		fetchImpl?: Fetch;
 		githubToken?: string;
 		allowPrerelease?: boolean;
-		/** Refuse replacement unless the existing path is a non-script OMP executable. */
+		/** Refuse replacement unless the existing path is a non-script ultraworkers executable. */
 		validateExistingTarget?: boolean;
 		verifyInstalledVersion?: typeof verifyInstalledVersion;
 	} = {},
 ): Promise<void> {
 	if (options.validateExistingTarget) await validateExistingUpdateTarget(targetPath);
 	const binaryName = options.binaryName ?? getBinaryName();
-	// Unique per attempt so two overlapping `omp update` runs never share a temp
+	// Unique per attempt so two overlapping `ultraworkers update` runs never share a temp
 	// or backup path. A fixed temp name (`<binary>.new`) let the second run's
 	// pre-download unlink delete the first run's still-downloading temp file; the
 	// first kept writing to its open fd (size + digest still passed), then chmod
@@ -1914,7 +1986,7 @@ export async function updateViaBinaryAt(
 	console.log(chalk.dim(`Verified ${asset.digest}`));
 
 	// Serialize the target swap and stale-artifact sweep per target so two
-	// overlapping `omp update` runs never replace the same binary concurrently
+	// overlapping `ultraworkers update` runs never replace the same binary concurrently
 	// or reclaim each other's live backup/temp files. The download above writes
 	// to a unique temp path and is safe to overlap; only the swap is shared.
 	const verification = await withFileLock(targetPath, async () => {
@@ -1947,24 +2019,24 @@ export async function updateViaBinaryAt(
 /**
  * In-place forwarder bodies, by shim extension, for launchers that cannot be
  * renamed aside during a script-shim takeover; each execs the sibling
- * `omp.exe`. Rewriting matters for the shims that outrank `.exe` at command
+ * `ultraworkers.exe`. Rewriting matters for the shims that outrank `.exe` at command
  * resolution: PowerShell prefers `.ps1` and Git Bash resolves the
  * extensionless sh shim first, so leaving the old body behind would keep
  * launching the replaced install.
  */
 const SHIM_FORWARDERS: Record<string, string> = {
-	"": `#!/bin/sh\nexec "$(dirname "$0")/${APP_NAME}.exe" "$@"\n`,
-	".cmd": `@"%~dp0${APP_NAME}.exe" %*\r\n`,
-	".bat": `@"%~dp0${APP_NAME}.exe" %*\r\n`,
-	".ps1": `& "$PSScriptRoot\\${APP_NAME}.exe" @args\nexit $LASTEXITCODE\n`,
+	"": `#!/bin/sh\nexec "$(dirname "$0")/${WIRE_NAME}.exe" "$@"\n`,
+	".cmd": `@"%~dp0${WIRE_NAME}.exe" %*\r\n`,
+	".bat": `@"%~dp0${WIRE_NAME}.exe" %*\r\n`,
+	".ps1": `& "$PSScriptRoot\\${WIRE_NAME}.exe" @args\nexit $LASTEXITCODE\n`,
 };
 
 /**
  * Take over a Windows script-launcher install for a binary-only release.
  *
  * npm-managed Windows installs are launched through script shims
- * (`omp`/`omp.cmd`/`omp.ps1`) that cannot be overwritten with a native
- * executable. The release binary is installed as `omp.exe` beside them and
+ * (`ultraworkers`/`ultraworkers.cmd`/`ultraworkers.ps1`) that cannot be overwritten with a native
+ * executable. The release binary is installed as `ultraworkers.exe` beside them and
  * the shims are then renamed aside: cmd.exe would already prefer `.exe` via
  * PATHEXT, but PowerShell resolves `.ps1` first, so the takeover only sticks
  * once the shims are out of the way. A working launcher exists at every
@@ -1986,7 +2058,7 @@ export async function updateViaShimTakeover(
 ): Promise<void> {
 	const binaryName = options.binaryName ?? getBinaryName();
 	const launcherDir = path.dirname(shimPath);
-	const exePath = path.join(launcherDir, `${APP_NAME}.exe`);
+	const exePath = path.join(launcherDir, `${WIRE_NAME}.exe`);
 	const attempt = `${Date.now()}.${process.pid}.${updateAttemptSeq++}`;
 	const tempPath = `${exePath}.${attempt}.new`;
 	const asset = await getReleaseBinaryAsset(
@@ -2011,7 +2083,7 @@ export async function updateViaShimTakeover(
 	// never retire the same shims or reclaim a live run's backup before its
 	// verification can roll it back.
 	await withFileLock(exePath, async () => {
-		console.log(chalk.dim(`Installing ${APP_NAME}.exe beside the script launcher...`));
+		console.log(chalk.dim(`Installing ${WIRE_NAME}.exe beside the script launcher...`));
 		await fs.promises.rename(tempPath, exePath);
 		// Retire the shims so PATH resolution lands on the new exe. Renamed, not
 		// deleted: restorable on verification failure, and Windows permits
@@ -2021,20 +2093,33 @@ export async function updateViaShimTakeover(
 		// so one can succeed where the other fails.
 		const backupSuffix = `${attempt}.bak`;
 		const retired: Array<{ launcher: string; backup: string }> = [];
+		// Both identities, because both can be sitting in `launcherDir`. A user
+		// upgrading from a pre-rebrand install has `ultraworkers.cmd` / `ultraworkers.ps1` there, and
+		// PowerShell resolves `.ps1` ahead of `.exe` — so retiring only the current
+		// name's shims leaves the freshly installed exe shadowed, which is the one
+		// outcome this function exists to prevent, and it fails silently and for
+		// precisely the users who most needed the update.
+		//
+		// A `Set` because the two names are distinct today but must not be walked
+		// twice if they ever converge: the rollback below restores `retired` in
+		// order, and a duplicated entry would restore onto itself.
+		const launcherNames = [...new Set([WIRE_NAME, LEGACY_WIRE_NAME])];
 		for (const ext of ["", ".cmd", ".ps1", ".bat"]) {
-			const launcher = path.join(launcherDir, `${APP_NAME}${ext}`);
-			const backup = `${launcher}.${backupSuffix}`;
-			try {
-				await fs.promises.rename(launcher, backup);
-				retired.push({ launcher, backup });
-			} catch (err) {
-				if (isEnoent(err)) continue;
+			for (const name of launcherNames) {
+				const launcher = path.join(launcherDir, `${name}${ext}`);
+				const backup = `${launcher}.${backupSuffix}`;
 				try {
-					const original = await Bun.file(launcher).text();
-					await Bun.write(launcher, SHIM_FORWARDERS[ext]);
-					forwarded.push({ launcher, original });
-				} catch {
-					stuck.push(launcher);
+					await fs.promises.rename(launcher, backup);
+					retired.push({ launcher, backup });
+				} catch (err) {
+					if (isEnoent(err)) continue;
+					try {
+						const original = await Bun.file(launcher).text();
+						await Bun.write(launcher, SHIM_FORWARDERS[ext]);
+						forwarded.push({ launcher, original });
+					} catch {
+						stuck.push(launcher);
+					}
 				}
 			}
 		}
@@ -2065,7 +2150,7 @@ export async function updateViaShimTakeover(
 		}
 		// Reclaim exe backups and retired-shim leftovers from earlier attempts.
 		for (const ext of [".exe", "", ".cmd", ".ps1", ".bat"]) {
-			await sweepStaleUpdateArtifacts(path.join(launcherDir, `${APP_NAME}${ext}`));
+			await sweepStaleUpdateArtifacts(path.join(launcherDir, `${WIRE_NAME}${ext}`));
 		}
 	});
 	for (const { launcher } of forwarded) {
@@ -2164,7 +2249,7 @@ export async function runUpdateCommand(opts: {
 		return;
 	}
 
-	// Choose update method based on the prioritized omp binary in PATH. For
+	// Choose update method based on the prioritized ultraworkers binary in PATH. For
 	// binary-only releases the package managers are never consulted: a bun/npm
 	// symlink resolves to method "binary" and is replaced in place, keeping the
 	// same PATH entry live.
@@ -2178,10 +2263,10 @@ export async function runUpdateCommand(opts: {
 		}
 		if (target.method === "nix") {
 			console.log(chalk.yellow("This installation is managed by Nix and cannot update itself."));
-			console.log(chalk.dim("Update the flake input or profile that provides omp, then rebuild."));
+			console.log(chalk.dim(`Update the flake input or profile that provides ${APP_NAME}, then rebuild.`));
 			return;
 		} else if (target.method === "brew") {
-			await updateViaHomebrew(release.version, opts.force);
+			await updateViaHomebrew(release.version, opts.force, target.formula);
 		} else if (target.method === "mise") {
 			await updateViaMise(release.version, opts.force);
 		} else if (target.method === "bun" || target.method === "npm") {

@@ -1,7 +1,7 @@
 /**
  * Read CLI command handler.
  *
- * Handles `omp read` — invokes the `read` agent tool against a path/URL and
+ * Handles `ultraworkers read` — invokes the `read` agent tool against a path/URL and
  * prints the resulting content blocks exactly as the model would receive them
  * (including truncation/limit notices appended by the meta-notice wrapper).
  */
@@ -32,7 +32,7 @@ export interface ReadCommandArgs {
 }
 
 /**
- * Session state `omp read <path>` must load before resolving: the caller's
+ * Session state `ultraworkers read <path>` must load before resolving: the caller's
  * skills for skill:// and MCP servers for MCP resources — `mcp://` or any
  * scheme with no registered handler that the router's MCP fallback accepts.
  * Filesystem paths, web URLs, and other registered schemes need neither.
@@ -89,7 +89,7 @@ export async function runReadCommand(cmd: ReadCommandArgs): Promise<void> {
 			const result = await discoverAndLoadMCPTools(cwd, {
 				enableProjectConfig: cfgMcpEnableProjectConfig.get(settings),
 				filterExa: true,
-				// `omp read` has no Eval prelude, so browser MCP remains available.
+				// `ultraworkers read` has no Eval prelude, so browser MCP remains available.
 				filterBrowser: false,
 				cacheStorage: settings.getStorage(),
 				authStorage,
@@ -114,7 +114,7 @@ export async function runReadCommand(cmd: ReadCommandArgs): Promise<void> {
 		}
 
 		const tool = wrapToolWithMetaNotice(new ReadTool(session));
-		const result = await tool.execute("omp-read", { path: cmd.path });
+		const result = await tool.execute("uw-read", { path: cmd.path });
 
 		for (const block of result.content) {
 			if (block.type === "text") {

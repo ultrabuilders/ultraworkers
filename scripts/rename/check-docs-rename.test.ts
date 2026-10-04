@@ -1,0 +1,302 @@
+import { describe, expect, it } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import {
+	formatRuleAReport,
+	isExcluded,
+	loadAllowlist,
+	readMarkdown,
+	scanRuleA,
+	staleAllowlistEntries,
+	ungatedViolations,
+} from "./check-docs-rename";
+
+/**
+ * The gate's contract, in the terms a user of the gate experiences:
+ * a file that has been renamed is not reported, a file that has NOT been
+ * renamed is a failure, and a file that is allowed but has grown since it was
+ * allowed is also a failure.
+ *
+ * Every case here was run against the real script before being written down.
+ * The budget row is not hypothetical: with a bare path list, injecting one more
+ * legacy token into an already-allowed file left the gate at exit 0.
+ */
+
+async function fixture(files: Record<string, string>): Promise<string> {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "docs-rename-"));
+	for (const [rel, body] of Object.entries(files)) {
+		const target = path.join(dir, rel);
+		await fs.mkdir(path.dirname(target), { recursive: true });
+		await fs.writeFile(target, body);
+	}
+	return dir;
+}
+
+describe("rule A path exclusion", () => {
+	// The exclusion list is where a rename sweep does its damage if it is wrong:
+	// `src/**.md` is prompt corpus compiled into system prompts at runtime, so
+	// renaming a token there changes what the model is told.
+	it("keeps runtime prompt corpus and plan history out of the documentation surface", () => {
+		expect(isExcluded("packages/coding-agent/src/prompts/internal-urls/omp.md")).toBe(true);
+		expect(isExcluded("packages/coding-agent/src/prompts/anything.md")).toBe(true);
+		expect(isExcluded("packages/coding-agent/test/fixtures/case.md")).toBe(true);
+		expect(isExcluded(".omp/skills/semantic-compression/SKILL.md")).toBe(true);
+		expect(isExcluded(".lavish/logs/one.md")).toBe(true);
+		expect(isExcluded("packages/coding-agent/CHANGELOG.md")).toBe(true);
+		expect(isExcluded("MILESTONE_1_EXECUTION_PLAN.md")).toBe(true);
+	});
+
+	it("does not exclude real documentation", () => {
+		// The failure that matters: an exclusion broad enough to swallow docs is
+		// a gate that can never go red on the thing it exists to catch.
+		expect(isExcluded("docs/settings.md")).toBe(false);
+		expect(isExcluded("README.md")).toBe(false);
+		expect(isExcluded("docs/skills/authoring-extensions.md")).toBe(false);
+	});
+});
+
+describe("rule A scanning", () => {
+	it("reports a documentation file carrying the legacy token", async () => {
+		const dir = await fixture({ "docs/a.md": "run omp please\n" });
+		const violations = await scanRuleA(dir);
+		expect(violations).toEqual([{ path: "docs/a.md", occurrences: 1 }]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	// The token must be word-bounded, or the gate fires on `omplete`,
+	// `compile.ts` prose and every other word containing the letters.
+	it("does not match the token inside a longer word", async () => {
+		const dir = await fixture({ "docs/a.md": "omplete and compiler\n" });
+		expect(await scanRuleA(dir)).toEqual([]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	it("ignores an excluded path even when it carries the token", async () => {
+		const dir = await fixture({
+			"packages/x/src/prompts/p.md": "omp\n",
+			".omp/skills/s/SKILL.md": "omp\n",
+		});
+		expect(await scanRuleA(dir)).toEqual([]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	// MT4 SURVIVED the assertion above: widening `EXCLUDED_PACKAGE_PATHS` from
+	// `src|test|bench` to all of `packages/` left the suite green, because every
+	// other case checked `isExcluded` in isolation and never asked the SCAN to
+	// honour it. This row is the one that dies — a real scan over a real
+	// package-shaped tree, not a predicate call.
+	it("keeps prompt corpus out of a real scan even when the exclusion is widened", async () => {
+		const dir = await fixture({
+			// A package README is documentation and MUST still be reported.
+			"packages/x/README.md": "run omp\n",
+			// Prompt corpus under src/ is runtime, and must not be.
+			"packages/x/src/prompts/p.md": "omp\n",
+			"packages/x/src/prompts/internal-urls/omp.md": "omp\n",
+			"packages/x/test/fixtures/case.md": "omp\n",
+		});
+		const violations = await scanRuleA(dir);
+		expect(violations).toEqual([{ path: "packages/x/README.md", occurrences: 1 }]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	// The scan walks the FILESYSTEM (`Bun.Glob` with `dot: true`), not the index,
+	// and a filesystem walk does not consult `.gitignore`. Measured on this tree
+	// before the exclusion existed: the walk covered 1516 markdown files where the
+	// repository has 972, and the entire 544-file difference was installed
+	// dependencies. 278 of those already contained the letter sequence inside
+	// longer words (`pr-omp-t`), and none were word-bounded — so the gate was green
+	// by a one-dependency margin, and one dependency whose README says "omp" as a
+	// standalone word would have moved the number the whole M5 sweep is measured
+	// against, naming a file nobody can legitimately allow-list.
+	//
+	// A real scan over a real package-shaped tree, not an `isExcluded` call: the
+	// row above records a widening that survived because every other case tested
+	// the predicate in isolation and never asked the scan to honour it.
+	it("does not report an installed dependency's markdown, and still reports the repo's own", async () => {
+		const dir = await fixture({
+			"docs/a.md": "run omp\n",
+			// Word-bounded on purpose: this is the string that would have moved the
+			// gate. It has to be excluded for the right reason, not because it
+			// happens to be spelled inside a longer word.
+			"node_modules/some-dep/README.md": "the omp binary\n",
+			"node_modules/@scope/pkg/notes.md": "omp\n",
+		});
+		expect(await scanRuleA(dir)).toEqual([{ path: "docs/a.md", occurrences: 1 }]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+});
+
+describe("rule A allow-list", () => {
+	it("fails a file that is not on the list", async () => {
+		const violations = [{ path: "docs/a.md", occurrences: 1 }];
+		expect(ungatedViolations(violations, [])).toHaveLength(1);
+	});
+
+	it("passes a file the list accepts", async () => {
+		const violations = [{ path: "docs/a.md", occurrences: 4 }];
+		expect(ungatedViolations(violations, [{ path: "docs/a.md" }])).toEqual([]);
+	});
+
+	// Measured, not assumed: with a bare path list, adding one more token to an
+	// allowed file left the gate green. Without a count, an allow-list silences a
+	// file forever and the sweep stops converging while still passing.
+	it("fails an allowed file that has grown past the count it was accepted at", () => {
+		const grown = [{ path: "docs/a.md", occurrences: 5 }];
+		expect(ungatedViolations(grown, [{ path: "docs/a.md", budget: 4 }])).toHaveLength(1);
+	});
+
+	// The sweep working is the point: a file that dropped tokens stays allowed.
+	it("does not fail an allowed file that shrank", () => {
+		const shrank = [{ path: "docs/a.md", occurrences: 2 }];
+		expect(ungatedViolations(shrank, [{ path: "docs/a.md", budget: 4 }])).toEqual([]);
+	});
+
+	// Naming the finished file is how the allow-list shrinks toward the bead's
+	// budget instead of growing forever.
+	it("names an allow-list line that no longer matches anything", () => {
+		const violations = [{ path: "docs/b.md", occurrences: 1 }];
+		expect(staleAllowlistEntries(violations, [{ path: "docs/a.md", budget: 1 }])).toEqual(["docs/a.md"]);
+	});
+
+	it("treats a missing allow-list as no exemptions rather than as a pass", async () => {
+		// A missing file must not read as "nothing to check": that is the state
+		// before anyone has seeded it, and it is exactly when the gate must be
+		// loudest.
+		const dir = await fixture({ "docs/a.md": "omp\n" });
+		expect(await loadAllowlist(dir)).toEqual([]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	it("reads a tab-pinned budget and attaches the comment above it as the reason", async () => {
+		// The `#`-line-above convention was documented and exercised by this fixture
+		// from the start — the line literally reads "reason goes here" — while the
+		// parser discarded it and the assertion below recorded that as correct. An
+		// allow-list whose stated purpose is to record *why* a path was accepted, and
+		// which cannot read a single reason, is not reviewable.
+		const dir = await fixture({
+			"scripts/rename/docs-legacy-allowlist.txt": ["# reason goes here", "", "docs/a.md\t7", "docs/b.md"].join("\n"),
+		});
+		expect(await loadAllowlist(dir)).toEqual([
+			{ path: "docs/a.md", budget: 7, reason: "reason goes here" },
+			{ path: "docs/b.md", reason: undefined },
+		]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	it("does not attach the file header to the first entry", async () => {
+		// `# ---` ends the run of comment lines. Without it, the 30-line header that
+		// explains the FORMAT would be recorded as the justification for one
+		// specific path — which reads as audited and is not.
+		const dir = await fixture({
+			"scripts/rename/docs-legacy-allowlist.txt": ["# what this file is", "# ---", "docs/a.md\t3"].join("\n"),
+		});
+		expect(await loadAllowlist(dir)).toEqual([{ path: "docs/a.md", budget: 3, reason: undefined }]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+});
+
+// The regression these rows exist for: the gate printed only its own
+// metrics (`0 not on the allow-list`), so a green run with 869 occurrences
+// behind the allow-list read as a finished sweep. The count was on screen
+// and unlabeled. Deleting the outstanding clause from the line kills row 1.
+// Module scope, not inside one `describe`: the concurrent-write rows below
+// assert the same counts survive alongside a caveat, and a copy of this
+// parser in two blocks is two parsers that can drift.
+function outstanding(line: string): { occurrences: number; files: number } | null {
+	const match = /(\d+) occurrence\(s\) in (\d+) file\(s\)/.exec(line);
+	return match ? { occurrences: Number(match[1]), files: Number(match[2]) } : null;
+}
+
+describe("rule A reporting", () => {
+	it("surfaces the accepted occurrences still awaiting classification", () => {
+		// `docs/b.md` is allow-listed at its current size, so it passes the gate —
+		// but its 4 occurrences are still legacy tokens in an unclassified file,
+		// and that is the number a reader needs to judge the sweep.
+		const violations = [
+			{ path: "docs/a.md", occurrences: 3 },
+			{ path: "docs/b.md", occurrences: 4 },
+			{ path: "docs/c.md", occurrences: 5 },
+		];
+		const allowlist = [
+			{ path: "docs/b.md", budget: 4 },
+			{ path: "docs/c.md", budget: 9 },
+		];
+		const blocking = ungatedViolations(violations, allowlist);
+		expect(blocking).toHaveLength(1);
+		const line = formatRuleAReport(violations, allowlist, blocking, staleAllowlistEntries(violations, allowlist));
+		expect(outstanding(line)).toEqual({ occurrences: 9, files: 2 });
+	});
+
+	// Without this, row 1 also passes on a hardcoded constant.
+	it("reports nothing outstanding once the allow-list is empty of matches", () => {
+		const line = formatRuleAReport([], [], [], []);
+		expect(outstanding(line)).toEqual({ occurrences: 0, files: 0 });
+	});
+});
+
+/**
+ * The scan walks the filesystem, so it races every peer writing in this tree.
+ * Measured 2026-10-04: a vanished path threw ENOENT out of the read, the gate
+ * exited 1 with zero `FAIL ruleA` lines, and a reader would have gone looking for
+ * a documentation violation that did not exist. The regression these rows defend
+ * is the gate reaching a verdict at all.
+ */
+describe("rule A concurrent tree writes", () => {
+	it("reports a path that vanished rather than throwing out of the scan", async () => {
+		// A real ENOENT on a real read: the path is genuinely absent, which is
+		// exactly the state a peer leaves behind when it removes a scratch dir.
+		const absent = path.join(os.tmpdir(), `omp-gate-absent-${process.pid}-${Date.now()}.md`);
+		const read = await readMarkdown(absent);
+		expect(read).toEqual({ ok: false, vanished: true });
+	});
+
+	it("still reads a file that is there, so the absent case is not the only outcome", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-gate-read-"));
+		try {
+			const file = path.join(dir, "live.md");
+			await fs.writeFile(file, "legacy omp token\n");
+			const read = await readMarkdown(file);
+			// Without this the row above passes on a function that always answers
+			// `vanished`, which would make the gate blind to every real file.
+			expect(read).toEqual({ ok: true, text: "legacy omp token\n" });
+		} finally {
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("qualifies the summary count with the paths that vanished, so it cannot be read as final", () => {
+		const violations = [{ path: "docs/a.md", occurrences: 3 }];
+		const allowlist = [{ path: "docs/a.md", budget: 3 }];
+		const line = formatRuleAReport(violations, allowlist, [], [], ["scratch/gone.md"]);
+		expect(line).toContain("VANISHED mid-scan");
+		expect(line).toContain("scratch/gone.md");
+		// The counts survive; only the caveat is added. A reader acting on the
+		// number must still find it, with the caveat travelling alongside it.
+		expect(outstanding(line)).toEqual({ occurrences: 3, files: 1 });
+	});
+
+	it("omits the caveat entirely when nothing vanished, so it cannot be a constant", () => {
+		const line = formatRuleAReport([], [], [], []);
+		expect(line).not.toContain("VANISHED");
+	});
+});
+
+describe("scan scope", () => {
+	it("skips a nested repository but still scans ordinary tracked docs", async () => {
+		// `EnterWorktree` writes a whole checkout under `.claude/worktrees/<name>/`
+		// carrying its own `.git` FILE, and the `dot: true` glob descends into it —
+		// 661 phantom failures were measured from one worktree in the sibling gate.
+		// The control is `docs/a.md`, NOT a dot-directory: this gate already lists
+		// `.lavish-wip/`, `.lavish/` and `.omp/` in EXCLUDED_PREFIXES, so a tracked
+		// dot-directory cannot be its positive control the way it is for the source
+		// gate, whose `dot: false` would drop `.omp/tools/tui.ts`.
+		const dir = await fixture({
+			"docs/a.md": "uses omp here\n",
+			".claude/worktrees/someone/.git": "gitdir: /elsewhere\n",
+			".claude/worktrees/someone/docs/copied.md": "uses omp here\n",
+		});
+		expect(await scanRuleA(dir)).toEqual([{ path: "docs/a.md", occurrences: 1 }]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+});

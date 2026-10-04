@@ -3,12 +3,25 @@ import { useSyncExternalStore } from "react";
 export type SystemTheme = "light" | "dark";
 export type ThemePreference = "system" | "light" | "dark";
 
-const STORAGE_KEY = "omp-stats-theme";
+const STORAGE_KEY = "ultraworkers-stats-theme";
+/**
+ * Pre-rebrand key, kept only so an existing dashboard does not silently lose its saved
+ * theme. `readStoredPreference` copies it across once and removes it.
+ */
+const LEGACY_STORAGE_KEY = "omp-stats-theme";
 const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 
 function readStoredPreference(): ThemePreference {
 	if (typeof localStorage === "undefined") return "system";
-	const stored = localStorage.getItem(STORAGE_KEY);
+	let stored = localStorage.getItem(STORAGE_KEY);
+	if (stored === null) {
+		const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+		if (legacy !== null) {
+			localStorage.setItem(STORAGE_KEY, legacy);
+			localStorage.removeItem(LEGACY_STORAGE_KEY);
+			stored = legacy;
+		}
+	}
 	return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
 }
 

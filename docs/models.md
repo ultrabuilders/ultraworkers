@@ -29,8 +29,8 @@ Legacy behavior still present:
 
 ```yaml
 providers:
-  <provider-id>:
-    # provider-level config
+   <provider-id>:
+      # provider-level config
 ```
 
 `provider-id` is the canonical provider key used across selection and auth lookup.
@@ -41,57 +41,57 @@ The root object currently contains only `providers`; unknown root keys fail sche
 
 ```yaml
 providers:
-  my-provider:
-    baseUrl: https://api.example.com/v1
-    apiKey: MY_PROVIDER_API_KEY
-    api: openai-completions
-    headers:
-      X-Team: platform
-    authHeader: true
-    auth: apiKey
-    disableStrictTools: false # set true for Anthropic-compatible endpoints that reject the strict field
-    discovery:
-      type: ollama
-      timeoutMs: 10000 # optional per-provider HTTP probe timeout in milliseconds
-    modelOverrides:
-      some-model-id:
-        name: Renamed model
-    models:
-      - id: some-model-id
-        name: Some Model
-        api: openai-completions
-        reasoning: false
-        input: [text]
-        imageInputDecoder: stb # local STB decoder; OMP converts WebP before dispatch
-        cost:
-          input: 0
-          output: 0
-          cacheRead: 0
-          cacheWrite: 0
-        contextWindow: 128000
-        maxContextWindow: 256000 # optional extended-context window
-        maxTokens: 16384
-        headers:
-          X-Model: value
-        compat:
-          supportsStore: true
-          supportsDeveloperRole: true
-          supportsReasoningEffort: true
-          maxTokensField: max_completion_tokens
-          openRouterRouting:
-            only: [anthropic]
-          vercelGatewayRouting:
-            order: [anthropic, openai]
-          extraBody:
-            gateway: m1-01
-            controller: mlx
+   my-provider:
+      baseUrl: https://api.example.com/v1
+      apiKey: MY_PROVIDER_API_KEY
+      api: openai-completions
+      headers:
+         X-Team: platform
+      authHeader: true
+      auth: apiKey
+      disableStrictTools: false # set true for Anthropic-compatible endpoints that reject the strict field
+      discovery:
+         type: ollama
+         timeoutMs: 10000 # optional per-provider HTTP probe timeout in milliseconds
+      modelOverrides:
+         some-model-id:
+            name: Renamed model
+      models:
+         - id: some-model-id
+           name: Some Model
+           api: openai-completions
+           reasoning: false
+           input: [text]
+           imageInputDecoder: stb # local STB decoder; ultraworkers converts WebP before dispatch
+           cost:
+              input: 0
+              output: 0
+              cacheRead: 0
+              cacheWrite: 0
+           contextWindow: 128000
+           maxContextWindow: 256000 # optional extended-context window
+           maxTokens: 16384
+           headers:
+              X-Model: value
+           compat:
+              supportsStore: true
+              supportsDeveloperRole: true
+              supportsReasoningEffort: true
+              maxTokensField: max_completion_tokens
+              openRouterRouting:
+                 only: [anthropic]
+              vercelGatewayRouting:
+                 order: [anthropic, openai]
+              extraBody:
+                 gateway: m1-01
+                 controller: mlx
 ```
 
 `maxContextWindow` is available on both `models` entries and `modelOverrides`.
 Set `contextWindow` to the normal prompt window and `maxContextWindow` to the
 larger prompt window accepted by the provider. `/extended-context on` selects
 the larger window; `off` restores the normal one. An override specifying only
-`contextWindow` remains fixed in both modes, as before. This changes OMP's
+`contextWindow` remains fixed in both modes, as before. This changes ultraworkers'
 local context budget, not the provider's server-side limit; verify the endpoint
 accepts requests of the configured size.
 Configured maxima do not replace provider-advertised capacity. Models governed
@@ -125,8 +125,8 @@ selecting the extended window.
 - `auth`: `apiKey` (default), `none`, or `oauth`; for `models.yml` custom models, `oauth` is accepted by schema but does not waive the `apiKey` requirement
 - `discovery.type`: `ollama`, `llama.cpp`, `lm-studio`, `openai-models-list`, `proxy`, or `litellm`
 - `discovery.injectV1`: optional boolean, default `true`, for `openai-models-list`. Set `false` to fetch the model list from `{baseUrl}/models` without injecting `/v1` — for gateways that root their OpenAI-compatible surface at a versioned path (e.g. `https://api.opper.ai/v3/compat`) where the forced `/v1/models` returns a different, smaller model list. Query strings in `baseUrl` are ignored, matching the default mode.
-- `transport`: `pi-native` only. When set, every model under that provider is sent to an `omp auth-gateway` compatible `baseUrl` via `POST /v1/pi/stream`; `apiKey` is the gateway bearer.
-- `imageInputDecoder`: `stb` only. Set this on a custom model or `modelOverrides` entry when the serving backend uses an STB-compatible image decoder that cannot accept WebP; OMP converts attached and historical WebP images before provider dispatch.
+- `transport`: `pi-native` only. When set, every model under that provider is sent to an `ultraworkers auth-gateway` compatible `baseUrl` via `POST /v1/pi/stream`; `apiKey` is the gateway bearer.
+- `imageInputDecoder`: `stb` only. Set this on a custom model or `modelOverrides` entry when the serving backend uses an STB-compatible image decoder that cannot accept WebP; ultraworkers converts attached and historical WebP images before provider dispatch.
 - `tokenizer`: opt into a specific embedded local tokenizer when a proxy's model id is ambiguous or noncanonical. Allowed values: `claude-v3`, `claude-v47`, `claude-v5`, `claude-v5-sonnet`, `qwen3`, `deepseek-v3`, `kimi-k2`, and `glm5`. Omit it to use catalog identity policy; unknown models retain the fast local estimate.
 
 ## Validation rules (current)
@@ -182,10 +182,10 @@ Provider `apiKey` values and provider/model `headers` values may start with `!` 
 
 ```yaml
 providers:
-  openai:
-    apiKey: "!op read op://dev/openai/api-key"
-    headers:
-      X-Team-Key: "!bw get password omp-team-key"
+   openai:
+      apiKey: "!op read op://dev/openai/api-key"
+      headers:
+         X-Team-Key: "!bw get password omp-team-key"
 ```
 
 Successful command outputs are cached for the process lifetime, and concurrent requests share an in-flight execution. Failures back off for 30 seconds. An explicit model refresh or 401 credential refresh invalidates the relevant cached API keys and headers. Runtime API-key overrides, including `--api-key`, take precedence over configured credentials.
@@ -216,11 +216,11 @@ property, so repeated cold-start calls do not re-hash.
 
 ### Shared catalog refresh
 
-The bundled catalog remains the startup and offline baseline. After startup loads bundled and cached rows synchronously, the existing background refresh lifecycle fetches the current shared models.dev catalog for known providers. New model IDs are merged additively into each provider's bundled slice, normalized through that provider's catalog descriptor, and persisted in the model-cache database. This allows newly published models to appear without waiting for a new OMP binary.
+The bundled catalog remains the startup and offline baseline. After startup loads bundled and cached rows synchronously, the existing background refresh lifecycle fetches the current shared models.dev catalog for known providers. New model IDs are merged additively into each provider's bundled slice, normalized through that provider's catalog descriptor, and persisted in the model-cache database. This allows newly published models to appear without waiting for a new ultraworkers binary.
 
 Remote rows can supply current limits, pricing, modalities, and capability flags for newly added IDs, but they cannot introduce code, arbitrary headers, or an unregistered provider. A successful provider endpoint discovery remains authoritative for account availability. The shared catalog is not authoritative: it does not remove bundled models when a remote row disappears.
 
-Fresh cached snapshots avoid a network request. If refresh fails, OMP keeps the last usable cached snapshot and marks it stale; without a cache, it falls back to the bundled catalog. Provider discovery state records `source` (`bundled`, `models.dev`, `provider`, or `cache`) and `fetchedAt` so callers can distinguish current remote data from an offline fallback.
+Fresh cached snapshots avoid a network request. If refresh fails, ultraworkers keeps the last usable cached snapshot and marks it stale; without a cache, it falls back to the bundled catalog. Provider discovery state records `source` (`bundled`, `models.dev`, `provider`, or `cache`) and `fetchedAt` so callers can distinguish current remote data from an offline fallback.
 
 ## Provider and model identity
 
@@ -242,16 +242,16 @@ Provider defaults vs per-model overrides:
 ## Prompt cache lifetimes
 
 `promptCache` states how long the provider keeps a prompt cache entry alive for each retention tier
-OMP can request (`short` is the default tier; `long` is used where a 1h entry is supported, e.g.
+ultraworkers can request (`short` is the default tier; `long` is used where a 1h entry is supported, e.g.
 `PI_CACHE_RETENTION=long` or `providers.cacheRetention: "long"`). Values are seconds and are
 estimates: providers publish ranges, so pick the conservative end.
 
 ```yaml
 providers:
-  my-gateway:
-    models:
-      - id: claude-sonnet-5
-        promptCache: { short: 300, long: 3600 }
+   my-gateway:
+      models:
+         - id: claude-sonnet-5
+           promptCache: { short: 300, long: 3600 }
 ```
 
 The bundled catalog fills this in for direct Anthropic (5 min / 1 h). Other providers, including
@@ -262,7 +262,7 @@ backing cache behavior is known. See `providers.cacheWarming` in [Settings](./se
 
 ## Usage costs and time-based pricing
 
-OMP estimates token costs from the selected provider/model's catalog pricing, preferring server-reported monetary costs when available. Completed messages retain their recorded costs: crossing a pricing boundary, switching models, or reopening a session does not reprice accumulated usage.
+ultraworkers estimates token costs from the selected provider/model's catalog pricing, preferring server-reported monetary costs when available. Completed messages retain their recorded costs: crossing a pricing boundary, switching models, or reopening a session does not reprice accumulated usage.
 
 For the first-party `deepseek` provider, the catalog follows [DeepSeek's official pricing](https://api-docs.deepseek.com/quick_start/pricing):
 
@@ -270,7 +270,7 @@ For the first-party `deepseek` provider, the catalog follows [DeepSeek's officia
 - Flash pricing covers `deepseek-flash` and the retired-but-still-accepted `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` ids, all billed at the Flash card. Peak rates per million tokens are $0.30 uncached input, $0.006 cached input, and $1.20 output.
 - `deepseek-v4-pro` initially uses peak rates of $1.32 uncached input, $0.044 cached input, and $3.96 output per million tokens. From **2026-09-14 04:00 UTC**, its estimates use the Flash rate card, with the same peak/off-peak schedule.
 
-Local estimates use the assistant message's **request-start timestamp** to choose both the rate card and tariff for the whole request. This is OMP's estimation convention: DeepSeek's pricing page does not specify how its server bills a request spanning a boundary. A request whose timestamp cannot be recovered is left unpriced rather than estimated against a tariff chosen from the wall clock.
+Local estimates use the assistant message's **request-start timestamp** to choose both the rate card and tariff for the whole request. This is ultraworkers' estimation convention: DeepSeek's pricing page does not specify how its server bills a request spanning a boundary. A request whose timestamp cannot be recovered is left unpriced rather than estimated against a tariff chosen from the wall clock.
 
 The status line's `cost` segment appends **↑** for peak or **↓** for off-peak pricing on the **currently active provider/model**, using the current wall clock. It refreshes at tariff boundaries even while idle; the arrow is not a label for the accumulated session total. Models without scheduled pricing, including explicit flat-price overrides, show no arrow.
 
@@ -305,7 +305,7 @@ If `llama.cpp` is not explicitly configured, registry adds an implicit discovera
 
 Runtime discovery calls llama.cpp model endpoints and synthesizes model entries with local defaults.
 
-The provider `api` is the default for discovered models; catalog rules can override it per model class. Qwen-class models on any `discovery.type: llama.cpp` provider (implicit or explicit) are discovered as `openai-completions`, because the Responses API cannot carry the chat template's thinking controls (`enable_thinking` / `chat_template_kwargs`). The override lives in `packages/catalog/src/compat/rules/providers/llama.cpp.kdl` (`discovery-api`); `omp models find <id> --json` shows the resolved `api`.
+The provider `api` is the default for discovered models; catalog rules can override it per model class. Qwen-class models on any `discovery.type: llama.cpp` provider (implicit or explicit) are discovered as `openai-completions`, because the Responses API cannot carry the chat template's thinking controls (`enable_thinking` / `chat_template_kwargs`). The override lives in `packages/catalog/src/compat/rules/providers/llama.cpp.kdl` (`discovery-api`); `ultraworkers models find <id> --json` shows the resolved `api`.
 
 ### Implicit LM Studio discovery
 
@@ -339,31 +339,31 @@ You can configure discovery yourself:
 
 ```yaml
 providers:
-  ollama:
-    baseUrl: http://127.0.0.1:11434
-    api: openai-responses
-    auth: none
-    discovery:
-      type: ollama
+   ollama:
+      baseUrl: http://127.0.0.1:11434
+      api: openai-responses
+      auth: none
+      discovery:
+         type: ollama
 
-  llama.cpp:
-    baseUrl: http://127.0.0.1:8080
-    api: openai-responses
-    auth: none
-    discovery:
-      type: llama.cpp
+   llama.cpp:
+      baseUrl: http://127.0.0.1:8080
+      api: openai-responses
+      auth: none
+      discovery:
+         type: llama.cpp
 ```
 
 Custom LiteLLM gateways can use the same rich discovery path:
 
 ```yaml
 providers:
-  litellm-gateway:
-    baseUrl: http://gateway.example:4000/v1
-    apiKey: LITELLM_API_KEY
-    api: openai-completions
-    discovery:
-      type: litellm
+   litellm-gateway:
+      baseUrl: http://gateway.example:4000/v1
+      apiKey: LITELLM_API_KEY
+      api: openai-completions
+      discovery:
+         type: litellm
 ```
 
 LiteLLM metadata endpoints use the configured base URL with a trailing `/v1` stripped for discovery only, preserving any preceding proxy path. Runtime model calls keep the configured OpenAI-compatible `/v1` base URL.
@@ -386,13 +386,13 @@ from `baseUrl` before appending `/v1/messages`, so a single discovery `baseUrl`
 
 ```yaml
 providers:
-  newapi-reseller:
-    baseUrl: https://api.example.com/v1
-    apiKey: xxxx
-    authHeader: true # injects Authorization: Bearer for openai models
-    disableStrictTools: true # most anthropic-fronted proxies reject `strict`
-    discovery:
-      type: proxy
+   newapi-reseller:
+      baseUrl: https://api.example.com/v1
+      apiKey: xxxx
+      authHeader: true # injects Authorization: Bearer for openai models
+      disableStrictTools: true # most anthropic-fronted proxies reject `strict`
+      discovery:
+         type: proxy
 ```
 
 ### Extension provider registration
@@ -518,25 +518,25 @@ Global `enabledModels` and `disabledProviders` entries may also be scoped to a p
 
 ```yaml
 enabledModels:
-  - claude-sonnet-4-5
-  - path: ~/work
-    models:
-      - anthropic/claude-opus-4-5
+   - claude-sonnet-4-5
+   - path: ~/work
+     models:
+        - anthropic/claude-opus-4-5
 disabledProviders:
-  - ollama
-  - path: ~/private
-    providers:
-      - anthropic
+   - ollama
+   - path: ~/private
+     providers:
+        - anthropic
 ```
 
 String entries apply everywhere. Scoped entries apply when the current working directory is the configured path or one of its subdirectories. Use `path`, `paths`, `pathPrefix`, or `pathPrefixes`; use `models` for `enabledModels`, `providers` for `disabledProviders`, or `values` for either.
 
-## `/model` and `omp models`
+## `/model` and `ultraworkers models`
 
 Both surfaces keep provider-prefixed concrete models visible and selectable.
 
 - `/model` shows an all-models view plus one view per provider
-- `omp models` (default `ls` action) prints provider-grouped tables of every available model; `omp models find <substring>` filters by provider, id, or name; `omp models refresh` forces an online catalog re-fetch ignoring the model cache TTL; any provider name doubles as an `ls` filter (e.g. `omp models openai-codex`). Flags: `--json`, `-e <path>` (load extension, repeatable), `--no-extensions`, `--config <overlay>` (extra config overlay, repeatable)
+- `ultraworkers models` (default `ls` action) prints provider-grouped tables of every available model; `ultraworkers models find <substring>` filters by provider, id, or name; `ultraworkers models refresh` forces an online catalog re-fetch ignoring the model cache TTL; any provider name doubles as an `ls` filter (e.g. `ultraworkers models openai-codex`). Flags: `--json`, `-e <path>` (load extension, repeatable), `--no-extensions`, `--config <overlay>` (extra config overlay, repeatable)
 
 Selecting a provider row stores its explicit `provider/modelId`.
 
@@ -588,10 +588,10 @@ Example (`models.yml`) for an explicit OpenAI fallback:
 
 ```yaml
 providers:
-  openai-codex:
-    modelOverrides:
-      gpt-5.5:
-        contextPromotionTarget: openai-codex/gpt-5.4
+   openai-codex:
+      modelOverrides:
+         gpt-5.5:
+            contextPromotionTarget: openai-codex/gpt-5.4
 ```
 
 The built-in model policy currently links OpenAI `codex-spark` variants to `gpt-5.5`, and `gpt-5.5` to `gpt-5.4`, when that target exists on the same provider/API.
@@ -702,8 +702,8 @@ that authenticate via a query parameter instead of a header:
 
 ```yaml
 providers:
-  amazon-bedrock:
-    baseUrl: https://vpce-0123456789abcdef0.bedrock-runtime.us-east-1.vpce.amazonaws.com
+   amazon-bedrock:
+      baseUrl: https://vpce-0123456789abcdef0.bedrock-runtime.us-east-1.vpce.amazonaws.com
 ```
 
 One host shape is not taken literally: a `baseUrl` of exactly
@@ -725,10 +725,10 @@ its endpoints. AWS recommends `bedrock-runtime` for new applications
 Claude Opus 4.7 and later are served here; Opus 4.6 and earlier stay on Converse
 ([Claude in Amazon Bedrock](https://platform.claude.com/docs/en/build-with-claude/claude-in-amazon-bedrock)).
 
-| Route | Base URL | Provider | Model id |
-| --- | --- | --- | --- |
+| Route           | Base URL                                                   | Provider         | Model id                                               |
+| --------------- | ---------------------------------------------------------- | ---------------- | ------------------------------------------------------ |
 | bedrock-runtime | `https://bedrock-runtime.<region>.amazonaws.com/anthropic` | `amazon-bedrock` | inference profile, e.g. `us.anthropic.claude-opus-5-5` |
-| bedrock-mantle | `https://bedrock-mantle.<region>.api.aws/anthropic` | `bedrock-mantle` | `anthropic.claude-opus-5-5` |
+| bedrock-mantle  | `https://bedrock-mantle.<region>.api.aws/anthropic`        | `bedrock-mantle` | `anthropic.claude-opus-5-5`                            |
 
 The FIPS host (`bedrock-runtime-fips.<region>.amazonaws.com`) and AWS PrivateLink endpoint-specific
 hosts (`<vpce-id>[-<az>].bedrock-runtime.<region>.vpce.amazonaws.com`, likewise for
@@ -738,43 +738,43 @@ private DNS enabled needs no change: it answers on the public hostnames
 
 Define the model under the provider shown in the table, with `api: anthropic-messages`. Those two
 provider ids carry the catalog rule that enables Claude's on-demand compaction
-([Compaction](./compaction.md)). Set `auth: apiKey` so OMP sends plain API-key requests; without
+([Compaction](./compaction.md)). Set `auth: apiKey` so ultraworkers sends plain API-key requests; without
 it, custom `anthropic-messages` models get Claude Code request shaping. The examples authenticate
 with an [Amazon Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html);
-OMP does not sign runtime-route requests with SigV4. Write the region into the runtime URL. Mantle
-URLs may keep `{region}`, which OMP fills in from your AWS region settings.
+ultraworkers does not sign runtime-route requests with SigV4. Write the region into the runtime URL. Mantle
+URLs may keep `{region}`, which ultraworkers fills in from your AWS region settings.
 
 ```yaml
 providers:
-  amazon-bedrock:
-    baseUrl: https://bedrock-runtime.us-east-1.amazonaws.com
-    apiKey: AWS_BEARER_TOKEN_BEDROCK
-    auth: apiKey
-    models:
-      - id: us.anthropic.claude-opus-5-5
-        api: anthropic-messages
-        baseUrl: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
-        reasoning: true
-        input: [text, image]
-  bedrock-mantle:
-    baseUrl: https://bedrock-mantle.{region}.api.aws/openai/v1
-    apiKey: AWS_BEARER_TOKEN_BEDROCK
-    auth: apiKey
-    models:
-      - id: anthropic.claude-opus-5-5
-        api: anthropic-messages
-        baseUrl: https://bedrock-mantle.{region}.api.aws/anthropic
-        reasoning: true
-        input: [text, image]
+   amazon-bedrock:
+      baseUrl: https://bedrock-runtime.us-east-1.amazonaws.com
+      apiKey: AWS_BEARER_TOKEN_BEDROCK
+      auth: apiKey
+      models:
+         - id: us.anthropic.claude-opus-5-5
+           api: anthropic-messages
+           baseUrl: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
+           reasoning: true
+           input: [text, image]
+   bedrock-mantle:
+      baseUrl: https://bedrock-mantle.{region}.api.aws/openai/v1
+      apiKey: AWS_BEARER_TOKEN_BEDROCK
+      auth: apiKey
+      models:
+         - id: anthropic.claude-opus-5-5
+           api: anthropic-messages
+           baseUrl: https://bedrock-mantle.{region}.api.aws/anthropic
+           reasoning: true
+           input: [text, image]
 ```
 
-Requests on these routes are shaped by `compat.bedrockMessagesApi`, which OMP detects from a Bedrock
-`/anthropic` `baseUrl` under any provider id. Both routes reject the tool `strict` field, so OMP drops
-it. OMP also fits `metadata.user_id` to
+Requests on these routes are shaped by `compat.bedrockMessagesApi`, which ultraworkers detects from a Bedrock
+`/anthropic` `baseUrl` under any provider id. Both routes reject the tool `strict` field, so ultraworkers drops
+it. ultraworkers also fits `metadata.user_id` to
 Bedrock's [request-metadata pattern](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html),
 which the runtime route enforces: a value that fits is kept, otherwise its session id is sent,
 otherwise it is left out. Both run after any `onPayload` hook. Both routes verify thinking
-signatures, so by default OMP does not replay unsigned thinking to them.
+signatures, so by default ultraworkers does not replay unsigned thinking to them.
 
 The URL check cannot see a Bedrock route behind a proxy or an `ANTHROPIC_BASE_URL` reroute of the
 first-party `anthropic` provider; those keep plain Anthropic requests unless you opt in. Set the flag
@@ -783,9 +783,9 @@ out:
 
 ```yaml
 providers:
-  anthropic:
-    compat:
-      bedrockMessagesApi: true # ANTHROPIC_BASE_URL points at bedrock-runtime /anthropic
+   anthropic:
+      compat:
+         bedrockMessagesApi: true # ANTHROPIC_BASE_URL points at bedrock-runtime /anthropic
 ```
 
 On-demand compaction still needs a model line the catalog grants it to (`amazon-bedrock`,
@@ -793,31 +793,31 @@ On-demand compaction still needs a model line the catalog grants it to (`amazon-
 
 ### Strict tool schemas (`disableStrictTools`)
 
-Anthropic's API supports a `strict` field on tool definitions that forces the model to always follow the provided schema exactly. OMP enables it by default for a small allowlist of high-frequency built-in `anthropic-messages` tools (`bash`, `python`, `edit`, and `find`) whose schemas fit Anthropic's strict grammar limits; other tools still send normalized schemas but omit `strict`.
+Anthropic's API supports a `strict` field on tool definitions that forces the model to always follow the provided schema exactly. ultraworkers enables it by default for a small allowlist of high-frequency built-in `anthropic-messages` tools (`bash`, `python`, `edit`, and `find`) whose schemas fit Anthropic's strict grammar limits; other tools still send normalized schemas but omit `strict`.
 
 Third-party providers that front the Anthropic API (AWS Bedrock, Azure, self-hosted proxies) do not always implement this field and will reject requests that include it. Set `disableStrictTools: true` at the provider level to opt out of strict mode for the allowlisted tools:
 
 ```yaml
 providers:
-  bedrock-anthropic:
-    baseUrl: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
-    apiKey: AWS_BEARER_TOKEN
-    api: anthropic-messages
-    disableStrictTools: true
-    models:
-      - id: claude-sonnet-4-20250514
-        name: Claude Sonnet 4 (Bedrock)
-        input: [text, image]
-        contextWindow: 200000
-        maxTokens: 16384
-        cost:
-          input: 3.00
-          output: 15.00
-          cacheRead: 0.30
-          cacheWrite: 3.75
+   bedrock-anthropic:
+      baseUrl: https://bedrock-runtime.us-east-1.amazonaws.com/anthropic
+      apiKey: AWS_BEARER_TOKEN
+      api: anthropic-messages
+      disableStrictTools: true
+      models:
+         - id: claude-sonnet-4-20250514
+           name: Claude Sonnet 4 (Bedrock)
+           input: [text, image]
+           contextWindow: 200000
+           maxTokens: 16384
+           cost:
+              input: 3.00
+              output: 15.00
+              cacheRead: 0.30
+              cacheWrite: 3.75
 ```
 
-`disableStrictTools` is a provider-level flag that applies to all models in the provider. It disables the Anthropic `strict` marker only for tools that OMP would otherwise mark strict; it does not change runtime tool argument validation. OMP can automatically retry without strict tools after Anthropic reports a strict-grammar-too-large error before the first streamed token, but proxies that reject the `strict` field for other reasons should set this flag explicitly.
+`disableStrictTools` is a provider-level flag that applies to all models in the provider. It disables the Anthropic `strict` marker only for tools that ultraworkers would otherwise mark strict; it does not change runtime tool argument validation. ultraworkers can automatically retry without strict tools after Anthropic reports a strict-grammar-too-large error before the first streamed token, but proxies that reject the `strict` field for other reasons should set this flag explicitly.
 
 Tool schemas going on the wire are normalized by the unified flow in
 `packages/ai/src/utils/schema/normalize.ts` (Google/CCA/MCP dispatchers
@@ -833,85 +833,85 @@ and the per-provider dispatcher mapping.
 
 ```yaml
 providers:
-  local-openai:
-    baseUrl: http://127.0.0.1:8000/v1
-    auth: none
-    api: openai-completions
-    models:
-      - id: Qwen/Qwen2.5-Coder-32B-Instruct
-        name: Qwen 2.5 Coder 32B (local)
+   local-openai:
+      baseUrl: http://127.0.0.1:8000/v1
+      auth: none
+      api: openai-completions
+      models:
+         - id: Qwen/Qwen2.5-Coder-32B-Instruct
+           name: Qwen 2.5 Coder 32B (local)
 ```
 
 For oMLX or another local OpenAI-compatible server with a discoverable `/v1/models` endpoint, prefer discovery instead of listing models by hand. Set `api` to the endpoint family your server actually exposes: `openai-completions` uses `/v1/chat/completions`; servers that expose `/v1/responses` need `openai-responses` instead.
 
 ```yaml
 providers:
-  omlx:
-    baseUrl: http://127.0.0.1:11434/v1
-    auth: none
-    api: openai-completions
-    discovery:
-      type: openai-models-list
+   omlx:
+      baseUrl: http://127.0.0.1:11434/v1
+      auth: none
+      api: openai-completions
+      discovery:
+         type: openai-models-list
 ```
 
-The built-in vLLM provider can be pointed at a non-default endpoint without declaring a custom discovery type. OMP uses vLLM's `/v1/models` metadata and preserves vLLM's `max_model_len` field as the discovered context window.
+The built-in vLLM provider can be pointed at a non-default endpoint without declaring a custom discovery type. ultraworkers uses vLLM's `/v1/models` metadata and preserves vLLM's `max_model_len` field as the discovered context window.
 
 ```yaml
 providers:
-  vllm:
-    baseUrl: http://192.168.5.3:8085/v1
-    auth: none
+   vllm:
+      baseUrl: http://192.168.5.3:8085/v1
+      auth: none
 ```
 
 For multiple vLLM endpoints, use arbitrary provider IDs with the generic OpenAI-compatible discovery path. Set `auth: none` for local no-auth servers or `apiKey` for authenticated ones. Generic discovery reads `max_model_len` first and then `context_length` as a generic OpenAI-compatible fallback.
 
 ```yaml
 providers:
-  vllm-fast:
-    baseUrl: http://host-a:8000/v1
-    auth: none
-    api: openai-completions
-    discovery:
-      type: openai-models-list
-  vllm-long:
-    baseUrl: http://host-b:8000/v1
-    auth: none
-    api: openai-completions
-    discovery:
-      type: openai-models-list
+   vllm-fast:
+      baseUrl: http://host-a:8000/v1
+      auth: none
+      api: openai-completions
+      discovery:
+         type: openai-models-list
+   vllm-long:
+      baseUrl: http://host-b:8000/v1
+      auth: none
+      api: openai-completions
+      discovery:
+         type: openai-models-list
 ```
 
 ### Hosted proxy with env-based key
 
 ```yaml
 providers:
-  anthropic-proxy:
-    baseUrl: https://proxy.example.com/anthropic
-    apiKey: ANTHROPIC_PROXY_API_KEY
-    api: anthropic-messages
-    authHeader: true
-    disableStrictTools: true # if the proxy doesn't support strict tool schemas
-    models:
-      - id: claude-sonnet-4-20250514
-        name: Claude Sonnet 4 (Proxy)
-        reasoning: true
-        input: [text, image]
+   anthropic-proxy:
+      baseUrl: https://proxy.example.com/anthropic
+      apiKey: ANTHROPIC_PROXY_API_KEY
+      api: anthropic-messages
+      authHeader: true
+      disableStrictTools: true # if the proxy doesn't support strict tool schemas
+      models:
+         - id: claude-sonnet-4-20250514
+           name: Claude Sonnet 4 (Proxy)
+           reasoning: true
+           input: [text, image]
 ```
 
 ### Override built-in provider route + model metadata
 
 ```yaml
 providers:
-  openrouter:
-    baseUrl: https://my-proxy.example.com/v1
-    headers:
-      X-Team: platform
-    modelOverrides:
-      anthropic/claude-sonnet-4:
-        name: Sonnet 4 (Corp)
-        compat:
-          openRouterRouting:
-            only: [anthropic]
+   openrouter:
+      baseUrl: https://my-proxy.example.com/v1
+      headers:
+         X-Team: platform
+      modelOverrides:
+         anthropic/claude-sonnet-4:
+            name: Sonnet 4 (Corp)
+            compat:
+               openRouterRouting:
+                  only: [anthropic]
 ```
 
 ## Legacy consumer caveat

@@ -1,8 +1,8 @@
 /**
- * CLI handler for `omp ps` — inspect and control processes supervised by the
+ * CLI handler for `ultraworkers ps` — inspect and control processes supervised by the
  * daemon broker from outside the harness.
  *
- * A bare `omp ps` on a TTY opens the interactive alt-screen monitor
+ * A bare `ultraworkers ps` on a TTY opens the interactive alt-screen monitor
  * (`pi-tui/apps/ps-top`); `--plain`, `--json`, and non-TTY outputs use the static
  * listing. Actions (`stop`, `kill`, `restart`, `logs`, `info`) connect through
  * the regular client, which revives a dead broker so it can re-adopt detached
@@ -10,7 +10,7 @@
  */
 
 import { truncateToWidth } from "@oh-my-pi/pi-tui";
-import { formatDuration, getProjectDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, formatDuration, getProjectDir } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import {
 	closeDaemonClients,
@@ -127,7 +127,7 @@ export async function runPsCommand(cmd: PsCommandArgs): Promise<void> {
 			return;
 		}
 		if (!cmd.name) {
-			console.error(chalk.red(`${cmd.action} requires a process name. Run \`omp ps\` to list processes.`));
+			console.error(chalk.red(`${cmd.action} requires a process name. Run \`${APP_NAME} ps\` to list processes.`));
 			process.exitCode = 1;
 			return;
 		}

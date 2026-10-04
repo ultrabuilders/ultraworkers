@@ -40,7 +40,7 @@ describe("advisor tool-call loop guard", () => {
 	let session: AgentSession | undefined;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-advisor-tool-call-loop-guard-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-tool-call-loop-guard-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");
 	});

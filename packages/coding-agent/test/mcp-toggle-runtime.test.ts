@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { CustomTool } from "@oh-my-pi/pi-coding-agent/extensibility/custom-tools/types";
 import { applyMcpToggleRuntime } from "@oh-my-pi/pi-coding-agent/modes/components/extensions/mcp-runtime";
+import type { MCPToggleManager } from "@oh-my-pi/pi-coding-agent/modes/components/extensions/mcp-runtime";
+import type { McpCatalogRefreshReason } from "@oh-my-pi/pi-coding-agent/mcp/types";
 
 function stubCustomTool(name: string): CustomTool {
 	return {
@@ -87,7 +89,15 @@ describe("applyMcpToggleRuntime", () => {
 			discovery: { enableProjectConfig: false, filterExa: true, filterBrowser: true },
 			loadConfigs: async (cwd, options) => {
 				loads.push({ cwd, options });
-				return { configs: {}, sources: {}, exaApiKeys: [] };
+				// A config, not an empty map. The test is about the DISCOVERY FILTERS
+				// reaching the loader, so it wants the loader to return something it
+				// can go on to use — an empty map used to leave `applyMcpToggleRuntime`
+				// on its no-config branch, which now reports instead of returning.
+				return {
+					configs: { "project-only": { command: "true" } },
+					sources: {},
+					exaApiKeys: [],
+				};
 			},
 			manager: {
 				getConnectionStatus: () => "disconnected",
@@ -107,6 +117,153 @@ describe("applyMcpToggleRuntime", () => {
 				options: { enableProjectConfig: false, filterExa: true, filterBrowser: true },
 			},
 		]);
-		expect(connected).toEqual([]);
+		expect(connected).toEqual(["project-only"]);
+	});
+
+	// The regression. Discovery lists project-scope `.mcp.json` servers without
+	// consulting `mcp.enableProjectConfig`, while `applyMcpToggleRuntime` re-derives
+	// through it — so the panel offers a server the gated loader will not return.
+	// That branch used to refresh and return, which reported success for a connect
+	// that never happened; `MCPCommandController.#connectEnabledMCPServer` had
+	// already fixed the same defect on the `/mcp` side by naming the knob.
+	test("a server the gated loader will not return reports instead of reporting success", async () => {
+		const refreshed: (McpCatalogRefreshReason | undefined)[] = [];
+		const promise = applyMcpToggleRuntime({
+			name: "projonly",
+			enabled: true,
+			cwd: "/tmp/project",
+			discovery: { enableProjectConfig: false },
+			// Exactly what the gated loader returns for a project-scope server when
+			// the gate is off: absent from `configs`.
+			loadConfigs: async () => ({ configs: {}, sources: {}, exaApiKeys: [] }),
+			manager: {
+				getConnectionStatus: () => "disconnected",
+				getTools: () => [],
+				disconnectServer: async () => {
+					throw new Error("enable must not disconnect");
+				},
+				connectServers: async () => {
+					throw new Error("nothing was configured, so nothing may connect");
+				},
+			},
+			session: {
+				refreshMCPTools: (_next, reason) => {
+					refreshed.push(reason);
+				},
+			},
+		});
+		// The catalog genuinely did not change, so the refresh still happens — the
+		// report is added, not substituted for it.
+		await promise.then(
+			() => {
+				throw new Error("a connect that never happened must not resolve successfully");
+			},
+			(error: Error) => {
+				expect(error.message).toContain("projonly");
+				expect(error.message).toContain("mcp.enableProjectConfig");
+			},
+		);
+		expect(refreshed).toEqual(["push"]);
+	});
+});
+
+/**
+ * `refreshMCPTools` takes a SECOND argument: `McpCatalogRefreshReason`, the
+ * declaration of WHY the catalog changed. It cannot be recovered from the tool
+ * array — a connect, a `tools/list_changed` push and a disconnect all deliver
+ * the same array — and only `"connect"` activates the arriving catalog.
+ *
+ * The three tests above cannot see any of that. Their stubs are one-argument
+ * lambdas, which satisfy a one-argument interface, so they pass unchanged
+ * against an implementation that states nothing at all. Asserting the reason is
+ * what the interface has to widen before; until it does, the assertion cannot be
+ * written — a one-argument lambda cannot receive an argument that is not passed.
+ */
+describe("applyMcpToggleRuntime declares why the catalog changed", () => {
+	/**
+	 * A manager that records what it was asked to do, so each reason can be
+	 * compared against the action it claims rather than against a fixed string.
+	 */
+	function managerStub(status: "connected" | "disconnected", acted: string[]): MCPToggleManager {
+		return {
+			getConnectionStatus: () => status,
+			getTools: () => [],
+			disconnectServer: async name => {
+				acted.push(`disconnect:${name}`);
+			},
+			connectServers: async configs => {
+				acted.push(`connect:${Object.keys(configs).join(",")}`);
+				return { errors: new Map() };
+			},
+		};
+	}
+
+	const githubConfig = {
+		configs: { github: { command: "github-mcp-server" } },
+		sources: {},
+		exaApiKeys: [],
+	};
+
+	test("disabling a server states `disconnect`, naming the retraction it just performed", async () => {
+		const acted: string[] = [];
+		const reasons: (McpCatalogRefreshReason | undefined)[] = [];
+		await applyMcpToggleRuntime({
+			name: "github",
+			enabled: false,
+			cwd: "/tmp",
+			manager: managerStub("connected", acted),
+			session: {
+				refreshMCPTools: (_next, reason) => {
+					reasons.push(reason);
+				},
+			},
+		});
+		// The pairing is the assertion. A hard-coded "push" fails here for the same
+		// input that the third test proves correct for a different action.
+		expect(acted).toEqual(["disconnect:github"]);
+		expect(reasons).toEqual(["disconnect"]);
+	});
+
+	test("connecting a server states `connect`, so its arriving catalog activates", async () => {
+		const acted: string[] = [];
+		const reasons: (McpCatalogRefreshReason | undefined)[] = [];
+		await applyMcpToggleRuntime({
+			name: "github",
+			enabled: true,
+			cwd: "/tmp/project",
+			loadConfigs: async () => githubConfig,
+			manager: managerStub("disconnected", acted),
+			session: {
+				refreshMCPTools: (_next, reason) => {
+					reasons.push(reason);
+				},
+			},
+		});
+		expect(acted).toEqual(["connect:github"]);
+		expect(reasons).toEqual(["connect"]);
+	});
+
+	// The control, and the reason none of the three above could be satisfied by one
+	// hard-coded string. Enabling an ALREADY-connected server performs no connect,
+	// so no catalog arrived; claiming `connect` here would activate tools the user
+	// never connected, which is precisely the trust boundary the parameter exists
+	// to hold.
+	test("enabling an already-connected server changes no catalog and states `push`", async () => {
+		const acted: string[] = [];
+		const reasons: (McpCatalogRefreshReason | undefined)[] = [];
+		await applyMcpToggleRuntime({
+			name: "github",
+			enabled: true,
+			cwd: "/tmp/project",
+			loadConfigs: async () => githubConfig,
+			manager: managerStub("connected", acted),
+			session: {
+				refreshMCPTools: (_next, reason) => {
+					reasons.push(reason);
+				},
+			},
+		});
+		expect(acted).toEqual([]);
+		expect(reasons).toEqual(["push"]);
 	});
 });

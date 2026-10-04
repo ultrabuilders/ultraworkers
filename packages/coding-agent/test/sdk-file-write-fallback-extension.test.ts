@@ -104,6 +104,32 @@ describe("registerFileWriteFallback end-to-end (real extension, real session)", 
 		fs.chmodSync(target, mode);
 	};
 
+	/**
+	 * Asserts the denial this test is built on is REAL, from this process, before the
+	 * tool under test runs.
+	 *
+	 * Every other assertion in this file checks "the fallback behaves correctly WHEN IT
+	 * IS CALLED". None of them checked that it was called for the stated reason. A write
+	 * that succeeded outright leaves the handler list empty and `isError` false — the
+	 * only symptom is a `toEqual([])` several lines below, naming a missing handler
+	 * rather than the vanished EACCES that would have explained it. A mode the platform
+	 * declines to enforce (root, a filesystem ignoring the bit) produces exactly that:
+	 * every assertion passes while the seam under test was never exercised.
+	 *
+	 * So the premise is asserted directly, and it names the code — a permission problem
+	 * of any other origin (`ENOENT` on a path that was never created, `ENOTDIR` on a
+	 * typo) would otherwise satisfy "access failed" and hide the real defect.
+	 */
+	const expectDenied = (target: string): void => {
+		let code: string | undefined;
+		try {
+			fs.accessSync(target, fs.constants.W_OK);
+		} catch (err) {
+			code = (err as NodeJS.ErrnoException).code;
+		}
+		expect(code).toBe("EACCES");
+	};
+
 	// Mode bits do not constrain a privileged user, so `chmod` denies nothing as root
 	// and every expectation that depends on a real denial would fail for a reason
 	// unrelated to the seam. Root is real for a Docker-based local run and for a
@@ -197,6 +223,7 @@ describe("registerFileWriteFallback end-to-end (real extension, real session)", 
 				const targetPath = path.join(lockedDir, "new-file.txt");
 				const content = "export const value = 42;\n";
 
+				expectDenied(lockedDir);
 				const writeResult = await writeTool!.execute("call-write-1", { path: targetPath, content });
 
 				// (i) the tool call succeeds
@@ -465,6 +492,7 @@ describe("registerFileWriteFallback end-to-end (real extension, real session)", 
 			const targetPath = path.join(lockedDir, "ordered.txt");
 			const content = "export const value = 3;\n";
 			const writeTool = session.getToolByName("write") as AgentTool | undefined;
+			expectDenied(lockedDir);
 			const writeResult = await writeTool!.execute("call-write-order", { path: targetPath, content });
 
 			expect(writeResult.isError).not.toBe(true);
@@ -514,6 +542,7 @@ describe("registerFileWriteFallback end-to-end (real extension, real session)", 
 
 		try {
 			const writeTool = session.getToolByName("write") as AgentTool | undefined;
+			expectDenied(lockedDir);
 			const writeResult = await writeTool!.execute("call-write-cwd", {
 				path: path.join(lockedDir, "after-move.txt"),
 				content: "export const value = 4;\n",

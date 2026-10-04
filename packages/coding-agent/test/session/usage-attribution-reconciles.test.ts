@@ -170,4 +170,47 @@ describe("per-model attribution reconciles with the flat session total", () => {
 		// be a row they cannot act on.
 		expect(rows.some(row => row.key.includes("haiku-3"))).toBe(false);
 	});
+
+	// `Totals` prints `premiumRequests` beside `Cost` and `Tokens`, and every one of
+	// those rows is windowed to the same transcript. A field that can go missing
+	// would tempt a reader into the LIFETIME `getUsageStatistics()` as a fallback —
+	// and a lifetime count inside a windowed block is a number the user cannot
+	// reconcile with any other row, or with their bill. So the field is pinned as
+	// always-present: `undefined` here is a regression, not a tolerated state.
+	it("reports premiumRequests as a number even when no record carried one", () => {
+		const absent = new SessionStatsTracker(
+			hostWith(
+				[assistantTurn("anthropic", "sonnet-4-5", usage({ input: 10, output: 5, totalTokens: 15, cost: 0.5 }))],
+				[],
+			),
+		).getSessionStats();
+
+		console.error("[premium] no record carried one ->", absent.premiumRequests);
+
+		expect(typeof absent.premiumRequests).toBe("number");
+		expect(absent.premiumRequests).toBe(0);
+	});
+
+	it("sums premiumRequests from every usage source, not just the transcript", () => {
+		const tracker = new SessionStatsTracker(
+			hostWith(
+				[
+					assistantTurn(
+						"anthropic",
+						"sonnet-4-5",
+						usage({ input: 10, totalTokens: 10, cost: 0.5, premiumRequests: 4 }),
+					),
+					taskResult(usage({ input: 5, totalTokens: 5, cost: 0.1, premiumRequests: 2 })),
+				],
+				[modelUsageEntry(usage({ input: 1, totalTokens: 1, cost: 0.01, premiumRequests: 1 }))],
+			),
+		);
+
+		const stats = tracker.getSessionStats();
+		console.error("[premium] all three sources ->", stats.premiumRequests, "cost ->", stats.cost);
+
+		// If any source is dropped the sum is 6, 5, or 2 — each a plausible-looking
+		// number that under-reports premium spend without announcing itself.
+		expect(stats.premiumRequests).toBe(7);
+	});
 });

@@ -29,11 +29,11 @@ Configure with `tools.approvalMode`:
 
 ```yaml
 tools:
-  approvalMode: write
-  approval:
-    bash: prompt
-    read: allow
-    mcp__filesystem_delete: deny
+   approvalMode: write
+   approval:
+      bash: prompt
+      read: allow
+      mcp__filesystem_delete: deny
 ```
 
 For MCP tools, key the policy by the exact final registered name. The ordinary form is
@@ -53,6 +53,46 @@ Resolution per tool call:
 
 Policy strings are trimmed and case-normalized. Invalid user values are ignored.
 
+## Declared effects
+
+A tier says how strong a grant a call needs. It does not say what the call reaches,
+and the gap is visible above: `eval` declares `exec` and can still spawn a shell, so
+a `bash.patterns` deny does not apply to the same command run through `eval`. Until
+now the only remedy was a second hand-written policy per tool.
+
+An **effect** is a tool declaring which resource it reaches. `bash` and `eval` both
+declare `subprocess`; `read` declares `fs-read`; `edit` declares `fs-read` and
+`fs-write`; `web_search` declares `network`. A user writes one policy per resource:
+
+```yaml
+tools:
+   approval:
+      effects:
+         subprocess: deny
+         network: prompt
+```
+
+Effects combine by the same rule bash already uses: **any matching `deny` wins,
+otherwise any matching `prompt` wins**. A tool carrying several effects takes the
+strictest policy among them. The floor is applied after a tool-declared `deny` and a
+per-tool user `deny`, and before the approval mode — so an effect policy still holds
+under `yolo`, which is the mode where a written policy is most likely to be assumed
+lost. A tool's own explicit `allow` is not overridden; effects raise the floor a user
+policy and the mode can lower, not a tool's statement about its own arguments.
+
+An extension declares its tool's effects by calling `declareToolEffects(name, effects)`
+at registration, so a tool published outside this repository is gated by the same rule
+as a built-in one without anything here changing.
+
+**This is not a sandbox, and the limitation is the same one that applies to bash
+pattern policy: it is not process or filesystem containment.** An effect is a
+declaration a user may narrow, not a boundary the runtime enforces. A tool that
+declares no effects is unconstrained, and a tool that declares `fs-read` and then
+writes a file is not stopped — the declaration is the tool telling the user what it
+does, and it is the user's judgement that gives it weight. Enforcing the declaration
+would require intercepting the resource, which is a different mechanism with
+different costs.
+
 ## Safety overrides
 
 A tool can force a prompt with object-form approval:
@@ -61,7 +101,7 @@ A tool can force a prompt with object-form approval:
 approval: { tier: "exec", override: true, reason: "Critical pattern detected" }
 ```
 
-`bash` uses this for critical destructive patterns such as `rm -rf /`, fork bombs, remote-fetch-then-execute, writes to `/etc/passwd`, and host shutdown commands. It also supports configured `bash.patterns` rules: `deny` is absolute, `prompt` forces a prompt, and `allow` explicitly allows a matching simple command at the `write` tier. Reasons appear in the approval prompt. In `yolo`, a bare critical override is ignored, but an explicit tool/user `prompt` or `deny` policy is still enforced.
+`bash` uses this for critical destructive patterns such as `rm -rf /`, fork bombs, remote-fetch-then-execute, writes to `/etc/passwd`, and host shutdown commands. It also supports configured `bash.patterns` rules: `deny` is absolute, `prompt` forces a prompt, and `allow` explicitly allows a matching simple command at the `write` tier. Reasons appear in the approval prompt. A critical pattern is denied outright: it is not a prompt you can skip, and `yolo` does not auto-approve it. An explicit tool/user `prompt` or `deny` policy is enforced as before.
 
 `bash.allowCompoundCommands` is off by default. When enabled, it recognizes only flat chains joined by `&&` whose segments consist of literal arguments. Rules remain ordered within each segment: the first matching rule wins for that segment. Explicit restrictions are combined conservatively across the chain: any matching `deny` wins, otherwise any matching `prompt` wins. A restriction matching the complete chain but no individual segment remains a whole-chain veto.
 
@@ -70,6 +110,55 @@ All matching whole-chain restrictions are considered, so a later whole-chain den
 These explicit chain and segment restrictions are resolved before the existing raw and canonical critical-command checks. After those checks, a chain whose segments all explicitly resolve to `allow` receives the `write`-tier allow; if any segment is unmatched, bash instead retains its standalone `exec` approval tier with no explicit policy. The generic resolver then applies `tools.approval.bash`, followed by the active approval mode, exactly as it would for a standalone command. An unmatched segment therefore prompts only when that existing tool-wide policy or mode requires it. Expansions, assignments, other control flow, redirections, globbing, newlines, malformed syntax, and shell-state-changing builtins do not qualify and retain legacy approval behavior.
 
 This pattern policy controls approval for the `bash` tool; it is not process or filesystem containment. An approved command retains the shell's ambient filesystem, network, and subprocess access. The `eval` tool also declares the `exec` tier and can spawn a shell via subprocess, so a `bash.patterns` `deny` rule does not apply to the same command run through `eval` — under `yolo`, that `exec` call resolves to `allow`. To gate the shell `eval` can reach, add a `tools.approval.eval` policy (`prompt` or `deny`) alongside `bash.patterns`.
+
+**The missing containment is a decision, not an unfinished feature.** On 2026-09-29
+the owner settled to defer OS-tier containment — `FileSystemSandboxPolicy` and
+`NetworkSandboxPolicy`, which need kernel, syscall, or OS-profile support. In the same
+decision a proposal to move the default `tools.approvalMode` from `yolo` to `write` was
+dropped, so the default stays `yolo`. The paragraph above is therefore correct as
+written and nobody is waiting on a patch for it: under `yolo`, no rule in this file
+stops a command run through `eval`. `tools.approval.eval` is a policy you write, not a
+boundary the runtime enforces, and an unset approval mode fails closed only when no
+settings exist at all — a settings file that omits the key gets `yolo`.
+
+If you depend on that default, check it is still what this record claims:
+
+```bash
+grep -n 'isApprovalMode(configured) ? configured : "yolo"' packages/coding-agent/src/tools/approval.ts
+```
+
+No output means the default moved and this paragraph is stale.
+
+### Path rules
+
+`pathRules.deny` and `pathRules.allow` name the paths a project has declared
+off-limits, as globs:
+
+```yaml
+pathRules:
+   deny:
+      - "**/.env"
+      - "secrets/**"
+```
+
+**Deny wins, and an allow cannot rescue a path a deny also matches.** An allow
+only decides paths that no deny rule matched. The expressive-looking
+alternative — an explicit allow beating a broad deny — lets `allow: ["**"]`
+silently re-open everything the deny list closed, which is the opposite of what
+a user writing a deny rule is asking for.
+
+**This is the policy layer, not containment**, and the same sentence that
+applies to bash pattern policy applies here: a denied path is refused by the
+tools that consult these rules, and a command that reaches the same file by
+another route is not stopped by them. The rules default to empty, so nothing is
+refused until you write one.
+
+A double-star prefix matches zero or more leading segments, so `**` followed by
+a slash and `.env` matches a `.env` at the project root as well as a nested one.
+That is worth stating because the alternative reading compiles to a pattern that
+requires a separator, and the rule then quietly fails to cover the root file —
+no error, no warning, just a rule that does not do what it reads like it does.
+Globs are matched against the path with forward slashes on every platform.
 
 ### Computer safety
 
@@ -118,44 +207,39 @@ Examples:
 ```ts
 approval: "read";
 
-approval: (args) => (LSP_READONLY_ACTIONS.has(args.action) ? "read" : "write");
+approval: args => (LSP_READONLY_ACTIONS.has(args.action) ? "read" : "write");
 
-approval: (args) =>
-  isCritical(args.command)
-    ? { tier: "exec", override: true, reason: "Critical pattern detected" }
-    : "exec";
+approval: args =>
+	isCritical(args.command) ? { tier: "exec", override: true, reason: "Critical pattern detected" } : "exec";
 
-approval: (args) =>
-  isForbidden(args)
-    ? { tier: "exec", policy: "deny", reason: "Blocked by tool policy" }
-    : "write";
+approval: args => (isForbidden(args) ? { tier: "exec", policy: "deny", reason: "Blocked by tool policy" } : "write");
 ```
 
 ## ACP sessions
 
-ACP (`omp acp`) uses the same settings resolver as normal OMP launches. Global `~/.omp/agent/config.yml` applies, project config for the ACP session `cwd` applies, and any `--config <file>` overlays passed to the ACP server process apply to sessions created by that process.
+ACP (`ultraworkers acp`) uses the same settings resolver as normal ultraworkers launches. Global `~/.omp/agent/config.yml` applies, project config for the ACP session `cwd` applies, and any `--config <file>` overlays passed to the ACP server process apply to sessions created by that process.
 
 To auto-approve ACP tool calls, set the mode in global or project config:
 
 ```yaml
 tools:
-  approvalMode: yolo
+   approvalMode: yolo
 ```
 
 Or launch the ACP server with a runtime override or a one-process config overlay:
 
 ```bash
-omp acp --yolo
-omp acp --auto-approve
-omp acp --approval-mode yolo
-omp acp --config ./acp-yolo.yml   # file contains tools.approvalMode: yolo
+ultraworkers acp --yolo
+ultraworkers acp --auto-approve
+ultraworkers acp --approval-mode yolo
+ultraworkers acp --config ./acp-yolo.yml   # file contains tools.approvalMode: yolo
 ```
 
-Precedence is the normal settings precedence: runtime flags (`--approval-mode`, `--auto-approve`, `--yolo`) override `--config` overlays, which override project config, which overrides global config. ACP does not currently define a `session/new`, `session/load`, or `session/resume` approval-policy field, so ACP clients that need per-session yolo should launch a separate `omp acp` process with one of the flags above or with a session-specific `--config` overlay.
+Precedence is the normal settings precedence: runtime flags (`--approval-mode`, `--auto-approve`, `--yolo`) override `--config` overlays, which override project config, which overrides global config. ACP does not currently define a `session/new`, `session/load`, or `session/resume` approval-policy field, so ACP clients that need per-session yolo should launch a separate `ultraworkers acp` process with one of the flags above or with a session-specific `--config` overlay.
 
-`tools.approvalMode: yolo` fully applies to ACP when it is explicitly configured or supplied by a runtime flag. It skips OMP's approval prompts and also skips the ACP client permission gate for `bash`, `edit`, `delete`, and `move` unless `tools.approval.<tool>` is `prompt` or `deny`. The schema default is `yolo`, but default-config ACP sessions still keep the client permission gate; set `tools.approvalMode: yolo` explicitly when the client wants unattended execution.
+`tools.approvalMode: yolo` fully applies to ACP when it is explicitly configured or supplied by a runtime flag. It skips ultraworkers' approval prompts and also skips the ACP client permission gate for `bash`, `edit`, `delete`, and `move` unless `tools.approval.<tool>` is `prompt` or `deny`. The schema default is `yolo`, but default-config ACP sessions still keep the client permission gate; set `tools.approvalMode: yolo` explicitly when the client wants unattended execution.
 
-When ACP approval is required, OMP routes it through the ACP client instead of the terminal TUI. Client-gated `bash`, `edit`, `delete`, and `move` calls use ACP `session/request_permission`; generic approval prompts use form elicitation when the client advertises `elicitation.form`. A rejected, cancelled, or unsupported prompt rejects/cancels the tool call; OMP does not silently allow it.
+When ACP approval is required, ultraworkers routes it through the ACP client instead of the terminal TUI. Client-gated `bash`, `edit`, `delete`, and `move` calls use ACP `session/request_permission`; generic approval prompts use form elicitation when the client advertises `elicitation.form`. A rejected, cancelled, or unsupported prompt rejects/cancels the tool call; ultraworkers does not silently allow it.
 
 ## Subagents
 

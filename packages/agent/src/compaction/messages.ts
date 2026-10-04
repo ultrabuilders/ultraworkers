@@ -24,7 +24,39 @@ export interface CustomMessage<T = unknown> {
 	details?: T;
 	/** Who initiated this message for billing/attribution semantics. */
 	attribution?: MessageAttribution;
+	/**
+	 * Provenance for messages that arrived from somewhere other than the user.
+	 *
+	 * `attribution` answers "who is billed"; this answers "may I treat this as the
+	 * user's own request?" — a different question, and conflating them is how an
+	 * injected message ends up read as an instruction. Optional because absence is
+	 * the user case: records written before this field existed stay readable.
+	 *
+	 * Declared here rather than imported from `@ultraworkers/peer`, whose
+	 * `PeerOrigin` is structurally identical — that package depends on this one, so
+	 * importing from it would close a cycle. See `IrcOrigin` in
+	 * `@oh-my-pi/pi-tui/tools/irc` for the same reasoning on the wire type.
+	 */
+	origin?: CustomMessageOrigin;
 	timestamp: number;
+}
+
+/**
+ * Where a custom message came from.
+ *
+ * Mirrors `IrcOrigin` in `@oh-my-pi/pi-tui/tools/irc` and deliberately does not
+ * import it: `pi-tui` does not depend on `pi-agent`, so importing upward would
+ * close a cycle in the other direction. Two declarations of a three-field shape
+ * is the cheaper error than a package cycle, and the drift that would cause is
+ * asserted by a test rather than left to review.
+ */
+export interface CustomMessageOrigin {
+	/** `"peer"` for a message from another session; `"user"` for the operator. */
+	readonly kind: "peer" | "user";
+	/** The sending peer, when known. */
+	readonly from?: string;
+	/** The sender's session label, when it supplied one. */
+	readonly session?: string;
 }
 
 /** Legacy hook message type (pre-extensions). Kept for session migration. */

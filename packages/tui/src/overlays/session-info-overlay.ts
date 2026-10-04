@@ -63,7 +63,7 @@ export interface SessionInfoOverlayHost {
 export class SessionInfoOverlay implements Component {
 	/** The terminal draws the sheet: a centred `md` glass sheet titled Session info. */
 	readonly nativeOverlay = {
-		role: "omp.overlay.sessionInfo",
+		role: "ultraworkers.overlay.sessionInfo",
 		size: "md",
 		anchor: "center",
 		head: "Session info",
@@ -145,7 +145,7 @@ export class SessionInfoOverlay implements Component {
 			let items: { k: string; v: TspSpan[] }[] = [];
 			const flush = (): void => {
 				if (items.length === 0) return;
-				children.push(node("kv", { items, layout: "grid", role: "omp.info.kv" }));
+				children.push(node("kv", { items, layout: "grid", role: "ultraworkers.info.kv" }));
 				items = [];
 			};
 			for (const entry of section.entries) {

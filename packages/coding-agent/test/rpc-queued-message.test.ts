@@ -10,7 +10,7 @@ describe("RPC queued-message removal", () => {
 	let directory: string;
 
 	beforeEach(async () => {
-		directory = await fs.mkdtemp(path.join(os.tmpdir(), "omp-rpc-remove-"));
+		directory = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-rpc-remove-"));
 		client = new RpcClient({
 			command: [process.execPath, path.join(import.meta.dir, "fixtures", "queued-message-rpc-agent.ts")],
 			cwd: directory,

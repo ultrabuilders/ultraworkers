@@ -38,6 +38,7 @@ import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import { ServedModelTracker } from "@oh-my-pi/pi-tui/chat/served-model-marker";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
 import { OAuthManualInputManager } from "@oh-my-pi/pi-coding-agent/modes/oauth-manual-input";
+import type { StatusLineEntry } from "@oh-my-pi/pi-coding-agent/modes/types";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
@@ -48,8 +49,32 @@ import { cfgTerminalShowImages } from "@oh-my-pi/pi-coding-agent/modes/settings"
 
 type AnyFn = (...args: never[]) => unknown;
 
-/** Partial at every depth; function members keep their exact signature. */
-export type Deep<T> = T extends AnyFn ? T : T extends object ? { [K in keyof T]?: Deep<T[K]> } : T;
+/**
+ * Slots `layer()` replaces wholesale instead of merging: it recurses only into
+ * values `isPlainObject` accepts, and these all carry a prototype of their own.
+ */
+type ReplacedSlot = readonly unknown[] | ReadonlyMap<unknown, unknown> | ReadonlySet<unknown>;
+
+/**
+ * Partial at every depth; function members keep their exact signature.
+ *
+ * `ReplacedSlot` stops the recursion where `layer()` stops it. Without it
+ * `Deep<InteractiveModeContext>` re-enters the recursive `Component` tree
+ * through every array member and exhausts the instantiation budget (TS2589),
+ * while describing merges the helper cannot perform.
+ *
+ * Class instances are the remaining known divergence: `layer()` replaces them
+ * wholesale too, but `Deep` keeps describing them structurally. That is a
+ * looseness rather than a hazard — a fully-populated instance still assigns —
+ * and tightening it would narrow the contract for no gain, so it stays.
+ */
+export type Deep<T> = T extends AnyFn
+	? T
+	: [T] extends [ReplacedSlot]
+		? T
+		: T extends object
+			? { [K in keyof T]?: Deep<T[K]> }
+			: T;
 
 export type ContextOverrides = Deep<InteractiveModeContext>;
 export type SessionOverrides = Deep<AgentSession>;
@@ -66,9 +91,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * already holds an object merges recursively; every other override (values,
  * getters, class instances, arrays, maps) replaces the slot via its own
  * property descriptor so accessor overrides survive.
+ *
+ * Every override is applied, whatever its enumerability. A non-enumerable override used
+ * to be dropped here: the loop enumerated with `for...in`, which visits own *enumerable*
+ * properties only, so such a key never reached the descriptor lookup below and the stub
+ * kept its default. That failure is silent — a test asserting on the member still passed,
+ * against a value it never set — so the omission is worth a named case rather than an
+ * implicit consequence of the loop's shape.
+ *
+ * The keys come from `Object.getOwnPropertyNames` rather than `for...in` for that reason,
+ * and it also fixes the prototype question by choosing an answer: own properties only. A
+ * member inherited from a prototype is not an override, so it is left alone. Every caller
+ * in this repository passes an object literal, whose keys are all own and all enumerable,
+ * which is why the two enumerations agree for all of them.
  */
 function layer(target: object, overrides: object, skip?: Record<string, true>): void {
-	for (const key in overrides) {
+	for (const key of Object.getOwnPropertyNames(overrides)) {
 		if (skip?.[key]) continue;
 		const descriptor = Object.getOwnPropertyDescriptor(overrides, key);
 		if (descriptor === undefined) continue;
@@ -211,9 +249,15 @@ export function createInteractiveModeContext(overrides: ContextOverrides = {}): 
 		for (const item of Array.isArray(content) ? content : [content as Component]) chatContainer.addChild(item);
 		ui.requestRender();
 	};
+	const noticeContainer = new Container();
 	const ctx = {
 		ui,
 		chatContainer,
+		// Keyed notices go here so a test can assert a line is present in one
+		// container and ABSENT from the other — the contract that a line rendering
+		// into both would pass a non-empty check.
+		noticeContainer,
+		keyedStatusLines: [] as StatusLineEntry[],
 		statusContainer: new Container(),
 		editorContainer: new Container(),
 		pendingMessagesContainer: new Container(),

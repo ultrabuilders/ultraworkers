@@ -25,7 +25,7 @@ An advisor does not approve actions or mutate primary session state directly. It
 
 The subsystem requires `advisor.enabled: true`. Model selection then depends on the roster:
 
-- Without any discovered `WATCHDOG.yml` advisor entries, OMP creates the legacy/default advisor and resolves its model from `modelRoles.advisor`.
+- Without any discovered `WATCHDOG.yml` advisor entries, ultraworkers creates the legacy/default advisor and resolves its model from `modelRoles.advisor`.
 - With a roster, each enabled entry uses its explicit `model` when present, otherwise `modelRoles.advisor`. An unresolvable entry is reported as `no_model` without preventing other entries from running.
 - `advisors[].enabled: false` keeps an entry visible as paused but does not build its runtime.
 
@@ -33,10 +33,10 @@ Example:
 
 ```yaml
 modelRoles:
-  advisor: anthropic/claude-sonnet-4-5:medium
+   advisor: anthropic/claude-sonnet-4-5:medium
 
 advisor:
-  enabled: true
+   enabled: true
 ```
 
 Model selectors use normal role/model resolution, including provider-prefixed ids, canonical ids, fallback lists, and optional thinking suffixes.
@@ -47,13 +47,13 @@ When the advisor's model fails (outage, rate limit, unreachable endpoint), the a
 
 ```yaml
 modelRoles:
-  advisor: openai/gpt-5.5:medium
+   advisor: openai/gpt-5.5:medium
 
 retry:
-  fallbackChains:
-    advisor:
-      - anthropic/claude-sonnet-4-5:medium
-      - google-vertex/gemini-3-pro
+   fallbackChains:
+      advisor:
+         - anthropic/claude-sonnet-4-5:medium
+         - google-vertex/gemini-3-pro
 ```
 
 This follows the same rules as the primary's fallback: `retry.modelFallback` must be on, candidates still cooling down or without credentials are skipped, and `retry.fallbackRevertPolicy: cooldown-expiry` returns the advisor to its primary model once the cooldown ends.
@@ -66,10 +66,10 @@ Use `--advisor` to enable the advisor for one print-mode process without
 persisting `advisor.enabled`:
 
 ```sh
-omp -p --advisor "Review this task."
+ultraworkers -p --advisor "Review this task."
 ```
 
-While a primary prompt is running, eligible advisor notes can steer that run. After the final prompt settles, print mode preserves late advisor notes without starting hidden primary turns, then waits up to ten minutes for final reviews before disposing the session. That wait covers a failing advisor's retries and [backup reviewer](#backup-reviewer) switch, so a review that fails on the advisor's model finishes on its fallback instead of being abandoned. Error exits use a 30-second drain budget so failed automation can terminate. If either deadline expires, or the advisor stops for good (halted or quota-paused), OMP logs the reviews that disposal will abandon; completed reviews retain their transcript and token/cost usage.
+While a primary prompt is running, eligible advisor notes can steer that run. After the final prompt settles, print mode preserves late advisor notes without starting hidden primary turns, then waits up to ten minutes for final reviews before disposing the session. That wait covers a failing advisor's retries and [backup reviewer](#backup-reviewer) switch, so a review that fails on the advisor's model finishes on its fallback instead of being abandoned. Error exits use a 30-second drain budget so failed automation can terminate. If either deadline expires, or the advisor stops for good (halted or quota-paused), ultraworkers logs the reviews that disposal will abandon; completed reviews retain their transcript and token/cost usage.
 
 Slash commands:
 
@@ -140,8 +140,8 @@ A normal yield the agent drove itself is treated differently from a deliberate i
 
 - **While the loop is still streaming**, blockers can steer into the live turn. Nits and concerns from an in-progress review remain deferred until a final boundary.
 - **Once the loop has yielded and gone idle**, delivery keys on how the turn ended:
-  - If the primary's tail is a **terminal text answer with no queued work**, a late `concern` is preserved as a visible card rather than waking the agent to restate a completed turn (#4840) — it re-enters context on the next resume (a new message, `.`/`c`, or a steer/follow-up), exactly like the interrupt case. A `blocker` is the exception: it normally steers a triggered turn, because it means the agent handed off broken or unexercised work that must be acknowledged before the turn is considered done (#5628).
-  - Otherwise (the agent yielded mid-work, no terminal answer), an idle `concern`/`blocker` normally triggers a fresh turn so the advice is acted on immediately.
+   - If the primary's tail is a **terminal text answer with no queued work**, a late `concern` is preserved as a visible card rather than waking the agent to restate a completed turn (#4840) — it re-enters context on the next resume (a new message, `.`/`c`, or a steer/follow-up), exactly like the interrupt case. A `blocker` is the exception: it normally steers a triggered turn, because it means the agent handed off broken or unexercised work that must be acknowledged before the turn is considered done (#5628).
+   - Otherwise (the agent yielded mid-work, no terminal answer), an idle `concern`/`blocker` normally triggers a fresh turn so the advice is acted on immediately.
 
 Two session/client constraints can still preserve a note whose normal delivery path is steering:
 
@@ -280,22 +280,22 @@ Example:
 
 ```yaml
 instructions: |
-  Everyone: prefer diffs that keep tests unified.
+   Everyone: prefer diffs that keep tests unified.
 
 advisors:
-  - name: Architecture
-    enabled: true
-    model: anthropic/claude-sonnet-4-5:medium
-    tools: [read, grep, glob]
-    instructions: |
-      Watch cross-module coupling and public-API growth.
+   - name: Architecture
+     enabled: true
+     model: anthropic/claude-sonnet-4-5:medium
+     tools: [read, grep, glob]
+     instructions: |
+        Watch cross-module coupling and public-API growth.
 
-  - name: Fixer
-    enabled: false
-    model: anthropic/claude-sonnet-4-5:high
-    tools: [read, grep, glob, edit, bash]
-    instructions: |
-      You may edit and run tests to prove a fix locally, then advise.
+   - name: Fixer
+     enabled: false
+     model: anthropic/claude-sonnet-4-5:high
+     tools: [read, grep, glob, edit, bash]
+     instructions: |
+        You may edit and run tests to prove a fix locally, then advise.
 ```
 
 Fields:
@@ -351,7 +351,7 @@ Paths derive from the owning session file (not the shared artifacts root), so ea
 
 Why a file:
 
-- **Usage attribution.** `omp stats` scans each session folder recursively, so advisor assistant turns (with their usage/cost) are attributed to the same project/session like any other subagent. Advisor "session update" prompts are persisted as `synthetic`, agent-attributed user messages so they never inflate user-message metrics.
+- **Usage attribution.** `ultraworkers stats` scans each session folder recursively, so advisor assistant turns (with their usage/cost) are attributed to the same project/session like any other subagent. Advisor "session update" prompts are persisted as `synthetic`, agent-attributed user messages so they never inflate user-message metrics.
 - **Observability.** [Agent Hub](./agent-hub.md) discovers legacy and named `__advisor*.jsonl` files on open and shows each as a read-only `advisor`-kind transcript under its owning session.
 
 The file follows session switches: on `/new`, resume/switch, and branch the recorder reopens at the new session's path on the next advisor turn; before a `/delete` deletes the old artifacts dir the recorder feed is detached and drained so a queued write cannot recreate the deleted file. The on-disk log is append-only and independent of the in-memory context — re-primes and compaction never truncate it.

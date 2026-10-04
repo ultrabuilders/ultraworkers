@@ -36,6 +36,7 @@ import {
 	type ExtensionKind,
 	type ExtensionProvider,
 	type ExtensionState,
+	type HookTrustState,
 	isShadowedExtension,
 } from "./types";
 
@@ -330,11 +331,16 @@ export class ExtensionList implements Component {
 			: mcpSnap
 				? this.#getMcpHealthIcon(mcpSnap.health, masterDisabled)
 				: this.#getStateIcon(ext.state, masterDisabled);
+		// Content-trust badge, beside the run state rather than inside it. Only
+		// `modified` stops a hook, so `state` already says the one thing that
+		// matters for running; the rest is provenance the user cannot otherwise
+		// see. Hooks only — a tool has no recorded hash to be untrusted about.
+		const trustBadge = ext.kind === "hook" && ext.trustState ? this.#getTrustBadge(ext.trustState) : "";
 		let name = sanitizeDisplayLine(ext.displayName);
 		const nameWidth = Math.min(24, width - 16);
 
 		// Build the line with indentation (visually "inside" the master switch)
-		let line = `   ${stateIcon} `;
+		let line = `   ${stateIcon} ${trustBadge}`;
 
 		if (isSelected && !masterDisabled) {
 			name = theme.bold(theme.fg("accent", name));
@@ -411,6 +417,31 @@ export class ExtensionList implements Component {
 				return theme.fg("dim", theme.status.disabled);
 			case "shadowed":
 				return theme.fg("warning", theme.status.shadowed);
+			case "modified":
+				return theme.fg("warning", theme.status.warning);
+		}
+	}
+
+	/**
+	 * Badge for a hook's content-trust verdict.
+	 *
+	 * `trusted` is the quiet case and draws nothing: it is the state of almost
+	 * every hook on almost every machine, and a permanent badge next to each one
+	 * would be noise that trains the eye to skip the column — which is exactly
+	 * where `modified` has to be seen. The other three are the ones worth a
+	 * glance: two say "this file is not yours to have edited", one says "nothing
+	 * has vouched for this yet".
+	 */
+	#getTrustBadge(state: HookTrustState): string {
+		switch (state) {
+			case "modified":
+				return theme.fg("warning", theme.status.warning);
+			case "untrusted":
+				return theme.fg("dim", theme.status.pending);
+			case "managed":
+				return theme.fg("dim", theme.status.info);
+			case "trusted":
+				return "";
 		}
 	}
 

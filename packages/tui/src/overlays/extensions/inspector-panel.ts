@@ -659,6 +659,8 @@ export class InspectorPanel implements Component {
 				return theme.fg("dim", `${theme.status.disabled} ${enablementLabel(state, reason)}`);
 			case "shadowed":
 				return theme.fg("warning", `${theme.status.shadowed} ${enablementLabel(state, reason, shadowedBy)}`);
+			case "modified":
+				return theme.fg("warning", `${theme.status.warning} ${enablementLabel(state, reason)}`);
 		}
 	}
 }

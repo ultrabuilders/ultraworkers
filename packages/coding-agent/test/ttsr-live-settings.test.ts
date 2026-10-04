@@ -43,7 +43,7 @@ async function settleSettingWatchers(session: AgentSession): Promise<void> {
 }
 
 async function withGuardedSession(run: (session: AgentSession, settings: Settings) => Promise<void>): Promise<void> {
-	using tempDir = TempDir.createSync("@pi-ttsr-live-");
+	using tempDir = TempDir.createSync("@ultraworkers-ttsr-live-");
 	const authStorage = await AuthStorage.create(tempDir.join("auth.db"));
 	authStorage.keys.setRuntime("managed-primary", "test-key");
 	const settings = Settings.isolated({ "compaction.enabled": false });

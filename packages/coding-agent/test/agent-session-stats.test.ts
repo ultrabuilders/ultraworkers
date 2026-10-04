@@ -97,7 +97,7 @@ describe("AgentSession session stats", () => {
 	it("keeps mixed peak and off-peak charges in session and footer totals after resume", async () => {
 		const target = modelRegistry.find("deepseek", "deepseek-v4-flash");
 		if (!target) throw new Error("Expected bundled DeepSeek Flash");
-		using tempDir = TempDir.createSync("@omp-session-mixed-cost-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-mixed-cost-");
 		const manager = SessionManager.create(tempDir.path(), tempDir.path());
 		manager.appendMessage({ role: "user", content: "First request", timestamp: 1 });
 		for (const [timestamp, inputCost, outputCost] of [
@@ -151,6 +151,87 @@ describe("AgentSession session stats", () => {
 				output: 2_000_000,
 				cost: 2.25,
 			});
+		} finally {
+			await session.dispose();
+			session = undefined;
+			await resumed.close();
+		}
+	});
+
+	it("keeps the compaction cost gap after a resume", async () => {
+		// The gap `epic-5125` documents, measured across a resume — the question the bead
+		// listed as unverified.
+		//
+		// `getUsageStatistics()` is lifetime (`#usage` accumulates every entry and is only
+		// reset by a fork), while `getSessionStats()` sums `activeModelUsageEntries` — the
+		// slice of the branch inside the latest compaction/reset window. After a compaction
+		// the two disagree: a user's bill does not shrink when context is compacted, but one
+		// of the two displays does.
+		//
+		// Only `model_usage` entries carry cost through that filter, so the windowed spend uses
+		// `appendUsage`. The assistant message contributes 30 to the LIFETIME side only — it is
+		// never counted by `activeModelUsageEntries`, which filters on `type === "model_usage"`.
+		// That asymmetry is the bug: after a compaction the window drops 100 that lifetime keeps.
+		// (An earlier draft claimed `model_usage` entries are not replayed on reload and the
+		// lifetime side read 30. That was wrong — measured, lifetime reads 137 after resume too.)
+		//
+		// The assertion is that the gap SURVIVES the resume. Asserting the two figures agree
+		// would pass exactly when the divergence is fixed — a test that cannot fail for the
+		// reason it exists.
+		using tempDir = TempDir.createSync("@ultraworkers-session-stats-resume-");
+		const target = model();
+		const manager = SessionManager.create(tempDir.path(), tempDir.path());
+		// 100 of windowed model spend before the boundary: lifetime keeps it, the window drops it.
+		appendUsage(manager, target, 100);
+		// 30 of assistant spend, which is what survives a reload — it proves the lifetime side
+		// is genuinely still being read after the resume rather than having gone quiet.
+		manager.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "Recorded response" }],
+			api: target.api,
+			provider: target.provider,
+			model: target.id,
+			timestamp: Date.parse("2026-09-10T03:59:59Z"),
+			stopReason: "stop",
+			usage: {
+				input: 1_000_000,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 1_000_000,
+				cost: { input: 30, output: 0, cacheRead: 0, cacheWrite: 0, total: 30 },
+			},
+		});
+		manager.appendMessage({ role: "user", content: "old", timestamp: 1 });
+		const kept = manager.appendMessage({ role: "user", content: "kept", timestamp: 2 });
+		manager.appendCompaction("summary", undefined, kept, 100);
+		// 7 of windowed model spend after the boundary: both surfaces keep this.
+		appendUsage(manager, target, 7);
+		session = createStatsSession(manager, target);
+
+		// The divergence, before any reload. 137 lifetime vs 7 windowed.
+		expect(manager.getUsageStatistics().cost).toBe(137);
+		expect(session.getSessionStats().cost).toBe(7);
+
+		await manager.flush();
+		const file = manager.getSessionFile();
+		if (!file) throw new Error("Expected persisted session file");
+		await session.dispose();
+		session = undefined;
+		await manager.close();
+
+		const resumed = await SessionManager.open(file, undefined, undefined, {
+			initialCwd: tempDir.path(),
+			suppressBreadcrumb: true,
+		});
+		session = createStatsSession(resumed, target);
+		try {
+			// After the resume the windowed side is rebuilt from the boundary on disk and still
+			// reads 7, while the lifetime side keeps the assistant spend. If a future change
+			// rehydrates the window across reload, THIS is the line that moves — that is the
+			// intended signal, not a nuisance.
+			expect(session.getSessionStats().cost).toBe(7);
+			expect(resumed.getUsageStatistics().cost).toBe(137);
 		} finally {
 			await session.dispose();
 			session = undefined;
@@ -246,7 +327,7 @@ describe("AgentSession session stats", () => {
 			throw new Error("Expected bundled model with a context window");
 		}
 
-		using tempDir = TempDir.createSync("@omp-session-stats-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-stats-");
 		const sessionFile = `${tempDir.path()}/repro.jsonl`;
 		await Bun.write(
 			sessionFile,

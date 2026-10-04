@@ -40,6 +40,7 @@ import { editorKey, editorKeys } from "../chrome/keybinding-hints";
 import { highlightCode, type ThemeColor, theme } from "../theme/theme";
 import { viewportRows } from "@oh-my-pi/pi-tui";
 import { commandFromToolCall, extractBlocks, extractLinks } from "./copy-targets";
+import { collectProviderBlocks, type CopyTargetProvider } from "./copy-target-registry";
 import { matchesAppToolsExpand, matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../keybinding-matchers";
 import { ChatTranscriptBuilder } from "../chat/chat-transcript-builder";
 import { TranscriptBrowser, type TranscriptBrowserFrame } from "../chat/transcript-browser";
@@ -77,7 +78,7 @@ function turnSummary(entry: TranscriptEntry): { label: string; role: string } {
 	const message = transcriptEntryMessage(entry);
 	switch (message?.role) {
 		case "user":
-			return { label: userMessageLabel(message.content), role: "omp.user" };
+			return { label: userMessageLabel(message.content), role: "ultraworkers.user" };
 		case "assistant": {
 			let prose = "";
 			const tools: string[] = [];
@@ -86,26 +87,29 @@ function turnSummary(entry: TranscriptEntry): { label: string; role: string } {
 				else if (content.type === "toolCall") tools.push(content.name);
 			}
 			const label = firstLine(prose) || tools.join(", ") || "thinking";
-			return { label, role: "omp.assistant" };
+			return { label, role: "ultraworkers.assistant" };
 		}
 		case "toolResult":
-			return { label: `${message.toolName} result`, role: `omp.tool.${message.toolName}` };
+			return { label: `${message.toolName} result`, role: `ultraworkers.tool.${message.toolName}` };
 		case "bashExecution":
-			return { label: `$ ${firstLine(message.command)}`, role: "omp.tool.bash" };
+			return { label: `$ ${firstLine(message.command)}`, role: "ultraworkers.tool.bash" };
 		case "pythonExecution":
-			return { label: firstLine(message.code), role: "omp.tool.eval" };
+			return { label: firstLine(message.code), role: "ultraworkers.tool.eval" };
 		case "compactionSummary":
-			return { label: "Compaction summary", role: "omp.summary" };
+			return { label: "Compaction summary", role: "ultraworkers.summary" };
 		case "branchSummary":
-			return { label: "Branch summary", role: "omp.summary" };
+			return { label: "Branch summary", role: "ultraworkers.summary" };
 		case "custom":
 		case "hookMessage": {
 			const draft = userTurnDraft(entry);
-			if (draft !== undefined) return { label: firstLine(draft), role: "omp.user" };
-			return { label: firstLine(textContent(message.content, " ")) || message.customType, role: "omp.custom" };
+			if (draft !== undefined) return { label: firstLine(draft), role: "ultraworkers.user" };
+			return {
+				label: firstLine(textContent(message.content, " ")) || message.customType,
+				role: "ultraworkers.custom",
+			};
 		}
 		default:
-			return { label: entry.id, role: "omp.message" };
+			return { label: entry.id, role: "ultraworkers.message" };
 	}
 }
 
@@ -198,7 +202,7 @@ export function timelineItem(target: OutlineTarget): TspPickerItem {
 				id,
 				label: calls.map(call => toolCallLabel(call.name, call.arguments)).join(" · "),
 				node: "tool",
-				role: `omp.tool.${calls[0]!.name}`,
+				role: `ultraworkers.tool.${calls[0]!.name}`,
 			};
 		}
 		case "toolResult":
@@ -220,7 +224,7 @@ export class TimelineItems {
 	}
 }
 
-/** Lines of a copy block shown in the native preview; longer blocks copy through omp. */
+/** Lines of a copy block shown in the native preview; longer blocks copy through ultraworkers. */
 const PREVIEW_BLOCK_LINES = 400;
 
 /** A block's preview caption: `rust · 12 lines`, `quote`, `link · docs`. */
@@ -246,9 +250,9 @@ function blockBody(block: CopyBlock): NativeNode {
 
 /**
  * One borderless preview section of the copy picker. A click copies it in the
- * terminal (`copy`) when the preview holds the whole text, else asks omp to
+ * terminal (`copy`) when the preview holds the whole text, else asks ultraworkers to
  * (`pick`); link sections also offer `open`. The focused block's section takes
- * the `omp.picker.block.focused` role and the accent tone.
+ * the `ultraworkers.picker.block.focused` role and the accent tone.
  */
 function previewSection(
 	key: string,
@@ -263,7 +267,7 @@ function previewSection(
 		"section",
 		{
 			head: caption,
-			role: focused ? "omp.picker.block.focused" : "omp.picker.block",
+			role: focused ? "ultraworkers.picker.block.focused" : "ultraworkers.picker.block",
 			...(focused ? { tone: "accent" as const } : {}),
 			...(href ? { href } : {}),
 			actions: { click: whole ? "copy" : "pick", ...(href ? { menu: ["copy", "open"] } : {}) },
@@ -295,6 +299,12 @@ export interface CopySelectorDeps {
 	onPick: (content: string, label: string, source: CopyPickSource) => void;
 	/** `o` on a link block — open `href` with the system opener. Absent: `o` is ignored. */
 	onOpen?: (href: string, label: string) => void;
+	/**
+	 * Extension-contributed copy targets. Core's own extraction runs first and
+	 * unchanged; a provider only adds blocks, so absent or empty means the picker
+	 * behaves exactly as it did before the seam existed.
+	 */
+	copyTargetProviders?: readonly CopyTargetProvider[];
 	onCancel: () => void;
 }
 
@@ -434,7 +444,7 @@ export class CopySelectorComponent implements Component {
 	#blocksFor(target: OutlineTarget): CopyBlock[] {
 		const cached = this.#blockCache.get(target.turnId);
 		if (cached) return cached;
-		const blocks = collectBlocks(target.entries);
+		const blocks = collectBlocks(target.entries, this.deps.copyTargetProviders ?? [], { cwd: this.deps.cwd });
 		this.#blockCache.set(target.turnId, blocks);
 		return blocks;
 	}
@@ -604,7 +614,7 @@ export class CopySelectorComponent implements Component {
 			return;
 		}
 		if (event.type === "action" && event.act === "pick") {
-			// A preview section too long to copy in the terminal: omp copies the full text.
+			// A preview section too long to copy in the terminal: ultraworkers copies the full text.
 			this.#pickSection(event.key);
 			return;
 		}
@@ -692,7 +702,7 @@ export class CopySelectorComponent implements Component {
 	 * The `timeline` picker: the turns as rows, the selected turn's blocks as
 	 * preview sections (the whole message first), each copied by a click. In
 	 * the block view the focused block's section takes the
-	 * `omp.picker.block.focused` role and the preview owns the focus.
+	 * `ultraworkers.picker.block.focused` role and the preview owns the focus.
 	 */
 	#describePicker(): NativeNode {
 		const memo = `${this.#selected}|${this.#blockSelected}|${this.#truncated}`;
@@ -828,7 +838,7 @@ export class CopySelectorComponent implements Component {
 			span("Copy", "strong"),
 			span(`${theme.sep.dot}pick what to put on the clipboard`, "dim"),
 		];
-		const root = overlayCard("omp.overlay.copy", head, children);
+		const root = overlayCard("ultraworkers.overlay.copy", head, children);
 		this.#native = { memo, targets: this.#targets, blocks: this.#blocks, node: root };
 		return root;
 	}
@@ -1062,48 +1072,68 @@ function pushMarkdownBlocks(blocks: CopyBlock[], text: string, entry: Transcript
 	}
 }
 
-/** Inner blocks of one turn: markdown code/quotes, commands, and tool output. */
-export function collectBlocks(entries: readonly TranscriptEntry[]): CopyBlock[] {
+/**
+ * Inner blocks of one turn: markdown code/quotes, commands, tool output, and —
+ * when the host registered any — the extension-contributed targets from
+ * {@link collectProviderBlocks}.
+ *
+ * Core's extraction is unconditional and runs first; a provider can only append.
+ * That is what makes the negative contract hold: with no providers registered, or
+ * with providers that return nothing for every entry, the result is byte-identical
+ * to what core produced before the seam existed.
+ */
+export function collectBlocks(
+	entries: readonly TranscriptEntry[],
+	providers: readonly CopyTargetProvider[] = [],
+	context?: { cwd?: string },
+): CopyBlock[] {
 	const blocks: CopyBlock[] = [];
+	const providerContext = { entries, cwd: context?.cwd ?? "" };
 	for (const entry of entries) {
 		const message = transcriptEntryMessage(entry);
-		if (!message) continue;
-		switch (message.role) {
-			case "user":
-				pushMarkdownBlocks(blocks, rawUserText(message), entry);
-				break;
-			case "assistant": {
-				pushMarkdownBlocks(blocks, assistantVisibleText(message), entry);
-				for (const content of message.content) {
-					if (content.type !== "toolCall") continue;
-					const command = commandFromToolCall(content);
-					if (command) {
-						blocks.push({
-							label: command.kind === "bash" ? "bash command" : "eval code",
-							content: command.code,
-							entry,
-							kind: "command",
-							language: command.language,
-						});
+		if (message) {
+			switch (message.role) {
+				case "user":
+					pushMarkdownBlocks(blocks, rawUserText(message), entry);
+					break;
+				case "assistant": {
+					pushMarkdownBlocks(blocks, assistantVisibleText(message), entry);
+					for (const content of message.content) {
+						if (content.type !== "toolCall") continue;
+						const command = commandFromToolCall(content);
+						if (command) {
+							blocks.push({
+								label: command.kind === "bash" ? "bash command" : "eval code",
+								content: command.code,
+								entry,
+								kind: "command",
+								language: command.language,
+							});
+						}
 					}
+					break;
 				}
-				break;
+				case "toolResult": {
+					const text = toolResultText(message);
+					if (text) blocks.push({ label: `${message.toolName} result`, content: text, entry });
+					break;
+				}
+				case "bashExecution":
+					blocks.push({ label: "command", content: message.command, entry, language: "bash" });
+					if (message.output.trim()) blocks.push({ label: "output", content: message.output, entry });
+					break;
+				case "pythonExecution":
+					blocks.push({ label: "eval code", content: message.code, entry, language: "python" });
+					if (message.output.trim()) blocks.push({ label: "output", content: message.output, entry });
+					break;
+				default:
+					break;
 			}
-			case "toolResult": {
-				const text = toolResultText(message);
-				if (text) blocks.push({ label: `${message.toolName} result`, content: text, entry });
-				break;
-			}
-			case "bashExecution":
-				blocks.push({ label: "command", content: message.command, entry, language: "bash" });
-				if (message.output.trim()) blocks.push({ label: "output", content: message.output, entry });
-				break;
-			case "pythonExecution":
-				blocks.push({ label: "eval code", content: message.code, entry, language: "python" });
-				if (message.output.trim()) blocks.push({ label: "output", content: message.output, entry });
-				break;
-			default:
-				break;
+		}
+		if (providers.length === 0) continue;
+		const contributed = collectProviderBlocks(entry, providerContext, providers);
+		for (const block of contributed.blocks) {
+			blocks.push({ ...block, entry });
 		}
 	}
 	return blocks;

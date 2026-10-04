@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The collab page now names the product in its title bar, connect screen and header. Those strings carried the pre-rebrand name, so the tab a user pinned still showed the old brand. They now read the shared `APP_NAME` constant.
+
+  The stored display name (`omp.collab.name`) and saved theme (`omp-collab-theme`) keep their existing keys on purpose — they name slots in the user's own browser, so renaming them would discard what someone already chose.
+
 ## [18.4.1] - 2026-09-28
 
 ### Fixed
